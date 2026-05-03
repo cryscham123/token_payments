@@ -1,0 +1,343 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="Order Service Domain Logic" id="fPDRBvhrFGuN-y8Ew94I">
+    <mxGraphModel dx="1601" dy="876" grid="1" gridSize="10" guides="1" tooltips="1" connect="0" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-132" parent="1" style="swimlane;whiteSpace=wrap;html=1;startSize=30;fillColor=#f5f5f5;fontColor=#333333;strokeColor=#666666;sketch=1;curveFitting=1;jiggle=2;" value="주문 생성 Context" vertex="1">
+          <mxGeometry height="680" width="1820" x="380" y="230" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-125" parent="q3rqbwMkTXjqQ767PhQi-132" style="swimlane;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=light-dark(#D6B656,#3399FF);sketch=1;" value="Domain Core" vertex="1">
+          <mxGeometry height="580" width="646" x="50" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="t8UkFrMfmjldC288A60Y-25" parent="q3rqbwMkTXjqQ767PhQi-125" style="whiteSpace=wrap;html=1;sketch=1;jiggle=2;curveFitting=1;align=center;verticalAlign=bottom;fontFamily=Helvetica;fontSize=12;labelPosition=center;verticalLabelPosition=top;" value="주문 Aggregate" vertex="1">
+          <mxGeometry height="520" width="300" x="26" y="45" as="geometry" />
+        </mxCell>
+        <mxCell id="t8UkFrMfmjldC288A60Y-10" parent="q3rqbwMkTXjqQ767PhQi-125" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=none;sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;Order (Aggregate Root)&lt;/b&gt;&lt;br&gt;&lt;hr&gt;OrderId orderId;&lt;br&gt;CustomerId customerId;&lt;br&gt;StoreId storeId;&lt;br&gt;Address deliveryAddress;&lt;br&gt;List&amp;lt;OrderItem&amp;gt; items;&lt;br&gt;TrackingId trackingId;&lt;br&gt;OrderStatus orderStatus;&lt;br&gt;PaymentId paymentId;&lt;br&gt;List&amp;lt;String&amp;gt; failureMessages;&lt;div&gt;PaymentId paymentId;&lt;br&gt;&lt;hr&gt;validateOrder();&lt;br&gt;initializeOrder();&lt;br&gt;initPayment();&lt;br&gt;confirmPayment();&lt;br&gt;approve();&lt;br&gt;initiateRefund();&lt;br&gt;completeRefund();&lt;br&gt;cancel();&lt;/div&gt;" vertex="1">
+          <mxGeometry height="315" width="220" x="66" y="75" as="geometry" />
+        </mxCell>
+        <mxCell id="t8UkFrMfmjldC288A60Y-11" parent="q3rqbwMkTXjqQ767PhQi-125" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=none;sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;Order Item&lt;/b&gt;&lt;hr&gt;OrderItemId orderItemId;&lt;br&gt;OrderId orderId;&lt;br&gt;ProductSnapshot product;&lt;br&gt;Integer quantity;&lt;div&gt;Crypto subTotal;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="150" width="200" x="66" y="397.5" as="geometry" />
+        </mxCell>
+        <mxCell id="t8UkFrMfmjldC288A60Y-26" parent="q3rqbwMkTXjqQ767PhQi-125" style="whiteSpace=wrap;html=1;sketch=1;jiggle=2;curveFitting=1;align=center;verticalAlign=bottom;fontFamily=Helvetica;fontSize=12;labelPosition=center;verticalLabelPosition=top;" value="가게 Aggregate" vertex="1">
+          <mxGeometry height="290" width="240" x="370" y="45" as="geometry" />
+        </mxCell>
+        <mxCell id="t8UkFrMfmjldC288A60Y-13" parent="q3rqbwMkTXjqQ767PhQi-125" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=default;sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;Store (Aggregate Root)&lt;/b&gt;&lt;br&gt;&lt;hr&gt;StoreId storeId;&lt;br&gt;List&amp;lt;Product&amp;gt; products;&lt;br&gt;Boolean active;&lt;div&gt;Address storeAddress;&lt;/div&gt;&lt;div&gt;WalletAddress storeWallet;&lt;/div&gt;&lt;div&gt;List&amp;lt;ChainNetwork&amp;gt; supportChain;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="130" width="200" x="389" y="65" as="geometry" />
+        </mxCell>
+        <mxCell id="t8UkFrMfmjldC288A60Y-12" parent="q3rqbwMkTXjqQ767PhQi-125" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#f5f5f5;sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;Product&lt;/b&gt;&lt;hr&gt;ProductId productId;&lt;br&gt;&lt;div&gt;String name;&lt;br&gt;Crypto price;&lt;div&gt;&lt;hr&gt;&lt;/div&gt;&lt;div&gt;snapshot();&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="110" width="201" x="389.5" y="205" as="geometry" />
+        </mxCell>
+        <mxCell id="t8UkFrMfmjldC288A60Y-27" parent="q3rqbwMkTXjqQ767PhQi-125" style="whiteSpace=wrap;html=1;sketch=1;jiggle=2;curveFitting=1;align=center;verticalAlign=bottom;fontFamily=Helvetica;fontSize=12;labelPosition=center;verticalLabelPosition=top;" value="고객 Aggregate" vertex="1">
+          <mxGeometry height="115" width="240" x="369" y="375" as="geometry" />
+        </mxCell>
+        <mxCell id="t8UkFrMfmjldC288A60Y-14" parent="q3rqbwMkTXjqQ767PhQi-125" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#dae8fc;sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;Customer (Aggregate Root)&lt;/b&gt;&lt;br&gt;&lt;hr&gt;CustomerId customerId;&lt;div&gt;WalletAddress cusomerWallet&lt;/div&gt;" vertex="1">
+          <mxGeometry height="70" width="200" x="389" y="397.5" as="geometry" />
+        </mxCell>
+        <mxCell id="t8UkFrMfmjldC288A60Y-3" parent="1" style="swimlane;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;startSize=23;sketch=1;curveFitting=1;jiggle=2;" value="Value Objects" vertex="1">
+          <mxGeometry height="580" width="490" x="1100" y="290" as="geometry" />
+        </mxCell>
+        <mxCell id="t8UkFrMfmjldC288A60Y-29" parent="t8UkFrMfmjldC288A60Y-3" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;OrderId&lt;/b&gt;&lt;br&gt;&lt;hr&gt;&lt;div&gt;UUID id;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="60" width="139" x="10" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="t8UkFrMfmjldC288A60Y-30" parent="t8UkFrMfmjldC288A60Y-3" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;CustomerId&lt;/b&gt;&lt;br&gt;&lt;hr&gt;&lt;div&gt;UUID id;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="60" width="139" x="10" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="t8UkFrMfmjldC288A60Y-34" parent="t8UkFrMfmjldC288A60Y-3" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;OrderItemId&lt;/b&gt;&lt;br&gt;&lt;hr&gt;&lt;div&gt;UUID id;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="60" width="139" x="10" y="360" as="geometry" />
+        </mxCell>
+        <mxCell id="t8UkFrMfmjldC288A60Y-33" parent="t8UkFrMfmjldC288A60Y-3" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;Address&lt;/b&gt;&lt;br&gt;&lt;div&gt;&lt;hr&gt;&lt;div&gt;UUID id;&lt;/div&gt;&lt;/div&gt;&lt;div&gt;String street;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="70" width="139" x="170" y="420" as="geometry" />
+        </mxCell>
+        <mxCell id="t8UkFrMfmjldC288A60Y-39" parent="t8UkFrMfmjldC288A60Y-3" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;WalletAddress&lt;/b&gt;&lt;br&gt;&lt;div&gt;&lt;hr&gt;&lt;div&gt;String Address&lt;/div&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="60" width="139" x="330" y="210" as="geometry" />
+        </mxCell>
+        <mxCell id="t8UkFrMfmjldC288A60Y-38" parent="t8UkFrMfmjldC288A60Y-3" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;OrderStatus&lt;/b&gt;&lt;br&gt;&lt;div&gt;&lt;hr&gt;&lt;/div&gt;&lt;div&gt;PENDING,&lt;br&gt;PAID,&lt;br&gt;APPROVED,&lt;br&gt;CANCELLING,&lt;br&gt;CANCELLED&lt;/div&gt;" vertex="1">
+          <mxGeometry height="120" width="139" x="170" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="t8UkFrMfmjldC288A60Y-37" parent="t8UkFrMfmjldC288A60Y-3" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;ProductSnapshot&lt;/b&gt;&lt;div&gt;&lt;hr&gt;&lt;/div&gt;&lt;div&gt;&lt;span style=&quot;background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;ProductId productId;&lt;/span&gt;&lt;/div&gt;&lt;div&gt;&lt;div&gt;&lt;div&gt;ZoneDateTime createdDate;&lt;/div&gt;&lt;div&gt;String name;&lt;/div&gt;&lt;/div&gt;&lt;div&gt;Money price;&lt;/div&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="120" width="139" x="170" y="130" as="geometry" />
+        </mxCell>
+        <mxCell id="t8UkFrMfmjldC288A60Y-5" parent="1" style="swimlane;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;startSize=23;sketch=1;curveFitting=1;jiggle=2;" value="Domain Events" vertex="1">
+          <mxGeometry height="370" width="200" x="1620" y="290" as="geometry" />
+        </mxCell>
+        <mxCell id="t8UkFrMfmjldC288A60Y-48" parent="t8UkFrMfmjldC288A60Y-5" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;div&gt;&lt;b style=&quot;background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;OrderPaidEvent&lt;/b&gt;&lt;/div&gt;&lt;div&gt;&lt;hr&gt;&lt;/div&gt;&lt;div&gt;Order order;&lt;br&gt;ZonedDateTime createdAt&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="90" width="170" x="10" y="150" as="geometry" />
+        </mxCell>
+        <mxCell id="t8UkFrMfmjldC288A60Y-31" parent="1" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;Store&lt;/b&gt;&lt;b style=&quot;background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;Id&lt;/b&gt;&lt;div&gt;&lt;hr&gt;&lt;div&gt;UUID id;&lt;/div&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="60" width="139" x="1110" y="570" as="geometry" />
+        </mxCell>
+        <mxCell id="t8UkFrMfmjldC288A60Y-32" parent="1" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b style=&quot;background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;ProductId&lt;/b&gt;&lt;div&gt;&lt;hr&gt;&lt;div&gt;UUID id;&lt;/div&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="60" width="139" x="1110" y="410" as="geometry" />
+        </mxCell>
+        <mxCell id="t8UkFrMfmjldC288A60Y-35" parent="1" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;div&gt;&lt;b&gt;Crypto&lt;/b&gt;&lt;/div&gt;&lt;div&gt;&lt;hr&gt;&lt;/div&gt;&lt;div&gt;BigDecimal amount;&lt;/div&gt;&lt;div&gt;String symbol;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="70" width="139" x="1270" y="330" as="geometry" />
+        </mxCell>
+        <mxCell id="t8UkFrMfmjldC288A60Y-36" parent="1" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;Tracking&lt;/b&gt;&lt;b style=&quot;background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;Id&lt;/b&gt;&lt;div&gt;&lt;hr&gt;&lt;div&gt;UUID id;&lt;/div&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="60" width="139" x="1110" y="730" as="geometry" />
+        </mxCell>
+        <mxCell id="t8UkFrMfmjldC288A60Y-40" parent="1" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;div&gt;&lt;b&gt;TransactionHash&lt;/b&gt;&lt;/div&gt;&lt;div&gt;&lt;hr&gt;&lt;/div&gt;&lt;div&gt;&lt;/div&gt;&lt;div&gt;String hash;&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="60" width="139" x="1430" y="330" as="geometry" />
+        </mxCell>
+        <mxCell id="t8UkFrMfmjldC288A60Y-41" parent="1" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;div&gt;&lt;b&gt;ChainNetwork&lt;/b&gt;&lt;/div&gt;&lt;div&gt;&lt;hr&gt;&lt;/div&gt;&lt;div&gt;&lt;/div&gt;&lt;div&gt;String chainId;&lt;/div&gt;&lt;div&gt;String name;&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="70" width="139" x="1430" y="410" as="geometry" />
+        </mxCell>
+        <mxCell id="t8UkFrMfmjldC288A60Y-47" parent="1" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;div&gt;&lt;b&gt;OrderCreatedEvent&lt;/b&gt;&lt;/div&gt;&lt;div&gt;&lt;hr&gt;Order order;&lt;br&gt;ZonedDateTime createdAt;&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="90" width="170" x="1630" y="330" as="geometry" />
+        </mxCell>
+        <mxCell id="t8UkFrMfmjldC288A60Y-50" parent="1" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;div&gt;&lt;b&gt;OrderCancelledEvent&lt;/b&gt;&lt;br&gt;&lt;hr&gt;&lt;/div&gt;&lt;div&gt;Order order;&lt;br&gt;ZonedDateTime createdAt&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="90" width="170" x="1630" y="550" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-73" parent="1" style="swimlane;whiteSpace=wrap;html=1;startSize=30;fillColor=#f5f5f5;fontColor=#333333;strokeColor=#666666;sketch=1;curveFitting=1;jiggle=2;" value="주문 승인 Context" vertex="1">
+          <mxGeometry height="680" width="1810" x="380" y="980" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-149" parent="q3rqbwMkTXjqQ767PhQi-73" style="swimlane;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;startSize=23;sketch=1;curveFitting=1;jiggle=2;" value="Value Objects" vertex="1">
+          <mxGeometry height="580" width="417" x="713" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="order-approval-value-obj-1" parent="q3rqbwMkTXjqQ767PhQi-149" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;ApprovalStatus&lt;/b&gt;&lt;br&gt;&lt;hr&gt;&lt;div&gt;PENDING,&lt;br&gt;APPROVED,&lt;br&gt;REJECTED&lt;/div&gt;" vertex="1">
+          <mxGeometry height="90" width="139" x="10" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="KQGpsL3DyPl_P96wa_h--2" parent="q3rqbwMkTXjqQ767PhQi-149" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;Store&lt;/b&gt;&lt;b style=&quot;background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;Id&lt;/b&gt;&lt;div&gt;&lt;hr&gt;&lt;div&gt;UUID id;&lt;/div&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="60" width="139" x="10" y="150" as="geometry" />
+        </mxCell>
+        <mxCell id="KQGpsL3DyPl_P96wa_h--3" parent="q3rqbwMkTXjqQ767PhQi-149" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;OrderId&lt;/b&gt;&lt;br&gt;&lt;hr&gt;&lt;div&gt;UUID id;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="60" width="139" x="10" y="230" as="geometry" />
+        </mxCell>
+        <mxCell id="KQGpsL3DyPl_P96wa_h--5" parent="q3rqbwMkTXjqQ767PhQi-149" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;OrderStatus&lt;/b&gt;&lt;br&gt;&lt;div&gt;&lt;hr&gt;&lt;/div&gt;&lt;div&gt;PENDING,&lt;br&gt;PAID,&lt;br&gt;APPROVED,&lt;br&gt;CANCELLING,&lt;br&gt;CANCELLED&lt;/div&gt;" vertex="1">
+          <mxGeometry height="120" width="139" x="167" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="KQGpsL3DyPl_P96wa_h--6" parent="q3rqbwMkTXjqQ767PhQi-149" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;div&gt;&lt;b&gt;Crypto&lt;/b&gt;&lt;/div&gt;&lt;div&gt;&lt;hr&gt;&lt;/div&gt;&lt;div&gt;BigDecimal amount;&lt;/div&gt;&lt;div&gt;String symbol;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="70" width="139" x="167" y="190" as="geometry" />
+        </mxCell>
+        <mxCell id="KQGpsL3DyPl_P96wa_h--7" parent="q3rqbwMkTXjqQ767PhQi-149" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;ProductSnapshot&lt;/b&gt;&lt;div&gt;&lt;hr&gt;&lt;/div&gt;&lt;div&gt;&lt;span style=&quot;background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;ProductId productId;&lt;/span&gt;&lt;/div&gt;&lt;div&gt;&lt;div&gt;&lt;div&gt;ZoneDateTime createdDate;&lt;/div&gt;&lt;div&gt;String name;&lt;/div&gt;&lt;/div&gt;&lt;div&gt;Money price;&lt;/div&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="120" width="139" x="10" y="310" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-157" parent="q3rqbwMkTXjqQ767PhQi-73" style="swimlane;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;startSize=23;sketch=1;curveFitting=1;jiggle=2;" value="Domain Events" vertex="1">
+          <mxGeometry height="370" width="333" x="1170" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="order-approval-event-1" parent="q3rqbwMkTXjqQ767PhQi-157" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;OrderApprovedEvent&lt;/b&gt;&lt;br&gt;&lt;hr&gt;Order order;&lt;br&gt;ZonedDateTime createdAt&lt;/div&gt;" vertex="1">
+          <mxGeometry height="70" width="240" x="10" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="order-approval-event-2" parent="q3rqbwMkTXjqQ767PhQi-157" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;OrderRejectedEvent&lt;/b&gt;&lt;br&gt;&lt;hr&gt;Order order;&lt;br&gt;List&amp;lt;String&amp;gt; rejectionReasons;&lt;br&gt;ZonedDateTime createdAt&lt;/div&gt;" vertex="1">
+          <mxGeometry height="90" width="240" x="10" y="130" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-159" parent="q3rqbwMkTXjqQ767PhQi-73" style="swimlane;whiteSpace=wrap;html=1;fillColor=#E1D5E7;strokeColor=#9673A6;sketch=1;startSize=25;" value="Application Service" vertex="1">
+          <mxGeometry height="370" width="263" x="1520" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-182" parent="q3rqbwMkTXjqQ767PhQi-159" style="whiteSpace=wrap;html=1;fillColor=#dae8fc;sketch=1;align=left;" value="&lt;i&gt;Input Ports&lt;/i&gt;&lt;div&gt;&lt;hr style=&quot;&quot;&gt;&lt;div&gt;&amp;nbsp;approveOrder(Request)&lt;/div&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="70" width="240" x="11.5" y="50" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-184" parent="q3rqbwMkTXjqQ767PhQi-159" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#dae8fc;sketch=1;" value="&lt;i&gt;Output Ports&lt;/i&gt;&lt;hr&gt;OrderDetailRepository&lt;br&gt;StoreRepository&lt;div&gt;ProductRepository&lt;br&gt;OrderApprovedMessagePublisher&lt;div&gt;OrderRejectedMessagePublisher&lt;/div&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="110" width="240" x="20" y="230" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-162" parent="q3rqbwMkTXjqQ767PhQi-73" style="swimlane;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#666666;sketch=1;startSize=25;" value="Adapters" vertex="1">
+          <mxGeometry height="180" width="623" x="1160" y="460" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-187" parent="q3rqbwMkTXjqQ767PhQi-162" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;sketch=1;" value="&lt;b&gt;Data Access Adapter (PostgreSQL)&lt;/b&gt;&lt;hr&gt;OrderDetailRepository&lt;br&gt;StoreRepository&lt;div&gt;ProductRepository&lt;/div&gt;" vertex="1">
+          <mxGeometry height="100" width="310" x="307" y="50" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-186" parent="q3rqbwMkTXjqQ767PhQi-162" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;sketch=1;" value="&lt;b&gt;Messaging Adapter (Kafka)&lt;/b&gt;&lt;hr&gt;StoreApprovalRequestListener&lt;br&gt;OrderApprovedMessagePublisher&lt;br&gt;OrderRejectedMessagePublisher&lt;div&gt;ProductCreatedPublisher&lt;/div&gt;" vertex="1">
+          <mxGeometry height="100" width="290" x="7" y="50" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-165" parent="q3rqbwMkTXjqQ767PhQi-73" style="swimlane;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=light-dark(#D6B656,#3399FF);sketch=1;" value="Domain Core" vertex="1">
+          <mxGeometry height="580" width="636.5" x="33.5" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-174" parent="q3rqbwMkTXjqQ767PhQi-165" style="whiteSpace=wrap;html=1;sketch=1;jiggle=2;curveFitting=1;align=center;verticalAlign=bottom;fontFamily=Helvetica;fontSize=12;labelPosition=center;verticalLabelPosition=top;" value="가게 Aggregate" vertex="1">
+          <mxGeometry height="480" width="263.5" x="16.5" y="50" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-170" parent="q3rqbwMkTXjqQ767PhQi-165" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#FFFFFF;strokeColor=#000000;sketch=1;" value="&lt;b&gt;Store (Aggregate Root)&lt;/b&gt;&lt;hr&gt;StoreId id&lt;br&gt;List&amp;lt;OrderDetail&amp;gt; orderDetail&lt;div&gt;List&amp;lt;Product&amp;gt; products&lt;br&gt;boolean active&lt;hr&gt;validateOrder(failureMessages)&lt;br&gt;constructOrderApproval(status)&lt;/div&gt;" vertex="1">
+          <mxGeometry height="160" width="220" x="40.5" y="70" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-171" parent="q3rqbwMkTXjqQ767PhQi-165" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#FFFFFF;strokeColor=#000000;sketch=1;" value="&lt;b&gt;OrderDetail&lt;/b&gt;&lt;hr&gt;OrderId orderId&lt;br&gt;OrderStatus orderStatus&lt;br&gt;Crypto totalAmount;&lt;br&gt;List&amp;lt;ProductSnapshot&amp;gt; products" vertex="1">
+          <mxGeometry height="110" width="190" x="40.49674804687504" y="239.99662597656243" as="geometry" />
+        </mxCell>
+        <mxCell id="KQGpsL3DyPl_P96wa_h--13" parent="q3rqbwMkTXjqQ767PhQi-165" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,#121212);sketch=1;" value="&lt;b&gt;Product&lt;/b&gt;&lt;hr&gt;ProductId id;&lt;br&gt;String name;&lt;br&gt;Crypto price;&lt;br&gt;Boolean available;&lt;hr&gt;updateInfo(name, price, available);" vertex="1">
+          <mxGeometry height="130" width="230" x="33.254376627604415" y="380.0022900390625" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-115" parent="1" style="swimlane;whiteSpace=wrap;html=1;fillColor=#E1D5E7;strokeColor=#9673A6;sketch=1;startSize=25;" value="Application Service" vertex="1">
+          <mxGeometry height="370" width="320" x="1850" y="290" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-116" parent="q3rqbwMkTXjqQ767PhQi-115" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#FFFFFF;strokeColor=#000000;sketch=1;" value="&lt;i&gt;Input Port&lt;/i&gt;&lt;br&gt;&lt;hr&gt;createOrder(Command)&lt;br&gt;trackOrder(Query)&lt;div&gt;PaymentResponseMessageListener();&lt;/div&gt;&lt;div&gt;StoreApprovalResponseMessageListener();&lt;/div&gt;" vertex="1">
+          <mxGeometry height="110" width="285" x="15" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-118" parent="q3rqbwMkTXjqQ767PhQi-115" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#FFFFFF;strokeColor=#000000;sketch=1;" value="&lt;i&gt;Output Ports&lt;/i&gt;&lt;hr&gt;OrderRepository&lt;br&gt;CustomerRepository&lt;br&gt;StoreRepository&lt;br&gt;PaymentRequestPublisher&lt;div&gt;StoreApprovalRequestMessagePublisher&lt;/div&gt;&lt;div&gt;OrderCanceledPaymentRequestMessagePublisher&lt;/div&gt;" vertex="1">
+          <mxGeometry height="140" width="285" x="15" y="180" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-119" parent="1" style="swimlane;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#666666;sketch=1;startSize=25;" value="Adapters" vertex="1">
+          <mxGeometry height="180" width="550" x="1620" y="690" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-120" parent="q3rqbwMkTXjqQ767PhQi-119" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#FFFFFF;strokeColor=#000000;sketch=1;" value="&lt;b&gt;Messaging Adapter (Kafka)&lt;/b&gt;&lt;hr&gt;PaymentResponseListener&lt;div&gt;StoreApprovalResponseListener&lt;br&gt;OrderCreatedPublisher&lt;div&gt;OrderPaidPublisher&lt;br&gt;OrderCancelledPublisher&lt;/div&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="120" width="220" x="20" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-121" parent="q3rqbwMkTXjqQ767PhQi-119" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#FFFFFF;strokeColor=#000000;sketch=1;" value="&lt;b&gt;Data Access Adapter (PostgreSQL)&lt;/b&gt;&lt;hr&gt;OrderRepository&lt;br&gt;CustomerRepository&lt;div&gt;StoreRepository&lt;/div&gt;" vertex="1">
+          <mxGeometry height="120" width="240" x="290" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-146" parent="1" style="swimlane;whiteSpace=wrap;html=1;startSize=30;fillColor=#f5f5f5;fontColor=#333333;strokeColor=#666666;sketch=1;curveFitting=1;jiggle=2;" value="결제 Context" vertex="1">
+          <mxGeometry height="680" width="2160" x="2280" y="230" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-200" parent="q3rqbwMkTXjqQ767PhQi-146" style="swimlane;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=light-dark(#D6B656,#3399FF);sketch=1;" value="Domain Core" vertex="1">
+          <mxGeometry height="580" width="650" x="50" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-201" parent="q3rqbwMkTXjqQ767PhQi-200" style="whiteSpace=wrap;html=1;sketch=1;jiggle=2;curveFitting=1;align=center;verticalAlign=bottom;fontFamily=Helvetica;fontSize=12;labelPosition=center;verticalLabelPosition=top;" value="결제 Aggregate" vertex="1">
+          <mxGeometry height="520" width="300" x="26" y="45" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-202" parent="q3rqbwMkTXjqQ767PhQi-200" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=none;sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;Payment (Aggregate Root)&lt;/b&gt;&lt;br&gt;&lt;hr&gt;PaymentId paymentId;&lt;br&gt;OrderId orderId;&lt;br&gt;CustomerId customerId;&lt;br&gt;Crypto amount;&lt;br&gt;PaymentStatus status;&lt;br&gt;WalletAddress walletFrom;&lt;br&gt;WalletAddress walletTo;&lt;br&gt;ChainNetwork network;&lt;br&gt;TransactionHash txHash;&lt;br&gt;GasEstimate gasEstimate;&lt;br&gt;SignatureData signature;&lt;br&gt;&lt;div&gt;ZonedDateTime expiresAt;&lt;br&gt;&lt;hr&gt;initializePayment();&lt;br&gt;submitSignedTx();&lt;br&gt;confirmPayment();&lt;br&gt;failPayment();&lt;br&gt;refundPayment();&lt;/div&gt;" vertex="1">
+          <mxGeometry height="325" width="240" x="45" y="65" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-203" parent="q3rqbwMkTXjqQ767PhQi-200" style="whiteSpace=wrap;html=1;sketch=1;jiggle=2;curveFitting=1;align=center;verticalAlign=bottom;fontFamily=Helvetica;fontSize=12;labelPosition=center;verticalLabelPosition=top;" value="지갑 Aggregate" vertex="1">
+          <mxGeometry height="345" width="280" x="370" y="45" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-204" parent="q3rqbwMkTXjqQ767PhQi-200" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=default;sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;Wallet (Aggregate Root)&lt;/b&gt;&lt;br&gt;&lt;hr&gt;WalletAddress address;&lt;br&gt;CustomerId ownerId;&lt;br&gt;WalletBalance balance;&lt;br&gt;ChainNetwork network;&lt;div&gt;Boolean connected;&lt;/div&gt;&lt;div&gt;ServerNonce currentChallenge;&lt;/div&gt;&lt;div&gt;&lt;hr&gt;updateBalance();&lt;br&gt;verifySignature();&lt;/div&gt;" vertex="1">
+          <mxGeometry height="175" width="240" x="389" y="65" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-205" parent="q3rqbwMkTXjqQ767PhQi-200" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#f5f5f5;sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;TransactionRecord&lt;/b&gt;&lt;hr&gt;TransactionHash hash;&lt;br&gt;&lt;div&gt;Crypto amount;&lt;br&gt;Crypto gasFee;&lt;div&gt;&lt;hr&gt;&lt;/div&gt;&lt;div&gt;toReceipt();&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="120" width="210" x="389" y="260" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-206" parent="q3rqbwMkTXjqQ767PhQi-146" style="swimlane;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;startSize=23;sketch=1;curveFitting=1;jiggle=2;" value="Value Objects" vertex="1">
+          <mxGeometry height="580" width="490" x="730" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-207" parent="q3rqbwMkTXjqQ767PhQi-206" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;PaymentId&lt;/b&gt;&lt;br&gt;&lt;hr&gt;&lt;div&gt;UUID id;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="60" width="139" x="10" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-208" parent="q3rqbwMkTXjqQ767PhQi-206" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;PaymentStatus&lt;/b&gt;&lt;br&gt;&lt;hr&gt;&lt;div&gt;PENDING,&lt;/div&gt;&lt;div&gt;SUBMITTED,&lt;br&gt;CONFIRMED,&lt;br&gt;FAILED&lt;/div&gt;" vertex="1">
+          <mxGeometry height="100" width="139" x="10" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-209" parent="q3rqbwMkTXjqQ767PhQi-206" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;WalletBalance&lt;/b&gt;&lt;br&gt;&lt;hr&gt;&lt;div&gt;Crypto amount;&lt;br&gt;ZonedDateTime lastUpdated;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="80" width="139" x="170" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-210" parent="q3rqbwMkTXjqQ767PhQi-206" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;TransactionReceipt&lt;/b&gt;&lt;br&gt;&lt;hr&gt;&lt;div&gt;TransactionHash hash;&lt;br&gt;BlockNumber blockNum;&lt;br&gt;Long gasUsed;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="90" width="139" x="330" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-211" parent="q3rqbwMkTXjqQ767PhQi-206" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;GasPrice&lt;/b&gt;&lt;br&gt;&lt;hr&gt;&lt;div&gt;Crypto gasPricePerUnit;&lt;br&gt;Long gasLimit;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="110" width="139" x="170" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-212" parent="q3rqbwMkTXjqQ767PhQi-206" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;BlockNumber&lt;/b&gt;&lt;br&gt;&lt;hr&gt;&lt;div&gt;Long number;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="60" width="139" x="330" y="320" as="geometry" />
+        </mxCell>
+        <mxCell id="signature-data-value-obj" parent="q3rqbwMkTXjqQ767PhQi-206" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;SignatureData&lt;/b&gt;&lt;br&gt;&lt;hr&gt;&lt;div&gt;String r;&lt;br&gt;String s;&lt;br&gt;Integer v;&lt;br&gt;String signedTx;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="100" width="139" x="330" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="nonce-value-obj" parent="q3rqbwMkTXjqQ767PhQi-206" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;ServerNonce&lt;/b&gt;&lt;br&gt;&lt;hr&gt;&lt;div&gt;Long value;&lt;br&gt;ZonedDateTime expiresAt&lt;/div&gt;" vertex="1">
+          <mxGeometry height="80" width="160" x="10" y="420" as="geometry" />
+        </mxCell>
+        <mxCell id="gas-estimate-value-obj" parent="q3rqbwMkTXjqQ767PhQi-206" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;GasEstimate&lt;/b&gt;&lt;br&gt;&lt;hr&gt;&lt;div&gt;Crypto estimatedFee;&lt;br&gt;Long gasLimit;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="80" width="139" x="180" y="420" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-213" parent="q3rqbwMkTXjqQ767PhQi-146" style="swimlane;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;startSize=23;sketch=1;curveFitting=1;jiggle=2;" value="Domain Events" vertex="1">
+          <mxGeometry height="370" width="520" x="1620" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-214" parent="q3rqbwMkTXjqQ767PhQi-213" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;PaymentProcessingStartedEvent&lt;/b&gt;&lt;br&gt;&lt;hr&gt;Payment payment;&lt;br&gt;ZonedDateTime createdAt&lt;/div&gt;" vertex="1">
+          <mxGeometry height="75" width="240" x="10" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-215" parent="q3rqbwMkTXjqQ767PhQi-213" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;PaymentConfirmedEvent&lt;/b&gt;&lt;br&gt;&lt;hr&gt;Payment payment;&lt;br&gt;TransactionReceipt receipt;&lt;br&gt;ZonedDateTime createdAt&lt;/div&gt;" vertex="1">
+          <mxGeometry height="90" width="240" x="10" y="135" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-216" parent="q3rqbwMkTXjqQ767PhQi-213" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;PaymentFailedEvent&lt;/b&gt;&lt;br&gt;&lt;hr&gt;Payment payment;&lt;br&gt;String failureReason;&lt;br&gt;ZonedDateTime createdAt&lt;/div&gt;" vertex="1">
+          <mxGeometry height="90" width="240" x="10" y="250" as="geometry" />
+        </mxCell>
+        <mxCell id="payment-refunded-event" parent="q3rqbwMkTXjqQ767PhQi-213" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;PaymentRefundedEvent&lt;/b&gt;&lt;br&gt;&lt;hr&gt;Payment payment;&lt;br&gt;TransactionReceipt refundReceipt;&lt;br&gt;ZonedDateTime createdAt&lt;/div&gt;" vertex="1">
+          <mxGeometry height="90" width="240" x="260" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="signature-expired-event" parent="q3rqbwMkTXjqQ767PhQi-213" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;SignatureExpiredEvent&lt;/b&gt;&lt;br&gt;&lt;hr&gt;Payment payment;&lt;br&gt;ZonedDateTime expiredAt&lt;/div&gt;" vertex="1">
+          <mxGeometry height="70" width="240" x="260" y="150" as="geometry" />
+        </mxCell>
+        <mxCell id="payment-app-service" parent="q3rqbwMkTXjqQ767PhQi-146" style="swimlane;whiteSpace=wrap;html=1;fillColor=#E1D5E7;strokeColor=#9673A6;sketch=1;startSize=25;" value="Application Service" vertex="1">
+          <mxGeometry height="370" width="320" x="1260" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="payment-app-input-port" parent="payment-app-service" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#FFFFFF;strokeColor=#000000;sketch=1;" value="&lt;i&gt;Input Port&lt;/i&gt;&lt;br&gt;&lt;hr&gt;initiatePayment(Command)&lt;br&gt;getPaymentStatus(Query)&lt;div&gt;handleBlockchainCallback();&lt;/div&gt;&lt;div&gt;requestNonce(WalletAddress);&lt;/div&gt;" vertex="1">
+          <mxGeometry height="100" width="285" x="15" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="payment-app-output-port" parent="payment-app-service" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#FFFFFF;strokeColor=#000000;sketch=1;" value="&lt;i&gt;Output Ports&lt;/i&gt;&lt;hr&gt;PaymentRepository&lt;br&gt;WalletRepository&lt;br&gt;BlockchainAdapter&lt;br&gt;PaymentEventPublisher&lt;div&gt;TransactionService&lt;/div&gt;" vertex="1">
+          <mxGeometry height="120" width="285" x="15" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="payment-adapters" parent="q3rqbwMkTXjqQ767PhQi-146" style="swimlane;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#666666;sketch=1;startSize=25;" value="Adapters" vertex="1">
+          <mxGeometry height="180" width="550" x="1233" y="460" as="geometry" />
+        </mxCell>
+        <mxCell id="payment-blockchain-adapter" parent="payment-adapters" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#FFFFFF;strokeColor=#000000;sketch=1;" value="&lt;b&gt;Blockchain Adapter (MetaMask/Web3j)&lt;/b&gt;&lt;hr&gt;monitorTransaction(hash)&lt;div&gt;getTransactionReceipt(hash)&lt;br&gt;&lt;div&gt;getTransactionStatus()&lt;br&gt;getGasPrice()&lt;br&gt;getWalletBalance()&lt;/div&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="120" width="240" x="20" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="payment-data-adapter" parent="payment-adapters" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#FFFFFF;strokeColor=#000000;sketch=1;" value="&lt;b&gt;Data Access Adapter (PostgreSQL)&lt;/b&gt;&lt;hr&gt;PaymentRepository&lt;br&gt;WalletRepository&lt;div&gt;TransactionRecordRepository&lt;/div&gt;" vertex="1">
+          <mxGeometry height="110" width="240" x="290" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-147" parent="1" style="swimlane;whiteSpace=wrap;html=1;startSize=30;fillColor=#f5f5f5;fontColor=#333333;strokeColor=#666666;sketch=1;curveFitting=1;jiggle=2;" value="제고관리 Context" vertex="1">
+          <mxGeometry height="680" width="2070" x="2280" y="980" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-217" parent="q3rqbwMkTXjqQ767PhQi-147" style="swimlane;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=light-dark(#D6B656,#3399FF);sketch=1;" value="Domain Core" vertex="1">
+          <mxGeometry height="580" width="360" x="50" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-218" parent="q3rqbwMkTXjqQ767PhQi-217" style="whiteSpace=wrap;html=1;sketch=1;jiggle=2;curveFitting=1;align=center;verticalAlign=bottom;fontFamily=Helvetica;fontSize=12;labelPosition=center;verticalLabelPosition=top;" value="상품 재고 Aggregate" vertex="1">
+          <mxGeometry height="520" width="300" x="26" y="45" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-219" parent="q3rqbwMkTXjqQ767PhQi-217" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=none;sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;ProductInventory (Aggregate Root)&lt;/b&gt;&lt;br&gt;&lt;hr&gt;ProductId productId;&lt;br&gt;StoreId storeId;&lt;br&gt;Quantity availableStock;&lt;br&gt;Quantity reservedStock;&lt;br&gt;Quantity totalStock;&lt;div&gt;List&amp;lt;InventoryReservation&amp;gt; reservations;&lt;/div&gt;&lt;div&gt;&lt;hr&gt;reserveInventory(ReservationId);&lt;br&gt;releaseReservation(&lt;span style=&quot;background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;ReservationId&lt;/span&gt;&lt;span style=&quot;background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;);&lt;/span&gt;&lt;/div&gt;&lt;div&gt;confirmReservation(&lt;span style=&quot;background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;ReservationId&lt;/span&gt;&lt;span style=&quot;background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;);&lt;/span&gt;&lt;/div&gt;&lt;div&gt;increaseStock(qty);&lt;/div&gt;&lt;div&gt;decreaseStock(qty);&lt;/div&gt;" vertex="1">
+          <mxGeometry height="215" width="250" x="40" y="70" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-221" parent="q3rqbwMkTXjqQ767PhQi-217" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=default;sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;InventoryReservation&lt;/b&gt;&lt;br&gt;&lt;hr&gt;ReservationId id;&lt;br&gt;OrderId orderId;&lt;br&gt;Quantity reservedQty;&lt;br&gt;ReservationStatus status;&lt;div&gt;ZonedDateTime createdAt;&lt;/div&gt;&lt;div&gt;&lt;hr&gt;confirm();&lt;br&gt;cancel();&lt;/div&gt;" vertex="1">
+          <mxGeometry height="165" width="211" x="40" y="320" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-223" parent="q3rqbwMkTXjqQ767PhQi-147" style="swimlane;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;startSize=23;sketch=1;curveFitting=1;jiggle=2;" value="Value Objects" vertex="1">
+          <mxGeometry height="580" width="570" x="460" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-224" parent="q3rqbwMkTXjqQ767PhQi-223" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;ReservationId&lt;/b&gt;&lt;br&gt;&lt;hr&gt;&lt;div&gt;UUID id;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="60" width="139" x="10" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-225" parent="q3rqbwMkTXjqQ767PhQi-223" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;Quantity&lt;/b&gt;&lt;br&gt;&lt;hr&gt;&lt;div&gt;Integer value;&lt;br&gt;isValid();&lt;br&gt;add(Quantity);&lt;br&gt;subtract(Quantity);&lt;/div&gt;" vertex="1">
+          <mxGeometry height="100" width="139" x="10" y="129" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-226" parent="q3rqbwMkTXjqQ767PhQi-223" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;ReservationStatus&lt;/b&gt;&lt;br&gt;&lt;hr&gt;&lt;div&gt;PENDING,&lt;br&gt;CONFIRMED,&lt;br&gt;CANCELLED&lt;/div&gt;" vertex="1">
+          <mxGeometry height="90" width="139" x="10" y="330" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-227" parent="q3rqbwMkTXjqQ767PhQi-223" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;ProductId&lt;/b&gt;&lt;br&gt;&lt;hr&gt;&lt;div&gt;UUID id;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="60" width="139" x="10" y="440" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-228" parent="q3rqbwMkTXjqQ767PhQi-223" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;StoreId&lt;/b&gt;&lt;br&gt;&lt;hr&gt;&lt;div&gt;UUID id;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="60" width="139" x="10" y="250" as="geometry" />
+        </mxCell>
+        <mxCell id="KQGpsL3DyPl_P96wa_h--1" parent="q3rqbwMkTXjqQ767PhQi-223" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;OrderId&lt;/b&gt;&lt;br&gt;&lt;hr&gt;&lt;div&gt;UUID id;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="60" width="139" x="170" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-229" parent="q3rqbwMkTXjqQ767PhQi-147" style="swimlane;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;startSize=23;sketch=1;curveFitting=1;jiggle=2;" value="Domain Events" vertex="1">
+          <mxGeometry height="370" width="630" x="1410" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-230" parent="q3rqbwMkTXjqQ767PhQi-229" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;InventoryReservedEvent&lt;/b&gt;&lt;br&gt;&lt;hr&gt;ProductInventory inv;&lt;br&gt;OrderId orderId;&lt;br&gt;ZonedDateTime createdAt&lt;/div&gt;" vertex="1">
+          <mxGeometry height="80" width="180" x="10" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-231" parent="q3rqbwMkTXjqQ767PhQi-229" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;InventoryConfirmedEvent&lt;/b&gt;&lt;br&gt;&lt;hr&gt;ProductInventory inv;&lt;br&gt;OrderId orderId;&lt;br&gt;ZonedDateTime createdAt&lt;/div&gt;" vertex="1">
+          <mxGeometry height="80" width="180" x="10" y="140" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-232" parent="q3rqbwMkTXjqQ767PhQi-229" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;InventoryReleasedEvent&lt;/b&gt;&lt;br&gt;&lt;hr&gt;ProductInventory inv;&lt;br&gt;OrderId orderId;&lt;br&gt;ZonedDateTime createdAt&lt;/div&gt;" vertex="1">
+          <mxGeometry height="80" width="180" x="10" y="240" as="geometry" />
+        </mxCell>
+        <mxCell id="oLJB5HWNLs9rZ8MvYHim-1" parent="q3rqbwMkTXjqQ767PhQi-229" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="StockIncreasedEvent&lt;br&gt;&lt;hr&gt;ProductInventory inv;&lt;br&gt;ZonedDateTime createdAt" vertex="1">
+          <mxGeometry height="80" width="180" x="210" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="oLJB5HWNLs9rZ8MvYHim-2" parent="q3rqbwMkTXjqQ767PhQi-229" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="StockDecreasedEvent&lt;br&gt;&lt;hr&gt;ProductInventory inv;&lt;br&gt;ZonedDateTime createdAt" vertex="1">
+          <mxGeometry height="80" width="180" x="210" y="140" as="geometry" />
+        </mxCell>
+        <mxCell id="reservation-expired-event" parent="q3rqbwMkTXjqQ767PhQi-229" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;ReservationExpiredEvent&lt;/b&gt;&lt;br&gt;&lt;hr&gt;ProductInventory inv;&lt;br&gt;ReservationId reservationId;&lt;br&gt;ZonedDateTime expiredAt" vertex="1">
+          <mxGeometry height="80" width="180" x="210" y="240" as="geometry" />
+        </mxCell>
+        <mxCell id="Ee_V-PCVlKZQ7anDrEAW-3" parent="q3rqbwMkTXjqQ767PhQi-229" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="ReservationExpiredEvent&lt;br&gt;&lt;hr&gt;ReservationId reservationId;&lt;br&gt;ZonedDateTime createdAt" vertex="1">
+          <mxGeometry height="80" width="180" x="420" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="inventory-adapters" parent="q3rqbwMkTXjqQ767PhQi-147" style="swimlane;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#666666;sketch=1;startSize=25;" value="Adapters" vertex="1">
+          <mxGeometry height="180" width="550" x="1060" y="460" as="geometry" />
+        </mxCell>
+        <mxCell id="inventory-messaging-adapter" parent="inventory-adapters" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#FFFFFF;strokeColor=#000000;sketch=1;" value="&lt;b&gt;Messaging Adapter (Kafka)&lt;/b&gt;&lt;hr&gt;OrderEventListener&lt;div&gt;PaymentEventListener&lt;br&gt;InventoryEventPublisher&lt;/div&gt;&lt;div&gt;ProductCreatedListener&lt;/div&gt;" vertex="1">
+          <mxGeometry height="110" width="240" x="20" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="inventory-data-adapter" parent="inventory-adapters" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#FFFFFF;strokeColor=#000000;sketch=1;" value="&lt;b&gt;Data Access Adapter (PostgreSQL)&lt;/b&gt;&lt;hr&gt;InventoryRepository&lt;br&gt;StoreRepository" vertex="1">
+          <mxGeometry height="110" width="240" x="290" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="inventory-app-service" parent="q3rqbwMkTXjqQ767PhQi-147" style="swimlane;whiteSpace=wrap;html=1;fillColor=#E1D5E7;strokeColor=#9673A6;sketch=1;startSize=25;" value="Application Service" vertex="1">
+          <mxGeometry height="370" width="320" x="1060" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="inventory-app-input-port" parent="inventory-app-service" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#FFFFFF;strokeColor=#000000;sketch=1;" value="&lt;i&gt;Input Port&lt;/i&gt;&lt;br&gt;&lt;hr&gt;reserveInventory(Command)&lt;br&gt;confirmReservation(Command)&lt;div&gt;getInventoryStatus(Query);&lt;/div&gt;&lt;div&gt;updateStock(Command);&lt;/div&gt;&lt;div&gt;handleReservationTimeout(();&lt;/div&gt;" vertex="1">
+          <mxGeometry height="110" width="285" x="15" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="inventory-app-output-port" parent="inventory-app-service" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#FFFFFF;strokeColor=#000000;sketch=1;" value="&lt;i&gt;Output Ports&lt;/i&gt;&lt;hr&gt;InventoryRepository&lt;br&gt;InventoryEventPublisher&lt;br&gt;OrderEventListener&lt;br&gt;PaymentEventListener&lt;div&gt;StoreRepository&lt;/div&gt;" vertex="1">
+          <mxGeometry height="130" width="285" x="15" y="200" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
