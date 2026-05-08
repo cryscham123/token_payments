@@ -1,0 +1,15 @@
+services:
+  test_network:
+    container_name: test_network
+    build:
+      context: app/test_network
+    env_file:
+      - .env
+    image: test_network
+    init: true
+    volumes:
+      - "${PWD}/app/test_network/data:${TEST_NETWORK_DB_PATH}"
+    ports:
+      - "8545:8545"
+    restart: always
+    platform: linux/amd64
