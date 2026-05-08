@@ -1,11 +1,11 @@
-<mxfile host="app.diagrams.net">
+<mxfile host="app.diagrams.net" pages="2">
   <diagram name="Order Service Domain Logic" id="fPDRBvhrFGuN-y8Ew94I">
-    <mxGraphModel dx="1601" dy="876" grid="1" gridSize="10" guides="1" tooltips="1" connect="0" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+    <mxGraphModel dx="2402" dy="1314" grid="1" gridSize="10" guides="1" tooltips="1" connect="0" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
         <mxCell id="q3rqbwMkTXjqQ767PhQi-132" parent="1" style="swimlane;whiteSpace=wrap;html=1;startSize=30;fillColor=#f5f5f5;fontColor=#333333;strokeColor=#666666;sketch=1;curveFitting=1;jiggle=2;" value="주문 생성 Context" vertex="1">
-          <mxGeometry height="680" width="1820" x="380" y="230" as="geometry" />
+          <mxGeometry height="840" width="1820" x="380" y="230" as="geometry" />
         </mxCell>
         <mxCell id="q3rqbwMkTXjqQ767PhQi-125" parent="q3rqbwMkTXjqQ767PhQi-132" style="swimlane;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=light-dark(#D6B656,#3399FF);sketch=1;" value="Domain Core" vertex="1">
           <mxGeometry height="580" width="646" x="50" y="60" as="geometry" />
@@ -31,8 +31,17 @@
         <mxCell id="t8UkFrMfmjldC288A60Y-27" parent="q3rqbwMkTXjqQ767PhQi-125" style="whiteSpace=wrap;html=1;sketch=1;jiggle=2;curveFitting=1;align=center;verticalAlign=bottom;fontFamily=Helvetica;fontSize=12;labelPosition=center;verticalLabelPosition=top;" value="고객 Aggregate" vertex="1">
           <mxGeometry height="115" width="240" x="369" y="375" as="geometry" />
         </mxCell>
-        <mxCell id="t8UkFrMfmjldC288A60Y-14" parent="q3rqbwMkTXjqQ767PhQi-125" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#dae8fc;sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;Customer (Aggregate Root)&lt;/b&gt;&lt;br&gt;&lt;hr&gt;CustomerId customerId;&lt;div&gt;WalletAddress cusomerWallet&lt;/div&gt;" vertex="1">
+        <mxCell id="t8UkFrMfmjldC288A60Y-14" parent="q3rqbwMkTXjqQ767PhQi-125" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#dae8fc;sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;Customer (Aggregate Root)&lt;/b&gt;&lt;br&gt;&lt;hr&gt;CustomerId customerId;&lt;div&gt;WalletAddress customerWallet&lt;/div&gt;" vertex="1">
           <mxGeometry height="70" width="200" x="389" y="397.5" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-119" parent="q3rqbwMkTXjqQ767PhQi-132" style="swimlane;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#666666;sketch=1;startSize=25;" value="Adapters" vertex="1">
+          <mxGeometry height="180" width="550" x="1232" y="625" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-120" parent="q3rqbwMkTXjqQ767PhQi-119" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#FFFFFF;strokeColor=#000000;sketch=1;" value="&lt;b&gt;Messaging Adapter (Kafka)&lt;/b&gt;&lt;hr&gt;PaymentResponseListener&lt;div&gt;StoreApprovalResponseListener&lt;br&gt;OrderCreatedPublisher&lt;div&gt;OrderPaidPublisher&lt;br&gt;OrderCancelledPublisher&lt;/div&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="120" width="220" x="20" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-121" parent="q3rqbwMkTXjqQ767PhQi-119" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#FFFFFF;strokeColor=#000000;sketch=1;" value="&lt;b&gt;Data Access Adapter (PostgreSQL)&lt;/b&gt;&lt;hr&gt;OrderRepository&lt;br&gt;CustomerRepository&lt;div&gt;StoreRepository&lt;/div&gt;" vertex="1">
+          <mxGeometry height="120" width="240" x="290" y="40" as="geometry" />
         </mxCell>
         <mxCell id="t8UkFrMfmjldC288A60Y-3" parent="1" style="swimlane;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;startSize=23;sketch=1;curveFitting=1;jiggle=2;" value="Value Objects" vertex="1">
           <mxGeometry height="580" width="490" x="1100" y="290" as="geometry" />
@@ -55,7 +64,7 @@
         <mxCell id="t8UkFrMfmjldC288A60Y-38" parent="t8UkFrMfmjldC288A60Y-3" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;OrderStatus&lt;/b&gt;&lt;br&gt;&lt;div&gt;&lt;hr&gt;&lt;/div&gt;&lt;div&gt;PENDING,&lt;br&gt;PAID,&lt;br&gt;APPROVED,&lt;br&gt;CANCELLING,&lt;br&gt;CANCELLED&lt;/div&gt;" vertex="1">
           <mxGeometry height="120" width="139" x="170" y="280" as="geometry" />
         </mxCell>
-        <mxCell id="t8UkFrMfmjldC288A60Y-37" parent="t8UkFrMfmjldC288A60Y-3" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;ProductSnapshot&lt;/b&gt;&lt;div&gt;&lt;hr&gt;&lt;/div&gt;&lt;div&gt;&lt;span style=&quot;background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;ProductId productId;&lt;/span&gt;&lt;/div&gt;&lt;div&gt;&lt;div&gt;&lt;div&gt;ZoneDateTime createdDate;&lt;/div&gt;&lt;div&gt;String name;&lt;/div&gt;&lt;/div&gt;&lt;div&gt;Money price;&lt;/div&gt;&lt;/div&gt;" vertex="1">
+        <mxCell id="t8UkFrMfmjldC288A60Y-37" parent="t8UkFrMfmjldC288A60Y-3" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;ProductSnapshot&lt;/b&gt;&lt;div&gt;&lt;hr&gt;&lt;/div&gt;&lt;div&gt;&lt;span style=&quot;background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;ProductId productId;&lt;/span&gt;&lt;/div&gt;&lt;div&gt;&lt;div&gt;&lt;div&gt;ZonedDateTime createdDate;&lt;/div&gt;&lt;div&gt;String name;&lt;/div&gt;&lt;/div&gt;&lt;div&gt;Crypto price;&lt;/div&gt;&lt;/div&gt;" vertex="1">
           <mxGeometry height="120" width="139" x="170" y="130" as="geometry" />
         </mxCell>
         <mxCell id="t8UkFrMfmjldC288A60Y-5" parent="1" style="swimlane;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;startSize=23;sketch=1;curveFitting=1;jiggle=2;" value="Domain Events" vertex="1">
@@ -70,8 +79,8 @@
         <mxCell id="t8UkFrMfmjldC288A60Y-32" parent="1" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b style=&quot;background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;ProductId&lt;/b&gt;&lt;div&gt;&lt;hr&gt;&lt;div&gt;UUID id;&lt;/div&gt;&lt;/div&gt;" vertex="1">
           <mxGeometry height="60" width="139" x="1110" y="410" as="geometry" />
         </mxCell>
-        <mxCell id="t8UkFrMfmjldC288A60Y-35" parent="1" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;div&gt;&lt;b&gt;Crypto&lt;/b&gt;&lt;/div&gt;&lt;div&gt;&lt;hr&gt;&lt;/div&gt;&lt;div&gt;BigDecimal amount;&lt;/div&gt;&lt;div&gt;String symbol;&lt;/div&gt;" vertex="1">
-          <mxGeometry height="70" width="139" x="1270" y="330" as="geometry" />
+        <mxCell id="t8UkFrMfmjldC288A60Y-35" parent="1" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;div&gt;&lt;b&gt;Crypto&lt;/b&gt;&lt;/div&gt;&lt;div&gt;&lt;hr&gt;&lt;/div&gt;&lt;div&gt;BigDecimal amount;&lt;/div&gt;&lt;div&gt;String symbol;&lt;/div&gt;&lt;div&gt;String chainId;&lt;/div&gt;&lt;div&gt;String tokenAddress;&lt;/div&gt;&lt;div&gt;Integer decimals;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="120" width="139" x="1270" y="330" as="geometry" />
         </mxCell>
         <mxCell id="t8UkFrMfmjldC288A60Y-36" parent="1" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;Tracking&lt;/b&gt;&lt;b style=&quot;background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;Id&lt;/b&gt;&lt;div&gt;&lt;hr&gt;&lt;div&gt;UUID id;&lt;/div&gt;&lt;/div&gt;" vertex="1">
           <mxGeometry height="60" width="139" x="1110" y="730" as="geometry" />
@@ -89,7 +98,7 @@
           <mxGeometry height="90" width="170" x="1630" y="550" as="geometry" />
         </mxCell>
         <mxCell id="q3rqbwMkTXjqQ767PhQi-73" parent="1" style="swimlane;whiteSpace=wrap;html=1;startSize=30;fillColor=#f5f5f5;fontColor=#333333;strokeColor=#666666;sketch=1;curveFitting=1;jiggle=2;" value="주문 승인 Context" vertex="1">
-          <mxGeometry height="680" width="1810" x="380" y="980" as="geometry" />
+          <mxGeometry height="680" width="1810" x="385" y="1160" as="geometry" />
         </mxCell>
         <mxCell id="q3rqbwMkTXjqQ767PhQi-149" parent="q3rqbwMkTXjqQ767PhQi-73" style="swimlane;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;startSize=23;sketch=1;curveFitting=1;jiggle=2;" value="Value Objects" vertex="1">
           <mxGeometry height="580" width="417" x="713" y="60" as="geometry" />
@@ -106,10 +115,10 @@
         <mxCell id="KQGpsL3DyPl_P96wa_h--5" parent="q3rqbwMkTXjqQ767PhQi-149" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;OrderStatus&lt;/b&gt;&lt;br&gt;&lt;div&gt;&lt;hr&gt;&lt;/div&gt;&lt;div&gt;PENDING,&lt;br&gt;PAID,&lt;br&gt;APPROVED,&lt;br&gt;CANCELLING,&lt;br&gt;CANCELLED&lt;/div&gt;" vertex="1">
           <mxGeometry height="120" width="139" x="167" y="40" as="geometry" />
         </mxCell>
-        <mxCell id="KQGpsL3DyPl_P96wa_h--6" parent="q3rqbwMkTXjqQ767PhQi-149" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;div&gt;&lt;b&gt;Crypto&lt;/b&gt;&lt;/div&gt;&lt;div&gt;&lt;hr&gt;&lt;/div&gt;&lt;div&gt;BigDecimal amount;&lt;/div&gt;&lt;div&gt;String symbol;&lt;/div&gt;" vertex="1">
-          <mxGeometry height="70" width="139" x="167" y="190" as="geometry" />
+        <mxCell id="KQGpsL3DyPl_P96wa_h--6" parent="q3rqbwMkTXjqQ767PhQi-149" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;div&gt;&lt;b&gt;Crypto&lt;/b&gt;&lt;/div&gt;&lt;div&gt;&lt;hr&gt;&lt;/div&gt;&lt;div&gt;BigDecimal amount;&lt;/div&gt;&lt;div&gt;String symbol;&lt;/div&gt;&lt;div&gt;String chainId;&lt;/div&gt;&lt;div&gt;String tokenAddress;&lt;/div&gt;&lt;div&gt;Integer decimals;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="120" width="139" x="167" y="190" as="geometry" />
         </mxCell>
-        <mxCell id="KQGpsL3DyPl_P96wa_h--7" parent="q3rqbwMkTXjqQ767PhQi-149" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;ProductSnapshot&lt;/b&gt;&lt;div&gt;&lt;hr&gt;&lt;/div&gt;&lt;div&gt;&lt;span style=&quot;background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;ProductId productId;&lt;/span&gt;&lt;/div&gt;&lt;div&gt;&lt;div&gt;&lt;div&gt;ZoneDateTime createdDate;&lt;/div&gt;&lt;div&gt;String name;&lt;/div&gt;&lt;/div&gt;&lt;div&gt;Money price;&lt;/div&gt;&lt;/div&gt;" vertex="1">
+        <mxCell id="KQGpsL3DyPl_P96wa_h--7" parent="q3rqbwMkTXjqQ767PhQi-149" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;ProductSnapshot&lt;/b&gt;&lt;div&gt;&lt;hr&gt;&lt;/div&gt;&lt;div&gt;&lt;span style=&quot;background-color: transparent; color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;ProductId productId;&lt;/span&gt;&lt;/div&gt;&lt;div&gt;&lt;div&gt;&lt;div&gt;ZonedDateTime createdDate;&lt;/div&gt;&lt;div&gt;String name;&lt;/div&gt;&lt;/div&gt;&lt;div&gt;Crypto price;&lt;/div&gt;&lt;/div&gt;" vertex="1">
           <mxGeometry height="120" width="139" x="10" y="310" as="geometry" />
         </mxCell>
         <mxCell id="q3rqbwMkTXjqQ767PhQi-157" parent="q3rqbwMkTXjqQ767PhQi-73" style="swimlane;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;startSize=23;sketch=1;curveFitting=1;jiggle=2;" value="Domain Events" vertex="1">
@@ -155,22 +164,16 @@
           <mxGeometry height="130" width="230" x="33.254376627604415" y="380.0022900390625" as="geometry" />
         </mxCell>
         <mxCell id="q3rqbwMkTXjqQ767PhQi-115" parent="1" style="swimlane;whiteSpace=wrap;html=1;fillColor=#E1D5E7;strokeColor=#9673A6;sketch=1;startSize=25;" value="Application Service" vertex="1">
-          <mxGeometry height="370" width="320" x="1850" y="290" as="geometry" />
+          <mxGeometry height="520" width="320" x="1850" y="290" as="geometry" />
         </mxCell>
-        <mxCell id="q3rqbwMkTXjqQ767PhQi-116" parent="q3rqbwMkTXjqQ767PhQi-115" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#FFFFFF;strokeColor=#000000;sketch=1;" value="&lt;i&gt;Input Port&lt;/i&gt;&lt;br&gt;&lt;hr&gt;createOrder(Command)&lt;br&gt;trackOrder(Query)&lt;div&gt;PaymentResponseMessageListener();&lt;/div&gt;&lt;div&gt;StoreApprovalResponseMessageListener();&lt;/div&gt;" vertex="1">
-          <mxGeometry height="110" width="285" x="15" y="40" as="geometry" />
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-116" parent="q3rqbwMkTXjqQ767PhQi-115" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#FFFFFF;strokeColor=#000000;sketch=1;" value="&lt;i&gt;Input Port&lt;/i&gt;&lt;br&gt;&lt;hr&gt;createOrder(Command)&lt;br&gt;trackOrder(Query)&lt;div&gt;PaymentResponseMessageListener();&lt;/div&gt;&lt;div&gt;StoreApprovalResponseMessageListener();&lt;/div&gt;&lt;div&gt;InventoryResponseMessageListener();&lt;/div&gt;" vertex="1">
+          <mxGeometry height="130" width="285" x="15" y="40" as="geometry" />
         </mxCell>
-        <mxCell id="q3rqbwMkTXjqQ767PhQi-118" parent="q3rqbwMkTXjqQ767PhQi-115" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#FFFFFF;strokeColor=#000000;sketch=1;" value="&lt;i&gt;Output Ports&lt;/i&gt;&lt;hr&gt;OrderRepository&lt;br&gt;CustomerRepository&lt;br&gt;StoreRepository&lt;br&gt;PaymentRequestPublisher&lt;div&gt;StoreApprovalRequestMessagePublisher&lt;/div&gt;&lt;div&gt;OrderCanceledPaymentRequestMessagePublisher&lt;/div&gt;" vertex="1">
-          <mxGeometry height="140" width="285" x="15" y="180" as="geometry" />
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-118" parent="q3rqbwMkTXjqQ767PhQi-115" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#FFFFFF;strokeColor=#000000;sketch=1;" value="&lt;i&gt;Output Ports&lt;/i&gt;&lt;hr&gt;OrderRepository&lt;br&gt;CheckoutProcessRepository&lt;br&gt;CustomerRepository&lt;br&gt;StoreRepository&lt;br&gt;InventoryCommandPublisher&lt;br&gt;PaymentRequestPublisher&lt;div&gt;StoreApprovalRequestMessagePublisher&lt;/div&gt;&lt;div&gt;OrderCanceledPaymentRequestMessagePublisher&lt;/div&gt;" vertex="1">
+          <mxGeometry height="160" width="285" x="15" y="180" as="geometry" />
         </mxCell>
-        <mxCell id="q3rqbwMkTXjqQ767PhQi-119" parent="1" style="swimlane;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#666666;sketch=1;startSize=25;" value="Adapters" vertex="1">
-          <mxGeometry height="180" width="550" x="1620" y="690" as="geometry" />
-        </mxCell>
-        <mxCell id="q3rqbwMkTXjqQ767PhQi-120" parent="q3rqbwMkTXjqQ767PhQi-119" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#FFFFFF;strokeColor=#000000;sketch=1;" value="&lt;b&gt;Messaging Adapter (Kafka)&lt;/b&gt;&lt;hr&gt;PaymentResponseListener&lt;div&gt;StoreApprovalResponseListener&lt;br&gt;OrderCreatedPublisher&lt;div&gt;OrderPaidPublisher&lt;br&gt;OrderCancelledPublisher&lt;/div&gt;&lt;/div&gt;" vertex="1">
-          <mxGeometry height="120" width="220" x="20" y="40" as="geometry" />
-        </mxCell>
-        <mxCell id="q3rqbwMkTXjqQ767PhQi-121" parent="q3rqbwMkTXjqQ767PhQi-119" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#FFFFFF;strokeColor=#000000;sketch=1;" value="&lt;b&gt;Data Access Adapter (PostgreSQL)&lt;/b&gt;&lt;hr&gt;OrderRepository&lt;br&gt;CustomerRepository&lt;div&gt;StoreRepository&lt;/div&gt;" vertex="1">
-          <mxGeometry height="120" width="240" x="290" y="40" as="geometry" />
+        <mxCell id="checkout-process-manager" parent="q3rqbwMkTXjqQ767PhQi-115" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#e1d5e7;strokeColor=#9673a6;sketch=1;" value="&lt;b&gt;CheckoutProcessManager&lt;/b&gt;&lt;hr&gt;handles: OrderCreated, InventoryReserved, PaymentConfirmed, PaymentFailed, OrderApproved, OrderRejected&lt;br&gt;publishes: ReserveInventory, InitiatePayment, RequestStoreApproval, ReleaseInventory, RefundPayment, CancelOrder" vertex="1">
+          <mxGeometry height="145" width="285" x="15" y="345" as="geometry" />
         </mxCell>
         <mxCell id="q3rqbwMkTXjqQ767PhQi-146" parent="1" style="swimlane;whiteSpace=wrap;html=1;startSize=30;fillColor=#f5f5f5;fontColor=#333333;strokeColor=#666666;sketch=1;curveFitting=1;jiggle=2;" value="결제 Context" vertex="1">
           <mxGeometry height="680" width="2160" x="2280" y="230" as="geometry" />
@@ -181,13 +184,13 @@
         <mxCell id="q3rqbwMkTXjqQ767PhQi-201" parent="q3rqbwMkTXjqQ767PhQi-200" style="whiteSpace=wrap;html=1;sketch=1;jiggle=2;curveFitting=1;align=center;verticalAlign=bottom;fontFamily=Helvetica;fontSize=12;labelPosition=center;verticalLabelPosition=top;" value="결제 Aggregate" vertex="1">
           <mxGeometry height="520" width="300" x="26" y="45" as="geometry" />
         </mxCell>
-        <mxCell id="q3rqbwMkTXjqQ767PhQi-202" parent="q3rqbwMkTXjqQ767PhQi-200" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=none;sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;Payment (Aggregate Root)&lt;/b&gt;&lt;br&gt;&lt;hr&gt;PaymentId paymentId;&lt;br&gt;OrderId orderId;&lt;br&gt;CustomerId customerId;&lt;br&gt;Crypto amount;&lt;br&gt;PaymentStatus status;&lt;br&gt;WalletAddress walletFrom;&lt;br&gt;WalletAddress walletTo;&lt;br&gt;ChainNetwork network;&lt;br&gt;TransactionHash txHash;&lt;br&gt;GasEstimate gasEstimate;&lt;br&gt;SignatureData signature;&lt;br&gt;&lt;div&gt;ZonedDateTime expiresAt;&lt;br&gt;&lt;hr&gt;initializePayment();&lt;br&gt;submitSignedTx();&lt;br&gt;confirmPayment();&lt;br&gt;failPayment();&lt;br&gt;refundPayment();&lt;/div&gt;" vertex="1">
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-202" parent="q3rqbwMkTXjqQ767PhQi-200" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=none;sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;Payment (Aggregate Root)&lt;/b&gt;&lt;br&gt;&lt;hr&gt;PaymentId paymentId;&lt;br&gt;OrderId orderId;&lt;br&gt;CustomerId customerId;&lt;br&gt;Crypto amount;&lt;br&gt;PaymentStatus status;&lt;br&gt;WalletAddress walletFrom;&lt;br&gt;WalletAddress walletTo;&lt;br&gt;ChainNetwork network;&lt;br&gt;TransactionHash txHash;&lt;br&gt;GasEstimate gasEstimate;&lt;br&gt;&lt;div&gt;ZonedDateTime expiresAt;&lt;br&gt;&lt;hr&gt;initializePayment();&lt;br&gt;markAwaitingSignature();&lt;br&gt;submitTxHash();&lt;br&gt;confirmPayment();&lt;br&gt;failPayment();&lt;br&gt;refundPayment();&lt;/div&gt;" vertex="1">
           <mxGeometry height="325" width="240" x="45" y="65" as="geometry" />
         </mxCell>
         <mxCell id="q3rqbwMkTXjqQ767PhQi-203" parent="q3rqbwMkTXjqQ767PhQi-200" style="whiteSpace=wrap;html=1;sketch=1;jiggle=2;curveFitting=1;align=center;verticalAlign=bottom;fontFamily=Helvetica;fontSize=12;labelPosition=center;verticalLabelPosition=top;" value="지갑 Aggregate" vertex="1">
           <mxGeometry height="345" width="280" x="370" y="45" as="geometry" />
         </mxCell>
-        <mxCell id="q3rqbwMkTXjqQ767PhQi-204" parent="q3rqbwMkTXjqQ767PhQi-200" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=default;sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;Wallet (Aggregate Root)&lt;/b&gt;&lt;br&gt;&lt;hr&gt;WalletAddress address;&lt;br&gt;CustomerId ownerId;&lt;br&gt;WalletBalance balance;&lt;br&gt;ChainNetwork network;&lt;div&gt;Boolean connected;&lt;/div&gt;&lt;div&gt;ServerNonce currentChallenge;&lt;/div&gt;&lt;div&gt;&lt;hr&gt;updateBalance();&lt;br&gt;verifySignature();&lt;/div&gt;" vertex="1">
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-204" parent="q3rqbwMkTXjqQ767PhQi-200" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=default;sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;WalletConnection&lt;/b&gt;&lt;br&gt;&lt;hr&gt;WalletAddress address;&lt;br&gt;CustomerId ownerId;&lt;br&gt;ChainNetwork network;&lt;br&gt;ServerNonce currentChallenge;&lt;div&gt;Boolean connected;&lt;/div&gt;&lt;div&gt;ZonedDateTime verifiedAt;&lt;/div&gt;&lt;div&gt;&lt;hr&gt;verifyOwnershipSignature();&lt;br&gt;disconnect();&lt;/div&gt;" vertex="1">
           <mxGeometry height="175" width="240" x="389" y="65" as="geometry" />
         </mxCell>
         <mxCell id="q3rqbwMkTXjqQ767PhQi-205" parent="q3rqbwMkTXjqQ767PhQi-200" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#f5f5f5;sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;TransactionRecord&lt;/b&gt;&lt;hr&gt;TransactionHash hash;&lt;br&gt;&lt;div&gt;Crypto amount;&lt;br&gt;Crypto gasFee;&lt;div&gt;&lt;hr&gt;&lt;/div&gt;&lt;div&gt;toReceipt();&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;/div&gt;" vertex="1">
@@ -199,8 +202,8 @@
         <mxCell id="q3rqbwMkTXjqQ767PhQi-207" parent="q3rqbwMkTXjqQ767PhQi-206" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;PaymentId&lt;/b&gt;&lt;br&gt;&lt;hr&gt;&lt;div&gt;UUID id;&lt;/div&gt;" vertex="1">
           <mxGeometry height="60" width="139" x="10" y="40" as="geometry" />
         </mxCell>
-        <mxCell id="q3rqbwMkTXjqQ767PhQi-208" parent="q3rqbwMkTXjqQ767PhQi-206" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;PaymentStatus&lt;/b&gt;&lt;br&gt;&lt;hr&gt;&lt;div&gt;PENDING,&lt;/div&gt;&lt;div&gt;SUBMITTED,&lt;br&gt;CONFIRMED,&lt;br&gt;FAILED&lt;/div&gt;" vertex="1">
-          <mxGeometry height="100" width="139" x="10" y="200" as="geometry" />
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-208" parent="q3rqbwMkTXjqQ767PhQi-206" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;PaymentStatus&lt;/b&gt;&lt;br&gt;&lt;hr&gt;&lt;div&gt;INITIATED,&lt;br&gt;AWAITING_SIGNATURE,&lt;br&gt;SUBMITTED,&lt;br&gt;CONFIRMING,&lt;br&gt;CONFIRMED,&lt;br&gt;FAILED,&lt;br&gt;EXPIRED,&lt;br&gt;REFUNDED&lt;/div&gt;" vertex="1">
+          <mxGeometry height="155" width="139" x="10" y="200" as="geometry" />
         </mxCell>
         <mxCell id="q3rqbwMkTXjqQ767PhQi-209" parent="q3rqbwMkTXjqQ767PhQi-206" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;WalletBalance&lt;/b&gt;&lt;br&gt;&lt;hr&gt;&lt;div&gt;Crypto amount;&lt;br&gt;ZonedDateTime lastUpdated;&lt;/div&gt;" vertex="1">
           <mxGeometry height="80" width="139" x="170" y="40" as="geometry" />
@@ -214,7 +217,7 @@
         <mxCell id="q3rqbwMkTXjqQ767PhQi-212" parent="q3rqbwMkTXjqQ767PhQi-206" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;BlockNumber&lt;/b&gt;&lt;br&gt;&lt;hr&gt;&lt;div&gt;Long number;&lt;/div&gt;" vertex="1">
           <mxGeometry height="60" width="139" x="330" y="320" as="geometry" />
         </mxCell>
-        <mxCell id="signature-data-value-obj" parent="q3rqbwMkTXjqQ767PhQi-206" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;SignatureData&lt;/b&gt;&lt;br&gt;&lt;hr&gt;&lt;div&gt;String r;&lt;br&gt;String s;&lt;br&gt;Integer v;&lt;br&gt;String signedTx;&lt;/div&gt;" vertex="1">
+        <mxCell id="signature-data-value-obj" parent="q3rqbwMkTXjqQ767PhQi-206" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;WalletSignature&lt;/b&gt;&lt;br&gt;&lt;hr&gt;&lt;div&gt;String message;&lt;br&gt;String signature;&lt;br&gt;WalletAddress signer;&lt;/div&gt;" vertex="1">
           <mxGeometry height="100" width="139" x="330" y="200" as="geometry" />
         </mxCell>
         <mxCell id="nonce-value-obj" parent="q3rqbwMkTXjqQ767PhQi-206" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;ServerNonce&lt;/b&gt;&lt;br&gt;&lt;hr&gt;&lt;div&gt;Long value;&lt;br&gt;ZonedDateTime expiresAt&lt;/div&gt;" vertex="1">
@@ -223,19 +226,22 @@
         <mxCell id="gas-estimate-value-obj" parent="q3rqbwMkTXjqQ767PhQi-206" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;GasEstimate&lt;/b&gt;&lt;br&gt;&lt;hr&gt;&lt;div&gt;Crypto estimatedFee;&lt;br&gt;Long gasLimit;&lt;/div&gt;" vertex="1">
           <mxGeometry height="80" width="139" x="180" y="420" as="geometry" />
         </mxCell>
+        <mxCell id="payment-crypto-value-obj" parent="q3rqbwMkTXjqQ767PhQi-206" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;div&gt;&lt;b&gt;Crypto&lt;/b&gt;&lt;/div&gt;&lt;div&gt;&lt;hr&gt;&lt;/div&gt;&lt;div&gt;BigDecimal amount;&lt;/div&gt;&lt;div&gt;String symbol;&lt;/div&gt;&lt;div&gt;String chainId;&lt;/div&gt;&lt;div&gt;String tokenAddress;&lt;/div&gt;&lt;div&gt;Integer decimals;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="120" width="139" x="330" y="420" as="geometry" />
+        </mxCell>
         <mxCell id="q3rqbwMkTXjqQ767PhQi-213" parent="q3rqbwMkTXjqQ767PhQi-146" style="swimlane;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;startSize=23;sketch=1;curveFitting=1;jiggle=2;" value="Domain Events" vertex="1">
           <mxGeometry height="370" width="520" x="1620" y="60" as="geometry" />
         </mxCell>
         <mxCell id="q3rqbwMkTXjqQ767PhQi-214" parent="q3rqbwMkTXjqQ767PhQi-213" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;PaymentProcessingStartedEvent&lt;/b&gt;&lt;br&gt;&lt;hr&gt;Payment payment;&lt;br&gt;ZonedDateTime createdAt&lt;/div&gt;" vertex="1">
           <mxGeometry height="75" width="240" x="10" y="40" as="geometry" />
         </mxCell>
-        <mxCell id="q3rqbwMkTXjqQ767PhQi-215" parent="q3rqbwMkTXjqQ767PhQi-213" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;PaymentConfirmedEvent&lt;/b&gt;&lt;br&gt;&lt;hr&gt;Payment payment;&lt;br&gt;TransactionReceipt receipt;&lt;br&gt;ZonedDateTime createdAt&lt;/div&gt;" vertex="1">
-          <mxGeometry height="90" width="240" x="10" y="135" as="geometry" />
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-215" parent="q3rqbwMkTXjqQ767PhQi-213" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;PaymentConfirmedEvent&lt;/b&gt;&lt;br&gt;&lt;hr&gt;PaymentId paymentId;&lt;br&gt;OrderId orderId;&lt;br&gt;TransactionHash txHash;&lt;br&gt;TransactionReceipt receipt;&lt;br&gt;ZonedDateTime createdAt&lt;/div&gt;" vertex="1">
+          <mxGeometry height="115" width="240" x="10" y="135" as="geometry" />
         </mxCell>
-        <mxCell id="q3rqbwMkTXjqQ767PhQi-216" parent="q3rqbwMkTXjqQ767PhQi-213" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;PaymentFailedEvent&lt;/b&gt;&lt;br&gt;&lt;hr&gt;Payment payment;&lt;br&gt;String failureReason;&lt;br&gt;ZonedDateTime createdAt&lt;/div&gt;" vertex="1">
-          <mxGeometry height="90" width="240" x="10" y="250" as="geometry" />
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-216" parent="q3rqbwMkTXjqQ767PhQi-213" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;PaymentFailedEvent&lt;/b&gt;&lt;br&gt;&lt;hr&gt;PaymentId paymentId;&lt;br&gt;OrderId orderId;&lt;br&gt;String failureReason;&lt;br&gt;ZonedDateTime createdAt&lt;/div&gt;" vertex="1">
+          <mxGeometry height="100" width="240" x="270" y="250" as="geometry" />
         </mxCell>
-        <mxCell id="payment-refunded-event" parent="q3rqbwMkTXjqQ767PhQi-213" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;PaymentRefundedEvent&lt;/b&gt;&lt;br&gt;&lt;hr&gt;Payment payment;&lt;br&gt;TransactionReceipt refundReceipt;&lt;br&gt;ZonedDateTime createdAt&lt;/div&gt;" vertex="1">
+        <mxCell id="payment-refunded-event" parent="q3rqbwMkTXjqQ767PhQi-213" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;PaymentRefundedEvent&lt;/b&gt;&lt;br&gt;&lt;hr&gt;PaymentId paymentId;&lt;br&gt;OrderId orderId;&lt;br&gt;TransactionReceipt refundReceipt;&lt;br&gt;ZonedDateTime createdAt&lt;/div&gt;" vertex="1">
           <mxGeometry height="90" width="240" x="260" y="40" as="geometry" />
         </mxCell>
         <mxCell id="signature-expired-event" parent="q3rqbwMkTXjqQ767PhQi-213" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=light-dark(#F8CECC,transparent);sketch=1;curveFitting=1;jiggle=2;" value="&lt;b&gt;SignatureExpiredEvent&lt;/b&gt;&lt;br&gt;&lt;hr&gt;Payment payment;&lt;br&gt;ZonedDateTime expiredAt&lt;/div&gt;" vertex="1">
@@ -251,15 +257,18 @@
           <mxGeometry height="120" width="285" x="15" y="200" as="geometry" />
         </mxCell>
         <mxCell id="payment-adapters" parent="q3rqbwMkTXjqQ767PhQi-146" style="swimlane;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#666666;sketch=1;startSize=25;" value="Adapters" vertex="1">
-          <mxGeometry height="180" width="550" x="1233" y="460" as="geometry" />
+          <mxGeometry height="220" width="810" x="1233" y="460" as="geometry" />
         </mxCell>
-        <mxCell id="payment-blockchain-adapter" parent="payment-adapters" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#FFFFFF;strokeColor=#000000;sketch=1;" value="&lt;b&gt;Blockchain Adapter (MetaMask/Web3j)&lt;/b&gt;&lt;hr&gt;monitorTransaction(hash)&lt;div&gt;getTransactionReceipt(hash)&lt;br&gt;&lt;div&gt;getTransactionStatus()&lt;br&gt;getGasPrice()&lt;br&gt;getWalletBalance()&lt;/div&gt;&lt;/div&gt;" vertex="1">
+        <mxCell id="payment-blockchain-adapter" parent="payment-adapters" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#FFFFFF;strokeColor=#000000;sketch=1;" value="&lt;b&gt;Blockchain RPC Adapter (Web3j/RPC)&lt;/b&gt;&lt;hr&gt;monitorTransaction(hash)&lt;div&gt;getTransactionReceipt(hash)&lt;br&gt;&lt;div&gt;getTransactionStatus()&lt;br&gt;getGasPrice()&lt;br&gt;getWalletBalance()&lt;/div&gt;&lt;/div&gt;" vertex="1">
           <mxGeometry height="120" width="240" x="20" y="40" as="geometry" />
         </mxCell>
-        <mxCell id="payment-data-adapter" parent="payment-adapters" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#FFFFFF;strokeColor=#000000;sketch=1;" value="&lt;b&gt;Data Access Adapter (PostgreSQL)&lt;/b&gt;&lt;hr&gt;PaymentRepository&lt;br&gt;WalletRepository&lt;div&gt;TransactionRecordRepository&lt;/div&gt;" vertex="1">
-          <mxGeometry height="110" width="240" x="290" y="40" as="geometry" />
+        <mxCell id="payment-wallet-adapter" parent="payment-adapters" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#FFFFFF;strokeColor=#000000;sketch=1;" value="&lt;b&gt;Wallet Adapter (MetaMask Client)&lt;/b&gt;&lt;hr&gt;connectWallet()&lt;br&gt;requestSignature(nonce)&lt;br&gt;requestTransaction(paymentRequest)&lt;br&gt;return txHash" vertex="1">
+          <mxGeometry height="120" width="240" x="290" y="40" as="geometry" />
         </mxCell>
-        <mxCell id="q3rqbwMkTXjqQ767PhQi-147" parent="1" style="swimlane;whiteSpace=wrap;html=1;startSize=30;fillColor=#f5f5f5;fontColor=#333333;strokeColor=#666666;sketch=1;curveFitting=1;jiggle=2;" value="제고관리 Context" vertex="1">
+        <mxCell id="payment-data-adapter" parent="payment-adapters" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#FFFFFF;strokeColor=#000000;sketch=1;" value="&lt;b&gt;Data Access Adapter (PostgreSQL)&lt;/b&gt;&lt;hr&gt;PaymentRepository&lt;br&gt;WalletConnectionRepository&lt;div&gt;TransactionRecordRepository&lt;/div&gt;" vertex="1">
+          <mxGeometry height="110" width="240" x="550" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="q3rqbwMkTXjqQ767PhQi-147" parent="1" style="swimlane;whiteSpace=wrap;html=1;startSize=30;fillColor=#f5f5f5;fontColor=#333333;strokeColor=#666666;sketch=1;curveFitting=1;jiggle=2;" value="재고관리 Context" vertex="1">
           <mxGeometry height="680" width="2070" x="2280" y="980" as="geometry" />
         </mxCell>
         <mxCell id="q3rqbwMkTXjqQ767PhQi-217" parent="q3rqbwMkTXjqQ767PhQi-147" style="swimlane;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=light-dark(#D6B656,#3399FF);sketch=1;" value="Domain Core" vertex="1">
@@ -336,6 +345,218 @@
         </mxCell>
         <mxCell id="inventory-app-output-port" parent="inventory-app-service" style="whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;fillColor=#FFFFFF;strokeColor=#000000;sketch=1;" value="&lt;i&gt;Output Ports&lt;/i&gt;&lt;hr&gt;InventoryRepository&lt;br&gt;InventoryEventPublisher&lt;br&gt;OrderEventListener&lt;br&gt;PaymentEventListener&lt;div&gt;StoreRepository&lt;/div&gt;" vertex="1">
           <mxGeometry height="130" width="285" x="15" y="200" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram name="Checkout Payment Sequence" id="checkout-payment-sequence">
+    <mxGraphModel dx="1601" dy="876" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1300" math="0" shadow="0">
+      <root>
+        <mxCell id="seq-0" />
+        <mxCell id="seq-1" parent="seq-0" />
+        <mxCell id="seq-title" value="Checkout Crypto Payment Sequence" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=22;fontStyle=1" vertex="1" parent="seq-1">
+          <mxGeometry x="40" y="20" width="520" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="seq-note" value="Kafka는 이벤트/커맨드 전달을 담당하고, CheckoutProcessManager가 다음 업무 단계를 결정한다." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;align=left;spacingLeft=10;" vertex="1" parent="seq-1">
+          <mxGeometry x="40" y="70" width="620" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="seq-customer" value="Customer Browser&lt;br&gt;+ MetaMask" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1" vertex="1" parent="seq-1">
+          <mxGeometry x="60" y="150" width="140" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="seq-order" value="Order API" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1" vertex="1" parent="seq-1">
+          <mxGeometry x="270" y="150" width="120" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="seq-cpm" value="Checkout&lt;br&gt;ProcessManager" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1" vertex="1" parent="seq-1">
+          <mxGeometry x="460" y="150" width="150" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="seq-kafka" value="Kafka" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1" vertex="1" parent="seq-1">
+          <mxGeometry x="690" y="150" width="110" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="seq-inventory" value="Inventory&lt;br&gt;Context" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1" vertex="1" parent="seq-1">
+          <mxGeometry x="880" y="150" width="130" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="seq-payment" value="Payment&lt;br&gt;Context" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1" vertex="1" parent="seq-1">
+          <mxGeometry x="1090" y="150" width="130" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="seq-chain" value="Blockchain RPC&lt;br&gt;(Web3j/RPC)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1" vertex="1" parent="seq-1">
+          <mxGeometry x="1300" y="150" width="150" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="seq-store" value="Store Approval&lt;br&gt;Context" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1" vertex="1" parent="seq-1">
+          <mxGeometry x="1530" y="150" width="150" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="seq-line-customer" value="" style="endArrow=none;html=1;rounded=0;dashed=1;strokeColor=#666666;" edge="1" parent="seq-1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="130" y="200" as="sourcePoint" />
+            <mxPoint x="130" y="1120" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="seq-line-order" value="" style="endArrow=none;html=1;rounded=0;dashed=1;strokeColor=#666666;" edge="1" parent="seq-1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="330" y="200" as="sourcePoint" />
+            <mxPoint x="330" y="1120" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="seq-line-cpm" value="" style="endArrow=none;html=1;rounded=0;dashed=1;strokeColor=#666666;" edge="1" parent="seq-1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="535" y="200" as="sourcePoint" />
+            <mxPoint x="535" y="1120" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="seq-line-kafka" value="" style="endArrow=none;html=1;rounded=0;dashed=1;strokeColor=#666666;" edge="1" parent="seq-1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="745" y="200" as="sourcePoint" />
+            <mxPoint x="745" y="1120" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="seq-line-inventory" value="" style="endArrow=none;html=1;rounded=0;dashed=1;strokeColor=#666666;" edge="1" parent="seq-1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="945" y="200" as="sourcePoint" />
+            <mxPoint x="945" y="1120" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="seq-line-payment" value="" style="endArrow=none;html=1;rounded=0;dashed=1;strokeColor=#666666;" edge="1" parent="seq-1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="1155" y="200" as="sourcePoint" />
+            <mxPoint x="1155" y="1120" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="seq-line-chain" value="" style="endArrow=none;html=1;rounded=0;dashed=1;strokeColor=#666666;" edge="1" parent="seq-1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="1375" y="200" as="sourcePoint" />
+            <mxPoint x="1375" y="1120" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="seq-line-store" value="" style="endArrow=none;html=1;rounded=0;dashed=1;strokeColor=#666666;" edge="1" parent="seq-1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="1605" y="200" as="sourcePoint" />
+            <mxPoint x="1605" y="1120" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="seq-m1" value="1. createOrder(command)" style="endArrow=block;html=1;rounded=0;" edge="1" parent="seq-1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="130" y="240" as="sourcePoint" />
+            <mxPoint x="330" y="240" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="seq-m2" value="2. save Order(PENDING) / publish OrderCreatedEvent" style="endArrow=block;html=1;rounded=0;" edge="1" parent="seq-1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="330" y="285" as="sourcePoint" />
+            <mxPoint x="745" y="285" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="seq-m3" value="3. consume OrderCreatedEvent" style="endArrow=block;html=1;rounded=0;" edge="1" parent="seq-1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="745" y="330" as="sourcePoint" />
+            <mxPoint x="535" y="330" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="seq-m4" value="4. publish ReserveInventoryCommand" style="endArrow=block;html=1;rounded=0;" edge="1" parent="seq-1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="535" y="375" as="sourcePoint" />
+            <mxPoint x="745" y="375" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="seq-m5" value="5. deliver ReserveInventoryCommand" style="endArrow=block;html=1;rounded=0;" edge="1" parent="seq-1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="745" y="420" as="sourcePoint" />
+            <mxPoint x="945" y="420" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="seq-m6" value="6. reserveInventory() / publish InventoryReservedEvent" style="endArrow=block;html=1;rounded=0;" edge="1" parent="seq-1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="945" y="465" as="sourcePoint" />
+            <mxPoint x="745" y="465" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="seq-m7" value="7. consume InventoryReservedEvent" style="endArrow=block;html=1;rounded=0;" edge="1" parent="seq-1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="745" y="510" as="sourcePoint" />
+            <mxPoint x="535" y="510" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="seq-m8" value="8. publish InitiatePaymentCommand" style="endArrow=block;html=1;rounded=0;" edge="1" parent="seq-1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="535" y="555" as="sourcePoint" />
+            <mxPoint x="745" y="555" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="seq-m9" value="9. deliver InitiatePaymentCommand" style="endArrow=block;html=1;rounded=0;" edge="1" parent="seq-1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="745" y="600" as="sourcePoint" />
+            <mxPoint x="1155" y="600" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="seq-m10" value="10. create Payment(AWAITING_SIGNATURE) / return paymentRequest" style="endArrow=block;html=1;rounded=0;" edge="1" parent="seq-1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1155" y="645" as="sourcePoint" />
+            <mxPoint x="130" y="645" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="seq-m11" value="11. connect wallet, sign nonce, send transaction" style="endArrow=block;html=1;rounded=0;" edge="1" parent="seq-1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="130" y="690" as="sourcePoint" />
+            <mxPoint x="1155" y="690" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="seq-m12" value="12. submit txHash / mark SUBMITTED" style="endArrow=block;html=1;rounded=0;" edge="1" parent="seq-1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="130" y="735" as="sourcePoint" />
+            <mxPoint x="1155" y="735" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="seq-m13" value="13. monitorTransaction(txHash)" style="endArrow=block;html=1;rounded=0;" edge="1" parent="seq-1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1155" y="780" as="sourcePoint" />
+            <mxPoint x="1375" y="780" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="seq-m14" value="14. receipt confirmed" style="endArrow=block;html=1;rounded=0;dashed=1;" edge="1" parent="seq-1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1375" y="825" as="sourcePoint" />
+            <mxPoint x="1155" y="825" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="seq-m15" value="15. publish PaymentConfirmedEvent" style="endArrow=block;html=1;rounded=0;" edge="1" parent="seq-1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1155" y="870" as="sourcePoint" />
+            <mxPoint x="745" y="870" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="seq-m16" value="16. consume PaymentConfirmedEvent" style="endArrow=block;html=1;rounded=0;" edge="1" parent="seq-1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="745" y="915" as="sourcePoint" />
+            <mxPoint x="535" y="915" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="seq-m17" value="17. publish RequestStoreApprovalCommand" style="endArrow=block;html=1;rounded=0;" edge="1" parent="seq-1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="535" y="960" as="sourcePoint" />
+            <mxPoint x="745" y="960" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="seq-m18" value="18. validate order / approve" style="endArrow=block;html=1;rounded=0;" edge="1" parent="seq-1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="745" y="1005" as="sourcePoint" />
+            <mxPoint x="1605" y="1005" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="seq-m19" value="19. publish OrderApprovedEvent" style="endArrow=block;html=1;rounded=0;" edge="1" parent="seq-1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1605" y="1050" as="sourcePoint" />
+            <mxPoint x="745" y="1050" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="seq-m20" value="20. completeOrder(APPROVED)" style="endArrow=block;html=1;rounded=0;" edge="1" parent="seq-1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="745" y="1095" as="sourcePoint" />
+            <mxPoint x="330" y="1095" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="seq-alt" value="failure / compensation path" style="swimlane;whiteSpace=wrap;html=1;startSize=25;fillColor=#f8cecc;strokeColor=#b85450;dashed=1;fontStyle=1" vertex="1" parent="seq-1">
+          <mxGeometry x="40" y="1125" width="1660" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="seq-alt-text" value="PaymentFailedEvent or PaymentExpiredEvent -&gt; CheckoutProcessManager -&gt; ReleaseInventoryCommand + CancelOrderCommand&lt;br&gt;OrderRejectedEvent -&gt; CheckoutProcessManager -&gt; RefundPaymentCommand + ReleaseInventoryCommand + CancelOrderCommand" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;fontSize=14" vertex="1" parent="seq-alt">
+          <mxGeometry x="20" y="40" width="1520" height="60" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>
