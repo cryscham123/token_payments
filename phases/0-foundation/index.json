@@ -13,7 +13,10 @@
     {
       "step": 1,
       "name": "shared-domain-kernel",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-09T21:05:26+0900",
+      "completed_at": "2026-05-09T21:10:26+0900",
+      "summary": "공통 shared domain kernel에 불변 id/value object(OrderId 등 UUID id, WalletAddress, ChainNetwork, TransactionHash, Crypto)와 단위 테스트를 추가했다."
     },
     {
       "step": 2,
