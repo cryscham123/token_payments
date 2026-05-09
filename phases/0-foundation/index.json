@@ -21,7 +21,10 @@
     {
       "step": 2,
       "name": "messaging-outbox-contracts",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-09T21:10:29+0900",
+      "completed_at": "2026-05-09T21:15:33+0900",
+      "summary": "공통 messaging/outbox 계약에 이벤트·커맨드 metadata, Outbox publish 상태 전이, processed message/command 멱등 키, checkout 이벤트·커맨드 이름과 결정적 보상 command id 테스트를 추가했다."
     },
     {
       "step": 3,
