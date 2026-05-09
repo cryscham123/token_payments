@@ -21,7 +21,10 @@
     {
       "step": 2,
       "name": "payment-domain-model",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-10T01:35:10+0900",
+      "completed_at": "2026-05-10T01:42:25+0900",
+      "summary": "결제 context 순수 domain model에 Payment/PaymentAuthorization 상태 전이, GasEstimate buffer, transaction receipt, payment events/export 및 adapter import 금지 테스트를 추가했다."
     },
     {
       "step": 3,
