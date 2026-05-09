@@ -5,11 +5,19 @@
 ## Runtime Commands
 
 ```bash
-PYTHONPATH=app python3 -m token_payments
+PYTHONPATH=app .venv/bin/python -m token_payments
 docker compose --env-file .env up -d postgres kafka kafka-ui pgweb test_network
 ```
 
 Use `.env.example` as the template for local `.env` values. Do not commit real private keys, API keys, seed phrases, or production credentials.
+
+## Verification Commands
+
+```bash
+.venv/bin/python scripts/validate_phases.py
+.venv/bin/python -m pytest scripts/test_*.py
+python3 .githooks/pre_commit_check.py
+```
 
 ## Package Layout
 
