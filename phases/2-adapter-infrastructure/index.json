@@ -1,0 +1,45 @@
+{
+  "project": "Token Payments",
+  "phase": "2-adapter-infrastructure",
+  "steps": [
+    {
+      "step": 0,
+      "name": "adapter-contract-foundation",
+      "status": "completed",
+      "started_at": "2026-05-10T08:43:29+0900",
+      "completed_at": "2026-05-10T08:49:49+0900",
+      "summary": "shared adapter foundation에 JSON-safe outbox serializer, checkout topic resolver, transaction/session Protocol, retry backoff config, PostgreSQL schema 초안, adapter env key와 import boundary 테스트를 추가했다."
+    },
+    {
+      "step": 1,
+      "name": "postgres-outbox-idempotency",
+      "status": "pending"
+    },
+    {
+      "step": 2,
+      "name": "postgres-context-repositories",
+      "status": "pending"
+    },
+    {
+      "step": 3,
+      "name": "outbox-relay-kafka-publisher",
+      "status": "pending"
+    },
+    {
+      "step": 4,
+      "name": "kafka-listener-adapters",
+      "status": "pending"
+    },
+    {
+      "step": 5,
+      "name": "wallet-blockchain-boundaries",
+      "status": "pending"
+    },
+    {
+      "step": 6,
+      "name": "adapter-infrastructure-verification",
+      "status": "pending"
+    }
+  ],
+  "created_at": "2026-05-10T08:43:29+0900"
+}
