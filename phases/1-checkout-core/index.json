@@ -29,7 +29,10 @@
     {
       "step": 3,
       "name": "payment-application-contracts",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-10T01:42:27+0900",
+      "completed_at": "2026-05-10T01:51:20+0900",
+      "summary": "결제 command DTO/port와 순수 PaymentCommandHandler를 추가해 결제 시작, txHash 제출, receipt 성공·실패, 만료, 환불 event outbox 및 중복 command 멱등 무시 contract를 테스트로 고정했다."
     },
     {
       "step": 4,
