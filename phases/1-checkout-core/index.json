@@ -13,7 +13,10 @@
     {
       "step": 1,
       "name": "inventory-application-contracts",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-10T01:29:23+0900",
+      "completed_at": "2026-05-10T01:35:08+0900",
+      "summary": "재고 command DTO/port와 순수 InventoryCommandHandler를 추가해 예약 성공 outbox 발행, 재고 부족 거부, 중복 command 멱등 무시 contract를 테스트로 고정했다."
     },
     {
       "step": 2,
