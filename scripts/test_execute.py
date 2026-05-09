@@ -397,8 +397,10 @@ class TestCommitStep:
 
         commit_calls = [c for c in calls if c[0] == "commit"]
         assert len(commit_calls) == 2
-        assert "feat(mvp):" in commit_calls[0][2]
-        assert "chore(mvp):" in commit_calls[1][2]
+        assert commit_calls[0][1] == "--no-gpg-sign"
+        assert commit_calls[1][1] == "--no-gpg-sign"
+        assert "feat(mvp):" in commit_calls[0][3]
+        assert "chore(mvp):" in commit_calls[1][3]
 
     def test_no_code_changes_skips_feat_commit(self, executor):
         call_count = {"diff": 0}
@@ -415,7 +417,7 @@ class TestCommitStep:
 
         executor._commit_step(2, "ui")
 
-        commit_msgs = [c[2] for c in calls if c[0] == "commit"]
+        commit_msgs = [c[3] for c in calls if c[0] == "commit"]
         assert len(commit_msgs) == 1
         assert "chore" in commit_msgs[0]
 

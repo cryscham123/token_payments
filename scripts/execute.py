@@ -143,7 +143,7 @@ class StepExecutor:
 
         if self._run_git("diff", "--cached", "--quiet").returncode != 0:
             msg = self.FEAT_MSG.format(phase=self._phase_name, num=step_num, name=step_name)
-            r = self._run_git("commit", "-m", msg)
+            r = self._run_git("commit", "--no-gpg-sign", "-m", msg)
             if r.returncode == 0:
                 print(f"  Commit: {msg}")
             else:
@@ -152,7 +152,7 @@ class StepExecutor:
         self._run_git("add", "-A")
         if self._run_git("diff", "--cached", "--quiet").returncode != 0:
             msg = self.CHORE_MSG.format(phase=self._phase_name, num=step_num)
-            r = self._run_git("commit", "-m", msg)
+            r = self._run_git("commit", "--no-gpg-sign", "-m", msg)
             if r.returncode != 0:
                 print(f"  WARN: housekeeping 커밋 실패: {r.stderr.strip()}")
 
@@ -393,7 +393,7 @@ class StepExecutor:
         self._run_git("add", "-A")
         if self._run_git("diff", "--cached", "--quiet").returncode != 0:
             msg = f"chore({self._phase_name}): mark phase completed"
-            r = self._run_git("commit", "-m", msg)
+            r = self._run_git("commit", "--no-gpg-sign", "-m", msg)
             if r.returncode == 0:
                 print(f"  ✓ {msg}")
 
