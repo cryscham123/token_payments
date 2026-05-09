@@ -1,0 +1,40 @@
+{
+  "project": "Token Payments",
+  "phase": "1-checkout-core",
+  "steps": [
+    {
+      "step": 0,
+      "name": "inventory-domain-model",
+      "status": "completed",
+      "started_at": "2026-05-10T01:18:29+0900",
+      "completed_at": "2026-05-10T01:25:35+0900",
+      "summary": "재고관리 context 순수 domain model에 Quantity, ReservationId, InventoryReservation, ProductInventory 상태 전이와 inventory domain events/export 및 adapter import 금지 테스트를 추가했다."
+    },
+    {
+      "step": 1,
+      "name": "inventory-application-contracts",
+      "status": "pending"
+    },
+    {
+      "step": 2,
+      "name": "payment-domain-model",
+      "status": "pending"
+    },
+    {
+      "step": 3,
+      "name": "payment-application-contracts",
+      "status": "pending"
+    },
+    {
+      "step": 4,
+      "name": "store-approval-core",
+      "status": "pending"
+    },
+    {
+      "step": 5,
+      "name": "checkout-core-verification",
+      "status": "pending"
+    }
+  ],
+  "created_at": "2026-05-10T01:18:29+0900"
+}
