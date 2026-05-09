@@ -4,6 +4,10 @@
       "dir": "0-foundation",
       "status": "completed",
       "completed_at": "2026-05-09T21:32:32+0900"
+    },
+    {
+      "dir": "1-checkout-core",
+      "status": "pending"
     }
   ]
 }
