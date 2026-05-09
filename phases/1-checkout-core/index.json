@@ -37,7 +37,10 @@
     {
       "step": 4,
       "name": "store-approval-core",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-10T01:51:22+0900",
+      "completed_at": "2026-05-10T01:58:59+0900",
+      "summary": "가게 승인 context 순수 domain/application contract를 추가해 승인 성공, 검증 반려, outbox 이벤트 발행, 중복 command 멱등 무시를 테스트로 고정했다."
     },
     {
       "step": 5,
