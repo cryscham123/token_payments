@@ -63,3 +63,33 @@ python3 .githooks/pre_commit_check.py
 - `payment`: `Payment`, `PaymentAuthorization`, txHash 제출, receipt 확인, `AWAITING_SIGNATURE` 만료 scheduler.
 - `store-approval`: 주문 상세 검증, 승인/반려 이벤트, 반려 시 보상 흐름 연결.
 - `adapter`: PostgreSQL repository, outbox relay, Kafka publisher/listener, Blockchain RPC/MetaMask boundary 구현.
+
+## Checkout Core 검증
+
+Checkout core phase는 adapter 구현 전에 inventory, payment, store-approval bounded context의 순수 domain/application 계약을 고정한다. 현재 공개 계약은 다음을 포함한다.
+
+- `inventory`: `ProductInventory`, `InventoryReservation`, 재고 예약/확정/해제 command DTO, `InventoryCommandHandler`, repository/outbox/processed-command port.
+- `payment`: `Payment`, `PaymentAuthorization`, gas estimate buffer, txHash 제출, receipt 확인, 만료/환불 command DTO, `PaymentCommandHandler`, Blockchain RPC/timeout/transaction port.
+- `store-approval`: `Store`, `OrderDetail`, 승인/반려 이벤트, `RequestStoreApprovalCommand`, `StoreApprovalService`, store/order-detail/outbox/processed-command port.
+
+Checkout core 산출물 검증:
+
+```bash
+.venv/bin/python -m pytest \
+  scripts/test_inventory_domain_model.py \
+  scripts/test_inventory_application_contracts.py \
+  scripts/test_payment_domain_model.py \
+  scripts/test_payment_application_contracts.py \
+  scripts/test_store_approval_core.py \
+  scripts/test_checkout_core_public_contracts.py \
+  scripts/test_foundation_public_contracts.py
+.venv/bin/python scripts/validate_phases.py
+python3 .githooks/pre_commit_check.py
+```
+
+다음 phase 후보는 adapter 중심으로 진행한다.
+
+- PostgreSQL repository: aggregate, outbox, processed command/message 저장소 구현.
+- outbox relay: committed outbox row 조회, publish 상태 전이, 재시도/failure_count 관리.
+- Kafka publisher/listener: context 간 이벤트/커맨드 topic, key, correlation/causation header 연결.
+- Blockchain RPC/MetaMask boundary: gas estimate, receipt 조회, refund transaction, wallet signature request 경계 구현.
