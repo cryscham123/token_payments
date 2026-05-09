@@ -1,0 +1,2 @@
+"""Store approval domain layer."""
+

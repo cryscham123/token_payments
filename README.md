@@ -28,3 +28,15 @@ python3 -m venv .venv
 python3 scripts/execute.py <phase-dir>
 python3 scripts/execute.py <phase-dir> --push
 ```
+
+## Application Runtime
+
+Token Payments 애플리케이션 코드는 `app/token_payments` 아래에 둔다. 현재 런타임 기준은 Python 3.12이며, bounded context별로 `domain`, `application`, `adapter` 레이어를 추가할 수 있는 최소 패키지 구조만 준비되어 있다.
+
+로컬 환경 변수는 민감정보가 없는 `.env.example`을 복사해 `.env`로 만든 뒤 값은 개발자 로컬에서만 채운다.
+
+```bash
+cp .env.example .env
+PYTHONPATH=app python3 -m token_payments
+docker compose --env-file .env up -d postgres kafka kafka-ui pgweb test_network
+```

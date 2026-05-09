@@ -1,0 +1,2 @@
+"""Payment adapter layer."""
+
