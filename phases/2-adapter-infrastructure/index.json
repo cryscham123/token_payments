@@ -13,7 +13,10 @@
     {
       "step": 1,
       "name": "postgres-outbox-idempotency",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-10T08:49:49+0900",
+      "completed_at": "2026-05-10T08:56:08+0900",
+      "summary": "PostgreSQL outbox/idempotency adapter 패키지와 fake connection 기반 계약 테스트를 추가해 outbox READY/FAILED→PUBLISHING→PUBLISHED/FAILED 전이와 processed message/command 중복 감지를 검증했다."
     },
     {
       "step": 2,
