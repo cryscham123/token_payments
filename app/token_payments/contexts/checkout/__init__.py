@@ -1,0 +1,2 @@
+"""Checkout process bounded context."""
+

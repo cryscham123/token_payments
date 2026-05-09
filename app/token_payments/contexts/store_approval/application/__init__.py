@@ -1,0 +1,2 @@
+"""Store approval application layer."""
+
