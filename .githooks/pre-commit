@@ -2,4 +2,10 @@
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
-exec python3 "$ROOT/.githooks/pre_commit_check.py"
+PYTHON="$ROOT/.venv/bin/python"
+
+if [[ ! -x "$PYTHON" ]]; then
+  PYTHON="python3"
+fi
+
+exec "$PYTHON" "$ROOT/.githooks/pre_commit_check.py"
