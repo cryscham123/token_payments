@@ -244,9 +244,11 @@ class TestBuildPreamble:
         result = executor._build_preamble("", ctx)
         assert "이전 Step 산출물" in result
 
-    def test_includes_commit_example(self, executor):
+    def test_tells_step_not_to_commit_directly(self, executor):
         result = executor._build_preamble("", "")
-        assert "feat(mvp):" in result
+        assert "git commit을 직접 실행하지 마라" in result
+        assert "하네스 오케스트레이터" in result
+        assert "feat(mvp):" not in result
 
     def test_includes_rules(self, executor):
         result = executor._build_preamble("", "")
