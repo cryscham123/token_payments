@@ -7,7 +7,8 @@
     },
     {
       "dir": "1-checkout-core",
-      "status": "pending"
+      "status": "completed",
+      "completed_at": "2026-05-10T02:04:41+0900"
     }
   ]
 }
