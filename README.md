@@ -23,8 +23,9 @@
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements-dev.txt
-.venv/bin/python -m pytest scripts/test_*.py
 .venv/bin/python scripts/validate_phases.py
+.venv/bin/python -m pytest scripts/test_*.py
+python3 .githooks/pre_commit_check.py
 python3 scripts/execute.py <phase-dir>
 python3 scripts/execute.py <phase-dir> --push
 ```
@@ -37,6 +38,28 @@ Token Payments 애플리케이션 코드는 `app/token_payments` 아래에 둔�
 
 ```bash
 cp .env.example .env
-PYTHONPATH=app python3 -m token_payments
+PYTHONPATH=app .venv/bin/python -m token_payments
 docker compose --env-file .env up -d postgres kafka kafka-ui pgweb test_network
 ```
+
+## Foundation 검증
+
+Foundation phase는 runtime package, shared domain kernel, messaging/outbox contracts, MetaMask auth skeleton, order/checkout process skeleton을 다음 phase에서 import 가능한 public contract로 고정한다.
+
+```bash
+.venv/bin/python -m pytest \
+  scripts/test_shared_domain_kernel.py \
+  scripts/test_messaging_outbox_contracts.py \
+  scripts/test_auth_context_skeleton.py \
+  scripts/test_order_checkout_skeleton.py \
+  scripts/test_foundation_public_contracts.py
+python3 scripts/validate_phases.py
+python3 .githooks/pre_commit_check.py
+```
+
+다음 phase 작업 후보:
+
+- `inventory`: `ProductInventory`, `InventoryReservation`, 재고 예약/확정/해제 command handler와 멱등 처리.
+- `payment`: `Payment`, `PaymentAuthorization`, txHash 제출, receipt 확인, `AWAITING_SIGNATURE` 만료 scheduler.
+- `store-approval`: 주문 상세 검증, 승인/반려 이벤트, 반려 시 보상 흐름 연결.
+- `adapter`: PostgreSQL repository, outbox relay, Kafka publisher/listener, Blockchain RPC/MetaMask boundary 구현.
