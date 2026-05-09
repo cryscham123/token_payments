@@ -29,7 +29,10 @@
     {
       "step": 3,
       "name": "auth-context-skeleton",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-09T21:15:35+0900",
+      "completed_at": "2026-05-09T21:22:23+0900",
+      "summary": "MetaMask nonce 인증 context에 User/LoginChallenge/AuthSession 도메인 skeleton, AuthNonce 등 값 객체와 application port 계약, nonce 재사용·만료·wallet 정규화 테스트를 추가했다."
     },
     {
       "step": 4,
