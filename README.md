@@ -21,7 +21,10 @@
 ## Harness 실행
 
 ```bash
-python3 -m pytest scripts/test_execute.py
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements-dev.txt
+.venv/bin/python -m pytest scripts/test_*.py
+.venv/bin/python scripts/validate_phases.py
 python3 scripts/execute.py <phase-dir>
 python3 scripts/execute.py <phase-dir> --push
 ```

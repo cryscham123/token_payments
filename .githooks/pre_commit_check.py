@@ -11,6 +11,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+PYTHON = str(ROOT / ".venv/bin/python") if (ROOT / ".venv/bin/python").exists() else (sys.executable or "python3")
 
 
 def main() -> int:
@@ -40,7 +41,7 @@ def main() -> int:
             (
                 "python compile",
                 [
-                    "python3",
+                    PYTHON,
                     "-c",
                     _py_compile_snippet([str(path.relative_to(ROOT)) for path in python_files]),
                 ],
@@ -53,7 +54,7 @@ def main() -> int:
             (
                 f"json parse {json_path.relative_to(ROOT)}",
                 [
-                    "python3",
+                    PYTHON,
                     "-c",
                     "import json, pathlib; "
                     f"json.loads(pathlib.Path({str(json_path)!r}).read_text(encoding='utf-8'))",
@@ -62,12 +63,22 @@ def main() -> int:
             )
         )
 
-    pytest_file = ROOT / "scripts/test_execute.py"
-    if pytest_file.exists():
+    phase_index = ROOT / "phases" / "index.json"
+    if phase_index.exists():
+        checks.append(("phase metadata", [PYTHON, "scripts/validate_phases.py"], True))
+
+    test_files = sorted((ROOT / "scripts").glob("test_*.py"))
+    if test_files:
         if _module_available("pytest"):
-            checks.append(("pytest", ["python3", "-m", "pytest", "scripts/test_execute.py"], True))
+            checks.append(
+                (
+                    "pytest",
+                    [PYTHON, "-m", "pytest", *[str(path.relative_to(ROOT)) for path in test_files]],
+                    True,
+                )
+            )
         else:
-            _info("pytest is not installed; scripts/test_execute.py is skipped.")
+            _info("pytest is not installed; scripts/test_*.py is skipped.")
 
     for label, command, enabled in checks:
         if not enabled:
@@ -101,7 +112,7 @@ def _json_files() -> list[Path]:
 
 def _module_available(name: str) -> bool:
     result = subprocess.run(
-        ["python3", "-c", f"import importlib.util; raise SystemExit(importlib.util.find_spec({name!r}) is None)"],
+        [PYTHON, "-c", f"import importlib.util; raise SystemExit(importlib.util.find_spec({name!r}) is None)"],
         cwd=ROOT,
     )
     return result.returncode == 0

@@ -23,3 +23,9 @@ phases/
 - `blocked`
 
 `step*-output.json`은 실행 산출물이므로 git에 추적하지 않는다. 다음 step 판단에 필요한 내용은 `index.json`의 `summary`, `error_message`, `blocked_reason`에 남긴다.
+
+## 검증
+
+```bash
+python3 scripts/validate_phases.py
+```

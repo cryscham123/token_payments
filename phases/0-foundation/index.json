@@ -1,0 +1,36 @@
+{
+  "project": "Token Payments",
+  "phase": "0-foundation",
+  "steps": [
+    {
+      "step": 0,
+      "name": "runtime-baseline",
+      "status": "pending"
+    },
+    {
+      "step": 1,
+      "name": "shared-domain-kernel",
+      "status": "pending"
+    },
+    {
+      "step": 2,
+      "name": "messaging-outbox-contracts",
+      "status": "pending"
+    },
+    {
+      "step": 3,
+      "name": "auth-context-skeleton",
+      "status": "pending"
+    },
+    {
+      "step": 4,
+      "name": "order-checkout-skeleton",
+      "status": "pending"
+    },
+    {
+      "step": 5,
+      "name": "foundation-verification",
+      "status": "pending"
+    }
+  ]
+}

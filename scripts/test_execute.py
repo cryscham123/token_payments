@@ -4,7 +4,6 @@ execute.py 리팩터링 안전망 테스트.
 """
 
 import json
-import os
 import subprocess
 import sys
 import textwrap

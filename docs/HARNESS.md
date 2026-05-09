@@ -80,7 +80,8 @@
 권장 AC:
 
 ```bash
-python3 -m pytest scripts/test_execute.py
+.venv/bin/python scripts/validate_phases.py
+.venv/bin/python -m pytest scripts/test_*.py
 ```
 
 애플리케이션 코드가 생긴 후에는 해당 프로젝트의 lint/build/test 커맨드를 AC에 추가한다.
@@ -88,6 +89,9 @@ python3 -m pytest scripts/test_execute.py
 ## 실행
 
 ```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements-dev.txt
+.venv/bin/python scripts/validate_phases.py
 python3 scripts/execute.py <phase-dir>
 python3 scripts/execute.py <phase-dir> --push
 ```
@@ -110,9 +114,11 @@ git config core.hooksPath .githooks
 
 pre-commit은 다음을 검증한다.
 
+- `.venv/bin/python`이 있으면 해당 Python을 우선 사용한다.
 - `scripts/*.py`와 `.codex/hooks/*.py` 컴파일
 - 주요 JSON 파일 parse
-- `scripts/test_execute.py` pytest 실행
+- `phases/index.json`과 각 phase step metadata 검증
+- `scripts/test_*.py` pytest 실행
 
 Codex hook은 다음을 수행한다.
 
