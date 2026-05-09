@@ -9,6 +9,10 @@
       "dir": "1-checkout-core",
       "status": "completed",
       "completed_at": "2026-05-10T02:04:41+0900"
+    },
+    {
+      "dir": "2-adapter-infrastructure",
+      "status": "pending"
     }
   ]
 }
