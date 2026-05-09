@@ -1,0 +1,44 @@
+{
+  "name": "harness",
+  "version": "0.1.0",
+  "description": "Plan, execute, and review phased Codex implementation work with AGENTS.md guardrails.",
+  "author": {
+    "name": "Ulala",
+    "email": "support@example.com",
+    "url": "https://openai.com/codex/"
+  },
+  "homepage": "https://openai.com/codex/",
+  "repository": "local",
+  "license": "MIT",
+  "keywords": [
+    "codex",
+    "harness",
+    "phases",
+    "tdd"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Harness",
+    "shortDescription": "Plan and run phased Codex work",
+    "longDescription": "Use Harness to turn product work into self-contained phase steps, execute those steps through Codex CLI, and review changes against AGENTS.md and docs guardrails.",
+    "developerName": "Ulala",
+    "category": "Coding",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://openai.com/codex/",
+    "privacyPolicyURL": "https://openai.com/policies/privacy-policy/",
+    "termsOfServiceURL": "https://openai.com/policies/terms-of-use/",
+    "defaultPrompt": [
+      "Plan a new Harness phase.",
+      "Review this Harness change.",
+      "Run the next Harness phase."
+    ],
+    "brandColor": "#111827",
+    "composerIcon": "./assets/harness.svg",
+    "logo": "./assets/harness.svg",
+    "screenshots": []
+  }
+}
