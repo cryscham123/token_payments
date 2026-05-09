@@ -5,7 +5,10 @@
     {
       "step": 0,
       "name": "runtime-baseline",
-      "status": "pending"
+      "status": "completed",
+      "summary": "Python 3.12 app runtime root를 app/token_payments로 정하고 bounded context별 domain/application/adapter skeleton, 실행 문서, 민감정보 없는 .env.example을 추가했다.",
+      "started_at": "2026-05-09T21:01:02+0900",
+      "completed_at": "2026-05-09T21:05:24+0900"
     },
     {
       "step": 1,
@@ -32,5 +35,6 @@
       "name": "foundation-verification",
       "status": "pending"
     }
-  ]
+  ],
+  "created_at": "2026-05-09T21:01:02+0900"
 }
