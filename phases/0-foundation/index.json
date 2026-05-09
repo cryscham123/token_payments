@@ -37,7 +37,10 @@
     {
       "step": 4,
       "name": "order-checkout-skeleton",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-09T21:22:25+0900",
+      "completed_at": "2026-05-09T21:28:26+0900",
+      "summary": "주문 생성 context에 Order/OrderItem/Customer/Store/Product와 주문 이벤트 skeleton을 추가하고 CheckoutProcessManager 순수 로직으로 성공·보상 커맨드 결정을 검증했다."
     },
     {
       "step": 5,
