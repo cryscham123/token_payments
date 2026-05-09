@@ -1,4 +1,3 @@
-"""Order domain layer."""
 """Order creation domain layer."""
 
 from .model import (
