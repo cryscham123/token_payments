@@ -29,7 +29,10 @@
     {
       "step": 3,
       "name": "compose-readiness-smoke",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-11T07:12:09+0900",
+      "completed_at": "2026-05-11T07:18:38+0900",
+      "summary": "committed .env.example placeholder, docker-compose service/env_file/volume/path, init SQL/Dockerfile 존재, post-compose bounded runtime command chain을 Docker/네트워크 기동 없이 검증하는 compose-readiness smoke를 추가했다."
     },
     {
       "step": 4,
