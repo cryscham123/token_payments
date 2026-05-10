@@ -13,6 +13,16 @@ from .contracts import (
     WorkerLoopOptions,
 )
 from .entrypoint import ContractRuntimeContainer, dispatch_runtime_command
+from .workers import (
+    KafkaConsumerWorker,
+    OutboxRelayWorker,
+    PaymentReceiptPollingWorker,
+    PaymentTimeoutCandidate,
+    PaymentTimeoutWorker,
+    WorkerBatchResult,
+    WorkerRunSummary,
+    WorkerRuntime,
+)
 
 __all__ = [
     "Clock",
@@ -23,8 +33,16 @@ __all__ = [
     "HealthStatus",
     "IdGenerator",
     "JsonValue",
+    "KafkaConsumerWorker",
+    "OutboxRelayWorker",
+    "PaymentReceiptPollingWorker",
+    "PaymentTimeoutCandidate",
+    "PaymentTimeoutWorker",
     "RuntimeConfig",
     "RuntimeContainer",
+    "WorkerBatchResult",
     "WorkerLoopOptions",
+    "WorkerRunSummary",
+    "WorkerRuntime",
     "dispatch_runtime_command",
 ]

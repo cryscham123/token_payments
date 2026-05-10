@@ -3,17 +3,23 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Sequence
+from typing import Callable, Sequence
 
 from .config import RuntimeConfig
-from .contracts import CommandDispatchResult, HealthState, HealthStatus, RuntimeContainer
+from .contracts import CommandDispatchResult, HealthState, HealthStatus, RuntimeContainer, WorkerLoopOptions
+from .workers import WorkerRuntime
 
 
 class ContractRuntimeContainer:
     """Minimal composition root used until concrete API/worker wiring exists."""
 
-    def __init__(self, config: RuntimeConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: RuntimeConfig | None = None,
+        worker_runtime_factory: Callable[[WorkerLoopOptions], WorkerRuntime] | None = None,
+    ) -> None:
         self._config = config or RuntimeConfig.from_env()
+        self._worker_runtime_factory = worker_runtime_factory
 
     @property
     def config(self) -> RuntimeConfig:
@@ -35,7 +41,18 @@ class ContractRuntimeContainer:
                 summary="runtime config loaded",
                 details={"health": self.health()},
             )
-        if command_name in {"api", "serve-api", "worker", "run-worker"}:
+        if command_name in {"worker", "run-worker"}:
+            runtime = self._build_worker_runtime()
+            summary = runtime.run_until_idle(max_batches=1)
+            return CommandDispatchResult.succeeded(
+                command=command_name,
+                summary=(
+                    f"{command_name} runtime ran {summary.batches} bounded batch(es) "
+                    f"and processed {summary.processed} item(s)"
+                ),
+                details={"config": self.config.to_dict(), "worker": summary.to_dict()},
+            )
+        if command_name in {"api", "serve-api"}:
             return CommandDispatchResult.succeeded(
                 command=command_name,
                 summary=f"{command_name} command accepted; long-running startup is not wired in this phase",
@@ -46,6 +63,12 @@ class ContractRuntimeContainer:
             summary=f"unknown runtime command: {command_name}",
             exit_code=64,
         )
+
+    def _build_worker_runtime(self) -> WorkerRuntime:
+        options = self.config.worker_loop_options()
+        if self._worker_runtime_factory is None:
+            return WorkerRuntime([])
+        return self._worker_runtime_factory(options)
 
 
 def dispatch_runtime_command(
