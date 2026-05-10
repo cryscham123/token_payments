@@ -13,6 +13,7 @@ STATUS_TONES = {
     "COMPLETED": "success",
     "PAID": "success",
     "PUBLISHED": "success",
+    "OK": "success",
     "SUCCEEDED": "success",
     "SUBMITTED": "progress",
     "CONFIRMING": "progress",
@@ -35,6 +36,7 @@ STATUS_TONES = {
     "PAYMENT_EXPIRED": "danger",
     "PAYMENT_FAILED": "danger",
     "REJECTED": "danger",
+    "UNAVAILABLE": "danger",
     "CANCELLED": "neutral",
     "DEGRADED": "neutral",
     "REFUNDED": "neutral",
@@ -224,10 +226,12 @@ class CheckoutViewModel:
 
 @dataclass(frozen=True)
 class OperatorFilterState:
-    contexts: tuple[str, ...] = ("orders", "payments", "outbox")
+    contexts: tuple[str, ...] = ("orders", "payments", "inventory", "store-approvals", "outbox", "workers", "errors")
     statuses: tuple[str, ...] = ()
     chain_id: int | None = None
     store_id: str | None = None
+    created_at_from: str | None = None
+    created_at_to: str | None = None
     failed_only: bool = False
     retry_candidates_only: bool = False
     sort: str = "-updatedAt"
@@ -239,11 +243,33 @@ class OperatorFilterState:
             object.__setattr__(self, "chain_id", _require_positive_int(self.chain_id, "OperatorFilterState.chain_id"))
         if self.store_id is not None:
             object.__setattr__(self, "store_id", _require_text(self.store_id, "OperatorFilterState.store_id"))
+        for field_name in ("created_at_from", "created_at_to"):
+            value = getattr(self, field_name)
+            if value is not None:
+                object.__setattr__(self, field_name, _require_text(value, f"OperatorFilterState.{field_name}"))
         if not isinstance(self.failed_only, bool):
             raise ValueError("OperatorFilterState.failed_only must be a bool")
         if not isinstance(self.retry_candidates_only, bool):
             raise ValueError("OperatorFilterState.retry_candidates_only must be a bool")
         object.__setattr__(self, "sort", _require_text(self.sort, "OperatorFilterState.sort"))
+
+
+@dataclass(frozen=True)
+class OperatorSummaryItem:
+    key: str
+    label: str
+    value: int
+    status: StatusBadge | str
+    detail: str | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "key", _require_text(self.key, "OperatorSummaryItem.key"))
+        object.__setattr__(self, "label", _require_text(self.label, "OperatorSummaryItem.label"))
+        object.__setattr__(self, "value", _require_non_negative_int(self.value, "OperatorSummaryItem.value"))
+        if not isinstance(self.status, StatusBadge):
+            object.__setattr__(self, "status", StatusBadge(str(self.status)))
+        if self.detail is not None:
+            object.__setattr__(self, "detail", _require_text(self.detail, "OperatorSummaryItem.detail"))
 
 
 @dataclass(frozen=True)
@@ -254,11 +280,16 @@ class OperatorTableRow:
     primary: str
     secondary: str | None = None
     amount: MoneyView | None = None
+    quantity: int | None = None
+    gas: MoneyView | None = None
     chain_id: int | None = None
+    store_id: str | None = None
+    created_at: str | None = None
     updated_at: str | None = None
     failure_reason: str | None = None
     latest_event: str | None = None
     tx_hash: str | None = None
+    retry_candidate: bool = False
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -267,14 +298,20 @@ class OperatorTableRow:
         if not isinstance(self.status, StatusBadge):
             object.__setattr__(self, "status", StatusBadge(str(self.status)))
         object.__setattr__(self, "primary", _require_text(self.primary, "OperatorTableRow.primary"))
-        for field_name in ("secondary", "updated_at", "failure_reason", "latest_event", "tx_hash"):
+        for field_name in ("secondary", "store_id", "created_at", "updated_at", "failure_reason", "latest_event", "tx_hash"):
             value = getattr(self, field_name)
             if value is not None:
                 object.__setattr__(self, field_name, _require_text(value, f"OperatorTableRow.{field_name}"))
         if self.amount is not None and not isinstance(self.amount, MoneyView):
             raise ValueError("OperatorTableRow.amount must be a MoneyView or None")
+        if self.quantity is not None:
+            object.__setattr__(self, "quantity", _require_non_negative_int(self.quantity, "OperatorTableRow.quantity"))
+        if self.gas is not None and not isinstance(self.gas, MoneyView):
+            raise ValueError("OperatorTableRow.gas must be a MoneyView or None")
         if self.chain_id is not None:
             object.__setattr__(self, "chain_id", _require_positive_int(self.chain_id, "OperatorTableRow.chain_id"))
+        if not isinstance(self.retry_candidate, bool):
+            raise ValueError("OperatorTableRow.retry_candidate must be a bool")
         object.__setattr__(self, "metadata", _readonly_mapping(self.metadata, "OperatorTableRow.metadata"))
 
 
@@ -291,8 +328,11 @@ class OperatorDetailView:
 @dataclass(frozen=True)
 class OperatorDashboardViewModel:
     filters: OperatorFilterState = field(default_factory=OperatorFilterState)
+    summary: tuple[OperatorSummaryItem, ...] = ()
     orders: tuple[OperatorTableRow, ...] = ()
     payments: tuple[OperatorTableRow, ...] = ()
+    inventory: tuple[OperatorTableRow, ...] = ()
+    store_approvals: tuple[OperatorTableRow, ...] = ()
     outbox: tuple[OperatorTableRow, ...] = ()
     workers: tuple[OperatorTableRow, ...] = ()
     errors: tuple[OperatorTableRow, ...] = ()
@@ -301,13 +341,24 @@ class OperatorDashboardViewModel:
     def __post_init__(self) -> None:
         if not isinstance(self.filters, OperatorFilterState):
             raise ValueError("OperatorDashboardViewModel.filters must be an OperatorFilterState")
+        object.__setattr__(self, "summary", _coerce_tuple(self.summary, OperatorSummaryItem, "OperatorDashboardViewModel.summary"))
         object.__setattr__(self, "orders", _coerce_tuple(self.orders, OperatorTableRow, "OperatorDashboardViewModel.orders"))
         object.__setattr__(self, "payments", _coerce_tuple(self.payments, OperatorTableRow, "OperatorDashboardViewModel.payments"))
+        object.__setattr__(self, "inventory", _coerce_tuple(self.inventory, OperatorTableRow, "OperatorDashboardViewModel.inventory"))
+        object.__setattr__(self, "store_approvals", _coerce_tuple(self.store_approvals, OperatorTableRow, "OperatorDashboardViewModel.store_approvals"))
         object.__setattr__(self, "outbox", _coerce_tuple(self.outbox, OperatorTableRow, "OperatorDashboardViewModel.outbox"))
         object.__setattr__(self, "workers", _coerce_tuple(self.workers, OperatorTableRow, "OperatorDashboardViewModel.workers"))
         object.__setattr__(self, "errors", _coerce_tuple(self.errors, OperatorTableRow, "OperatorDashboardViewModel.errors"))
         if self.detail is not None and not isinstance(self.detail, OperatorDetailView):
             raise ValueError("OperatorDashboardViewModel.detail must be an OperatorDetailView or None")
+
+    @property
+    def primary_rows(self) -> tuple[OperatorTableRow, ...]:
+        return self.orders + self.payments + self.inventory + self.store_approvals + self.outbox + self.errors
+
+    @property
+    def all_rows(self) -> tuple[OperatorTableRow, ...]:
+        return self.primary_rows + self.workers
 
 
 @dataclass(frozen=True)
@@ -366,6 +417,7 @@ __all__ = [
     "OperatorDashboardViewModel",
     "OperatorDetailView",
     "OperatorFilterState",
+    "OperatorSummaryItem",
     "OperatorTableRow",
     "RenderedHtml",
     "StatusBadge",
