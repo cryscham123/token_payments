@@ -109,10 +109,20 @@ CREATE TABLE IF NOT EXISTS payments (
     chain_name TEXT NOT NULL,
     tx_hash TEXT,
     gas_estimated_fee NUMERIC(38, 18),
+    gas_fee_symbol TEXT,
+    gas_fee_chain_id INTEGER CHECK (gas_fee_chain_id IS NULL OR gas_fee_chain_id > 0),
+    gas_fee_token_address TEXT,
+    gas_fee_decimals INTEGER CHECK (gas_fee_decimals IS NULL OR gas_fee_decimals >= 0),
     gas_limit NUMERIC(38, 0),
     gas_buffer_rate NUMERIC(10, 6),
     gas_max_fee NUMERIC(38, 18),
-    expires_at TIMESTAMPTZ,
+    receipt_block_number INTEGER CHECK (receipt_block_number IS NULL OR receipt_block_number >= 0),
+    receipt_gas_used INTEGER CHECK (receipt_gas_used IS NULL OR receipt_gas_used > 0),
+    failure_reason TEXT,
+    refund_tx_hash TEXT,
+    refund_block_number INTEGER CHECK (refund_block_number IS NULL OR refund_block_number >= 0),
+    refund_gas_used INTEGER CHECK (refund_gas_used IS NULL OR refund_gas_used > 0),
+    expires_at TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (order_id)
@@ -141,6 +151,7 @@ CREATE TABLE IF NOT EXISTS payment_authorizations (
     amount_decimals INTEGER NOT NULL CHECK (amount_decimals >= 0),
     to_wallet_address TEXT NOT NULL,
     status TEXT NOT NULL CHECK (status IN ('REQUESTED', 'AUTHORIZED', 'EXPIRED', 'REJECTED')),
+    tx_hash TEXT,
     expires_at TIMESTAMPTZ NOT NULL,
     authorized_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -150,6 +161,35 @@ CREATE TABLE IF NOT EXISTS payment_authorizations (
 
 CREATE INDEX IF NOT EXISTS idx_payment_authorizations_status_expires_at
     ON payment_authorizations (status, expires_at);
+
+CREATE TABLE IF NOT EXISTS store_approval_stores (
+    store_id UUID PRIMARY KEY,
+    owner_user_id UUID NOT NULL,
+    active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_store_approval_stores_owner_user_id
+    ON store_approval_stores (owner_user_id);
+
+CREATE TABLE IF NOT EXISTS store_approval_products (
+    store_id UUID NOT NULL REFERENCES store_approval_stores (store_id),
+    product_id UUID NOT NULL,
+    name TEXT NOT NULL,
+    price_numeric NUMERIC(38, 18) NOT NULL CHECK (price_numeric >= 0),
+    price_symbol TEXT NOT NULL,
+    price_chain_id INTEGER NOT NULL CHECK (price_chain_id > 0),
+    price_token_address TEXT,
+    price_decimals INTEGER NOT NULL CHECK (price_decimals >= 0),
+    available BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (store_id, product_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_store_approval_products_store_available
+    ON store_approval_products (store_id, available);
 
 CREATE TABLE IF NOT EXISTS store_approval_order_details (
     order_id UUID PRIMARY KEY,
