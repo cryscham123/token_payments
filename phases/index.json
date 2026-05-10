@@ -12,7 +12,8 @@
     },
     {
       "dir": "2-adapter-infrastructure",
-      "status": "pending"
+      "status": "completed",
+      "completed_at": "2026-05-10T09:30:07+0900"
     }
   ]
 }

@@ -93,3 +93,39 @@ python3 .githooks/pre_commit_check.py
 - outbox relay: committed outbox row 조회, publish 상태 전이, 재시도/failure_count 관리.
 - Kafka publisher/listener: context 간 이벤트/커맨드 topic, key, correlation/causation header 연결.
 - Blockchain RPC/MetaMask boundary: gas estimate, receipt 조회, refund transaction, wallet signature request 경계 구현.
+
+## Adapter Infrastructure 검증
+
+Adapter infrastructure phase는 checkout core의 port를 실제 인프라 경계로 연결하되 외부 client는 모두 adapter package 내부에서 constructor injection으로 받는다. 현재 공개 계약은 다음을 포함한다.
+
+- `shared.adapter.postgres`: outbox, processed message, processed command repository와 injected PostgreSQL connection protocol.
+- `shared.adapter`: outbox relay, JSON message serializer, topic resolver, retry backoff, transaction/session protocol.
+- `shared.adapter.kafka`: outbox 기반 publisher, inbound record decoder, consumer loop, malformed payload rejection.
+- context Kafka adapters: checkout event listener, inventory/payment/store approval command listener, processed message/command idempotency.
+- context PostgreSQL adapters: inventory/payment/store approval aggregate repository.
+- wallet/blockchain boundaries: wallet signature recover, gas estimate mapping, transaction receipt mapping, signature request, refund transaction boundary.
+
+Adapter infrastructure 산출물 검증:
+
+```bash
+.venv/bin/python -m pytest \
+  scripts/test_adapter_contract_foundation.py \
+  scripts/test_postgres_outbox_idempotency.py \
+  scripts/test_postgres_context_repositories.py \
+  scripts/test_outbox_relay_kafka_publisher.py \
+  scripts/test_kafka_listener_adapters.py \
+  scripts/test_wallet_blockchain_boundaries.py \
+  scripts/test_adapter_infrastructure_public_contracts.py \
+  scripts/test_checkout_core_public_contracts.py \
+  scripts/test_foundation_public_contracts.py
+.venv/bin/python scripts/validate_phases.py
+python3 .githooks/pre_commit_check.py
+```
+
+다음 phase 후보는 API/UI와 worker runtime 중심으로 정리한다.
+
+- Auth/order API: MetaMask login challenge, session, order creation endpoint.
+- Checkout tracking API: checkout process status, pending action, failure reason 조회.
+- Worker runtime: outbox relay, Kafka consumer loops, payment receipt polling, timeout scheduler 실행 wiring.
+- Customer checkout UI: wallet connect, payment signature request, txHash submission, progress tracking.
+- Operator status dashboard: order/payment/outbox status 조회와 retry/failure 관찰 화면.
