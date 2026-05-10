@@ -60,18 +60,25 @@ PYTHONPATH=app .venv/bin/python -m token_payments worker
 customer/operator UI phase preview verification:
 
 ```bash
-.venv/bin/python -m pytest \
+python3 -m pytest \
   scripts/test_ui_contract_foundation.py \
   scripts/test_customer_checkout_ui.py \
   scripts/test_operator_dashboard_ui.py \
-  scripts/test_ui_runtime_preview.py
+  scripts/test_ui_runtime_preview.py \
+  scripts/test_ui_public_contracts.py
 PYTHONPATH=app python3 -m token_payments ui
 PYTHONPATH=app python3 -m token_payments ui customer
 PYTHONPATH=app python3 -m token_payments ui operator
-.venv/bin/python scripts/validate_phases.py
+python3 scripts/validate_phases.py
 ```
 
 The `ui` runtime command returns bounded JSON and does not start an HTTP server. Rendered HTML lives under `CommandDispatchResult.details.preview`; this is a local preview contract, not an `ApiResponse`, DB seed, or production runtime configuration.
+
+Next phase candidates:
+
+- docker compose integration smoke: PostgreSQL, Kafka, test network, runtime health, worker, and UI preview from `.env.example`.
+- happy-path e2e checkout: order creation through inventory reservation, payment confirmation, and store approval.
+- compensation e2e checkout: payment failure, payment expiration, and store rejection compensation command idempotency.
 
 ## API / Worker Runtime Contracts
 
@@ -79,12 +86,10 @@ The API layer exposes framework-neutral facades: `AuthApi`, `OrdersApi`, `Checko
 
 The runtime layer exposes `RuntimeConfig`, `RuntimeContainer`, `ContractRuntimeContainer`, `dispatch_runtime_command`, and `WorkerRuntime`. Worker exports cover outbox relay, Kafka consumer, payment receipt polling, and payment timeout batches. Current CLI commands return bounded JSON results and do not start a long-running API server or daemon worker in this phase.
 
-Next phase candidates:
+Previous API/worker runtime phase candidates now covered by the UI phase:
 
 - customer checkout UI: wallet connect, signature wait, txHash submission, and checkout tracking.
 - operator status dashboard: order/payment/outbox/worker/error status table and detail panel.
-- docker compose integration smoke: PostgreSQL, Kafka, test network, and runtime health from `.env.example`.
-- happy-path e2e checkout: order creation through inventory reservation, payment confirmation, and store approval.
 
 ## Package Layout
 
