@@ -13,7 +13,10 @@
     {
       "step": 1,
       "name": "auth-api-session-runtime",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-10T13:56:11+0900",
+      "completed_at": "2026-05-10T14:06:25+0900",
+      "summary": "MetaMask login challenge/session use case, framework-neutral auth API handler, injected PostgreSQL auth repositories/schema, structured auth error mapping과 fake 기반 runtime 테스트를 추가했다."
     },
     {
       "step": 2,
