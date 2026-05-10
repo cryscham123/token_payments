@@ -25,6 +25,10 @@ STATUS_TONES = {
     "PENDING": "pending",
     "READY": "pending",
     "REQUESTED": "pending",
+    "INVENTORY_RESERVED": "success",
+    "ORDER_APPROVED": "success",
+    "STORE_APPROVAL": "pending",
+    "TX_SUBMITTED": "progress",
     "FAILED": "danger",
     "ERROR": "danger",
     "EXPIRED": "danger",
@@ -99,23 +103,67 @@ class CopyToken:
 
 
 @dataclass(frozen=True)
+class CheckoutOrderItemView:
+    product_id: str
+    name: str
+    quantity: int
+    unit_price: MoneyView
+    sub_total: MoneyView
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "product_id", _require_text(self.product_id, "CheckoutOrderItemView.product_id"))
+        object.__setattr__(self, "name", _require_text(self.name, "CheckoutOrderItemView.name"))
+        object.__setattr__(self, "quantity", _require_positive_int(self.quantity, "CheckoutOrderItemView.quantity"))
+        if not isinstance(self.unit_price, MoneyView):
+            raise ValueError("CheckoutOrderItemView.unit_price must be a MoneyView")
+        if not isinstance(self.sub_total, MoneyView):
+            raise ValueError("CheckoutOrderItemView.sub_total must be a MoneyView")
+
+
+@dataclass(frozen=True)
+class CheckoutAction:
+    action_id: str
+    label: str
+    kind: str = "secondary"
+    enabled: bool = True
+    tooltip: str | None = None
+    aria_label: str | None = None
+    disabled_reason: str | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "action_id", _require_text(self.action_id, "CheckoutAction.action_id"))
+        object.__setattr__(self, "label", _require_text(self.label, "CheckoutAction.label"))
+        kind = _require_text(self.kind, "CheckoutAction.kind")
+        if kind not in {"primary", "secondary", "danger"}:
+            raise ValueError("CheckoutAction.kind must be primary, secondary, or danger")
+        object.__setattr__(self, "kind", kind)
+        if not isinstance(self.enabled, bool):
+            raise ValueError("CheckoutAction.enabled must be a bool")
+        for field_name in ("tooltip", "aria_label", "disabled_reason"):
+            value = getattr(self, field_name)
+            if value is not None:
+                object.__setattr__(self, field_name, _require_text(value, f"CheckoutAction.{field_name}"))
+
+
+@dataclass(frozen=True)
 class CheckoutTimelineItem:
     label: str
     status: StatusBadge | str
+    stage: str | None = None
     message_id: str | None = None
+    command_id: str | None = None
     occurred_at: str | None = None
     detail: str | None = None
+    compensation_status: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "label", _require_text(self.label, "CheckoutTimelineItem.label"))
         if not isinstance(self.status, StatusBadge):
             object.__setattr__(self, "status", StatusBadge(str(self.status)))
-        if self.message_id is not None:
-            object.__setattr__(self, "message_id", _require_text(self.message_id, "CheckoutTimelineItem.message_id"))
-        if self.occurred_at is not None:
-            object.__setattr__(self, "occurred_at", _require_text(self.occurred_at, "CheckoutTimelineItem.occurred_at"))
-        if self.detail is not None:
-            object.__setattr__(self, "detail", _require_text(self.detail, "CheckoutTimelineItem.detail"))
+        for field_name in ("stage", "message_id", "command_id", "occurred_at", "detail", "compensation_status"):
+            value = getattr(self, field_name)
+            if value is not None:
+                object.__setattr__(self, field_name, _require_text(value, f"CheckoutTimelineItem.{field_name}"))
 
 
 @dataclass(frozen=True)
@@ -131,9 +179,13 @@ class CheckoutViewModel:
     token_amount: MoneyView | None = None
     gas_estimate: GasEstimateView | None = None
     payment_expires_at: str | None = None
+    payment_expires_in: str | None = None
     receiver_wallet: str | None = None
     tx_hash: str | None = None
+    tx_hash_status: StatusBadge | str | None = None
     failure_reason: str | None = None
+    order_items: tuple[CheckoutOrderItemView, ...] = ()
+    actions: tuple[CheckoutAction, ...] = ()
     timeline: tuple[CheckoutTimelineItem, ...] = ()
     updated_at: str | None = None
 
@@ -148,6 +200,7 @@ class CheckoutViewModel:
             "wallet_address",
             "network_label",
             "payment_expires_at",
+            "payment_expires_in",
             "receiver_wallet",
             "tx_hash",
             "failure_reason",
@@ -162,6 +215,10 @@ class CheckoutViewModel:
             raise ValueError("CheckoutViewModel.token_amount must be a MoneyView or None")
         if self.gas_estimate is not None and not isinstance(self.gas_estimate, GasEstimateView):
             raise ValueError("CheckoutViewModel.gas_estimate must be a GasEstimateView or None")
+        if self.tx_hash_status is not None and not isinstance(self.tx_hash_status, StatusBadge):
+            object.__setattr__(self, "tx_hash_status", StatusBadge(str(self.tx_hash_status)))
+        object.__setattr__(self, "order_items", _coerce_tuple(self.order_items, CheckoutOrderItemView, "CheckoutViewModel.order_items"))
+        object.__setattr__(self, "actions", _coerce_tuple(self.actions, CheckoutAction, "CheckoutViewModel.actions"))
         object.__setattr__(self, "timeline", _coerce_tuple(self.timeline, CheckoutTimelineItem, "CheckoutViewModel.timeline"))
 
 
@@ -299,6 +356,8 @@ def _readonly_mapping(value: Mapping[str, Any], field_name: str) -> Mapping[str,
 
 
 __all__ = [
+    "CheckoutAction",
+    "CheckoutOrderItemView",
     "CheckoutTimelineItem",
     "CheckoutViewModel",
     "CopyToken",
