@@ -26,6 +26,18 @@ from .observability import (
     OperatorWorkerSnapshot,
     PostgresOperatorObservabilityQuery,
 )
+from .smoke import (
+    AVAILABLE_SMOKE_SCENARIOS,
+    SMOKE_CONTRACT,
+    UNKNOWN_SMOKE_SCENARIO_ERROR,
+    SmokeResult,
+    SmokeScenarioResult,
+    SmokeStatus,
+    SmokeStep,
+    UnknownSmokeScenario,
+    describe_smoke_registry,
+    run_smoke_scenario,
+)
 from .workers import (
     KafkaConsumerWorker,
     OutboxRelayWorker,
@@ -38,6 +50,7 @@ from .workers import (
 )
 
 __all__ = [
+    "AVAILABLE_SMOKE_SCENARIOS",
     "Clock",
     "CommandDispatchResult",
     "CommandDispatchStatus",
@@ -63,10 +76,19 @@ __all__ = [
     "PaymentTimeoutWorker",
     "RuntimeConfig",
     "RuntimeContainer",
+    "SMOKE_CONTRACT",
+    "SmokeResult",
+    "SmokeScenarioResult",
+    "SmokeStatus",
+    "SmokeStep",
     "PostgresOperatorObservabilityQuery",
+    "UNKNOWN_SMOKE_SCENARIO_ERROR",
+    "UnknownSmokeScenario",
     "WorkerBatchResult",
     "WorkerLoopOptions",
     "WorkerRunSummary",
     "WorkerRuntime",
+    "describe_smoke_registry",
     "dispatch_runtime_command",
+    "run_smoke_scenario",
 ]

@@ -61,6 +61,8 @@ class ContractRuntimeContainer:
             )
         if command_name == "ui":
             return self._dispatch_ui_preview(command_parts[1] if len(command_parts) > 1 else None)
+        if command_name == "smoke":
+            return self._dispatch_smoke(command_parts[1] if len(command_parts) > 1 else None)
         return CommandDispatchResult.failed(
             command=command_name,
             summary=f"unknown runtime command: {command_name}",
@@ -93,6 +95,33 @@ class ContractRuntimeContainer:
             details={"preview": preview},
         )
 
+    def _dispatch_smoke(self, scenario: str | None) -> CommandDispatchResult:
+        from token_payments.runtime.smoke import UnknownSmokeScenario, describe_smoke_registry, run_smoke_scenario
+
+        if scenario is None:
+            registry = describe_smoke_registry()
+            return CommandDispatchResult.succeeded(
+                command="smoke",
+                summary=f"listed {len(registry['availableScenarios'])} reserved smoke scenario(s)",
+                details={"smoke": registry},
+            )
+
+        try:
+            result = run_smoke_scenario(scenario)
+        except UnknownSmokeScenario as exc:
+            return CommandDispatchResult.failed(
+                command="smoke",
+                summary=f"unknown smoke scenario: {exc.scenario}",
+                exit_code=64,
+                details={"error": exc.to_error()},
+            )
+
+        return CommandDispatchResult.succeeded(
+            command="smoke",
+            summary=result.summary,
+            details={"smoke": result.to_dict()},
+        )
+
 
 def dispatch_runtime_command(
     argv: Sequence[str] | None = None,
@@ -109,7 +138,7 @@ def _command_from_args(args: Sequence[str]) -> str:
     if not args:
         return "health"
     command = _normalize_command(args[0])
-    if command == "ui" and len(args) > 1:
+    if command in {"ui", "smoke"} and len(args) > 1:
         selector = args[1].strip() if isinstance(args[1], str) else ""
         if selector:
             return f"{command} {selector}"
