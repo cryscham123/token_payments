@@ -37,7 +37,10 @@
     {
       "step": 4,
       "name": "kafka-listener-adapters",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-10T09:10:33+0900",
+      "completed_at": "2026-05-10T09:23:17+0900",
+      "summary": "Kafka inbound listener adapter를 추가해 checkout event→process manager→outbox command 저장, inventory/payment/store approval command dispatch, processed message/command 중복 무시와 malformed payload 거부를 fake 기반 테스트로 검증했다."
     },
     {
       "step": 5,
