@@ -1,0 +1,171 @@
+"""Framework-neutral order API handlers."""
+
+from __future__ import annotations
+
+from typing import Any, Mapping
+
+from token_payments.contexts.order.application import (
+    CreateOrderCommand,
+    CreateOrderItem,
+    OrderApplicationError,
+    OrderCreationResult,
+    OrderErrorCode,
+    OrderUseCase,
+)
+from token_payments.contexts.order.domain import Address, OrderItem
+from token_payments.shared.domain import Crypto
+
+from .contracts import ApiRequest, ApiResponse, json_response
+
+
+class OrdersApi:
+    """Order API facade that can be adapted by any HTTP framework."""
+
+    def __init__(self, use_case: OrderUseCase) -> None:
+        self._use_case = use_case
+
+    def create_order(self, request: ApiRequest) -> ApiResponse:
+        try:
+            body = _request_body(request)
+            result = self._use_case.createOrder(
+                CreateOrderCommand(
+                    authenticated_user_id=_authenticated_user_id(request),
+                    store_id=_required_text(body, "storeId"),
+                    delivery_address=_address_from_body(_required_mapping(body, "deliveryAddress")),
+                    items=_items_from_body(body),
+                    requested_at=request.received_at,
+                    causation_id=request.request_id,
+                )
+            )
+            return json_response(_order_creation_payload(result), status_code=201, request_id=request.request_id)
+        except (OrderApplicationError, ValueError) as exc:
+            return _error_response(_coerce_order_error(exc), request.request_id)
+
+
+def _order_creation_payload(result: OrderCreationResult) -> dict[str, Any]:
+    order = result.order
+    return {
+        "order": {
+            "orderId": str(order.order_id),
+            "trackingId": str(order.tracking_id),
+            "customerId": str(order.customer_id),
+            "storeId": str(order.store_id),
+            "status": order.status.value,
+            "deliveryAddress": {
+                "id": order.delivery_address.id,
+                "street": order.delivery_address.street,
+            },
+            "totalAmount": _crypto_payload(result.total_amount),
+            "items": [_item_payload(item) for item in order.items],
+        }
+    }
+
+
+def _item_payload(item: OrderItem) -> dict[str, Any]:
+    snapshot = item.product_snapshot
+    return {
+        "orderItemId": str(item.order_item_id),
+        "productId": str(snapshot.product_id),
+        "name": snapshot.name,
+        "quantity": item.quantity,
+        "unitPrice": _crypto_payload(snapshot.price),
+        "subTotal": _crypto_payload(item.sub_total),
+    }
+
+
+def _crypto_payload(value: Crypto) -> dict[str, Any]:
+    return {
+        "amount": format(value.amount, "f"),
+        "symbol": value.symbol,
+        "chainId": value.chain_id,
+        "tokenAddress": str(value.token_address) if value.token_address is not None else None,
+        "decimals": value.decimals,
+    }
+
+
+def _request_body(request: ApiRequest) -> Mapping[str, Any]:
+    if not isinstance(request.body, Mapping):
+        raise OrderApplicationError(OrderErrorCode.VALIDATION_ERROR, "request body must be an object")
+    return request.body
+
+
+def _authenticated_user_id(request: ApiRequest) -> str:
+    for key, value in request.headers.items():
+        if key.lower() == "x-user-id" and value.strip():
+            return value.strip()
+    raise OrderApplicationError(OrderErrorCode.VALIDATION_ERROR, "X-User-Id header is required")
+
+
+def _address_from_body(body: Mapping[str, Any]) -> Address:
+    return Address(
+        id=_required_text(body, "id"),
+        street=_required_text(body, "street"),
+    )
+
+
+def _items_from_body(body: Mapping[str, Any]) -> tuple[CreateOrderItem, ...]:
+    raw_items = body.get("items")
+    if not isinstance(raw_items, list) or not raw_items:
+        raise OrderApplicationError(OrderErrorCode.VALIDATION_ERROR, "items must contain at least one item")
+    items: list[CreateOrderItem] = []
+    for raw_item in raw_items:
+        if not isinstance(raw_item, Mapping):
+            raise OrderApplicationError(OrderErrorCode.VALIDATION_ERROR, "items must contain objects")
+        items.append(
+            CreateOrderItem(
+                product_id=_required_text(raw_item, "productId"),
+                quantity=_required_int(raw_item, "quantity"),
+            )
+        )
+    return tuple(items)
+
+
+def _required_mapping(body: Mapping[str, Any], key: str) -> Mapping[str, Any]:
+    value = body.get(key)
+    if not isinstance(value, Mapping):
+        raise OrderApplicationError(OrderErrorCode.VALIDATION_ERROR, f"{key} must be an object")
+    return value
+
+
+def _required_text(body: Mapping[str, Any], key: str) -> str:
+    value = body.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise OrderApplicationError(OrderErrorCode.VALIDATION_ERROR, f"{key} is required")
+    return value.strip()
+
+
+def _required_int(body: Mapping[str, Any], key: str) -> int:
+    value = body.get(key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise OrderApplicationError(OrderErrorCode.VALIDATION_ERROR, f"{key} must be an integer")
+    return value
+
+
+def _error_response(error: OrderApplicationError, request_id: str | None) -> ApiResponse:
+    return json_response(
+        {
+            "error": {
+                "code": error.code.value,
+                "message": str(error),
+            }
+        },
+        status_code=_status_for_error(error.code),
+        request_id=request_id,
+    )
+
+
+def _status_for_error(code: OrderErrorCode) -> int:
+    return {
+        OrderErrorCode.CUSTOMER_NOT_FOUND: 404,
+        OrderErrorCode.STORE_NOT_FOUND: 404,
+        OrderErrorCode.VALIDATION_ERROR: 400,
+    }[code]
+
+
+def _coerce_order_error(error: OrderApplicationError | ValueError) -> OrderApplicationError:
+    if isinstance(error, OrderApplicationError):
+        return error
+    return OrderApplicationError(OrderErrorCode.VALIDATION_ERROR, str(error))
+
+
+__all__ = ["OrdersApi"]
