@@ -46,6 +46,62 @@ CREATE TABLE IF NOT EXISTS processed_commands (
 CREATE INDEX IF NOT EXISTS idx_processed_commands_order_id
     ON processed_commands (order_id);
 
+CREATE TABLE IF NOT EXISTS auth_users (
+    user_id UUID PRIMARY KEY,
+    wallet_address TEXT NOT NULL UNIQUE,
+    role TEXT NOT NULL CHECK (role IN ('CUSTOMER', 'STORE_OWNER', 'ADMIN')),
+    active BOOLEAN NOT NULL DEFAULT true,
+    last_login_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_users_wallet_address
+    ON auth_users (wallet_address);
+
+CREATE TABLE IF NOT EXISTS auth_login_challenges (
+    nonce_value TEXT PRIMARY KEY,
+    wallet_address TEXT NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('ISSUED', 'VERIFIED', 'EXPIRED', 'REJECTED')),
+    issued_at TIMESTAMPTZ NOT NULL,
+    verified_at TIMESTAMPTZ,
+    rejected_reason TEXT CHECK (
+        rejected_reason IS NULL OR rejected_reason IN (
+            'INVALID_SIGNATURE',
+            'EXPIRED_CHALLENGE',
+            'REUSED_NONCE',
+            'WALLET_MISMATCH'
+        )
+    ),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_login_challenges_wallet_status
+    ON auth_login_challenges (wallet_address, status, issued_at);
+
+CREATE TABLE IF NOT EXISTS auth_sessions (
+    session_id UUID PRIMARY KEY,
+    user_id UUID NOT NULL,
+    wallet_address TEXT NOT NULL,
+    refresh_token_hash TEXT NOT NULL,
+    refresh_token_salt TEXT NOT NULL,
+    refresh_token_rotation_version INTEGER NOT NULL CHECK (refresh_token_rotation_version >= 0),
+    device_id TEXT NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    revoked_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (refresh_token_hash, refresh_token_salt, refresh_token_rotation_version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id
+    ON auth_sessions (user_id);
+
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires_at
+    ON auth_sessions (expires_at);
+
 CREATE TABLE IF NOT EXISTS product_inventory (
     product_id UUID NOT NULL,
     store_id UUID NOT NULL,
