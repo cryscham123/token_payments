@@ -17,6 +17,21 @@ docker compose --env-file .env up -d postgres kafka kafka-ui pgweb test_network
 
 Use `.env.example` as the template for local `.env` values. The local blockchain RPC points at `test_network` on chain id `1337`. Do not commit real private keys, API keys, seed phrases, or production credentials.
 
+Local Docker smoke order:
+
+```bash
+cp .env.example .env
+PYTHONPATH=app python3 -m token_payments smoke compose-readiness
+docker compose --env-file .env up -d postgres kafka kafka-ui pgweb test_network
+PYTHONPATH=app python3 -m token_payments health
+PYTHONPATH=app python3 -m token_payments worker
+PYTHONPATH=app python3 -m token_payments ui customer
+PYTHONPATH=app python3 -m token_payments ui operator
+PYTHONPATH=app python3 -m token_payments smoke happy-path-checkout
+PYTHONPATH=app python3 -m token_payments smoke compensation-checkout
+docker compose --env-file .env down
+```
+
 ## Verification Commands
 
 ```bash

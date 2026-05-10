@@ -7,14 +7,62 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
 import math
+from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Sequence
 from uuid import UUID
 
 
 SMOKE_CONTRACT = "CommandDispatchResult.details.smoke"
 UNKNOWN_SMOKE_SCENARIO_ERROR = "UNKNOWN_SMOKE_SCENARIO"
 AVAILABLE_SMOKE_SCENARIOS = ("happy-path-checkout", "compensation-checkout", "compose-readiness")
+COMPOSE_READINESS_REQUIRED_ENV_KEYS = (
+    "TEST_NETWORK_PRIVATE_KEY",
+    "TEST_NETWORK_ACCOUNT",
+    "TEST_NETWORK_NETWORK_ID",
+    "TEST_NETWORK_DB_PATH",
+    "POSTGRES_DB",
+    "POSTGRES_USER",
+    "POSTGRES_PASSWORD",
+    "TZ",
+    "RUNTIME_API_HOST",
+    "RUNTIME_API_PORT",
+    "RUNTIME_REQUEST_TIMEOUT_SECONDS",
+    "RUNTIME_WORKER_BATCH_SIZE",
+    "RUNTIME_WORKER_POLL_INTERVAL_SECONDS",
+    "RUNTIME_RECEIPT_POLL_INTERVAL_SECONDS",
+    "ADAPTER_POSTGRES_DSN",
+    "ADAPTER_KAFKA_BOOTSTRAP_SERVERS",
+    "ADAPTER_KAFKA_CLIENT_ID",
+    "ADAPTER_OUTBOX_BATCH_SIZE",
+    "ADAPTER_OUTBOX_POLL_INTERVAL_SECONDS",
+    "ADAPTER_OUTBOX_RETRY_MAX_ATTEMPTS",
+    "ADAPTER_OUTBOX_RETRY_INITIAL_DELAY_SECONDS",
+    "ADAPTER_OUTBOX_RETRY_MAX_DELAY_SECONDS",
+    "ADAPTER_WALLET_SIGNATURE_DOMAIN",
+    "ADAPTER_BLOCKCHAIN_RPC_URL",
+    "ADAPTER_BLOCKCHAIN_CHAIN_ID",
+    "ADAPTER_BLOCKCHAIN_NATIVE_SYMBOL",
+    "ADAPTER_BLOCKCHAIN_NATIVE_DECIMALS",
+    "ADAPTER_BLOCKCHAIN_TOKEN_ADDRESS",
+    "ADAPTER_BLOCKCHAIN_GAS_BUFFER_RATE",
+)
+COMPOSE_READINESS_SENSITIVE_PLACEHOLDER_KEYS = (
+    "TEST_NETWORK_PRIVATE_KEY",
+    "TEST_NETWORK_ACCOUNT",
+    "POSTGRES_PASSWORD",
+    "ADAPTER_POSTGRES_DSN",
+    "ADAPTER_BLOCKCHAIN_TOKEN_ADDRESS",
+)
+COMPOSE_READINESS_REQUIRED_SERVICES = ("postgres", "kafka", "kafka-ui", "pgweb", "test_network")
+COMPOSE_READINESS_COMMAND_SEQUENCE = (
+    "health",
+    "worker",
+    "ui customer",
+    "ui operator",
+    "smoke happy-path-checkout",
+    "smoke compensation-checkout",
+)
 
 JsonValue = None | bool | int | float | str | list["JsonValue"] | dict[str, "JsonValue"]
 SmokeRunner = Callable[[], "SmokeScenarioResult"]
@@ -624,6 +672,123 @@ def _run_compensation_checkout() -> SmokeScenarioResult:
             "cancelOrderHandlerWired": False,
             "duplicateSummary": duplicate_summary,
         },
+    )
+
+
+def _run_compose_readiness() -> SmokeScenarioResult:
+    root = _repository_root()
+    env_path = root / ".env.example"
+    compose_path = root / "docker-compose.yml"
+    init_script_path = root / "app/postgres/init.d/001-token-payments-schema.sql"
+    test_network_dockerfile_path = root / "app/test_network/Dockerfile"
+
+    env_values, env_errors = _read_env_example(env_path)
+    env_errors.extend(_validate_env_example(env_values))
+
+    service_blocks, compose_errors = _read_compose_service_blocks(compose_path)
+    service_contracts = {
+        service_name: _compose_service_contract(service_blocks.get(service_name, ()))
+        for service_name in COMPOSE_READINESS_REQUIRED_SERVICES
+    }
+    compose_errors.extend(_validate_compose_contracts(root, service_blocks, service_contracts))
+
+    path_details = {
+        "postgresInitScript": _relative_path(init_script_path, root),
+        "testNetworkDockerfile": _relative_path(test_network_dockerfile_path, root),
+    }
+    path_errors = [
+        f"{path} is missing"
+        for path, exists in (
+            (path_details["postgresInitScript"], init_script_path.exists()),
+            (path_details["testNetworkDockerfile"], test_network_dockerfile_path.exists()),
+        )
+        if not exists
+    ]
+
+    runtime_command_chain = [
+        {
+            "command": command,
+            "boundedJson": True,
+            "startsLongRunningProcess": False,
+        }
+        for command in COMPOSE_READINESS_COMMAND_SEQUENCE
+    ]
+    details = {
+        "dockerStarted": False,
+        "networkCalls": False,
+        "envExample": {
+            "path": _relative_path(env_path, root),
+            "requiredKeys": list(COMPOSE_READINESS_REQUIRED_ENV_KEYS),
+            "placeholderSafe": not env_errors,
+            "sensitivePlaceholderKeys": list(COMPOSE_READINESS_SENSITIVE_PLACEHOLDER_KEYS),
+        },
+        "compose": {
+            "path": _relative_path(compose_path, root),
+            "requiredServices": list(COMPOSE_READINESS_REQUIRED_SERVICES),
+            "serviceNames": [
+                service_name
+                for service_name in COMPOSE_READINESS_REQUIRED_SERVICES
+                if service_name in service_blocks
+            ],
+            "discoveredServiceNames": list(service_blocks),
+            "serviceContracts": service_contracts,
+        },
+        "paths": path_details,
+        "runtimeCommandChain": runtime_command_chain,
+    }
+    errors = env_errors + compose_errors + path_errors
+    steps = (
+        _compose_readiness_step(
+            ".env.example contract",
+            "committed env example contains required local-only placeholders",
+            {"missingKeys": _missing_env_keys(env_values), "placeholderSafe": not env_errors},
+            env_errors,
+        ),
+        _compose_readiness_step(
+            "docker-compose service contract",
+            "committed compose file defines required local infrastructure services",
+            {
+                "requiredServices": list(COMPOSE_READINESS_REQUIRED_SERVICES),
+                "serviceNames": details["compose"]["serviceNames"],
+            },
+            compose_errors,
+        ),
+        _compose_readiness_step(
+            "compose path references",
+            "compose-referenced init script and test network Dockerfile exist in the repository",
+            path_details,
+            path_errors,
+        ),
+        _compose_readiness_step(
+            "runtime command readiness chain",
+            "bounded runtime commands can be run after local compose startup",
+            {"commands": runtime_command_chain},
+            (),
+        ),
+    )
+
+    if errors:
+        return SmokeScenarioResult(
+            scenario="compose-readiness",
+            result=SmokeResult(
+                status=SmokeStatus.FAILED,
+                summary="compose readiness found committed env, compose, or path contract violations",
+            ),
+            steps=steps,
+            details=details | {"errors": errors},
+        )
+
+    return SmokeScenarioResult(
+        scenario="compose-readiness",
+        result=SmokeResult(
+            status=SmokeStatus.PASSED,
+            summary=(
+                "compose readiness validated committed env, compose, path, and runtime command contracts "
+                "without starting Docker"
+            ),
+        ),
+        steps=steps,
+        details=details,
     )
 
 
@@ -1295,6 +1460,275 @@ def _single_decision(decisions: tuple[Any, ...], expected_name: str) -> Any:
     return matches[0]
 
 
+def _repository_root() -> Path:
+    return Path(__file__).resolve().parents[3]
+
+
+def _read_env_example(path: Path) -> tuple[dict[str, str], list[str]]:
+    if not path.exists():
+        return {}, [f"{_relative_path(path, _repository_root())} is missing"]
+
+    values: dict[str, str] = {}
+    errors: list[str] = []
+    for line_number, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            errors.append(f".env.example:{line_number} is not KEY=VALUE syntax")
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key:
+            errors.append(f".env.example:{line_number} has an empty key")
+            continue
+        values[key] = value.strip()
+    return values, errors
+
+
+def _validate_env_example(values: Mapping[str, str]) -> list[str]:
+    errors = [f".env.example is missing required key {key}" for key in _missing_env_keys(values)]
+    for key in COMPOSE_READINESS_SENSITIVE_PLACEHOLDER_KEYS:
+        value = values.get(key)
+        if not value or not _is_safe_committed_placeholder(value):
+            errors.append(f".env.example key {key} must use a local-only placeholder value")
+    return errors
+
+
+def _missing_env_keys(values: Mapping[str, str]) -> list[str]:
+    return [key for key in COMPOSE_READINESS_REQUIRED_ENV_KEYS if key not in values]
+
+
+def _is_safe_committed_placeholder(value: str) -> bool:
+    normalized = value.lower()
+    return "replace_with_local_dev_only" in normalized
+
+
+def _read_compose_service_blocks(path: Path) -> tuple[dict[str, tuple[str, ...]], list[str]]:
+    if not path.exists():
+        return {}, [f"{_relative_path(path, _repository_root())} is missing"]
+
+    services: dict[str, list[str]] = {}
+    in_services = False
+    current_service: str | None = None
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = _indent_width(raw_line)
+        if indent == 0 and stripped == "services:":
+            in_services = True
+            current_service = None
+            continue
+        if not in_services:
+            continue
+        if indent == 0:
+            break
+        if indent == 2 and stripped.endswith(":") and not stripped.startswith("- "):
+            service_name = stripped[:-1]
+            services[service_name] = []
+            current_service = service_name
+            continue
+        if current_service is not None:
+            services[current_service].append(raw_line)
+
+    if not in_services:
+        return {}, ["docker-compose.yml is missing top-level services block"]
+    return {service: tuple(block) for service, block in services.items()}, []
+
+
+def _validate_compose_contracts(
+    root: Path,
+    service_blocks: Mapping[str, tuple[str, ...]],
+    service_contracts: Mapping[str, Mapping[str, Any]],
+) -> list[str]:
+    errors = [
+        f"docker-compose.yml is missing required service {service}"
+        for service in COMPOSE_READINESS_REQUIRED_SERVICES
+        if service not in service_blocks
+    ]
+    postgres = service_contracts.get("postgres", {})
+    test_network = service_contracts.get("test_network", {})
+    pgweb = service_contracts.get("pgweb", {})
+    kafka_ui = service_contracts.get("kafka-ui", {})
+
+    if ".env" not in postgres.get("envFile", ()):
+        errors.append("postgres service must reference .env through env_file")
+    if not postgres.get("initDirectoryMounted"):
+        errors.append("postgres service must mount app/postgres/init.d into docker-entrypoint-initdb.d")
+
+    if ".env" not in test_network.get("envFile", ()):
+        errors.append("test_network service must reference .env through env_file")
+    if test_network.get("buildContext") != "app/test_network":
+        errors.append("test_network service must build from app/test_network")
+    if not test_network.get("dataVolumeMounted"):
+        errors.append("test_network service must mount app/test_network/data at TEST_NETWORK_DB_PATH")
+
+    if ".env" not in pgweb.get("envFile", ()):
+        errors.append("pgweb service must reference .env through env_file")
+    if "postgres" not in pgweb.get("dependsOn", ()):
+        errors.append("pgweb service must depend on postgres")
+    if "kafka" not in kafka_ui.get("dependsOn", ()):
+        errors.append("kafka-ui service must depend on kafka")
+
+    build_context = test_network.get("buildContext")
+    if isinstance(build_context, str) and build_context:
+        dockerfile_path = root / build_context / "Dockerfile"
+        if not dockerfile_path.exists():
+            errors.append(f"{_relative_path(dockerfile_path, root)} is missing")
+    return errors
+
+
+def _compose_service_contract(block: tuple[str, ...]) -> dict[str, JsonValue]:
+    env_file = _compose_list_for_key(block, "env_file")
+    volumes = _compose_list_for_key(block, "volumes")
+    depends_on = _compose_mapping_keys_for_key(block, "depends_on")
+    build_context = _compose_nested_scalar(block, "build", "context")
+    return {
+        "containerName": _compose_scalar_for_key(block, "container_name"),
+        "image": _compose_scalar_for_key(block, "image"),
+        "envFile": env_file,
+        "volumes": volumes,
+        "dependsOn": depends_on,
+        "buildContext": build_context,
+        "initDirectoryMounted": any(
+            "app/postgres/init.d:/docker-entrypoint-initdb.d" in volume for volume in volumes
+        ),
+        "dataVolumeMounted": any("app/test_network/data:${TEST_NETWORK_DB_PATH}" in volume for volume in volumes),
+    }
+
+
+def _compose_base_indent(block: tuple[str, ...]) -> int | None:
+    indents = [
+        _indent_width(line)
+        for line in block
+        if line.strip() and not line.strip().startswith("#") and not line.strip().startswith("- ")
+    ]
+    return min(indents) if indents else None
+
+
+def _compose_scalar_for_key(block: tuple[str, ...], key: str) -> str | None:
+    base_indent = _compose_base_indent(block)
+    if base_indent is None:
+        return None
+    prefix = f"{key}:"
+    for line in block:
+        stripped = line.strip()
+        if _indent_width(line) == base_indent and stripped.startswith(prefix):
+            value = stripped[len(prefix) :].strip()
+            return _unquote_yamlish_value(value) if value else None
+    return None
+
+
+def _compose_list_for_key(block: tuple[str, ...], key: str) -> list[JsonValue]:
+    base_indent = _compose_base_indent(block)
+    if base_indent is None:
+        return []
+    prefix = f"{key}:"
+    for index, line in enumerate(block):
+        stripped = line.strip()
+        indent = _indent_width(line)
+        if indent != base_indent or not stripped.startswith(prefix):
+            continue
+        scalar_value = stripped[len(prefix) :].strip()
+        if scalar_value:
+            return [_unquote_yamlish_value(scalar_value)]
+        values: list[JsonValue] = []
+        for nested in block[index + 1 :]:
+            nested_stripped = nested.strip()
+            if not nested_stripped or nested_stripped.startswith("#"):
+                continue
+            nested_indent = _indent_width(nested)
+            if nested_indent <= indent:
+                break
+            if nested_stripped.startswith("- "):
+                values.append(_unquote_yamlish_value(nested_stripped[2:].strip()))
+        return values
+    return []
+
+
+def _compose_nested_scalar(block: tuple[str, ...], parent_key: str, child_key: str) -> str | None:
+    base_indent = _compose_base_indent(block)
+    if base_indent is None:
+        return None
+    parent_prefix = f"{parent_key}:"
+    child_prefix = f"{child_key}:"
+    for index, line in enumerate(block):
+        stripped = line.strip()
+        indent = _indent_width(line)
+        if indent != base_indent or not stripped.startswith(parent_prefix):
+            continue
+        for nested in block[index + 1 :]:
+            nested_stripped = nested.strip()
+            if not nested_stripped or nested_stripped.startswith("#"):
+                continue
+            nested_indent = _indent_width(nested)
+            if nested_indent <= indent:
+                break
+            if nested_stripped.startswith(child_prefix):
+                return _unquote_yamlish_value(nested_stripped[len(child_prefix) :].strip())
+    return None
+
+
+def _compose_mapping_keys_for_key(block: tuple[str, ...], key: str) -> list[JsonValue]:
+    base_indent = _compose_base_indent(block)
+    if base_indent is None:
+        return []
+    prefix = f"{key}:"
+    for index, line in enumerate(block):
+        stripped = line.strip()
+        indent = _indent_width(line)
+        if indent != base_indent or not stripped.startswith(prefix):
+            continue
+        keys: list[JsonValue] = []
+        for nested in block[index + 1 :]:
+            nested_stripped = nested.strip()
+            if not nested_stripped or nested_stripped.startswith("#"):
+                continue
+            nested_indent = _indent_width(nested)
+            if nested_indent <= indent:
+                break
+            if nested_stripped.endswith(":") and not nested_stripped.startswith("- "):
+                keys.append(nested_stripped[:-1])
+        return keys
+    return []
+
+
+def _compose_readiness_step(
+    name: str,
+    summary: str,
+    details: Mapping[str, Any],
+    errors: Sequence[str],
+) -> SmokeStep:
+    if errors:
+        return SmokeStep(
+            name=name,
+            result=SmokeResult(
+                status=SmokeStatus.FAILED,
+                summary=summary,
+                details=dict(details) | {"errors": list(errors)},
+            ),
+        )
+    return _passed_step(name, summary, details)
+
+
+def _indent_width(line: str) -> int:
+    return len(line) - len(line.lstrip(" "))
+
+
+def _unquote_yamlish_value(value: str) -> str:
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    return value
+
+
+def _relative_path(path: Path, root: Path) -> str:
+    try:
+        return path.relative_to(root).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
 def _passed_step(name: str, summary: str, details: Mapping[str, Any]) -> SmokeStep:
     return SmokeStep(name=name, result=SmokeResult(status=SmokeStatus.PASSED, summary=summary, details=details))
 
@@ -1505,6 +1939,7 @@ _SMOKE_RUNNERS: Mapping[str, SmokeRunner] = MappingProxyType(
     {
         "happy-path-checkout": _run_happy_path_checkout,
         "compensation-checkout": _run_compensation_checkout,
+        "compose-readiness": _run_compose_readiness,
     }
 )
 
