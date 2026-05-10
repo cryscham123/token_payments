@@ -37,7 +37,10 @@
     {
       "step": 4,
       "name": "worker-runtime-orchestration",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-10T14:28:26+0900",
+      "completed_at": "2026-05-10T14:37:05+0900",
+      "summary": "outbox relay, Kafka consumer, payment receipt polling, payment timeout scheduler를 주입형 bounded worker runtime으로 조립하고 worker entrypoint/fake 기반 orchestration 테스트를 추가했다."
     },
     {
       "step": 5,
