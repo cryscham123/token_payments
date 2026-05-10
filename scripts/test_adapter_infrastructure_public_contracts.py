@@ -127,7 +127,7 @@ def test_env_compose_and_postgres_schema_cover_adapter_infrastructure() -> None:
         "ADAPTER_OUTBOX_BATCH_SIZE=",
         "ADAPTER_WALLET_SIGNATURE_DOMAIN=",
         "ADAPTER_BLOCKCHAIN_RPC_URL=http://localhost:8545",
-        "ADAPTER_BLOCKCHAIN_CHAIN_ID=11155111",
+        "ADAPTER_BLOCKCHAIN_CHAIN_ID=1337",
     ):
         assert key in env_example
 

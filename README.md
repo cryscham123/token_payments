@@ -133,13 +133,36 @@ python3 .githooks/pre_commit_check.py
 
 ## API / Worker Runtime 검증
 
-API/worker runtime phase의 공통 계약은 framework-neutral request/response DTO, env 기반 runtime config, command dispatch result, composition root Protocol을 먼저 고정한다. 이 단계의 entrypoint는 runtime command 위임만 검증하며 long-running server나 worker를 시작하지 않는다.
+API/worker runtime phase는 다음 UI/e2e phase가 사용할 framework-neutral 계약을 고정한다. 현재 공개 계약은 다음을 포함한다.
+
+- API facades: `AuthApi`, `OrdersApi`, `CheckoutApi`, `PaymentsApi`, `OperatorApi`.
+- API DTO: `ApiRequest`, `ApiResponse`, `json_response`.
+- Runtime: `RuntimeConfig`, `RuntimeContainer`, `ContractRuntimeContainer`, `dispatch_runtime_command`.
+- Workers: `WorkerRuntime`, `OutboxRelayWorker`, `KafkaConsumerWorker`, `PaymentReceiptPollingWorker`, `PaymentTimeoutWorker`.
+- Operator observability: read-only dashboard/detail snapshots, retry candidate 표시, worker health snapshot.
+
+Entrypoint는 runtime command 위임만 검증한다. `health`, `worker`, `api` command는 bounded contract를 반환하며 long-running server를 시작하지 않는다.
 
 ```bash
 .venv/bin/python -m pytest \
   scripts/test_runtime_contract_foundation.py \
+  scripts/test_auth_api_session_runtime.py \
+  scripts/test_order_api_checkout_start.py \
+  scripts/test_checkout_tracking_payment_api.py \
+  scripts/test_worker_runtime_orchestration.py \
+  scripts/test_operator_observability_api.py \
+  scripts/test_api_worker_runtime_public_contracts.py \
   scripts/test_adapter_infrastructure_public_contracts.py \
+  scripts/test_checkout_core_public_contracts.py \
   scripts/test_foundation_public_contracts.py
 .venv/bin/python scripts/validate_phases.py
 PYTHONPATH=app .venv/bin/python -m token_payments health
+PYTHONPATH=app .venv/bin/python -m token_payments worker
 ```
+
+다음 phase 후보는 UI/e2e 중심으로 진행한다.
+
+- customer checkout UI: 지갑 연결, 서명 대기, txHash 제출, checkout tracking 표시.
+- operator status dashboard: 주문/결제/outbox/worker/error 상태 테이블과 상세 패널.
+- docker compose integration smoke: `.env.example` 기반 PostgreSQL, Kafka, test network 기동과 runtime health 확인.
+- happy-path e2e checkout: 주문 생성부터 재고 예약, 결제 제출/확인, 가게 승인까지의 정상 sequence 검증.

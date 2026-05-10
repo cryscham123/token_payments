@@ -17,7 +17,8 @@
     },
     {
       "dir": "3-api-worker-runtime",
-      "status": "pending"
+      "status": "completed",
+      "completed_at": "2026-05-10T19:04:26+0900"
     }
   ]
 }
