@@ -61,8 +61,6 @@ services:
       - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
       - KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0
       - KAFKA_LOG_DIRS=/var/lib/kafka/data
-    volumes:
-      - "${PWD}/app/kafka/data:/var/lib/kafka/data"
 
   kafka-ui:
     container_name: kafka-ui
