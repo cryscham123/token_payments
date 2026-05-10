@@ -13,7 +13,10 @@
     {
       "step": 1,
       "name": "happy-path-checkout-e2e",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-11T06:57:22+0900",
+      "completed_at": "2026-05-11T07:05:36+0900",
+      "summary": "주문 생성, 재고 예약, 결제 생성/txHash 제출/receipt 확인, 가게 승인까지 실제 application service와 CheckoutProcessManager를 호출하는 deterministic in-memory happy-path smoke를 추가했다."
     },
     {
       "step": 2,
