@@ -13,7 +13,10 @@
     {
       "step": 1,
       "name": "customer-checkout-ui",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-10T19:21:00+0900",
+      "completed_at": "2026-05-10T19:30:42+0900",
+      "summary": "고객 checkout UI에 상품 스냅샷, 결제 실행 패널, 고정 7단계 timeline, action model, responsive layout과 fixture 기반 semantic 테스트를 추가했다."
     },
     {
       "step": 2,
