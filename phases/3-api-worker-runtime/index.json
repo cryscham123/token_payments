@@ -53,7 +53,10 @@
     {
       "step": 6,
       "name": "api-worker-runtime-verification",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-10T18:52:48+0900",
+      "completed_at": "2026-05-10T19:05:18+0900",
+      "summary": "API/worker runtime public contract 테스트를 추가해 API facades, worker/runtime exports, CLI JSON entrypoint, import boundary, env/compose/schema 일관성을 검증하고 README/app README의 runtime 명령과 UI/e2e 다음 phase 후보를 정리했다."
     }
   ],
   "created_at": "2026-05-10T13:39:45+0900"
