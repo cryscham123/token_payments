@@ -209,3 +209,43 @@ python3 scripts/validate_phases.py
 - docker compose integration smoke: `.env.example` 기반 PostgreSQL, Kafka, test network 기동과 runtime health/worker/ui preview 확인.
 - happy-path e2e checkout: 주문 생성부터 재고 예약, 결제 제출/확인, 가게 승인까지 정상 sequence 검증.
 - compensation e2e checkout: 결제 실패/만료/가게 반려의 보상 command 멱등성 검증.
+
+## E2E Integration Readiness 검증
+
+E2E readiness phase는 실제 Docker, PostgreSQL, Kafka, Blockchain RPC를 자동으로 기동하지 않고 다음 phase로 넘길 수 있는 public contract와 smoke command를 고정한다. `token_payments.runtime.smoke`는 표준 라이브러리 import boundary를 유지하며 결과 payload는 `CommandDispatchResult.details.smoke` 아래 JSON primitive로 직렬화된다.
+
+```bash
+python3 -m pytest \
+  scripts/test_e2e_smoke_contract_foundation.py \
+  scripts/test_happy_path_checkout_e2e.py \
+  scripts/test_compensation_checkout_e2e.py \
+  scripts/test_compose_readiness_smoke.py \
+  scripts/test_e2e_integration_public_contracts.py
+PYTHONPATH=app python3 -m token_payments smoke
+PYTHONPATH=app python3 -m token_payments smoke happy-path-checkout
+PYTHONPATH=app python3 -m token_payments smoke compensation-checkout
+PYTHONPATH=app python3 -m token_payments smoke compose-readiness
+python3 scripts/validate_phases.py
+python3 .githooks/pre_commit_check.py
+```
+
+Manual Docker compose smoke order:
+
+```bash
+cp .env.example .env
+PYTHONPATH=app python3 -m token_payments smoke compose-readiness
+docker compose --env-file .env up -d postgres kafka kafka-ui pgweb test_network
+PYTHONPATH=app python3 -m token_payments health
+PYTHONPATH=app python3 -m token_payments worker
+PYTHONPATH=app python3 -m token_payments ui customer
+PYTHONPATH=app python3 -m token_payments ui operator
+PYTHONPATH=app python3 -m token_payments smoke happy-path-checkout
+PYTHONPATH=app python3 -m token_payments smoke compensation-checkout
+docker compose --env-file .env down
+```
+
+다음 phase 후보:
+
+- real docker compose integration: 컨테이너를 실제로 기동하고, DB schema applied by app/postgres/init.d/001-token-payments-schema.sql 상태를 확인하며, Kafka topic publish/consume과 bounded runtime smoke command chain을 검증한다.
+- HTTP framework adapter: framework-neutral API facade를 실제 ASGI/WSGI route로 연결하고 auth/order/checkout/payment/operator endpoint contract를 HTTP response로 고정한다.
+- order status projection/handler gap: `CancelOrderCommand` 처리와 payment/store approval event 기반 order status update handler wiring을 추가해 compensation smoke의 남은 gap을 닫는다.

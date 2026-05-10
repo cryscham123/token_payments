@@ -95,6 +95,46 @@ Next phase candidates:
 - happy-path e2e checkout: order creation through inventory reservation, payment confirmation, and store approval.
 - compensation e2e checkout: payment failure, payment expiration, and store rejection compensation command idempotency.
 
+## E2E Integration Readiness
+
+The final readiness phase keeps smoke runtime execution deterministic and local-only. It verifies public exports, CLI dispatch, scenario registry, JSON result serialization, import boundaries, README coverage, and phase metadata without starting Docker or reading local `.env` secrets.
+
+```bash
+python3 -m pytest \
+  scripts/test_e2e_smoke_contract_foundation.py \
+  scripts/test_happy_path_checkout_e2e.py \
+  scripts/test_compensation_checkout_e2e.py \
+  scripts/test_compose_readiness_smoke.py \
+  scripts/test_e2e_integration_public_contracts.py
+PYTHONPATH=app python3 -m token_payments smoke
+PYTHONPATH=app python3 -m token_payments smoke happy-path-checkout
+PYTHONPATH=app python3 -m token_payments smoke compensation-checkout
+PYTHONPATH=app python3 -m token_payments smoke compose-readiness
+python3 scripts/validate_phases.py
+python3 .githooks/pre_commit_check.py
+```
+
+Manual Docker compose smoke order:
+
+```bash
+cp .env.example .env
+PYTHONPATH=app python3 -m token_payments smoke compose-readiness
+docker compose --env-file .env up -d postgres kafka kafka-ui pgweb test_network
+PYTHONPATH=app python3 -m token_payments health
+PYTHONPATH=app python3 -m token_payments worker
+PYTHONPATH=app python3 -m token_payments ui customer
+PYTHONPATH=app python3 -m token_payments ui operator
+PYTHONPATH=app python3 -m token_payments smoke happy-path-checkout
+PYTHONPATH=app python3 -m token_payments smoke compensation-checkout
+docker compose --env-file .env down
+```
+
+Next phase candidates:
+
+- real docker compose integration: start the committed compose stack, verify DB schema applied by app/postgres/init.d/001-token-payments-schema.sql, exercise Kafka topic publish/consume, and confirm the bounded runtime smoke command chain against live local infrastructure.
+- HTTP framework adapter: wire the framework-neutral API facade to real ASGI/WSGI route handlers while preserving the existing `ApiRequest`/`ApiResponse` contracts.
+- order status projection/handler gap: wire `CancelOrderCommand` and the order status update handler for payment/store approval events so compensation flows update order state end to end.
+
 ## API / Worker Runtime Contracts
 
 The API layer exposes framework-neutral facades: `AuthApi`, `OrdersApi`, `CheckoutApi`, `PaymentsApi`, and `OperatorApi`. They accept `ApiRequest` and return `ApiResponse` so a later HTTP framework can adapt them without changing the application contracts.
