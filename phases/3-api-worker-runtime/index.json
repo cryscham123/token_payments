@@ -29,7 +29,10 @@
     {
       "step": 3,
       "name": "checkout-tracking-payment-api",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-10T14:17:59+0900",
+      "completed_at": "2026-05-10T14:28:26+0900",
+      "summary": "Checkout tracking read model/query adapter와 framework-neutral tracking API를 추가하고, txHash 제출 API가 PaymentCommandHandler를 통해 SUBMITTED 상태로 전이하도록 검증했다."
     },
     {
       "step": 4,
