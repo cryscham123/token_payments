@@ -29,7 +29,10 @@
     {
       "step": 3,
       "name": "outbox-relay-kafka-publisher",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-10T09:05:16+0900",
+      "completed_at": "2026-05-10T09:10:33+0900",
+      "summary": "OutboxRelay와 Kafka publisher boundary를 추가해 READY/FAILED outbox claim, PUBLISHING→PUBLISHED/FAILED 전이, payload JSON 및 correlation/causation/message/command header 보존을 테스트로 검증했다."
     },
     {
       "step": 4,
