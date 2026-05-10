@@ -1,8 +1,14 @@
 """Order adapter layer."""
 
-from .postgres import PostgresCustomerRepository, PostgresOrderRepository, PostgresStoreRepository
+from .postgres import (
+    PostgresCheckoutTrackingQuery,
+    PostgresCustomerRepository,
+    PostgresOrderRepository,
+    PostgresStoreRepository,
+)
 
 __all__ = [
+    "PostgresCheckoutTrackingQuery",
     "PostgresCustomerRepository",
     "PostgresOrderRepository",
     "PostgresStoreRepository",

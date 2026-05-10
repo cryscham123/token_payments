@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 from typing import Any, Mapping
 
@@ -17,14 +18,27 @@ from token_payments.contexts.order.domain import (
     Store,
     TrackingId,
 )
+from token_payments.contexts.order.application.queries import CheckoutTrackingSnapshot, OutboxStatusSnapshot
+from token_payments.contexts.payment.domain import (
+    AuthorizationStatus,
+    GasEstimate,
+    Payment,
+    PaymentAuthorization,
+    PaymentStatus,
+    TransactionReceipt,
+    TransactionSignatureRequest,
+)
 from token_payments.shared.adapter.postgres import PostgresConnection
 from token_payments.shared.domain import (
+    ChainNetwork,
     Crypto,
     CustomerId,
     OrderId,
+    OutboxPublishStatus,
     PaymentId,
     ProductId,
     StoreId,
+    TransactionHash,
     UserId,
     WalletAddress,
 )
@@ -103,6 +117,98 @@ SELECT
 FROM order_items
 WHERE order_id = %(order_id)s
 ORDER BY order_item_id
+"""
+
+SELECT_TRACKING_ORDER_BY_TRACKING_ID_SQL = """
+SELECT
+    order_id,
+    tracking_id,
+    status,
+    failure_messages,
+    updated_at AS order_updated_at
+FROM orders
+WHERE tracking_id = %(tracking_id)s
+"""
+
+SELECT_TRACKING_ORDER_BY_ORDER_ID_SQL = """
+SELECT
+    order_id,
+    tracking_id,
+    status,
+    failure_messages,
+    updated_at AS order_updated_at
+FROM orders
+WHERE order_id = %(order_id)s
+"""
+
+SELECT_TRACKING_PAYMENT_BY_ORDER_ID_SQL = """
+SELECT
+    payment_id,
+    order_id,
+    customer_id,
+    amount_numeric,
+    amount_symbol,
+    amount_chain_id,
+    amount_token_address,
+    amount_decimals,
+    status,
+    wallet_from,
+    wallet_to,
+    chain_id,
+    chain_name,
+    tx_hash,
+    gas_estimated_fee,
+    gas_fee_symbol,
+    gas_fee_chain_id,
+    gas_fee_token_address,
+    gas_fee_decimals,
+    gas_limit,
+    gas_buffer_rate,
+    gas_max_fee,
+    receipt_block_number,
+    receipt_gas_used,
+    failure_reason,
+    refund_tx_hash,
+    refund_block_number,
+    refund_gas_used,
+    expires_at,
+    updated_at AS payment_updated_at
+FROM payments
+WHERE order_id = %(order_id)s
+"""
+
+SELECT_TRACKING_AUTHORIZATION_BY_PAYMENT_ID_SQL = """
+SELECT
+    payment_id,
+    user_id,
+    wallet_address,
+    chain_id,
+    chain_name,
+    request_id,
+    amount_numeric,
+    amount_symbol,
+    amount_chain_id,
+    amount_token_address,
+    amount_decimals,
+    to_wallet_address,
+    status,
+    tx_hash,
+    expires_at,
+    authorized_at,
+    updated_at AS authorization_updated_at
+FROM payment_authorizations
+WHERE payment_id = %(payment_id)s
+"""
+
+SELECT_TRACKING_OUTBOX_STATUS_SQL = """
+SELECT
+    message_identity,
+    name,
+    status,
+    COALESCE(published_at, created_at) AS outbox_updated_at
+FROM outbox_messages
+WHERE message_key = %(order_id)s
+ORDER BY created_at
 """
 
 UPSERT_ORDER_SQL = """
@@ -316,6 +422,65 @@ class PostgresOrderRepository:
             )
 
 
+class PostgresCheckoutTrackingQuery:
+    """Read checkout tracking state without mutating command-side aggregates."""
+
+    def __init__(self, connection: PostgresConnection) -> None:
+        self._connection = connection
+
+    def get_by_tracking_id(self, tracking_id: TrackingId) -> CheckoutTrackingSnapshot | None:
+        if not isinstance(tracking_id, TrackingId):
+            raise ValueError("PostgresCheckoutTrackingQuery.get_by_tracking_id requires a TrackingId")
+        order_row = _fetch_one(
+            self._connection.execute(SELECT_TRACKING_ORDER_BY_TRACKING_ID_SQL, {"tracking_id": str(tracking_id)})
+        )
+        return self._snapshot_from_order_row(order_row)
+
+    def get_by_order_id(self, order_id: OrderId) -> CheckoutTrackingSnapshot | None:
+        if not isinstance(order_id, OrderId):
+            raise ValueError("PostgresCheckoutTrackingQuery.get_by_order_id requires an OrderId")
+        order_row = _fetch_one(
+            self._connection.execute(SELECT_TRACKING_ORDER_BY_ORDER_ID_SQL, {"order_id": str(order_id)})
+        )
+        return self._snapshot_from_order_row(order_row)
+
+    def _snapshot_from_order_row(self, order_row: Mapping[str, Any] | object | None) -> CheckoutTrackingSnapshot | None:
+        if order_row is None:
+            return None
+
+        order_id = OrderId(_row_value(order_row, "order_id"))
+        payment_row = _fetch_one(
+            self._connection.execute(SELECT_TRACKING_PAYMENT_BY_ORDER_ID_SQL, {"order_id": str(order_id)})
+        )
+        payment = _tracking_payment_from_row(payment_row) if payment_row is not None else None
+
+        authorization_row = None
+        authorization = None
+        if payment is not None:
+            authorization_row = _fetch_one(
+                self._connection.execute(
+                    SELECT_TRACKING_AUTHORIZATION_BY_PAYMENT_ID_SQL,
+                    {"payment_id": str(payment.payment_id)},
+                )
+            )
+            authorization = _tracking_authorization_from_row(authorization_row) if authorization_row is not None else None
+
+        outbox_rows = _fetch_all(
+            self._connection.execute(SELECT_TRACKING_OUTBOX_STATUS_SQL, {"order_id": str(order_id)})
+        )
+        outbox_statuses = tuple(_tracking_outbox_status_from_row(row) for row in outbox_rows)
+        return CheckoutTrackingSnapshot(
+            order_id=order_id,
+            tracking_id=TrackingId(_row_value(order_row, "tracking_id")),
+            order_status=OrderStatus(_row_value(order_row, "status")),
+            failure_messages=_failure_messages(_row_value(order_row, "failure_messages")),
+            payment=payment,
+            authorization=authorization,
+            outbox_statuses=outbox_statuses,
+            updated_at=_latest_updated_at(order_row, payment_row, authorization_row, outbox_statuses),
+        )
+
+
 def _row_to_customer(row: Mapping[str, Any] | object) -> Customer:
     return Customer(
         customer_id=CustomerId(_row_value(row, "customer_id")),
@@ -423,6 +588,118 @@ def _total_amount(items: tuple[OrderItem, ...]) -> Crypto:
         token_address=first.token_address,
         decimals=first.decimals,
     )
+
+
+def _tracking_payment_from_row(row: Mapping[str, Any] | object) -> Payment:
+    return Payment(
+        payment_id=PaymentId(_row_value(row, "payment_id")),
+        order_id=OrderId(_row_value(row, "order_id")),
+        customer_id=CustomerId(_row_value(row, "customer_id")),
+        amount=_crypto_from_row(row, "amount"),
+        wallet_from=WalletAddress(_row_value(row, "wallet_from")),
+        wallet_to=WalletAddress(_row_value(row, "wallet_to")),
+        chain_network=ChainNetwork(chain_id=int(_row_value(row, "chain_id")), name=str(_row_value(row, "chain_name"))),
+        gas_estimate=_tracking_gas_estimate_from_row(row),
+        expires_at=_row_value(row, "expires_at"),
+        status=PaymentStatus(_row_value(row, "status")),
+        tx_hash=_optional_tx_hash(_row_value(row, "tx_hash")),
+        receipt=_tracking_receipt_from_row(row, "tx_hash", "receipt_block_number", "receipt_gas_used"),
+        failure_reason=_row_value(row, "failure_reason"),
+        refund_receipt=_tracking_receipt_from_row(row, "refund_tx_hash", "refund_block_number", "refund_gas_used"),
+    )
+
+
+def _tracking_authorization_from_row(row: Mapping[str, Any] | object) -> PaymentAuthorization:
+    signature_request = TransactionSignatureRequest(
+        request_id=str(_row_value(row, "request_id")),
+        amount=_crypto_from_row(row, "amount"),
+        to=WalletAddress(_row_value(row, "to_wallet_address")),
+        expires_at=_row_value(row, "expires_at"),
+    )
+    return PaymentAuthorization(
+        payment_id=PaymentId(_row_value(row, "payment_id")),
+        user_id=UserId(_row_value(row, "user_id")),
+        wallet=WalletAddress(_row_value(row, "wallet_address")),
+        chain_network=ChainNetwork(chain_id=int(_row_value(row, "chain_id")), name=str(_row_value(row, "chain_name"))),
+        signature_request=signature_request,
+        status=AuthorizationStatus(_row_value(row, "status")),
+        tx_hash=_optional_tx_hash(_row_value(row, "tx_hash")),
+        authorized_at=_row_value(row, "authorized_at"),
+    )
+
+
+def _tracking_gas_estimate_from_row(row: Mapping[str, Any] | object) -> GasEstimate | None:
+    if _row_value(row, "gas_estimated_fee") is None:
+        return None
+    estimated_fee = Crypto(
+        amount=_row_value(row, "gas_estimated_fee"),
+        symbol=str(_row_value(row, "gas_fee_symbol")),
+        chain_id=int(_row_value(row, "gas_fee_chain_id")),
+        token_address=_row_value(row, "gas_fee_token_address"),
+        decimals=int(_row_value(row, "gas_fee_decimals")),
+    )
+    max_fee_amount = _row_value(row, "gas_max_fee")
+    max_fee = None
+    if max_fee_amount is not None:
+        max_fee = Crypto(
+            amount=max_fee_amount,
+            symbol=estimated_fee.symbol,
+            chain_id=estimated_fee.chain_id,
+            token_address=estimated_fee.token_address,
+            decimals=estimated_fee.decimals,
+        )
+    return GasEstimate(
+        estimated_fee=estimated_fee,
+        gas_limit=int(_row_value(row, "gas_limit")),
+        buffer_rate=Decimal(str(_row_value(row, "gas_buffer_rate"))),
+        max_fee=max_fee,
+    )
+
+
+def _tracking_receipt_from_row(
+    row: Mapping[str, Any] | object,
+    hash_key: str,
+    block_number_key: str,
+    gas_used_key: str,
+) -> TransactionReceipt | None:
+    tx_hash = _optional_tx_hash(_row_value(row, hash_key))
+    block_number = _row_value(row, block_number_key)
+    gas_used = _row_value(row, gas_used_key)
+    if tx_hash is None and block_number is None and gas_used is None:
+        return None
+    if tx_hash is None or block_number is None or gas_used is None:
+        raise ValueError("tracking payment receipt row must include hash, block number, and gas used")
+    return TransactionReceipt(hash=tx_hash, block_number=int(block_number), gas_used=int(gas_used))
+
+
+def _tracking_outbox_status_from_row(row: Mapping[str, Any] | object) -> OutboxStatusSnapshot:
+    return OutboxStatusSnapshot(
+        message_id=str(_row_value(row, "message_identity")),
+        name=str(_row_value(row, "name")),
+        status=OutboxPublishStatus(_row_value(row, "status")),
+        updated_at=_row_value(row, "outbox_updated_at"),
+    )
+
+
+def _latest_updated_at(
+    order_row: Mapping[str, Any] | object,
+    payment_row: Mapping[str, Any] | object | None,
+    authorization_row: Mapping[str, Any] | object | None,
+    outbox_statuses: tuple[OutboxStatusSnapshot, ...],
+) -> datetime:
+    values = [_row_value(order_row, "order_updated_at")]
+    if payment_row is not None:
+        values.append(_row_value(payment_row, "payment_updated_at"))
+    if authorization_row is not None:
+        values.append(_row_value(authorization_row, "authorization_updated_at"))
+    values.extend(status.updated_at for status in outbox_statuses)
+    return max(values)
+
+
+def _optional_tx_hash(value: Any) -> TransactionHash | None:
+    if value is None:
+        return None
+    return TransactionHash(value)
 
 
 def _fetch_one(result: Any) -> Any:
