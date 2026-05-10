@@ -1,0 +1,152 @@
+"""Framework-neutral API request/response contracts."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field, fields, is_dataclass
+from datetime import UTC, datetime
+from decimal import Decimal
+from enum import StrEnum
+import json
+import math
+from types import MappingProxyType
+from typing import Any, Mapping
+from uuid import UUID
+
+
+JsonValue = None | bool | int | float | str | list["JsonValue"] | dict[str, "JsonValue"]
+
+
+@dataclass(frozen=True)
+class ApiRequest:
+    """Pure request DTO independent of an HTTP framework."""
+
+    request_id: str
+    method: str
+    path: str
+    headers: Mapping[str, str] = field(default_factory=dict)
+    query: Mapping[str, Any] = field(default_factory=dict)
+    body: Any = None
+    received_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "request_id", _require_text(self.request_id, "ApiRequest.request_id"))
+        object.__setattr__(self, "method", _require_text(self.method, "ApiRequest.method").upper())
+        path = _require_text(self.path, "ApiRequest.path")
+        if not path.startswith("/"):
+            raise ValueError("ApiRequest.path must start with /")
+        object.__setattr__(self, "path", path)
+        object.__setattr__(self, "headers", MappingProxyType(_string_mapping(self.headers, "ApiRequest.headers")))
+        object.__setattr__(self, "query", MappingProxyType(_to_json_safe_mapping(self.query, "ApiRequest.query")))
+        object.__setattr__(self, "body", _to_json_safe(self.body))
+        object.__setattr__(self, "received_at", _require_aware_datetime(self.received_at, "ApiRequest.received_at"))
+
+
+@dataclass(frozen=True)
+class ApiResponse:
+    """Pure response DTO that can be adapted to any web framework."""
+
+    status_code: int
+    body: JsonValue
+    headers: Mapping[str, str] = field(default_factory=dict)
+    request_id: str | None = None
+
+    def __post_init__(self) -> None:
+        if isinstance(self.status_code, bool) or not isinstance(self.status_code, int):
+            raise ValueError("ApiResponse.status_code must be an integer")
+        if self.status_code < 100 or self.status_code > 599:
+            raise ValueError("ApiResponse.status_code must be between 100 and 599")
+        object.__setattr__(self, "body", _to_json_safe(self.body))
+        object.__setattr__(self, "headers", MappingProxyType(_string_mapping(self.headers, "ApiResponse.headers")))
+        if self.request_id is not None:
+            object.__setattr__(self, "request_id", _require_text(self.request_id, "ApiResponse.request_id"))
+
+    def to_json(self) -> str:
+        return json.dumps(
+            {
+                "requestId": self.request_id,
+                "statusCode": self.status_code,
+                "body": self.body,
+                "headers": dict(self.headers),
+            },
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+
+
+def json_response(
+    body: Any,
+    *,
+    status_code: int = 200,
+    request_id: str | None = None,
+    headers: Mapping[str, str] | None = None,
+) -> ApiResponse:
+    response_headers = {"Content-Type": "application/json"}
+    if headers:
+        response_headers.update(_string_mapping(headers, "json_response.headers"))
+    return ApiResponse(
+        status_code=status_code,
+        body=_to_json_safe(body),
+        headers=response_headers,
+        request_id=request_id,
+    )
+
+
+def _require_text(value: str, field_name: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field_name} must be a non-empty string")
+    return value.strip()
+
+
+def _require_aware_datetime(value: datetime, field_name: str) -> datetime:
+    if not isinstance(value, datetime):
+        raise ValueError(f"{field_name} must be a datetime")
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError(f"{field_name} must be timezone-aware")
+    return value
+
+
+def _string_mapping(value: Mapping[str, Any], field_name: str) -> dict[str, str]:
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{field_name} must be a mapping")
+    output: dict[str, str] = {}
+    for key, item in value.items():
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError(f"{field_name} keys must be non-empty strings")
+        output[key] = str(item)
+    return output
+
+
+def _to_json_safe_mapping(value: Mapping[str, Any], field_name: str) -> dict[str, JsonValue]:
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{field_name} must be a mapping")
+    output: dict[str, JsonValue] = {}
+    for key, item in value.items():
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError(f"{field_name} keys must be non-empty strings")
+        output[key] = _to_json_safe(item)
+    return output
+
+
+def _to_json_safe(value: Any) -> JsonValue:
+    if value is None or isinstance(value, (bool, int, str)):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("JSON response floats must be finite")
+        return value
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, datetime):
+        return _require_aware_datetime(value, "JSON response datetime").isoformat()
+    if isinstance(value, UUID):
+        return str(value)
+    if isinstance(value, StrEnum):
+        return value.value
+    if isinstance(value, Mapping):
+        return _to_json_safe_mapping(value, "JSON response mapping")
+    if isinstance(value, tuple | list):
+        return [_to_json_safe(item) for item in value]
+    if is_dataclass(value) and not isinstance(value, type):
+        return {field.name: _to_json_safe(getattr(value, field.name)) for field in fields(value)}
+    raise TypeError(f"{type(value).__name__} is not JSON response serializable")

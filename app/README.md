@@ -6,6 +6,7 @@
 
 ```bash
 PYTHONPATH=app .venv/bin/python -m token_payments
+PYTHONPATH=app .venv/bin/python -m token_payments health
 docker compose --env-file .env up -d postgres kafka kafka-ui pgweb test_network
 ```
 
@@ -32,10 +33,23 @@ Adapter infrastructure specific verification:
   scripts/test_adapter_infrastructure_public_contracts.py
 ```
 
+API/worker runtime contract verification:
+
+```bash
+.venv/bin/python -m pytest \
+  scripts/test_runtime_contract_foundation.py \
+  scripts/test_adapter_infrastructure_public_contracts.py \
+  scripts/test_foundation_public_contracts.py
+.venv/bin/python scripts/validate_phases.py
+PYTHONPATH=app .venv/bin/python -m token_payments health
+```
+
 ## Package Layout
 
 ```text
 app/token_payments/
+  api/
+  runtime/
   contexts/
     auth/
       domain/
