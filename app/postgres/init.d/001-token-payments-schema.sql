@@ -102,6 +102,105 @@ CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id
 CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires_at
     ON auth_sessions (expires_at);
 
+CREATE TABLE IF NOT EXISTS order_customers (
+    customer_id UUID PRIMARY KEY,
+    user_id UUID NOT NULL UNIQUE,
+    wallet_address TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_order_customers_user_id
+    ON order_customers (user_id);
+
+CREATE TABLE IF NOT EXISTS order_stores (
+    store_id UUID PRIMARY KEY,
+    owner_user_id UUID NOT NULL,
+    active BOOLEAN NOT NULL DEFAULT true,
+    store_address_id TEXT,
+    store_address_street TEXT,
+    store_wallet_address TEXT,
+    supported_chain_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (
+        (store_address_id IS NULL AND store_address_street IS NULL)
+        OR (store_address_id IS NOT NULL AND store_address_street IS NOT NULL)
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_order_stores_owner_user_id
+    ON order_stores (owner_user_id);
+
+CREATE TABLE IF NOT EXISTS order_store_products (
+    store_id UUID NOT NULL REFERENCES order_stores (store_id),
+    product_id UUID NOT NULL,
+    name TEXT NOT NULL,
+    price_numeric NUMERIC(38, 18) NOT NULL CHECK (price_numeric >= 0),
+    price_symbol TEXT NOT NULL,
+    price_chain_id INTEGER NOT NULL CHECK (price_chain_id > 0),
+    price_token_address TEXT,
+    price_decimals INTEGER NOT NULL CHECK (price_decimals >= 0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (store_id, product_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_order_store_products_store_id
+    ON order_store_products (store_id);
+
+CREATE TABLE IF NOT EXISTS orders (
+    order_id UUID PRIMARY KEY,
+    customer_id UUID NOT NULL,
+    store_id UUID NOT NULL,
+    delivery_address_id TEXT NOT NULL,
+    delivery_address_street TEXT NOT NULL,
+    tracking_id UUID NOT NULL UNIQUE,
+    status TEXT NOT NULL CHECK (status IN ('PENDING', 'PAID', 'APPROVED', 'CANCELLING', 'CANCELLED')),
+    payment_id UUID,
+    failure_messages JSONB NOT NULL DEFAULT '[]'::jsonb,
+    total_amount_numeric NUMERIC(38, 18) NOT NULL CHECK (total_amount_numeric >= 0),
+    total_amount_symbol TEXT NOT NULL,
+    total_amount_chain_id INTEGER NOT NULL CHECK (total_amount_chain_id > 0),
+    total_amount_token_address TEXT,
+    total_amount_decimals INTEGER NOT NULL CHECK (total_amount_decimals >= 0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_orders_customer_id
+    ON orders (customer_id);
+
+CREATE INDEX IF NOT EXISTS idx_orders_store_status
+    ON orders (store_id, status);
+
+CREATE INDEX IF NOT EXISTS idx_orders_tracking_id
+    ON orders (tracking_id);
+
+CREATE TABLE IF NOT EXISTS order_items (
+    order_item_id UUID PRIMARY KEY,
+    order_id UUID NOT NULL REFERENCES orders (order_id),
+    product_id UUID NOT NULL,
+    product_snapshot_created_at TIMESTAMPTZ NOT NULL,
+    product_snapshot_name TEXT NOT NULL,
+    unit_price_numeric NUMERIC(38, 18) NOT NULL CHECK (unit_price_numeric >= 0),
+    unit_price_symbol TEXT NOT NULL,
+    unit_price_chain_id INTEGER NOT NULL CHECK (unit_price_chain_id > 0),
+    unit_price_token_address TEXT,
+    unit_price_decimals INTEGER NOT NULL CHECK (unit_price_decimals >= 0),
+    quantity INTEGER NOT NULL CHECK (quantity > 0),
+    subtotal_numeric NUMERIC(38, 18) NOT NULL CHECK (subtotal_numeric >= 0),
+    subtotal_symbol TEXT NOT NULL,
+    subtotal_chain_id INTEGER NOT NULL CHECK (subtotal_chain_id > 0),
+    subtotal_token_address TEXT,
+    subtotal_decimals INTEGER NOT NULL CHECK (subtotal_decimals >= 0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_order_items_order_id
+    ON order_items (order_id);
+
 CREATE TABLE IF NOT EXISTS product_inventory (
     product_id UUID NOT NULL,
     store_id UUID NOT NULL,
