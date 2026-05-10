@@ -1,0 +1,35 @@
+{
+  "project": "Token Payments",
+  "phase": "5-e2e-integration-readiness",
+  "steps": [
+    {
+      "step": 0,
+      "name": "e2e-smoke-contract-foundation",
+      "status": "completed",
+      "started_at": "2026-05-11T06:52:17+0900",
+      "completed_at": "2026-05-11T06:57:22+0900",
+      "summary": "표준 라이브러리 기반 runtime smoke contract와 예약 scenario registry, `smoke` CLI 목록 JSON, unknown scenario exit code 64 구조화 오류 계약을 추가했다."
+    },
+    {
+      "step": 1,
+      "name": "happy-path-checkout-e2e",
+      "status": "pending"
+    },
+    {
+      "step": 2,
+      "name": "compensation-checkout-e2e",
+      "status": "pending"
+    },
+    {
+      "step": 3,
+      "name": "compose-readiness-smoke",
+      "status": "pending"
+    },
+    {
+      "step": 4,
+      "name": "e2e-phase-verification",
+      "status": "pending"
+    }
+  ],
+  "created_at": "2026-05-11T06:52:17+0900"
+}
