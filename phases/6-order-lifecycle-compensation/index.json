@@ -1,0 +1,35 @@
+{
+  "project": "Token Payments",
+  "phase": "6-order-lifecycle-compensation",
+  "steps": [
+    {
+      "step": 0,
+      "name": "cancel-order-command-handler",
+      "status": "completed",
+      "started_at": "2026-05-11T08:37:49+0900",
+      "summary": "Added pure order CancelOrderCommand handler contract with idempotent processed-command handling and OrderCancelledEvent outbox emission.",
+      "completed_at": "2026-05-11T08:44:19+0900"
+    },
+    {
+      "step": 1,
+      "name": "order-status-event-projector",
+      "status": "pending"
+    },
+    {
+      "step": 2,
+      "name": "order-lifecycle-adapter-wiring",
+      "status": "pending"
+    },
+    {
+      "step": 3,
+      "name": "compensation-smoke-gap-closure",
+      "status": "pending"
+    },
+    {
+      "step": 4,
+      "name": "order-lifecycle-phase-verification",
+      "status": "pending"
+    }
+  ],
+  "created_at": "2026-05-11T08:37:49+0900"
+}
