@@ -34,7 +34,8 @@ class ContractRuntimeContainer:
         )
 
     def dispatch_command(self, command: str) -> CommandDispatchResult:
-        command_name = _normalize_command(command)
+        command_parts = _normalize_command(command).split()
+        command_name = command_parts[0]
         if command_name == "health":
             return CommandDispatchResult.succeeded(
                 command=command_name,
@@ -58,6 +59,8 @@ class ContractRuntimeContainer:
                 summary=f"{command_name} command accepted; long-running startup is not wired in this phase",
                 details={"config": self.config.to_dict()},
             )
+        if command_name == "ui":
+            return self._dispatch_ui_preview(command_parts[1] if len(command_parts) > 1 else None)
         return CommandDispatchResult.failed(
             command=command_name,
             summary=f"unknown runtime command: {command_name}",
@@ -70,6 +73,26 @@ class ContractRuntimeContainer:
             return WorkerRuntime([])
         return self._worker_runtime_factory(options)
 
+    def _dispatch_ui_preview(self, view: str | None) -> CommandDispatchResult:
+        from token_payments.ui.preview import UnknownUiPreviewView, render_ui_preview
+
+        try:
+            preview = render_ui_preview(view)
+        except UnknownUiPreviewView as exc:
+            return CommandDispatchResult.failed(
+                command="ui",
+                summary=f"unknown ui preview view: {exc.view}",
+                exit_code=64,
+                details={"error": exc.to_error()},
+            )
+
+        sample_count = len(preview.get("samples", ()))
+        return CommandDispatchResult.succeeded(
+            command="ui",
+            summary=f"rendered {preview['view']} ui preview with {sample_count} sample(s)",
+            details={"preview": preview},
+        )
+
 
 def dispatch_runtime_command(
     argv: Sequence[str] | None = None,
@@ -77,9 +100,20 @@ def dispatch_runtime_command(
     container: RuntimeContainer | None = None,
 ) -> CommandDispatchResult:
     args = list(argv or [])
-    command = args[0] if args else "health"
+    command = _command_from_args(args)
     runtime_container = container or ContractRuntimeContainer()
     return runtime_container.dispatch_command(command)
+
+
+def _command_from_args(args: Sequence[str]) -> str:
+    if not args:
+        return "health"
+    command = _normalize_command(args[0])
+    if command == "ui" and len(args) > 1:
+        selector = args[1].strip() if isinstance(args[1], str) else ""
+        if selector:
+            return f"{command} {selector}"
+    return command
 
 
 def _normalize_command(command: str) -> str:

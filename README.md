@@ -40,8 +40,13 @@ Token Payments 애플리케이션 코드는 `app/token_payments` 아래에 둔�
 cp .env.example .env
 PYTHONPATH=app .venv/bin/python -m token_payments
 PYTHONPATH=app .venv/bin/python -m token_payments health
+PYTHONPATH=app python3 -m token_payments ui
+PYTHONPATH=app python3 -m token_payments ui customer
+PYTHONPATH=app python3 -m token_payments ui operator
 docker compose --env-file .env up -d postgres kafka kafka-ui pgweb test_network
 ```
+
+`ui` preview command는 long-running HTTP server를 시작하지 않고 bounded JSON을 반환한다. HTML preview는 runtime `CommandDispatchResult.details.preview` 아래에 들어가며, `ApiResponse` 계약이 아니라 로컬 customer/operator UI phase 확인용 fixture 계약이다.
 
 ## Foundation 검증
 
@@ -166,3 +171,19 @@ PYTHONPATH=app .venv/bin/python -m token_payments worker
 - operator status dashboard: 주문/결제/outbox/worker/error 상태 테이블과 상세 패널.
 - docker compose integration smoke: `.env.example` 기반 PostgreSQL, Kafka, test network 기동과 runtime health 확인.
 - happy-path e2e checkout: 주문 생성부터 재고 예약, 결제 제출/확인, 가게 승인까지의 정상 sequence 검증.
+
+## Customer/Operator UI Preview 검증
+
+customer/operator UI phase는 표준 라이브러리 기반 HTML renderer와 local-only preview fixture만 사용한다. preview fixture는 production config, DB seed, 지갑, Kafka, PostgreSQL, Blockchain RPC 연결로 취급하지 않는다.
+
+```bash
+python3 -m pytest \
+  scripts/test_ui_contract_foundation.py \
+  scripts/test_customer_checkout_ui.py \
+  scripts/test_operator_dashboard_ui.py \
+  scripts/test_ui_runtime_preview.py
+PYTHONPATH=app python3 -m token_payments ui
+PYTHONPATH=app python3 -m token_payments ui customer
+PYTHONPATH=app python3 -m token_payments ui operator
+python3 scripts/validate_phases.py
+```

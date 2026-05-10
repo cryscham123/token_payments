@@ -9,6 +9,9 @@ PYTHONPATH=app .venv/bin/python -m token_payments
 PYTHONPATH=app .venv/bin/python -m token_payments health
 PYTHONPATH=app .venv/bin/python -m token_payments worker
 PYTHONPATH=app .venv/bin/python -m token_payments api
+PYTHONPATH=app python3 -m token_payments ui
+PYTHONPATH=app python3 -m token_payments ui customer
+PYTHONPATH=app python3 -m token_payments ui operator
 docker compose --env-file .env up -d postgres kafka kafka-ui pgweb test_network
 ```
 
@@ -53,6 +56,22 @@ API/worker runtime contract verification:
 PYTHONPATH=app .venv/bin/python -m token_payments health
 PYTHONPATH=app .venv/bin/python -m token_payments worker
 ```
+
+customer/operator UI phase preview verification:
+
+```bash
+.venv/bin/python -m pytest \
+  scripts/test_ui_contract_foundation.py \
+  scripts/test_customer_checkout_ui.py \
+  scripts/test_operator_dashboard_ui.py \
+  scripts/test_ui_runtime_preview.py
+PYTHONPATH=app python3 -m token_payments ui
+PYTHONPATH=app python3 -m token_payments ui customer
+PYTHONPATH=app python3 -m token_payments ui operator
+.venv/bin/python scripts/validate_phases.py
+```
+
+The `ui` runtime command returns bounded JSON and does not start an HTTP server. Rendered HTML lives under `CommandDispatchResult.details.preview`; this is a local preview contract, not an `ApiResponse`, DB seed, or production runtime configuration.
 
 ## API / Worker Runtime Contracts
 
