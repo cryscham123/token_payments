@@ -14,6 +14,10 @@
       "dir": "2-adapter-infrastructure",
       "status": "completed",
       "completed_at": "2026-05-10T09:30:07+0900"
+    },
+    {
+      "dir": "3-api-worker-runtime",
+      "status": "pending"
     }
   ]
 }
