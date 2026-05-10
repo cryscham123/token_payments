@@ -24,6 +24,10 @@
       "dir": "4-customer-operator-ui",
       "status": "completed",
       "completed_at": "2026-05-10T19:47:24+0900"
+    },
+    {
+      "dir": "5-e2e-integration-readiness",
+      "status": "pending"
     }
   ]
 }
