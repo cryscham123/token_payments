@@ -1,2 +1,1 @@
 """Checkout process adapter layer."""
-
