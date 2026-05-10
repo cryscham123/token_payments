@@ -7,10 +7,12 @@
 ```bash
 PYTHONPATH=app .venv/bin/python -m token_payments
 PYTHONPATH=app .venv/bin/python -m token_payments health
+PYTHONPATH=app .venv/bin/python -m token_payments worker
+PYTHONPATH=app .venv/bin/python -m token_payments api
 docker compose --env-file .env up -d postgres kafka kafka-ui pgweb test_network
 ```
 
-Use `.env.example` as the template for local `.env` values. Do not commit real private keys, API keys, seed phrases, or production credentials.
+Use `.env.example` as the template for local `.env` values. The local blockchain RPC points at `test_network` on chain id `1337`. Do not commit real private keys, API keys, seed phrases, or production credentials.
 
 ## Verification Commands
 
@@ -38,11 +40,32 @@ API/worker runtime contract verification:
 ```bash
 .venv/bin/python -m pytest \
   scripts/test_runtime_contract_foundation.py \
+  scripts/test_auth_api_session_runtime.py \
+  scripts/test_order_api_checkout_start.py \
+  scripts/test_checkout_tracking_payment_api.py \
+  scripts/test_worker_runtime_orchestration.py \
+  scripts/test_operator_observability_api.py \
+  scripts/test_api_worker_runtime_public_contracts.py \
   scripts/test_adapter_infrastructure_public_contracts.py \
+  scripts/test_checkout_core_public_contracts.py \
   scripts/test_foundation_public_contracts.py
 .venv/bin/python scripts/validate_phases.py
 PYTHONPATH=app .venv/bin/python -m token_payments health
+PYTHONPATH=app .venv/bin/python -m token_payments worker
 ```
+
+## API / Worker Runtime Contracts
+
+The API layer exposes framework-neutral facades: `AuthApi`, `OrdersApi`, `CheckoutApi`, `PaymentsApi`, and `OperatorApi`. They accept `ApiRequest` and return `ApiResponse` so a later HTTP framework can adapt them without changing the application contracts.
+
+The runtime layer exposes `RuntimeConfig`, `RuntimeContainer`, `ContractRuntimeContainer`, `dispatch_runtime_command`, and `WorkerRuntime`. Worker exports cover outbox relay, Kafka consumer, payment receipt polling, and payment timeout batches. Current CLI commands return bounded JSON results and do not start a long-running API server or daemon worker in this phase.
+
+Next phase candidates:
+
+- customer checkout UI: wallet connect, signature wait, txHash submission, and checkout tracking.
+- operator status dashboard: order/payment/outbox/worker/error status table and detail panel.
+- docker compose integration smoke: PostgreSQL, Kafka, test network, and runtime health from `.env.example`.
+- happy-path e2e checkout: order creation through inventory reservation, payment confirmation, and store approval.
 
 ## Package Layout
 
