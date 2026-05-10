@@ -19,6 +19,19 @@ Use `.env.example` as the template for local `.env` values. Do not commit real p
 python3 .githooks/pre_commit_check.py
 ```
 
+Adapter infrastructure specific verification:
+
+```bash
+.venv/bin/python -m pytest \
+  scripts/test_adapter_contract_foundation.py \
+  scripts/test_postgres_outbox_idempotency.py \
+  scripts/test_postgres_context_repositories.py \
+  scripts/test_outbox_relay_kafka_publisher.py \
+  scripts/test_kafka_listener_adapters.py \
+  scripts/test_wallet_blockchain_boundaries.py \
+  scripts/test_adapter_infrastructure_public_contracts.py
+```
+
 ## Package Layout
 
 ```text
@@ -51,3 +64,10 @@ app/token_payments/
 ```
 
 Domain code must stay free of PostgreSQL, Kafka, Blockchain RPC, and MetaMask client dependencies. Application services should depend on ports, and adapters should own external integrations.
+
+## Adapter Boundaries
+
+- PostgreSQL adapters use injected connection objects and live under context `adapter/postgres.py` files plus `shared/adapter/postgres`.
+- Kafka adapters use injected producer/consumer objects and live under `shared/adapter/kafka` plus context `adapter/kafka.py` files.
+- Wallet and blockchain adapters use injected clients under `contexts/auth/adapter/wallet_signature.py`, `contexts/payment/adapter/blockchain.py`, and `contexts/payment/adapter/transaction_service.py`.
+- `.env.example` contains only local placeholder keys for adapter wiring. Real private keys, seed phrases, API keys, and production RPC URLs stay out of committed files.
