@@ -21,7 +21,10 @@
     {
       "step": 2,
       "name": "operator-dashboard-ui",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-10T19:30:42+0900",
+      "completed_at": "2026-05-10T19:37:58+0900",
+      "summary": "운영 dashboard UI에 filters, summary metrics, inventory/store approval/outbox/worker/error 통합 테이블, read-only detail panel과 fixture 기반 semantic 테스트를 추가했다."
     },
     {
       "step": 3,
