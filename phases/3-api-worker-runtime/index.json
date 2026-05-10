@@ -5,7 +5,10 @@
     {
       "step": 0,
       "name": "runtime-contract-foundation",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-10T13:48:11+0900",
+      "completed_at": "2026-05-10T13:56:11+0900",
+      "summary": "API/worker runtime 공통 계약으로 env config, worker loop options, health/dispatch result, composition root Protocol, framework-neutral API request/response DTO와 import boundary 테스트를 추가했다."
     },
     {
       "step": 1,
