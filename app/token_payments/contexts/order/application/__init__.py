@@ -1,12 +1,13 @@
 """Order application layer."""
 
-from .commands import CreateOrderCommand, CreateOrderItem
+from .commands import CancelOrderCommand, CreateOrderCommand, CreateOrderItem
 from .ports import (
     CustomerRepository,
     OrderCreationResult,
     OrderRepository,
     OrderUseCase,
     OutboxMessageRepository,
+    ProcessedCommandRepository,
     StoreRepository,
 )
 from .queries import (
@@ -16,9 +17,19 @@ from .queries import (
     CheckoutTrackingSnapshot,
     OutboxStatusSnapshot,
 )
-from .service import OrderApplicationError, OrderApplicationService, OrderErrorCode
+from .service import (
+    OrderApplicationError,
+    OrderApplicationService,
+    OrderCommandHandler,
+    OrderCommandRejected,
+    OrderCommandRejectionReason,
+    OrderCommandResult,
+    OrderCommandStatus,
+    OrderErrorCode,
+)
 
 __all__ = [
+    "CancelOrderCommand",
     "CheckoutCurrentStep",
     "CheckoutPendingAction",
     "CheckoutTrackingQueryPort",
@@ -28,11 +39,17 @@ __all__ = [
     "CustomerRepository",
     "OrderApplicationError",
     "OrderApplicationService",
+    "OrderCommandHandler",
+    "OrderCommandRejected",
+    "OrderCommandRejectionReason",
+    "OrderCommandResult",
+    "OrderCommandStatus",
     "OrderCreationResult",
     "OrderErrorCode",
     "OrderRepository",
     "OrderUseCase",
     "OutboxStatusSnapshot",
     "OutboxMessageRepository",
+    "ProcessedCommandRepository",
     "StoreRepository",
 ]

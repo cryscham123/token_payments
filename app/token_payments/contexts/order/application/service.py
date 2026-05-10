@@ -2,15 +2,33 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum
 from typing import Any
 
-from token_payments.contexts.order.domain import Customer, Order, OrderItem, Store
-from token_payments.shared.domain import CheckoutEventName, Crypto, EventMetadata, OutboxMessage, ProductId
+from token_payments.contexts.order.domain import Customer, Order, OrderCancelledEvent, OrderItem, OrderStatus, Store
+from token_payments.shared.domain import (
+    CheckoutEventName,
+    CommandId,
+    Crypto,
+    EventMetadata,
+    IdempotencyDecision,
+    OrderId,
+    OutboxMessage,
+    ProcessedCommand,
+    ProductId,
+)
 
-from .commands import CreateOrderCommand
-from .ports import CustomerRepository, OrderCreationResult, OrderRepository, OutboxMessageRepository, StoreRepository
+from .commands import CancelOrderCommand, CreateOrderCommand
+from .ports import (
+    CustomerRepository,
+    OrderCreationResult,
+    OrderRepository,
+    OutboxMessageRepository,
+    ProcessedCommandRepository,
+    StoreRepository,
+)
 
 
 ORDER_EVENT_TOPIC = "order.events"
@@ -26,6 +44,41 @@ class OrderApplicationError(Exception):
     def __init__(self, code: OrderErrorCode, message: str) -> None:
         self.code = code
         super().__init__(message)
+
+
+class OrderCommandStatus(StrEnum):
+    CANCELLED = "CANCELLED"
+    ALREADY_CANCELLED = "ALREADY_CANCELLED"
+    DUPLICATE_IGNORED = "DUPLICATE_IGNORED"
+
+
+class OrderCommandRejectionReason(StrEnum):
+    ORDER_NOT_FOUND = "ORDER_NOT_FOUND"
+    INVALID_STATE = "INVALID_STATE"
+
+
+class OrderCommandRejected(Exception):
+    def __init__(
+        self,
+        reason: OrderCommandRejectionReason,
+        command_id: CommandId,
+        order_id: OrderId,
+        message: str,
+    ) -> None:
+        super().__init__(message)
+        self.reason = reason
+        self.command_id = command_id
+        self.order_id = order_id
+
+
+@dataclass(frozen=True)
+class OrderCommandResult:
+    command_id: CommandId
+    order_id: OrderId
+    status: OrderCommandStatus
+    order: Order | None = None
+    outbox_message: OutboxMessage | None = None
+    duplicate_decision: IdempotencyDecision | None = None
 
 
 class OrderApplicationService:
@@ -79,6 +132,86 @@ class OrderApplicationService:
         return OrderCreationResult(order=order, total_amount=total_amount, outbox_message=outbox_message)
 
 
+class OrderCommandHandler:
+    HANDLER_NAME = "order-command-handler"
+
+    def __init__(
+        self,
+        orders: OrderRepository,
+        processed_commands: ProcessedCommandRepository,
+        outbox_messages: OutboxMessageRepository,
+    ) -> None:
+        self._orders = orders
+        self._processed_commands = processed_commands
+        self._outbox_messages = outbox_messages
+
+    def cancel_order(self, command: CancelOrderCommand) -> OrderCommandResult:
+        if self._is_duplicate(command.command_id):
+            return OrderCommandResult(
+                command_id=command.command_id,
+                order_id=command.order_id,
+                status=OrderCommandStatus.DUPLICATE_IGNORED,
+                duplicate_decision=IdempotencyDecision.IGNORE_DUPLICATE,
+            )
+
+        order = self._load_order(command)
+        if order.status is OrderStatus.CANCELLED:
+            self._record_processed(command)
+            return OrderCommandResult(
+                command_id=command.command_id,
+                order_id=command.order_id,
+                status=OrderCommandStatus.ALREADY_CANCELLED,
+                order=order,
+            )
+
+        try:
+            cancelled = order.cancel(command.reason)
+            event = cancelled.record_cancelled(command.requested_at)
+        except ValueError as exc:
+            raise OrderCommandRejected(
+                reason=OrderCommandRejectionReason.INVALID_STATE,
+                command_id=command.command_id,
+                order_id=command.order_id,
+                message=str(exc),
+            ) from exc
+
+        outbox_message = _record_order_cancelled(command, event)
+        self._orders.save(cancelled)
+        self._outbox_messages.save(outbox_message)
+        self._record_processed(command)
+        return OrderCommandResult(
+            command_id=command.command_id,
+            order_id=command.order_id,
+            status=OrderCommandStatus.CANCELLED,
+            order=cancelled,
+            outbox_message=outbox_message,
+        )
+
+    def _is_duplicate(self, command_id: CommandId) -> bool:
+        return self._processed_commands.was_processed(command_id, self.HANDLER_NAME)
+
+    def _load_order(self, command: CancelOrderCommand) -> Order:
+        order = self._orders.get(command.order_id)
+        if order is None:
+            raise OrderCommandRejected(
+                reason=OrderCommandRejectionReason.ORDER_NOT_FOUND,
+                command_id=command.command_id,
+                order_id=command.order_id,
+                message=f"order {command.order_id} was not found",
+            )
+        return order
+
+    def _record_processed(self, command: CancelOrderCommand) -> None:
+        self._processed_commands.record(
+            ProcessedCommand.record(
+                command_id=command.command_id,
+                handler=self.HANDLER_NAME,
+                processed_at=command.requested_at,
+                order_id=command.order_id,
+            )
+        )
+
+
 def _product_quantities(command: CreateOrderCommand) -> dict[ProductId, int]:
     quantities: dict[ProductId, int] = {}
     for item in command.items:
@@ -117,6 +250,32 @@ def _record_order_created(
     )
 
 
+def _record_order_cancelled(command: CancelOrderCommand, event: OrderCancelledEvent) -> OutboxMessage:
+    order = event.order
+    metadata = EventMetadata(
+        message_id=command.event_message_id,
+        name=CheckoutEventName.ORDER_CANCELLED,
+        aggregate_id=str(order.order_id),
+        occurred_at=event.created_at,
+        correlation_id=str(order.order_id),
+        causation_id=str(command.command_id),
+    )
+    headers = {
+        "correlationId": str(order.order_id),
+        "causationId": str(command.command_id),
+    }
+    if command.causation_id is not None:
+        headers["sourceCausationId"] = command.causation_id
+
+    return OutboxMessage.record_event(
+        metadata=metadata,
+        topic=ORDER_EVENT_TOPIC,
+        key=str(order.order_id),
+        payload=_order_cancelled_payload(command, event),
+        headers=headers,
+    )
+
+
 def _order_created_payload(
     command: CreateOrderCommand,
     customer: Customer,
@@ -150,6 +309,20 @@ def _order_created_payload(
         "occurredAt": command.requested_at.isoformat(),
         "correlationId": str(order.order_id),
         "causationId": command.causation_id,
+    }
+
+
+def _order_cancelled_payload(command: CancelOrderCommand, event: OrderCancelledEvent) -> dict[str, Any]:
+    order = event.order
+    return {
+        "eventName": CheckoutEventName.ORDER_CANCELLED.value,
+        "orderId": str(order.order_id),
+        "status": order.status.value,
+        "reason": command.reason,
+        "failureMessages": list(order.failure_messages),
+        "occurredAt": event.created_at.isoformat(),
+        "correlationId": str(order.order_id),
+        "causationId": str(command.command_id),
     }
 
 

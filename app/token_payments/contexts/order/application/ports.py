@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from token_payments.contexts.order.domain import Customer, Order, Store
-from token_payments.shared.domain import Crypto, OutboxMessage, StoreId, UserId
+from token_payments.shared.domain import CommandId, Crypto, OrderId, OutboxMessage, ProcessedCommand, StoreId, UserId
 
 from .commands import CreateOrderCommand
 
@@ -34,7 +34,18 @@ class StoreRepository(Protocol):
 
 
 class OrderRepository(Protocol):
+    def get(self, order_id: OrderId) -> Order | None:
+        ...
+
     def save(self, order: Order) -> None:
+        ...
+
+
+class ProcessedCommandRepository(Protocol):
+    def was_processed(self, command_id: CommandId, handler: str) -> bool:
+        ...
+
+    def record(self, processed_command: ProcessedCommand) -> None:
         ...
 
 

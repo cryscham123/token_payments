@@ -13,6 +13,7 @@ from .ids import MessageId, OrderId
 
 class CheckoutEventName(StrEnum):
     ORDER_CREATED = "OrderCreatedEvent"
+    ORDER_CANCELLED = "OrderCancelledEvent"
     INVENTORY_RESERVED = "InventoryReservedEvent"
     PAYMENT_CONFIRMED = "PaymentConfirmedEvent"
     PAYMENT_FAILED = "PaymentFailedEvent"
