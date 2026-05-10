@@ -72,8 +72,11 @@ class KafkaConsumerLoop:
             raise ValueError("KafkaConsumerLoop.run_batch limit must be a positive integer")
 
         processed = 0
-        for record in self._consumer:
-            if processed >= limit:
+        records = iter(self._consumer)
+        while processed < limit:
+            try:
+                record = next(records)
+            except StopIteration:
                 break
             self._listener.handle(KafkaInboundMessage.from_record(record))
             processed += 1
