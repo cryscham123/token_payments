@@ -48,6 +48,21 @@ docker compose --env-file .env up -d postgres kafka kafka-ui pgweb test_network
 
 `ui` preview command는 long-running HTTP server를 시작하지 않고 bounded JSON을 반환한다. HTML preview는 runtime `CommandDispatchResult.details.preview` 아래에 들어가며, `ApiResponse` 계약이 아니라 로컬 customer/operator UI phase 확인용 fixture 계약이다.
 
+로컬 Docker smoke는 committed config readiness를 먼저 확인한 뒤 사람이 직접 컨테이너를 기동한다.
+
+```bash
+cp .env.example .env
+PYTHONPATH=app python3 -m token_payments smoke compose-readiness
+docker compose --env-file .env up -d postgres kafka kafka-ui pgweb test_network
+PYTHONPATH=app python3 -m token_payments health
+PYTHONPATH=app python3 -m token_payments worker
+PYTHONPATH=app python3 -m token_payments ui customer
+PYTHONPATH=app python3 -m token_payments ui operator
+PYTHONPATH=app python3 -m token_payments smoke happy-path-checkout
+PYTHONPATH=app python3 -m token_payments smoke compensation-checkout
+docker compose --env-file .env down
+```
+
 ## Foundation 검증
 
 Foundation phase는 runtime package, shared domain kernel, messaging/outbox contracts, MetaMask auth skeleton, order/checkout process skeleton을 다음 phase에서 import 가능한 public contract로 고정한다.
