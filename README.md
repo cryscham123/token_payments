@@ -39,6 +39,7 @@ Token Payments 애플리케이션 코드는 `app/token_payments` 아래에 둔�
 ```bash
 cp .env.example .env
 PYTHONPATH=app .venv/bin/python -m token_payments
+PYTHONPATH=app .venv/bin/python -m token_payments health
 docker compose --env-file .env up -d postgres kafka kafka-ui pgweb test_network
 ```
 
@@ -129,3 +130,16 @@ python3 .githooks/pre_commit_check.py
 - Worker runtime: outbox relay, Kafka consumer loops, payment receipt polling, timeout scheduler 실행 wiring.
 - Customer checkout UI: wallet connect, payment signature request, txHash submission, progress tracking.
 - Operator status dashboard: order/payment/outbox status 조회와 retry/failure 관찰 화면.
+
+## API / Worker Runtime 검증
+
+API/worker runtime phase의 공통 계약은 framework-neutral request/response DTO, env 기반 runtime config, command dispatch result, composition root Protocol을 먼저 고정한다. 이 단계의 entrypoint는 runtime command 위임만 검증하며 long-running server나 worker를 시작하지 않는다.
+
+```bash
+.venv/bin/python -m pytest \
+  scripts/test_runtime_contract_foundation.py \
+  scripts/test_adapter_infrastructure_public_contracts.py \
+  scripts/test_foundation_public_contracts.py
+.venv/bin/python scripts/validate_phases.py
+PYTHONPATH=app .venv/bin/python -m token_payments health
+```
