@@ -181,9 +181,16 @@ python3 -m pytest \
   scripts/test_ui_contract_foundation.py \
   scripts/test_customer_checkout_ui.py \
   scripts/test_operator_dashboard_ui.py \
-  scripts/test_ui_runtime_preview.py
+  scripts/test_ui_runtime_preview.py \
+  scripts/test_ui_public_contracts.py
 PYTHONPATH=app python3 -m token_payments ui
 PYTHONPATH=app python3 -m token_payments ui customer
 PYTHONPATH=app python3 -m token_payments ui operator
 python3 scripts/validate_phases.py
 ```
+
+다음 phase 후보는 integration/e2e 중심으로 진행한다.
+
+- docker compose integration smoke: `.env.example` 기반 PostgreSQL, Kafka, test network 기동과 runtime health/worker/ui preview 확인.
+- happy-path e2e checkout: 주문 생성부터 재고 예약, 결제 제출/확인, 가게 승인까지 정상 sequence 검증.
+- compensation e2e checkout: 결제 실패/만료/가게 반려의 보상 command 멱등성 검증.
