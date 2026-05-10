@@ -16,8 +16,12 @@ from .ports import (
     UserRepository,
     WalletSignatureVerifier,
 )
+from .service import AuthApplicationError, AuthApplicationService, AuthErrorCode
 
 __all__ = [
+    "AuthApplicationError",
+    "AuthApplicationService",
+    "AuthErrorCode",
     "AuthEventPublisher",
     "AuthSessionRepository",
     "AuthUseCase",
