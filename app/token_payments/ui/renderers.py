@@ -6,6 +6,8 @@ from html import escape
 from typing import Any, Iterable, Mapping
 
 from .models import (
+    CheckoutAction,
+    CheckoutOrderItemView,
     CheckoutTimelineItem,
     CheckoutViewModel,
     CopyToken,
@@ -95,6 +97,14 @@ body {
   align-items: start;
 }
 
+.tp-order-panel {
+  order: 1;
+}
+
+.tp-payment-panel {
+  order: 2;
+}
+
 .tp-operator-layout {
   display: grid;
   grid-template-columns: minmax(180px, 240px) minmax(0, 1fr) minmax(240px, 320px);
@@ -128,6 +138,12 @@ body {
 
 .tp-field {
   min-width: 0;
+}
+
+.tp-field-amount .tp-value,
+.tp-field-gas .tp-value,
+.tp-value-num {
+  text-align: right;
 }
 
 .tp-label {
@@ -196,6 +212,38 @@ body {
   width: 36px;
   height: 36px;
   padding: 0;
+}
+
+.tp-button:disabled {
+  color: var(--tp-disabled);
+  background: var(--tp-surface-muted);
+  border-color: var(--tp-border);
+  cursor: not-allowed;
+}
+
+.tp-action-list {
+  display: grid;
+  gap: 8px;
+}
+
+.tp-action-note {
+  color: var(--tp-muted);
+  font-size: 12px;
+}
+
+.tp-line-items {
+  display: grid;
+  gap: 8px;
+}
+
+.tp-line-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  min-height: 44px;
+  align-items: center;
+  border-bottom: 1px solid var(--tp-border);
+  padding: 8px 0;
 }
 
 .tp-badge {
@@ -340,6 +388,14 @@ body {
     grid-template-columns: 1fr;
   }
 
+  .tp-payment-panel {
+    order: 1;
+  }
+
+  .tp-order-panel {
+    order: 2;
+  }
+
   .tp-metrics {
     grid-template-columns: 1fr;
   }
@@ -365,35 +421,38 @@ def render_checkout_page(view: CheckoutViewModel) -> RenderedHtml:
     {render_status_badge(view.status)}
   </header>
   <section class="tp-layout">
-    <div class="tp-stack">
-      <section class="tp-panel">
-        <h2 class="tp-section-title">Payment</h2>
+    <aside class="tp-panel tp-panel-dark tp-payment-panel">
+      <h2 class="tp-section-title">Payment</h2>
+      <div class="tp-stack">
         <div class="tp-metrics">
           {_field_html("Tracking", _copy_html(view.tracking_id, "tracking id"))}
           {_field_html("Wallet", _copy_html(view.wallet_address, "wallet address") if view.wallet_address else "not connected")}
           {_field_html("Network", _network_html(view))}
-          {_field_html("Amount", _money_html(view.token_amount))}
+          {_field_html("Amount", _money_html(view.token_amount), "amount", numeric=True)}
           {_field_html("Receiver", _copy_html(view.receiver_wallet, "receiver wallet") if view.receiver_wallet else "pending")}
-          {_field_html("Expires", view.payment_expires_at or "pending")}
-          {_field_html("Gas estimate", _gas_html(view))}
+          {_field_html("Expires", _esc(view.payment_expires_at or "pending"))}
+          {_field_html("Countdown", _esc(view.payment_expires_in or "pending"))}
+          {_field_html("Gas estimate", _gas_html(view), "gas", numeric=True)}
           {_field_html("txHash", _copy_html(view.tx_hash, "tx hash") if view.tx_hash else "not submitted")}
+          {_field_html("txHash status", render_status_badge(view.tx_hash_status) if view.tx_hash_status else "not submitted")}
         </div>
         {_failure_html(view.failure_reason)}
+        {_field_html("Current step", render_status_badge(view.current_step))}
+        {_field_html("Pending action", _esc(action))}
+        {_field_html("Updated", _esc(view.updated_at or "pending"))}
+        {_actions_html(view.actions)}
+      </div>
+    </aside>
+    <div class="tp-stack tp-order-panel">
+      <section class="tp-panel">
+        <h2 class="tp-section-title">Order</h2>
+        {_line_items_html(view.order_items)}
       </section>
       <section class="tp-panel">
         <h2 class="tp-section-title">Timeline</h2>
         {_timeline_html(view.timeline)}
       </section>
     </div>
-    <aside class="tp-panel tp-panel-dark">
-      <h2 class="tp-section-title">Execution</h2>
-      <div class="tp-stack">
-        {_field_html("Current step", render_status_badge(view.current_step))}
-        {_field_html("Pending action", _esc(action))}
-        {_field_html("Updated", _esc(view.updated_at or "pending"))}
-        <button class="tp-button tp-button-primary" type="button">{_esc(_action_label(action))}</button>
-      </div>
-    </aside>
   </section>
 </main>
 """
@@ -529,8 +588,51 @@ def _definition_html(fields: Mapping[str, Any], class_name: str) -> str:
     return f'<dl class="{_esc(class_name)}">{"".join(items)}</dl>'
 
 
-def _field_html(label: str, value_html: str) -> str:
-    return f'<div class="tp-field"><dt class="tp-label">{_esc(label)}</dt><dd class="tp-value">{value_html}</dd></div>'
+def _field_html(label: str, value_html: str, modifier: str | None = None, *, numeric: bool = False) -> str:
+    field_class = "tp-field" + (f" tp-field-{modifier}" if modifier else "")
+    value_class = "tp-value" + (" tp-value-num" if numeric else "")
+    return f'<div class="{field_class}"><dt class="tp-label">{_esc(label)}</dt><dd class="{value_class}">{value_html}</dd></div>'
+
+
+def _line_items_html(items: tuple[CheckoutOrderItemView, ...]) -> str:
+    if not items:
+        return '<span class="tp-value">No order items</span>'
+    return f'<div class="tp-line-items">{"".join(_line_item_html(item) for item in items)}</div>'
+
+
+def _line_item_html(item: CheckoutOrderItemView) -> str:
+    return f"""
+<div class="tp-line-item">
+  <div>
+    <span class="tp-value">{_esc(item.name)}</span>
+    <span class="tp-label">Qty {_esc(item.quantity)} / {_money_html(item.unit_price)}</span>
+    <span class="tp-mono">{_esc(item.product_id)}</span>
+  </div>
+  <div class="tp-value tp-value-num">{_money_html(item.sub_total)}</div>
+</div>
+"""
+
+
+def _actions_html(actions: tuple[CheckoutAction, ...]) -> str:
+    if not actions:
+        return f'<button class="tp-button tp-button-primary" type="button">{_esc(_action_label("WAITING"))}</button>'
+    return f'<div class="tp-action-list">{"".join(_action_html(action) for action in actions)}</div>'
+
+
+def _action_html(action: CheckoutAction) -> str:
+    kind_class = {
+        "primary": " tp-button-primary",
+        "danger": " tp-button-danger",
+        "secondary": "",
+    }[action.kind]
+    disabled = ' disabled aria-disabled="true"' if not action.enabled else ' aria-disabled="false"'
+    tooltip = action.tooltip or action.label
+    aria_label = action.aria_label or action.label
+    note = f'<span class="tp-action-note">{_esc(action.disabled_reason)}</span>' if action.disabled_reason else ""
+    return (
+        f'<button class="tp-button{kind_class}" type="button" data-action-id="{_esc(action.action_id)}" '
+        f'aria-label="{_esc(aria_label)}" title="{_esc(tooltip)}"{disabled}>{_esc(action.label)}</button>{note}'
+    )
 
 
 def _timeline_html(items: tuple[CheckoutTimelineItem, ...]) -> str:
@@ -542,10 +644,12 @@ def _timeline_item_html(item: CheckoutTimelineItem) -> str:
     detail_parts = [
         _esc(item.detail) if item.detail else None,
         _copy_html(item.message_id, "message id") if item.message_id else None,
+        _copy_html(item.command_id, "command id") if item.command_id else None,
+        _esc(item.compensation_status) if item.compensation_status else None,
         _esc(item.occurred_at) if item.occurred_at else None,
     ]
     return f"""
-<li class="tp-timeline-item" data-tone="{_esc(item.status.tone)}">
+<li class="tp-timeline-item" data-tone="{_esc(item.status.tone)}" data-stage="{_esc(item.stage or item.label)}">
   <span class="tp-timeline-dot" aria-hidden="true"></span>
   <div>
     <div>{_esc(item.label)} {render_status_badge(item.status)}</div>

@@ -2,6 +2,8 @@
 
 from .mappers import checkout_view_from_api_payload, operator_dashboard_from_api_payload
 from .models import (
+    CheckoutAction,
+    CheckoutOrderItemView,
     CheckoutTimelineItem,
     CheckoutViewModel,
     CopyToken,
@@ -17,6 +19,8 @@ from .models import (
 from .renderers import render_checkout_page, render_operator_dashboard, render_status_badge
 
 __all__ = [
+    "CheckoutAction",
+    "CheckoutOrderItemView",
     "CheckoutTimelineItem",
     "CheckoutViewModel",
     "CopyToken",
