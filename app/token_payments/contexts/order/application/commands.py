@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from token_payments.contexts.order.domain import Address, TrackingId
-from token_payments.shared.domain import MessageId, OrderId, ProductId, StoreId, UserId
+from token_payments.shared.domain import CommandId, MessageId, OrderId, ProductId, StoreId, UserId
 
 
 @dataclass(frozen=True)
@@ -51,6 +51,36 @@ class CreateOrderCommand:
                 "causation_id",
                 _require_text(self.causation_id, "CreateOrderCommand.causation_id"),
             )
+
+
+@dataclass(frozen=True)
+class CancelOrderCommand:
+    command_id: CommandId
+    order_id: OrderId
+    reason: str
+    requested_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    causation_id: str | None = None
+    event_message_id: MessageId = field(default_factory=MessageId.new)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.command_id, CommandId):
+            raise ValueError("CancelOrderCommand.command_id must be a CommandId")
+        if not isinstance(self.order_id, OrderId):
+            raise ValueError("CancelOrderCommand.order_id must be an OrderId")
+        object.__setattr__(self, "reason", _require_text(self.reason, "CancelOrderCommand.reason"))
+        object.__setattr__(
+            self,
+            "requested_at",
+            _require_aware_datetime(self.requested_at, "CancelOrderCommand.requested_at"),
+        )
+        if self.causation_id is not None:
+            object.__setattr__(
+                self,
+                "causation_id",
+                _require_text(self.causation_id, "CancelOrderCommand.causation_id"),
+            )
+        if not isinstance(self.event_message_id, MessageId):
+            raise ValueError("CancelOrderCommand.event_message_id must be a MessageId")
 
 
 def _coerce_items(items: tuple[CreateOrderItem, ...] | list[CreateOrderItem]) -> tuple[CreateOrderItem, ...]:

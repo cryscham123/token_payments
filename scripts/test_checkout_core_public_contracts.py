@@ -171,6 +171,7 @@ def test_checkout_core_message_names_are_ready_for_process_manager_and_adapters(
     order_id = OrderId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c21")
 
     assert {event.value for event in CheckoutEventName} >= {
+        "OrderCancelledEvent",
         "InventoryReservedEvent",
         "PaymentConfirmedEvent",
         "PaymentFailedEvent",
