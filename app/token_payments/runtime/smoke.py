@@ -581,6 +581,651 @@ def _run_happy_path_checkout() -> SmokeScenarioResult:
     )
 
 
+def _run_compensation_checkout() -> SmokeScenarioResult:
+    failure = _run_payment_receipt_failure_compensation()
+    expiration = _run_payment_signature_expiration_compensation()
+    rejection = _run_store_rejection_compensation()
+
+    sub_scenarios = {
+        "paymentReceiptFailure": failure["details"],
+        "paymentSignatureExpiration": expiration["details"],
+        "storeRejectionAfterPaymentConfirmation": rejection["details"],
+    }
+    duplicate_summary = _compensation_duplicate_summary(sub_scenarios)
+
+    return SmokeScenarioResult(
+        scenario="compensation-checkout",
+        result=SmokeResult(
+            status=SmokeStatus.PASSED,
+            summary=(
+                "compensation checkout emitted deterministic idempotent commands for failure, "
+                "expiration, and rejection"
+            ),
+        ),
+        steps=(
+            _passed_step(
+                "payment receipt failure compensation",
+                "PaymentFailedEvent emitted deterministic release/cancel compensation commands",
+                failure["stepDetails"],
+            ),
+            _passed_step(
+                "payment signature expiration compensation",
+                "PaymentExpiredEvent emitted deterministic release/cancel compensation commands",
+                expiration["stepDetails"],
+            ),
+            _passed_step(
+                "store rejection compensation",
+                "OrderRejectedEvent emitted deterministic refund/release/cancel compensation commands",
+                rejection["stepDetails"],
+            ),
+        ),
+        details={
+            "subScenarios": sub_scenarios,
+            "cancelOrderHandlerWired": False,
+            "duplicateSummary": duplicate_summary,
+        },
+    )
+
+
+def _run_payment_receipt_failure_compensation() -> dict[str, Any]:
+    from token_payments.contexts.inventory.application import ReleaseInventoryCommand
+    from token_payments.contexts.payment.application import ConfirmPaymentReceiptCommand, SubmitTransactionHashCommand
+    from token_payments.shared.domain import CheckoutCommandName, CommandId, TransactionHash
+
+    fixture = _build_compensation_fixture("7c")
+    failed_tx_hash = TransactionHash("0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc")
+    submit_result = fixture.payment_handler.submit_transaction_hash(
+        SubmitTransactionHashCommand(
+            command_id=CommandId(f"{fixture.order_id}:SubmitTransactionHashCommand"),
+            payment_id=fixture.payment_id,
+            order_id=fixture.order_id,
+            tx_hash=failed_tx_hash,
+            submitted_at=fixture.now + timedelta(minutes=3),
+            causation_id=str(fixture.initiate_decision.metadata.command_id),
+        )
+    )
+    failed_result = fixture.payment_handler.confirm_payment_receipt(
+        ConfirmPaymentReceiptCommand(
+            command_id=CommandId(f"{fixture.order_id}:ConfirmPaymentReceiptCommand"),
+            payment_id=fixture.payment_id,
+            order_id=fixture.order_id,
+            checked_at=fixture.now + timedelta(minutes=4),
+            failure_reason="receipt not confirmed by deterministic smoke adapter",
+            causation_id=str(submit_result.command_id),
+            event_message_id=_message_id("7c", "40"),
+        )
+    )
+    if failed_result.outbox_message is None or failed_result.payment is None:
+        raise RuntimeError("payment failure result did not include outbox message and payment")
+
+    decisions, duplicate_event_replay = _consume_compensation_event(fixture, failed_result.outbox_message)
+    release_decision = _single_decision(decisions, CheckoutCommandName.RELEASE_INVENTORY.value)
+    release_command = ReleaseInventoryCommand(
+        command_id=release_decision.metadata.command_id,
+        order_id=fixture.order_id,
+        product_id=fixture.product_id,
+        store_id=fixture.store_id,
+        requested_at=release_decision.metadata.issued_at,
+        causation_id=release_decision.metadata.causation_id,
+        event_message_id=_message_id("7c", "41"),
+    )
+    release_result = fixture.inventory_handler.release_inventory(release_command)
+    duplicate_release = fixture.inventory_handler.release_inventory(release_command)
+    if release_result.inventory is None:
+        raise RuntimeError("inventory release result did not include inventory")
+
+    details = _base_compensation_details(
+        trigger_event=failed_result.outbox_message.name,
+        decisions=decisions,
+        duplicate_event_replay=duplicate_event_replay,
+        duplicate_command_results={
+            CheckoutCommandName.RELEASE_INVENTORY.value: duplicate_release.status.value,
+            CheckoutCommandName.CANCEL_ORDER.value: "HANDLER_NOT_WIRED",
+        },
+        final_inventory=release_result.inventory,
+    ) | {
+        "finalPaymentStatus": failed_result.payment.status.value,
+        "cancelOrderHandlerWired": False,
+    }
+    return {
+        "details": details,
+        "stepDetails": {
+            "triggerEvent": details["triggerEvent"],
+            "compensationCommandIds": details["compensationCommandIds"],
+            "duplicateCommandResults": details["duplicateCommandResults"],
+        },
+    }
+
+
+def _run_payment_signature_expiration_compensation() -> dict[str, Any]:
+    from token_payments.contexts.inventory.application import ReleaseInventoryCommand
+    from token_payments.contexts.payment.application import ExpireAwaitingSignatureCommand
+    from token_payments.shared.domain import CheckoutCommandName, CommandId
+
+    fixture = _build_compensation_fixture("8c")
+    expired_result = fixture.payment_handler.expire_awaiting_signature(
+        ExpireAwaitingSignatureCommand(
+            command_id=CommandId(f"{fixture.order_id}:ExpireAwaitingSignatureCommand"),
+            payment_id=fixture.payment_id,
+            order_id=fixture.order_id,
+            expired_at=fixture.now + timedelta(minutes=16),
+            reason="signature expired before txHash submission",
+            causation_id=str(fixture.initiate_decision.metadata.command_id),
+            event_message_id=_message_id("8c", "40"),
+        )
+    )
+    if expired_result.outbox_message is None or expired_result.payment is None:
+        raise RuntimeError("payment expiration result did not include outbox message and payment")
+
+    decisions, duplicate_event_replay = _consume_compensation_event(fixture, expired_result.outbox_message)
+    release_decision = _single_decision(decisions, CheckoutCommandName.RELEASE_INVENTORY.value)
+    release_command = ReleaseInventoryCommand(
+        command_id=release_decision.metadata.command_id,
+        order_id=fixture.order_id,
+        product_id=fixture.product_id,
+        store_id=fixture.store_id,
+        requested_at=release_decision.metadata.issued_at,
+        causation_id=release_decision.metadata.causation_id,
+        event_message_id=_message_id("8c", "41"),
+    )
+    release_result = fixture.inventory_handler.release_inventory(release_command)
+    duplicate_release = fixture.inventory_handler.release_inventory(release_command)
+    if release_result.inventory is None:
+        raise RuntimeError("inventory release result did not include inventory")
+
+    details = _base_compensation_details(
+        trigger_event=expired_result.outbox_message.name,
+        decisions=decisions,
+        duplicate_event_replay=duplicate_event_replay,
+        duplicate_command_results={
+            CheckoutCommandName.RELEASE_INVENTORY.value: duplicate_release.status.value,
+            CheckoutCommandName.CANCEL_ORDER.value: "HANDLER_NOT_WIRED",
+        },
+        final_inventory=release_result.inventory,
+    ) | {
+        "finalPaymentStatus": expired_result.payment.status.value,
+        "cancelOrderHandlerWired": False,
+    }
+    return {
+        "details": details,
+        "stepDetails": {
+            "triggerEvent": details["triggerEvent"],
+            "compensationCommandIds": details["compensationCommandIds"],
+            "duplicateCommandResults": details["duplicateCommandResults"],
+        },
+    }
+
+
+def _run_store_rejection_compensation() -> dict[str, Any]:
+    from token_payments.contexts.inventory.application import ReleaseInventoryCommand
+    from token_payments.contexts.payment.application import (
+        ConfirmPaymentReceiptCommand,
+        RefundPaymentCommand,
+        SubmitTransactionHashCommand,
+    )
+    from token_payments.contexts.store_approval.application import RequestStoreApprovalCommand
+    from token_payments.shared.domain import CheckoutCommandName, CommandId
+
+    fixture = _build_compensation_fixture("9c")
+    submit_result = fixture.payment_handler.submit_transaction_hash(
+        SubmitTransactionHashCommand(
+            command_id=CommandId(f"{fixture.order_id}:SubmitTransactionHashCommand"),
+            payment_id=fixture.payment_id,
+            order_id=fixture.order_id,
+            tx_hash=fixture.confirmed_tx_hash,
+            submitted_at=fixture.now + timedelta(minutes=3),
+            causation_id=str(fixture.initiate_decision.metadata.command_id),
+        )
+    )
+    confirmed_result = fixture.payment_handler.confirm_payment_receipt(
+        ConfirmPaymentReceiptCommand(
+            command_id=CommandId(f"{fixture.order_id}:ConfirmPaymentReceiptCommand"),
+            payment_id=fixture.payment_id,
+            order_id=fixture.order_id,
+            checked_at=fixture.now + timedelta(minutes=4),
+            causation_id=str(submit_result.command_id),
+            event_message_id=_message_id("9c", "40"),
+        )
+    )
+    if confirmed_result.outbox_message is None or confirmed_result.payment is None:
+        raise RuntimeError("payment confirmation result did not include outbox message and payment")
+
+    approval_decision = _single_decision(
+        _handle_checkout_event(
+            process_manager=fixture.process_manager,
+            processed_messages=fixture.processed_messages,
+            outbox_messages=fixture.outbox_messages,
+            topic_resolver=fixture.topic_resolver,
+            source_message=confirmed_result.outbox_message,
+        ),
+        CheckoutCommandName.REQUEST_STORE_APPROVAL.value,
+    )
+    approval_result = fixture.approval_service.request_store_approval(
+        RequestStoreApprovalCommand(
+            command_id=approval_decision.metadata.command_id,
+            order_id=fixture.order_id,
+            store_id=fixture.store_id,
+            owner_user_id=fixture.owner_user_id,
+            requested_at=approval_decision.metadata.issued_at,
+            rejection_reason="store owner rejected deterministic smoke order",
+            causation_id=approval_decision.metadata.causation_id,
+            event_message_id=_message_id("9c", "41"),
+        )
+    )
+    if approval_result.outbox_message is None or approval_result.order_detail is None:
+        raise RuntimeError("store rejection result did not include outbox message and order detail")
+
+    decisions, duplicate_event_replay = _consume_compensation_event(fixture, approval_result.outbox_message)
+    refund_decision = _single_decision(decisions, CheckoutCommandName.REFUND_PAYMENT.value)
+    release_decision = _single_decision(decisions, CheckoutCommandName.RELEASE_INVENTORY.value)
+
+    refund_command = RefundPaymentCommand(
+        command_id=refund_decision.metadata.command_id,
+        payment_id=fixture.payment_id,
+        order_id=fixture.order_id,
+        requested_at=refund_decision.metadata.issued_at,
+        causation_id=refund_decision.metadata.causation_id,
+        event_message_id=_message_id("9c", "42"),
+    )
+    refund_result = fixture.payment_handler.refund_payment(refund_command)
+    duplicate_refund = fixture.payment_handler.refund_payment(refund_command)
+    if refund_result.payment is None:
+        raise RuntimeError("payment refund result did not include payment")
+
+    release_command = ReleaseInventoryCommand(
+        command_id=release_decision.metadata.command_id,
+        order_id=fixture.order_id,
+        product_id=fixture.product_id,
+        store_id=fixture.store_id,
+        requested_at=release_decision.metadata.issued_at,
+        causation_id=release_decision.metadata.causation_id,
+        event_message_id=_message_id("9c", "43"),
+    )
+    release_result = fixture.inventory_handler.release_inventory(release_command)
+    duplicate_release = fixture.inventory_handler.release_inventory(release_command)
+    if release_result.inventory is None:
+        raise RuntimeError("inventory release result did not include inventory")
+
+    details = _base_compensation_details(
+        trigger_event=approval_result.outbox_message.name,
+        decisions=decisions,
+        duplicate_event_replay=duplicate_event_replay,
+        duplicate_command_results={
+            CheckoutCommandName.REFUND_PAYMENT.value: duplicate_refund.status.value,
+            CheckoutCommandName.RELEASE_INVENTORY.value: duplicate_release.status.value,
+            CheckoutCommandName.CANCEL_ORDER.value: "HANDLER_NOT_WIRED",
+        },
+        final_inventory=release_result.inventory,
+    ) | {
+        "finalPaymentStatus": refund_result.payment.status.value,
+        "finalStoreApprovalStatus": approval_result.order_detail.approval_status.value,
+        "cancelOrderHandlerWired": False,
+    }
+    return {
+        "details": details,
+        "stepDetails": {
+            "triggerEvent": details["triggerEvent"],
+            "compensationCommandIds": details["compensationCommandIds"],
+            "duplicateCommandResults": details["duplicateCommandResults"],
+        },
+    }
+
+
+@dataclass(frozen=True)
+class _CompensationCheckoutFixture:
+    now: datetime
+    order_id: Any
+    product_id: Any
+    store_id: Any
+    payment_id: Any
+    owner_user_id: Any
+    confirmed_tx_hash: Any
+    total_amount: Any
+    outbox_messages: Any
+    processed_messages: Any
+    process_manager: Any
+    topic_resolver: Any
+    inventory_handler: Any
+    payment_handler: Any
+    approval_service: Any
+    initiate_decision: Any
+
+
+def _build_compensation_fixture(marker: str) -> _CompensationCheckoutFixture:
+    from token_payments.contexts.checkout.application import CheckoutProcessManager
+    from token_payments.contexts.inventory.application import InventoryCommandHandler, ReserveInventoryCommand
+    from token_payments.contexts.inventory.domain import ProductInventory
+    from token_payments.contexts.order.application import CreateOrderCommand, CreateOrderItem, OrderApplicationService
+    from token_payments.contexts.order.domain import (
+        Address,
+        Customer,
+        Product as OrderProduct,
+        Store as OrderStore,
+        TrackingId,
+    )
+    from token_payments.contexts.payment.application import InitiatePaymentCommand, PaymentCommandHandler
+    from token_payments.contexts.payment.domain import GasEstimate, TransactionReceipt
+    from token_payments.contexts.store_approval.application import StoreApprovalService
+    from token_payments.contexts.store_approval.domain import (
+        OrderDetail,
+        Product as ApprovalProduct,
+        Store as ApprovalStore,
+    )
+    from token_payments.shared.adapter.messaging import MessageTopicResolver
+    from token_payments.shared.domain import (
+        ChainNetwork,
+        CheckoutCommandName,
+        Crypto,
+        CustomerId,
+        OrderId,
+        PaymentId,
+        ProductId,
+        StoreId,
+        TransactionHash,
+        UserId,
+        WalletAddress,
+    )
+
+    now = datetime(2026, 5, 10, 11, 0, tzinfo=UTC)
+    order_id = OrderId(str(_uuid(marker, "21")))
+    product_id = ProductId(str(_uuid(marker, "23")))
+    store_id = StoreId(str(_uuid(marker, "24")))
+    payment_id = PaymentId(str(_uuid(marker, "25")))
+    customer_id = CustomerId(str(_uuid(marker, "26")))
+    user_id = UserId(str(_uuid(marker, "27")))
+    owner_user_id = UserId(str(_uuid(marker, "28")))
+    tracking_id = TrackingId(str(_uuid(marker, "29")))
+    wallet_from = WalletAddress("0x1111111111111111111111111111111111111111")
+    wallet_to = WalletAddress("0x2222222222222222222222222222222222222222")
+    token_address = WalletAddress("0x3333333333333333333333333333333333333333")
+    confirmed_tx_hash = TransactionHash("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+    chain = ChainNetwork(chain_id=11155111, name="Sepolia")
+    unit_price = Crypto(
+        amount=Decimal("1.25"),
+        symbol="USDC",
+        chain_id=chain.chain_id,
+        token_address=token_address,
+        decimals=6,
+    )
+
+    outbox_messages = _InMemoryOutboxMessageRepository()
+    processed_messages = _InMemoryProcessedMessageRepository()
+    inventory_processed_commands = _InMemoryProcessedCommandRepository()
+    payment_processed_commands = _InMemoryProcessedCommandRepository()
+    approval_processed_commands = _InMemoryProcessedCommandRepository()
+
+    customer = Customer(customer_id=customer_id, user_id=user_id, customer_wallet=wallet_from)
+    order_product = OrderProduct(product_id=product_id, name="Deterministic Compensation Item", price=unit_price)
+    order_store = OrderStore(
+        store_id=store_id,
+        owner_user_id=owner_user_id,
+        products=(order_product,),
+        store_address=Address(id=f"store-address-{marker}", street="42 Token Street"),
+        store_wallet=wallet_to,
+        supported_chain_ids=(chain.chain_id,),
+    )
+    order_repository = _InMemoryOrderRepository()
+    order_service = OrderApplicationService(
+        customers=_InMemoryCustomerRepository({str(user_id): customer}),
+        stores=_InMemoryOrderStoreRepository({str(store_id): order_store}),
+        orders=order_repository,
+        outbox_messages=outbox_messages,
+    )
+    order_result = order_service.createOrder(
+        CreateOrderCommand(
+            authenticated_user_id=user_id,
+            store_id=store_id,
+            delivery_address=Address(id=f"delivery-address-{marker}", street="7 Checkout Avenue"),
+            items=(CreateOrderItem(product_id=product_id, quantity=1),),
+            order_id=order_id,
+            tracking_id=tracking_id,
+            event_message_id=_message_id(marker, "22"),
+            requested_at=now,
+        )
+    )
+
+    process_manager = CheckoutProcessManager()
+    topic_resolver = MessageTopicResolver.default()
+    reserve_decision = _single_decision(
+        _handle_checkout_event(
+            process_manager=process_manager,
+            processed_messages=processed_messages,
+            outbox_messages=outbox_messages,
+            topic_resolver=topic_resolver,
+            source_message=order_result.outbox_message,
+        ),
+        CheckoutCommandName.RESERVE_INVENTORY.value,
+    )
+    inventory_repository = _InMemoryInventoryRepository(
+        {
+            (str(product_id), str(store_id)): ProductInventory(
+                product_id=product_id,
+                store_id=store_id,
+                available_stock=10,
+                reserved_stock=0,
+                total_stock=10,
+            )
+        }
+    )
+    inventory_handler = InventoryCommandHandler(
+        inventory_repository=inventory_repository,
+        processed_commands=inventory_processed_commands,
+        outbox_messages=outbox_messages,
+    )
+    inventory_result = inventory_handler.reserve_inventory(
+        ReserveInventoryCommand(
+            command_id=reserve_decision.metadata.command_id,
+            order_id=order_id,
+            product_id=product_id,
+            store_id=store_id,
+            quantity=1,
+            requested_at=reserve_decision.metadata.issued_at,
+            causation_id=reserve_decision.metadata.causation_id,
+            event_message_id=_message_id(marker, "30"),
+        )
+    )
+    if inventory_result.outbox_message is None:
+        raise RuntimeError("inventory reserve result did not include outbox message")
+
+    initiate_decision = _single_decision(
+        _handle_checkout_event(
+            process_manager=process_manager,
+            processed_messages=processed_messages,
+            outbox_messages=outbox_messages,
+            topic_resolver=topic_resolver,
+            source_message=inventory_result.outbox_message,
+        ),
+        CheckoutCommandName.INITIATE_PAYMENT.value,
+    )
+    payment_handler = PaymentCommandHandler(
+        payment_repository=_InMemoryPaymentRepository(),
+        authorization_repository=_InMemoryPaymentAuthorizationRepository(),
+        processed_commands=payment_processed_commands,
+        outbox_messages=outbox_messages,
+        blockchain_adapter=_InMemoryBlockchainAdapter(
+            receipt=TransactionReceipt(hash=confirmed_tx_hash, block_number=123456, gas_used=21000),
+            gas_estimate=GasEstimate(
+                estimated_fee=Crypto(
+                    amount=Decimal("0.00042"),
+                    symbol="ETH",
+                    chain_id=chain.chain_id,
+                    token_address=None,
+                    decimals=18,
+                ),
+                gas_limit=21000,
+                buffer_rate=Decimal("0.20"),
+            ),
+        ),
+        timeout_scheduler=_InMemoryPaymentTimeoutScheduler(),
+        transaction_service=_InMemoryTransactionService(),
+    )
+    payment_handler.initiate_payment(
+        InitiatePaymentCommand(
+            command_id=initiate_decision.metadata.command_id,
+            payment_id=payment_id,
+            order_id=order_id,
+            customer_id=customer_id,
+            user_id=user_id,
+            amount=order_result.total_amount,
+            wallet_from=wallet_from,
+            wallet_to=wallet_to,
+            chain_network=chain,
+            expires_at=now + timedelta(minutes=15),
+            requested_at=initiate_decision.metadata.issued_at,
+            causation_id=initiate_decision.metadata.causation_id,
+            event_message_id=_message_id(marker, "31"),
+        )
+    )
+
+    approval_product = ApprovalProduct(product_id=product_id, name=order_product.name, price=unit_price, available=True)
+    approval_service = StoreApprovalService(
+        store_repository=_InMemoryApprovalStoreRepository(
+            {
+                str(store_id): ApprovalStore(
+                    store_id=store_id,
+                    owner_user_id=owner_user_id,
+                    products=(approval_product,),
+                )
+            }
+        ),
+        order_detail_repository=_InMemoryOrderDetailRepository(
+            {
+                str(order_id): OrderDetail(
+                    order_id=order_id,
+                    store_id=store_id,
+                    order_status="PAID",
+                    total_amount=order_result.total_amount,
+                    products=(approval_product,),
+                )
+            }
+        ),
+        processed_commands=approval_processed_commands,
+        outbox_messages=outbox_messages,
+    )
+
+    return _CompensationCheckoutFixture(
+        now=now,
+        order_id=order_id,
+        product_id=product_id,
+        store_id=store_id,
+        payment_id=payment_id,
+        owner_user_id=owner_user_id,
+        confirmed_tx_hash=confirmed_tx_hash,
+        total_amount=order_result.total_amount,
+        outbox_messages=outbox_messages,
+        processed_messages=processed_messages,
+        process_manager=process_manager,
+        topic_resolver=topic_resolver,
+        inventory_handler=inventory_handler,
+        payment_handler=payment_handler,
+        approval_service=approval_service,
+        initiate_decision=initiate_decision,
+    )
+
+
+def _consume_compensation_event(
+    fixture: _CompensationCheckoutFixture,
+    source_message: Any,
+) -> tuple[tuple[Any, ...], dict[str, JsonValue]]:
+    decisions = _handle_checkout_event(
+        process_manager=fixture.process_manager,
+        processed_messages=fixture.processed_messages,
+        outbox_messages=fixture.outbox_messages,
+        topic_resolver=fixture.topic_resolver,
+        source_message=source_message,
+    )
+    duplicate_decisions = _handle_checkout_event(
+        process_manager=fixture.process_manager,
+        processed_messages=fixture.processed_messages,
+        outbox_messages=fixture.outbox_messages,
+        topic_resolver=fixture.topic_resolver,
+        source_message=source_message,
+    )
+    replay = _direct_process_manager_replay(fixture.process_manager, source_message)
+    return decisions, {
+        "ignoredByProcessedMessageRepository": len(duplicate_decisions) == 0,
+        "firstCommandIds": _decision_id_list(decisions),
+        "processedDuplicateCommandIds": _decision_id_list(duplicate_decisions),
+        "directReplayCommandIds": replay["directReplayCommandIds"],
+        "sameDirectDecisionIdsOnReplay": replay["sameDirectDecisionIdsOnReplay"],
+    }
+
+
+def _direct_process_manager_replay(process_manager: Any, source_message: Any) -> dict[str, JsonValue]:
+    event = _checkout_event_from_source_message(source_message)
+    first = process_manager.handle(event)
+    second = process_manager.handle(event)
+    first_ids = _decision_id_list(first)
+    second_ids = _decision_id_list(second)
+    return {
+        "directReplayCommandIds": [first_ids, second_ids],
+        "sameDirectDecisionIdsOnReplay": first_ids == second_ids,
+    }
+
+
+def _base_compensation_details(
+    *,
+    trigger_event: str,
+    decisions: tuple[Any, ...],
+    duplicate_event_replay: Mapping[str, Any],
+    duplicate_command_results: Mapping[str, str],
+    final_inventory: Any,
+) -> dict[str, JsonValue]:
+    return {
+        "triggerEvent": trigger_event,
+        "compensationCommandIds": _decision_ids_by_name(decisions),
+        "duplicateEventReplay": dict(duplicate_event_replay),
+        "duplicateCommandResults": dict(duplicate_command_results),
+        "finalInventory": {
+            "availableStock": final_inventory.available_stock.value,
+            "reservedStock": final_inventory.reserved_stock.value,
+        },
+    }
+
+
+def _compensation_duplicate_summary(sub_scenarios: Mapping[str, Mapping[str, Any]]) -> dict[str, JsonValue]:
+    duplicate_results: dict[str, list[str]] = {
+        "ReleaseInventoryCommand": [],
+        "RefundPaymentCommand": [],
+        "CancelOrderCommand": [],
+    }
+    for scenario in sub_scenarios.values():
+        for command_name, result in scenario["duplicateCommandResults"].items():
+            duplicate_results.setdefault(command_name, []).append(str(result))
+
+    return {
+        "duplicateEventReplaysIgnored": sum(
+            1
+            for scenario in sub_scenarios.values()
+            if scenario["duplicateEventReplay"]["ignoredByProcessedMessageRepository"]
+        ),
+        "deterministicProcessManagerReplays": sum(
+            1
+            for scenario in sub_scenarios.values()
+            if scenario["duplicateEventReplay"]["sameDirectDecisionIdsOnReplay"]
+        ),
+        "duplicateCommandResults": {key: values for key, values in duplicate_results.items() if values},
+    }
+
+
+def _decision_ids_by_name(decisions: tuple[Any, ...]) -> dict[str, JsonValue]:
+    return {decision.name.value: str(decision.metadata.command_id) for decision in decisions}
+
+
+def _decision_id_list(decisions: tuple[Any, ...]) -> list[JsonValue]:
+    return [str(decision.metadata.command_id) for decision in decisions]
+
+
+def _uuid(marker: str, suffix: str) -> str:
+    return f"018f33aa-9e6d-73d8-9dc3-47d6cdcc{marker}{suffix}"
+
+
+def _message_id(marker: str, suffix: str) -> Any:
+    from token_payments.shared.domain import MessageId
+
+    return MessageId(_uuid(marker, suffix))
+
+
 def _handle_checkout_event(
     *,
     process_manager: Any,
@@ -589,20 +1234,9 @@ def _handle_checkout_event(
     topic_resolver: Any,
     source_message: Any,
 ) -> tuple[Any, ...]:
-    from token_payments.contexts.checkout.application import CheckoutProcessEvent
-    from token_payments.shared.domain import EventMetadata, MessageId, OrderId, OutboxMessage, ProcessedMessage
+    from token_payments.shared.domain import OutboxMessage, ProcessedMessage
 
-    event = CheckoutProcessEvent(
-        metadata=EventMetadata(
-            message_id=MessageId(source_message.identity),
-            name=source_message.name,
-            aggregate_id=source_message.key,
-            occurred_at=source_message.created_at,
-            correlation_id=source_message.headers.get("correlationId", source_message.key),
-            causation_id=source_message.headers.get("causationId"),
-        ),
-        order_id=OrderId(str(source_message.payload["orderId"])),
-    )
+    event = _checkout_event_from_source_message(source_message)
     if processed_messages.was_processed(event.metadata.message_id, "checkout-process-manager"):
         return ()
 
@@ -635,6 +1269,23 @@ def _handle_checkout_event(
         )
     )
     return tuple(decisions)
+
+
+def _checkout_event_from_source_message(source_message: Any) -> Any:
+    from token_payments.contexts.checkout.application import CheckoutProcessEvent
+    from token_payments.shared.domain import EventMetadata, MessageId, OrderId
+
+    return CheckoutProcessEvent(
+        metadata=EventMetadata(
+            message_id=MessageId(source_message.identity),
+            name=source_message.name,
+            aggregate_id=source_message.key,
+            occurred_at=source_message.created_at,
+            correlation_id=source_message.headers.get("correlationId", source_message.key),
+            causation_id=source_message.headers.get("causationId"),
+        ),
+        order_id=OrderId(str(source_message.payload["orderId"])),
+    )
 
 
 def _single_decision(decisions: tuple[Any, ...], expected_name: str) -> Any:
@@ -853,6 +1504,7 @@ class _InMemoryOrderDetailRepository:
 _SMOKE_RUNNERS: Mapping[str, SmokeRunner] = MappingProxyType(
     {
         "happy-path-checkout": _run_happy_path_checkout,
+        "compensation-checkout": _run_compensation_checkout,
     }
 )
 
