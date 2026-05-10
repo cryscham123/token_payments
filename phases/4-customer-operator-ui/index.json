@@ -29,7 +29,10 @@
     {
       "step": 3,
       "name": "ui-runtime-preview",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-10T19:37:58+0900",
+      "completed_at": "2026-05-10T19:45:39+0900",
+      "summary": "customer/operator UI preview runtime command, local-only sample fixtures, structured unknown-view error, README 검증 명령을 추가했다."
     },
     {
       "step": 4,
