@@ -15,6 +15,7 @@ from .models import (
     OperatorDashboardViewModel,
     OperatorDetailView,
     OperatorFilterState,
+    OperatorSummaryItem,
     OperatorTableRow,
     RenderedHtml,
     StatusBadge,
@@ -134,6 +135,28 @@ body {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+}
+
+.tp-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.tp-summary-item {
+  min-width: 0;
+  border: 1px solid var(--tp-border);
+  border-radius: 8px;
+  background: var(--tp-surface);
+  padding: 10px;
+}
+
+.tp-summary-value {
+  display: block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 22px;
+  font-weight: 650;
+  line-height: 1.2;
 }
 
 .tp-field {
@@ -294,7 +317,7 @@ body {
 
 .tp-table {
   width: 100%;
-  min-width: 760px;
+  min-width: 980px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -322,6 +345,19 @@ body {
 
 .tp-table .tp-num {
   text-align: right;
+}
+
+.tp-operator-empty {
+  border: 1px dashed var(--tp-border);
+  border-radius: 8px;
+  background: var(--tp-surface);
+  color: var(--tp-muted);
+  padding: 14px;
+}
+
+.tp-readonly-note {
+  color: var(--tp-muted);
+  font-size: 12px;
 }
 
 .tp-timeline {
@@ -399,6 +435,10 @@ body {
   .tp-metrics {
     grid-template-columns: 1fr;
   }
+
+  .tp-summary-grid {
+    grid-template-columns: 1fr;
+  }
 }
 """.strip()
 
@@ -468,9 +508,10 @@ def render_operator_dashboard(view: OperatorDashboardViewModel) -> RenderedHtml:
   <header class="tp-page-head">
     <div>
       <h1 class="tp-title">Operator Dashboard</h1>
-      <span class="tp-value">Orders, payments, outbox, workers, errors</span>
+      <span class="tp-value">Orders, payments, inventory, store approvals, outbox, workers, errors</span>
+      <span class="tp-readonly-note">read-only observability; retry candidates are displayed only</span>
     </div>
-    {render_status_badge("PENDING")}
+    {render_status_badge(_operator_surface_status(view))}
   </header>
   <section class="tp-operator-layout">
     <aside class="tp-panel">
@@ -478,11 +519,10 @@ def render_operator_dashboard(view: OperatorDashboardViewModel) -> RenderedHtml:
       {_filters_html(view.filters)}
     </aside>
     <div class="tp-stack">
-      {_table_html("Orders", view.orders)}
-      {_table_html("Payments", view.payments)}
-      {_table_html("Outbox", view.outbox)}
-      {_table_html("Workers", view.workers)}
-      {_table_html("Errors", view.errors)}
+      {_summary_html(view.summary)}
+      {_empty_operator_html(view.primary_rows)}
+      {_table_html("Operational status", view.primary_rows)}
+      {_table_html("Worker health", view.workers)}
     </div>
     <aside class="tp-panel">
       {_detail_html(view.detail)}
@@ -519,6 +559,8 @@ def _filters_html(filters: OperatorFilterState) -> str:
         "Statuses": ", ".join(filters.statuses) if filters.statuses else "all",
         "Chain": str(filters.chain_id) if filters.chain_id is not None else "all",
         "Store": filters.store_id or "all",
+        "Created from": filters.created_at_from or "all",
+        "Created to": filters.created_at_to or "all",
         "Failed only": str(filters.failed_only),
         "Retry candidates": str(filters.retry_candidates_only),
         "Sort": filters.sort,
@@ -526,9 +568,34 @@ def _filters_html(filters: OperatorFilterState) -> str:
     return _definition_html(fields, "tp-filter-list")
 
 
+def _summary_html(items: tuple[OperatorSummaryItem, ...]) -> str:
+    if not items:
+        return ""
+    rendered = "".join(_summary_item_html(item) for item in items)
+    return f'<section class="tp-summary-grid" aria-label="Operator status summary">{rendered}</section>'
+
+
+def _summary_item_html(item: OperatorSummaryItem) -> str:
+    detail = f'<span class="tp-label">{_esc(item.detail)}</span>' if item.detail else ""
+    return f"""
+<div class="tp-summary-item" data-summary-key="{_esc(item.key)}">
+  <span class="tp-label">{_esc(item.label)}</span>
+  <span class="tp-summary-value">{_esc(item.value)}</span>
+  {render_status_badge(item.status)}
+  {detail}
+</div>
+"""
+
+
+def _empty_operator_html(rows: tuple[OperatorTableRow, ...]) -> str:
+    if rows:
+        return ""
+    return '<div class="tp-operator-empty">No operator rows match these filters</div>'
+
+
 def _table_html(title: str, rows: Iterable[OperatorTableRow]) -> str:
     row_tuple = tuple(rows)
-    body = "".join(_row_html(row) for row in row_tuple) or '<tr><td colspan="7">No rows</td></tr>'
+    body = "".join(_row_html(row) for row in row_tuple) or '<tr><td colspan="10">No operator rows match these filters</td></tr>'
     return f"""
 <section>
   <h2 class="tp-section-title">{_esc(title)}</h2>
@@ -539,7 +606,10 @@ def _table_html(title: str, rows: Iterable[OperatorTableRow]) -> str:
           <th>Resource</th>
           <th>Identifier</th>
           <th>Status</th>
+          <th>Store</th>
           <th class="tp-num">Amount</th>
+          <th class="tp-num">Qty</th>
+          <th class="tp-num">Gas</th>
           <th>Chain</th>
           <th>Updated</th>
           <th>Notes</th>
@@ -554,9 +624,12 @@ def _table_html(title: str, rows: Iterable[OperatorTableRow]) -> str:
 
 def _row_html(row: OperatorTableRow) -> str:
     notes = [
-        row.failure_reason,
-        row.latest_event,
+        _esc(row.primary),
+        _esc(row.secondary) if row.secondary else None,
+        _esc(row.failure_reason) if row.failure_reason else None,
+        _esc(row.latest_event) if row.latest_event else None,
         _copy_html(row.tx_hash, "tx hash") if row.tx_hash else None,
+        "Retry candidate" if row.retry_candidate else None,
         _metadata_html(row.metadata),
     ]
     return f"""
@@ -564,7 +637,10 @@ def _row_html(row: OperatorTableRow) -> str:
   <td>{_esc(row.resource)}</td>
   <td>{_copy_html(row.identity, row.resource + " id")}</td>
   <td>{render_status_badge(row.status)}</td>
+  <td>{_copy_html(row.store_id, "store id") if row.store_id else "-"}</td>
   <td class="tp-num">{_money_html(row.amount)}</td>
+  <td class="tp-num">{_esc(row.quantity) if row.quantity is not None else "-"}</td>
+  <td class="tp-num">{_money_html(row.gas)}</td>
   <td>{_esc(str(row.chain_id)) if row.chain_id is not None else "-"}</td>
   <td>{_esc(row.updated_at or "-")}</td>
   <td>{_join_html(notes)}</td>
@@ -720,6 +796,8 @@ def _safe_display_value(key: str, value: Any) -> str:
         return "REDACTED"
     if isinstance(value, Mapping):
         return _metadata_html(value)
+    if isinstance(value, tuple | list):
+        return ", ".join(_safe_display_value("item", item) for item in value)
     if isinstance(value, bool | int | float):
         return _esc(str(value))
     if value is None:
@@ -734,6 +812,14 @@ def _join_html(values: Iterable[str | None]) -> str:
 
 def _looks_like_identifier(value: str) -> bool:
     return len(value) >= 24 or value.startswith("0x")
+
+
+def _operator_surface_status(view: OperatorDashboardViewModel) -> str:
+    if any(item.status.tone == "danger" and item.value > 0 for item in view.summary):
+        return "FAILED"
+    if any(row.status.tone == "danger" for row in view.all_rows):
+        return "FAILED"
+    return "OK"
 
 
 def _shorten(value: str) -> str:

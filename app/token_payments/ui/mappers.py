@@ -14,6 +14,7 @@ from .models import (
     OperatorDashboardViewModel,
     OperatorDetailView,
     OperatorFilterState,
+    OperatorSummaryItem,
     OperatorTableRow,
     StatusBadge,
 )
@@ -92,15 +93,27 @@ def operator_dashboard_from_api_payload(
     filter_state = _operator_filters(filters or {})
     orders = tuple(_order_row(item) for item in _mapping_items(payload.get("orders"), "orders"))
     payments = tuple(_payment_row(item) for item in _mapping_items(payload.get("payments"), "payments"))
+    inventory = tuple(_inventory_row(item) for item in _mapping_items(payload.get("inventory"), "inventory"))
+    store_approvals = tuple(
+        _store_approval_row(item)
+        for item in _mapping_items(
+            payload.get("storeApprovals", payload.get("store_approvals", payload.get("approvals"))),
+            "storeApprovals",
+        )
+    )
     outbox = tuple(_outbox_row(item) for item in _mapping_items(payload.get("outbox"), "outbox"))
     workers = tuple(_worker_row(item) for item in _mapping_items(payload.get("workers"), "workers"))
     errors = tuple(_error_row(item) for item in _mapping_items(payload.get("errors"), "errors"))
-    detail_view = OperatorDetailView(title="Detail", fields=detail) if detail is not None else None
+    detail_payload = detail if detail is not None else _optional_mapping(payload.get("detail"))
+    detail_view = _operator_detail_view(detail_payload) if detail_payload is not None else None
 
     return OperatorDashboardViewModel(
         filters=filter_state,
+        summary=_operator_summary_items(outbox=outbox, workers=workers),
         orders=orders,
         payments=payments,
+        inventory=inventory,
+        store_approvals=store_approvals,
         outbox=outbox,
         workers=workers,
         errors=errors,
@@ -109,11 +122,17 @@ def operator_dashboard_from_api_payload(
 
 
 def _operator_filters(payload: Mapping[str, Any]) -> OperatorFilterState:
+    statuses = tuple(status.upper() for status in _text_tuple(payload.get("statuses", payload.get("status")), default=()))
     return OperatorFilterState(
-        contexts=_text_tuple(payload.get("contexts"), default=("orders", "payments", "outbox")),
-        statuses=_text_tuple(payload.get("statuses"), default=()),
+        contexts=_text_tuple(
+            payload.get("contexts", payload.get("context")),
+            default=("orders", "payments", "inventory", "store-approvals", "outbox", "workers", "errors"),
+        ),
+        statuses=statuses,
         chain_id=_optional_int(payload.get("chain_id", payload.get("chainId"))),
         store_id=_optional_text(payload.get("store_id", payload.get("storeId"))),
+        created_at_from=_optional_text(payload.get("created_at_from", payload.get("createdAtFrom"))),
+        created_at_to=_optional_text(payload.get("created_at_to", payload.get("createdAtTo"))),
         failed_only=_bool_value(payload.get("failed_only", payload.get("failedOnly")), default=False),
         retry_candidates_only=_bool_value(
             payload.get("retry_candidates_only", payload.get("retryCandidatesOnly")),
@@ -140,6 +159,8 @@ def _order_row(payload: Mapping[str, Any]) -> OperatorTableRow:
         secondary=f"store {_optional_text(payload.get('storeId')) or '-'} / customer {_optional_text(payload.get('customerId')) or '-'}",
         amount=total_amount,
         chain_id=total_amount.chain_id,
+        store_id=_optional_text(payload.get("storeId")),
+        created_at=_optional_text(payload.get("createdAt")),
         updated_at=_optional_text(payload.get("updatedAt")),
         failure_reason=_optional_text(payload.get("failureReason")),
         latest_event=_optional_text(payload.get("latestEvent")),
@@ -159,7 +180,9 @@ def _payment_row(payload: Mapping[str, Any]) -> OperatorTableRow:
         primary=f"order {_optional_text(payload.get('orderId')) or '-'}",
         secondary=secondary,
         amount=amount,
+        gas=_optional_money_from_payload(payload.get("gasEstimate", payload.get("gas"))),
         chain_id=chain_id,
+        created_at=_optional_text(payload.get("createdAt")),
         updated_at=_optional_text(payload.get("updatedAt")),
         failure_reason=_optional_text(payload.get("failureReason")),
         tx_hash=_optional_text(payload.get("txHash")),
@@ -170,11 +193,59 @@ def _payment_row(payload: Mapping[str, Any]) -> OperatorTableRow:
     )
 
 
+def _inventory_row(payload: Mapping[str, Any]) -> OperatorTableRow:
+    reserved_qty = _optional_int(payload.get("reservedQty", payload.get("quantity")))
+    available_stock = _optional_int(payload.get("availableStock"))
+    return OperatorTableRow(
+        resource="inventory",
+        identity=_optional_text(payload.get("reservationId")) or _text(payload.get("productId"), "inventory.productId"),
+        status=StatusBadge(_text(payload.get("status"), "inventory.status")),
+        primary=_optional_text(payload.get("latestEvent")) or _text(payload.get("productId"), "inventory.productId"),
+        secondary=f"order {_optional_text(payload.get('orderId')) or '-'} / product {_optional_text(payload.get('productId')) or '-'}",
+        quantity=reserved_qty,
+        chain_id=_optional_int(payload.get("chainId")),
+        store_id=_optional_text(payload.get("storeId")),
+        created_at=_optional_text(payload.get("createdAt")),
+        updated_at=_optional_text(payload.get("updatedAt")),
+        failure_reason=_optional_text(payload.get("failureReason")),
+        latest_event=_optional_text(payload.get("latestEvent")),
+        metadata={
+            "availableStock": available_stock,
+            "orderId": _optional_text(payload.get("orderId")),
+            "productId": _optional_text(payload.get("productId")),
+        },
+    )
+
+
+def _store_approval_row(payload: Mapping[str, Any]) -> OperatorTableRow:
+    amount_payload = payload.get("totalAmount", payload.get("amount"))
+    amount = _money_from_payload(amount_payload) if amount_payload is not None else None
+    return OperatorTableRow(
+        resource="store-approvals",
+        identity=_optional_text(payload.get("approvalId")) or _text(payload.get("orderId"), "storeApproval.orderId"),
+        status=StatusBadge(_text(payload.get("status"), "storeApproval.status")),
+        primary=_optional_text(payload.get("latestEvent")) or f"order {_text(payload.get('orderId'), 'storeApproval.orderId')}",
+        secondary=f"order {_optional_text(payload.get('orderId')) or '-'}",
+        amount=amount,
+        chain_id=_optional_int(payload.get("chainId")) or (amount.chain_id if amount else None),
+        store_id=_optional_text(payload.get("storeId")),
+        created_at=_optional_text(payload.get("createdAt")),
+        updated_at=_optional_text(payload.get("updatedAt")),
+        failure_reason=_optional_text(payload.get("failureReason")),
+        latest_event=_optional_text(payload.get("latestEvent")),
+        metadata={
+            "rejectionReasons": payload.get("rejectionReasons"),
+            "ownerUserId": _optional_text(payload.get("ownerUserId")),
+        },
+    )
+
+
 def _outbox_row(payload: Mapping[str, Any]) -> OperatorTableRow:
     retry_candidate = _bool_value(payload.get("retryCandidate"), default=False)
     metadata: dict[str, Any] = {
         "kind": _optional_text(payload.get("kind")),
         "failureCount": payload.get("failureCount"),
+        "retryReason": _optional_text(payload.get("retryReason")),
     }
     if retry_candidate:
         metadata["retry"] = "Retry candidate"
@@ -184,9 +255,11 @@ def _outbox_row(payload: Mapping[str, Any]) -> OperatorTableRow:
         status=StatusBadge(_text(payload.get("status"), "outbox.status")),
         primary=_text(payload.get("name"), "outbox.name"),
         secondary=f"{_optional_text(payload.get('topic')) or '-'} / key {_optional_text(payload.get('key')) or '-'}",
+        created_at=_optional_text(payload.get("createdAt")),
         updated_at=_optional_text(payload.get("updatedAt")),
         failure_reason=_optional_text(payload.get("lastError")),
         latest_event=_optional_text(payload.get("name")),
+        retry_candidate=retry_candidate,
         metadata=metadata,
     )
 
@@ -209,8 +282,50 @@ def _error_row(payload: Mapping[str, Any]) -> OperatorTableRow:
         identity=_text(payload.get("aggregateId"), "error.aggregateId"),
         status=StatusBadge(_text(payload.get("code"), "error.code")),
         primary=_text(payload.get("context"), "error.context"),
+        created_at=_optional_text(payload.get("createdAt")),
         updated_at=_optional_text(payload.get("createdAt")),
         failure_reason=_text(payload.get("message"), "error.message"),
+    )
+
+
+def _operator_summary_items(
+    *,
+    outbox: tuple[OperatorTableRow, ...],
+    workers: tuple[OperatorTableRow, ...],
+) -> tuple[OperatorSummaryItem, ...]:
+    retry_candidates = sum(1 for row in outbox if row.retry_candidate)
+    failed_outbox = sum(1 for row in outbox if row.status.label == "FAILED")
+    unhealthy_workers = sum(1 for row in workers if row.status.label != "OK")
+    return (
+        OperatorSummaryItem(
+            key="retry-candidates",
+            label="Retry candidates",
+            value=retry_candidates,
+            status="FAILED" if retry_candidates else "OK",
+            detail="Read-only candidates for relay or compensation inspection",
+        ),
+        OperatorSummaryItem(
+            key="failed-outbox",
+            label="Failed outbox",
+            value=failed_outbox,
+            status="FAILED" if failed_outbox else "OK",
+            detail="Outbox rows currently marked FAILED",
+        ),
+        OperatorSummaryItem(
+            key="unhealthy-workers",
+            label="Unhealthy workers",
+            value=unhealthy_workers,
+            status="UNAVAILABLE" if unhealthy_workers else "OK",
+            detail="Workers not reporting OK health",
+        ),
+    )
+
+
+def _operator_detail_view(payload: Mapping[str, Any]) -> OperatorDetailView:
+    title = _optional_text(payload.get("title")) or "Detail"
+    return OperatorDetailView(
+        title=title,
+        fields={str(key): value for key, value in payload.items() if str(key) != "title"},
     )
 
 
@@ -418,6 +533,12 @@ def _money_from_payload(value: object) -> MoneyView:
         token_address=_optional_text(payload.get("tokenAddress")),
         decimals=_optional_int(payload.get("decimals")),
     )
+
+
+def _optional_money_from_payload(value: object) -> MoneyView | None:
+    if value is None:
+        return None
+    return _money_from_payload(value)
 
 
 def _child_mapping(payload: Mapping[str, Any], key: str, *, default: Mapping[str, Any]) -> Mapping[str, Any]:
