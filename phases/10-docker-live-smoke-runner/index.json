@@ -27,5 +27,6 @@
       "summary": "Closed docker live smoke public verification with scripts/test_docker_live_smoke_public_contracts.py covering plan contract compatibility with docker-runtime-readiness manual live order, execution guardrail source/docs, README runner commands/refusal/cleanup behavior, and phase metadata."
     }
   ],
-  "created_at": "2026-05-11T15:32:06+0900"
+  "created_at": "2026-05-11T15:32:06+0900",
+  "completed_at": "2026-05-11T15:45:33+0900"
 }
