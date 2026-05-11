@@ -180,6 +180,35 @@ Next phase candidates:
 - ASGI/FastAPI thin adapter: add a production framework adapter while preserving the existing route manifest and facade contracts.
 - operator lifecycle action endpoints: expose cancel, retry, and replay commands with policy, idempotency, and audit behavior.
 
+## Operator Action Endpoints
+
+The operator action endpoints phase closes the `cancel/retry/replay operator actions` surface as a bounded framework-neutral endpoint contract. `cancelOrder`, `retryOutboxMessage`, and `replayMessage` are verified through public `ApiRequest`/`ApiResponse` facades, route manifests, register helpers, ADMIN-only policy, idempotency, and audit payloads; live Docker/Kafka publish is not started automatically.
+
+```bash
+python3 -m pytest \
+  scripts/test_operator_action_contracts.py \
+  scripts/test_operator_cancel_order_action.py \
+  scripts/test_operator_outbox_actions.py \
+  scripts/test_operator_action_http_routes.py \
+  scripts/test_operator_action_public_contracts.py \
+  scripts/test_operator_http_routes.py \
+  scripts/test_wsgi_runtime_preview.py \
+  scripts/test_http_adapter_public_contracts.py \
+  scripts/test_api_worker_runtime_public_contracts.py \
+  scripts/test_order_lifecycle_public_contracts.py \
+  scripts/test_happy_path_checkout_e2e.py \
+  scripts/test_compensation_checkout_e2e.py
+PYTHONPATH=app python3 -m token_payments api
+PYTHONPATH=app python3 -m token_payments serve-api
+python3 scripts/validate_phases.py
+```
+
+Next phase candidates:
+
+- ASGI/FastAPI thin adapter: add a thin production framework layer while keeping the current route manifest and `build_wsgi_app` contract stable.
+- live Docker compose integration: start the committed compose stack and verify DB schema, Kafka publish/consume, and bounded runtime smoke commands against live local infrastructure.
+- operator action UI wiring: connect dashboard cancel/retry/replay controls to the existing operator action endpoint contract and surface result/audit state.
+
 ## API / Worker Runtime Contracts
 
 The API layer exposes framework-neutral facades: `AuthApi`, `OrdersApi`, `CheckoutApi`, `PaymentsApi`, and `OperatorApi`. They accept `ApiRequest` and return `ApiResponse` so a later HTTP framework can adapt them without changing the application contracts.

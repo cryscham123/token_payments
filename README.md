@@ -298,3 +298,32 @@ python3 scripts/validate_phases.py
 - real docker compose integration: committed compose stack을 실제로 기동하고 DB schema, Kafka publish/consume, bounded runtime smoke command chain을 live local infrastructure에서 검증한다.
 - ASGI/FastAPI thin adapter: 현재 route manifest와 `build_wsgi_app` 계약을 유지한 채 production framework adapter를 얇게 추가한다.
 - operator lifecycle action endpoints: cancel/retry/replay 같은 operator action endpoint를 policy, idempotency, audit trail과 함께 고정한다.
+
+## Operator Action Endpoints 검증
+
+Operator action endpoints phase는 `cancel/retry/replay operator actions`를 bounded framework-neutral endpoint contract로 고정한다. `cancelOrder`, `retryOutboxMessage`, `replayMessage`는 public `ApiRequest`/`ApiResponse`, route manifest, register helper, ADMIN-only policy, idempotency, audit payload를 검증하지만 live Docker/Kafka publish is not started automatically.
+
+```bash
+python3 -m pytest \
+  scripts/test_operator_action_contracts.py \
+  scripts/test_operator_cancel_order_action.py \
+  scripts/test_operator_outbox_actions.py \
+  scripts/test_operator_action_http_routes.py \
+  scripts/test_operator_action_public_contracts.py \
+  scripts/test_operator_http_routes.py \
+  scripts/test_wsgi_runtime_preview.py \
+  scripts/test_http_adapter_public_contracts.py \
+  scripts/test_api_worker_runtime_public_contracts.py \
+  scripts/test_order_lifecycle_public_contracts.py \
+  scripts/test_happy_path_checkout_e2e.py \
+  scripts/test_compensation_checkout_e2e.py
+PYTHONPATH=app python3 -m token_payments api
+PYTHONPATH=app python3 -m token_payments serve-api
+python3 scripts/validate_phases.py
+```
+
+다음 phase 후보:
+
+- ASGI/FastAPI thin adapter: 현재 framework-neutral route manifest와 `build_wsgi_app` 계약을 유지하면서 production framework layer를 얇게 추가한다.
+- live Docker compose integration: committed compose stack을 기동해 DB schema, Kafka publish/consume, bounded runtime smoke command chain을 live local infrastructure에서 검증한다.
+- operator action UI wiring: 운영 dashboard에서 cancel/retry/replay action 버튼과 결과/audit 상태를 기존 action endpoint contract에 연결한다.
