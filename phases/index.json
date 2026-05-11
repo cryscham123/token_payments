@@ -34,6 +34,10 @@
       "dir": "6-order-lifecycle-compensation",
       "status": "completed",
       "completed_at": "2026-05-11T08:54:38+0900"
+    },
+    {
+      "dir": "7-http-framework-adapter",
+      "status": "pending"
     }
   ]
 }
