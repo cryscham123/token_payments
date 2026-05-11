@@ -21,7 +21,10 @@
     {
       "step": 2,
       "name": "docker-live-smoke-public-verification",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-11T15:41:43+0900",
+      "completed_at": "2026-05-11T15:45:33+0900",
+      "summary": "Closed docker live smoke public verification with scripts/test_docker_live_smoke_public_contracts.py covering plan contract compatibility with docker-runtime-readiness manual live order, execution guardrail source/docs, README runner commands/refusal/cleanup behavior, and phase metadata."
     }
   ],
   "created_at": "2026-05-11T15:32:06+0900"
