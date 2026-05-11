@@ -13,3 +13,4 @@ __pycache__/
 htmlcov/
 phases/**/phase*-output.json
 phases/**/step*-output.json
+**/certs/*

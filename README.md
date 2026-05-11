@@ -47,6 +47,24 @@ PYTHONPATH=app python3 -m token_payments ui operator
 
 `ui` preview command는 long-running HTTP server를 시작하지 않고 bounded JSON을 반환한다. HTML preview는 runtime `CommandDispatchResult.details.preview` 아래에 들어가며, `ApiResponse` 계약이 아니라 로컬 customer/operator UI phase 확인용 fixture 계약이다.
 
+## Browser Preview Runtime
+
+Browser Preview Runtime은 실제 브라우저 주소창에서 customer/operator preview HTML을 확인하기 위한 local-only preview fixture다. 이 경로는 production server나 external integration smoke가 아니다. It does not connect to DB, Kafka, Docker, Blockchain RPC, or local `.env`.
+
+```bash
+PYTHONPATH=app python3 scripts/browser_preview_server.py --host 127.0.0.1 --port 8765
+PYTHONPATH=app python3 scripts/browser_preview_smoke.py
+```
+
+브라우저에서 다음 URL을 연다.
+
+```text
+http://127.0.0.1:8765/customer
+http://127.0.0.1:8765/operator
+```
+
+서버는 명시적으로 실행한 터미널에서만 localhost port를 bind한다. 확인이 끝나면 같은 터미널에서 `Ctrl-C`로 종료한다.
+
 ## Docker Runtime Verification
 
 Docker runtime image 계약은 루트 `Dockerfile`이 Python 3.12 기반으로 `app/token_payments`만 `/workspace/app/token_payments`에 복사하고 `PYTHONPATH=/workspace/app`에서 bounded `health` command를 실행하는지 고정한다. `docker-compose.yml`은 같은 image를 쓰는 compose one-shot services `token_payments_health`, `token_payments_worker`, `token_payments_smoke`를 제공한다.
