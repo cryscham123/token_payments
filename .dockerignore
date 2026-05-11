@@ -1,0 +1,14 @@
+.env
+.venv
+**/data
+phases/**/step*-output.json
+phases/**/phase*-output.json
+.git
+__pycache__
+.pytest_cache
+*.py[cod]
+.coverage
+htmlcov
+node_modules
+.next
+out
