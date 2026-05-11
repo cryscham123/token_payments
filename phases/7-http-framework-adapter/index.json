@@ -21,7 +21,10 @@
     {
       "step": 2,
       "name": "checkout-payment-http-routes",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-11T12:15:10+0900",
+      "completed_at": "2026-05-11T12:19:19+0900",
+      "summary": "Added checkout tracking and payment txHash HTTP route manifests plus registration helpers, preserving path/query lookup, X-Request-Id causation, and optional commandId passthrough."
     },
     {
       "step": 3,
