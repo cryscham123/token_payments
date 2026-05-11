@@ -271,3 +271,30 @@ python3 scripts/validate_phases.py
 - HTTP framework adapter: framework-neutral API facade를 실제 ASGI/WSGI route로 연결하고 auth/order/checkout/payment/operator endpoint contract를 HTTP response로 고정한다.
 - real docker compose integration: 컨테이너를 실제로 기동하고 DB schema 적용, Kafka topic publish/consume, bounded runtime smoke command chain을 검증한다.
 - operator order lifecycle observability: cancellation reason, compensation command idempotency, replay 상태를 operator API/UI에서 조회할 수 있게 한다.
+
+## HTTP Framework Adapter 검증
+
+HTTP framework adapter phase는 framework-neutral API facade를 route manifest, router, WSGI callable로 연결한다. `api`와 `serve-api` CLI command는 bounded HTTP adapter preview를 JSON으로 반환하며, 테스트나 기본 실행 경로에서 long-running server 또는 network port bind를 시작하지 않는다.
+
+```bash
+python3 -m pytest \
+  scripts/test_http_adapter_contract_foundation.py \
+  scripts/test_auth_order_http_routes.py \
+  scripts/test_checkout_payment_http_routes.py \
+  scripts/test_operator_http_routes.py \
+  scripts/test_wsgi_runtime_preview.py \
+  scripts/test_http_adapter_public_contracts.py \
+  scripts/test_api_worker_runtime_public_contracts.py \
+  scripts/test_order_lifecycle_public_contracts.py \
+  scripts/test_happy_path_checkout_e2e.py \
+  scripts/test_compensation_checkout_e2e.py
+PYTHONPATH=app python3 -m token_payments api
+PYTHONPATH=app python3 -m token_payments serve-api
+python3 scripts/validate_phases.py
+```
+
+다음 phase 후보:
+
+- real docker compose integration: committed compose stack을 실제로 기동하고 DB schema, Kafka publish/consume, bounded runtime smoke command chain을 live local infrastructure에서 검증한다.
+- ASGI/FastAPI thin adapter: 현재 route manifest와 `build_wsgi_app` 계약을 유지한 채 production framework adapter를 얇게 추가한다.
+- operator lifecycle action endpoints: cancel/retry/replay 같은 operator action endpoint를 policy, idempotency, audit trail과 함께 고정한다.

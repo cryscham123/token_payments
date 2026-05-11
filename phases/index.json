@@ -37,7 +37,8 @@
     },
     {
       "dir": "7-http-framework-adapter",
-      "status": "pending"
+      "status": "completed",
+      "completed_at": "2026-05-11T12:29:18+0900"
     }
   ]
 }

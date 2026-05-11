@@ -6,6 +6,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
 import hashlib
+from http import HTTPStatus
 import json
 from types import MappingProxyType
 from typing import Any, Mapping
@@ -15,6 +16,8 @@ from .contracts import ApiRequest, ApiResponse, json_response
 
 
 HttpHandler = Callable[[ApiRequest], ApiResponse]
+WsgiStartResponse = Callable[[str, list[tuple[str, str]], object | None], object]
+WsgiApplication = Callable[[Mapping[str, Any], WsgiStartResponse], Iterable[bytes]]
 
 
 @dataclass(frozen=True)
@@ -248,6 +251,58 @@ class HttpRouter:
         return HttpResponse.from_api_response(route.handler(ApiRequest(**api_kwargs)))
 
 
+def build_wsgi_app(router: HttpRouter) -> WsgiApplication:
+    """Return a bounded WSGI callable backed by a framework-neutral router."""
+
+    if not isinstance(router, HttpRouter):
+        raise ValueError("build_wsgi_app.router must be an HttpRouter")
+
+    def app(environ: Mapping[str, Any], start_response: WsgiStartResponse) -> Iterable[bytes]:
+        request = HttpRequest(
+            method=str(environ.get("REQUEST_METHOD") or "GET"),
+            path=str(environ.get("PATH_INFO") or "/"),
+            query=str(environ.get("QUERY_STRING") or ""),
+            headers=_headers_from_wsgi_environ(environ),
+            body=_body_from_wsgi_environ(environ),
+        )
+        response = router.handle(request)
+        start_response(_status_line(response.status_code), list(response.headers.items()), None)
+        return [response.body]
+
+    return app
+
+
+def list_http_route_specs() -> tuple[HttpRouteSpec, ...]:
+    """Return every public HTTP route spec in stable product-family order."""
+
+    return (
+        *AUTH_HTTP_ROUTES.values(),
+        *ORDER_HTTP_ROUTES.values(),
+        *CHECKOUT_HTTP_ROUTES.values(),
+        *PAYMENT_HTTP_ROUTES.values(),
+        *OPERATOR_HTTP_ROUTES.values(),
+    )
+
+
+def http_route_manifest() -> tuple[dict[str, str], ...]:
+    """Return a JSON-safe HTTP route manifest for docs, CLI previews, and adapters."""
+
+    return tuple(
+        {
+            "method": spec.method,
+            "path": spec.path,
+            "operationId": spec.operation_id,
+        }
+        for spec in list_http_route_specs()
+    )
+
+
+def describe_http_routes() -> tuple[dict[str, str], ...]:
+    """Alias used by runtime previews to avoid exposing mutable route state."""
+
+    return http_route_manifest()
+
+
 def register_auth_routes(router: HttpRouter, auth_api: Any) -> tuple[HttpRoute, ...]:
     """Register AuthApi facade routes on an existing router."""
 
@@ -479,6 +534,60 @@ def _is_param_segment(segment: str) -> bool:
     return segment.startswith("{") and segment.endswith("}") and len(segment) > 2
 
 
+def _headers_from_wsgi_environ(environ: Mapping[str, Any]) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    for key, value in environ.items():
+        if not key.startswith("HTTP_") or value is None:
+            continue
+        headers[_header_name_from_wsgi_key(key[5:])] = str(value)
+
+    content_type = environ.get("CONTENT_TYPE")
+    if content_type:
+        headers["Content-Type"] = str(content_type)
+
+    content_length = environ.get("CONTENT_LENGTH")
+    if content_length:
+        headers["Content-Length"] = str(content_length)
+
+    return headers
+
+
+def _body_from_wsgi_environ(environ: Mapping[str, Any]) -> bytes:
+    input_stream = environ.get("wsgi.input")
+    content_length = _wsgi_content_length(environ.get("CONTENT_LENGTH"))
+    if input_stream is None or content_length <= 0:
+        return b""
+
+    raw_body = input_stream.read(content_length)
+    if isinstance(raw_body, bytes):
+        return raw_body
+    if isinstance(raw_body, bytearray):
+        return bytes(raw_body)
+    if isinstance(raw_body, str):
+        return raw_body.encode("utf-8")
+    return bytes(raw_body)
+
+
+def _wsgi_content_length(value: Any) -> int:
+    try:
+        content_length = int(str(value or "0"))
+    except ValueError:
+        return 0
+    return max(content_length, 0)
+
+
+def _header_name_from_wsgi_key(key: str) -> str:
+    return "-".join(part.capitalize() for part in key.split("_") if part)
+
+
+def _status_line(status_code: int) -> str:
+    try:
+        phrase = HTTPStatus(status_code).phrase
+    except ValueError:
+        phrase = "Unknown"
+    return f"{status_code} {phrase}"
+
+
 def _string_mapping(value: Mapping[str, Any], field_name: str) -> dict[str, str]:
     if not isinstance(value, Mapping):
         raise ValueError(f"{field_name} must be a mapping")
@@ -560,6 +669,12 @@ __all__ = [
     "ORDER_HTTP_ROUTES",
     "OPERATOR_HTTP_ROUTES",
     "PAYMENT_HTTP_ROUTES",
+    "WsgiApplication",
+    "WsgiStartResponse",
+    "build_wsgi_app",
+    "describe_http_routes",
+    "http_route_manifest",
+    "list_http_route_specs",
     "register_auth_routes",
     "register_checkout_routes",
     "register_order_routes",
