@@ -139,7 +139,7 @@ def test_execute_mode_is_rejected_as_bounded_json_error() -> None:
     assert payload["status"] == "error"
     assert payload["dockerStarted"] is False
     assert payload["networkCalls"] is False
-    assert payload["error"]["code"] == "LIVE_DOCKER_EXECUTION_NOT_IMPLEMENTED"
+    assert payload["error"]["code"] == "LIVE_DOCKER_CONFIRMATION_REQUIRED"
 
 
 def _run_plan(*args: str) -> dict[str, Any]:
