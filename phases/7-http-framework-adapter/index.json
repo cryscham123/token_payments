@@ -13,7 +13,10 @@
     {
       "step": 1,
       "name": "auth-order-http-routes",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-11T12:09:25+0900",
+      "completed_at": "2026-05-11T12:15:10+0900",
+      "summary": "Added auth/order HTTP route manifests and registration helpers for AuthApi session lifecycle routes and OrdersApi order creation while preserving facade ApiResponse status/body mapping."
     },
     {
       "step": 2,
