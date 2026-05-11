@@ -49,6 +49,10 @@
       "dir": "9-live-docker-compose-integration",
       "status": "completed",
       "completed_at": "2026-05-11T15:13:12+0900"
+    },
+    {
+      "dir": "10-docker-live-smoke-runner",
+      "status": "pending"
     }
   ]
 }
