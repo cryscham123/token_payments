@@ -16,6 +16,7 @@ def test_http_adapter_public_exports_cover_router_routes_wsgi_and_manifest_helpe
         "AUTH_HTTP_ROUTES",
         "CHECKOUT_HTTP_ROUTES",
         "ORDER_HTTP_ROUTES",
+        "OPERATOR_ACTION_HTTP_ROUTES",
         "OPERATOR_HTTP_ROUTES",
         "PAYMENT_HTTP_ROUTES",
         "HttpRequest",
@@ -30,6 +31,7 @@ def test_http_adapter_public_exports_cover_router_routes_wsgi_and_manifest_helpe
         "register_auth_routes",
         "register_checkout_routes",
         "register_order_routes",
+        "register_operator_action_routes",
         "register_operator_routes",
         "register_payment_routes",
     }
@@ -45,7 +47,7 @@ def test_http_route_manifest_includes_every_phase_7_route_family() -> None:
     described = list(describe_http_routes())
 
     assert described == manifest
-    assert len(manifest) == 13
+    assert len(manifest) == 16
     assert {entry["operationId"] for entry in manifest} == {
         "requestLoginChallenge",
         "loginWithMetaMask",
@@ -60,6 +62,9 @@ def test_http_route_manifest_includes_every_phase_7_route_family() -> None:
         "getOperatorOrderDetail",
         "getOperatorPaymentDetail",
         "getOperatorOutboxDetail",
+        "cancelOperatorOrder",
+        "retryOperatorOutboxMessage",
+        "replayOperatorMessage",
     }
     assert {entry["path"].split("/")[1] for entry in manifest} == {
         "auth",

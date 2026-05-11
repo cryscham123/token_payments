@@ -20,7 +20,7 @@ from token_payments.contexts.order.application import (
 )
 from token_payments.shared.domain import CheckoutCommandName, CommandId, MessageId, OrderId, OutboxMessageKind
 
-from .contracts import JsonValue
+from .contracts import ApiRequest, ApiResponse, JsonValue, json_response
 from .operator import OperatorClaims
 
 
@@ -380,6 +380,69 @@ class OperatorMessageReplayPort(Protocol):
         ...
 
 
+class OperatorActionApi:
+    """Operator lifecycle action API facade backed by action executors."""
+
+    def __init__(
+        self,
+        *,
+        cancel_order_executor: "OperatorCancelOrderActionExecutor",
+        outbox_action_executor: "OperatorOutboxActionExecutor",
+    ) -> None:
+        self._cancel_order_executor = cancel_order_executor
+        self._outbox_action_executor = outbox_action_executor
+
+    def cancel_order(self, request: ApiRequest) -> ApiResponse:
+        try:
+            body = _body_mapping(request)
+            result = self._cancel_order_executor.cancel_order(
+                actor=_claims_from_request(request),
+                order_id=_lookup_value(request, "orderId"),
+                reason=_required_body_text(body, "reason"),
+                request_id=request.request_id,
+                requested_at=request.received_at,
+                idempotency_key=_optional_body_text(body, "idempotencyKey"),
+                parameters=_optional_body_mapping(body, "parameters"),
+            )
+            return _action_result_response(result, request.request_id)
+        except ValueError as exc:
+            return _validation_error_response(str(exc), request.request_id)
+
+    def retry_outbox_message(self, request: ApiRequest) -> ApiResponse:
+        try:
+            body = _body_mapping(request)
+            result = self._outbox_action_executor.retry_outbox_message(
+                actor=_claims_from_request(request),
+                message_kind=_required_body_text(body, "kind", fallback_key="messageKind"),
+                message_identity=_lookup_value(request, "messageId"),
+                reason=_required_body_text(body, "reason"),
+                request_id=request.request_id,
+                requested_at=request.received_at,
+                idempotency_key=_optional_body_text(body, "idempotencyKey"),
+                parameters=_optional_body_mapping(body, "parameters"),
+            )
+            return _action_result_response(result, request.request_id)
+        except ValueError as exc:
+            return _validation_error_response(str(exc), request.request_id)
+
+    def replay_message(self, request: ApiRequest) -> ApiResponse:
+        try:
+            body = _body_mapping(request)
+            result = self._outbox_action_executor.replay_message(
+                actor=_claims_from_request(request),
+                message_kind=_required_body_text(body, "kind", fallback_key="messageKind"),
+                message_identity=_lookup_value(request, "messageId"),
+                reason=_required_body_text(body, "reason"),
+                request_id=request.request_id,
+                requested_at=request.received_at,
+                idempotency_key=_optional_body_text(body, "idempotencyKey"),
+                parameters=_optional_body_mapping(body, "parameters"),
+            )
+            return _action_result_response(result, request.request_id)
+        except ValueError as exc:
+            return _validation_error_response(str(exc), request.request_id)
+
+
 class OperatorCancelOrderActionExecutor:
     """Runtime-neutral operator action executor for manual order cancellation."""
 
@@ -404,6 +467,7 @@ class OperatorCancelOrderActionExecutor:
         requested_at: datetime | None = None,
         idempotency_key: str | None = None,
         event_message_id: MessageId | str | None = None,
+        parameters: Mapping[str, Any] | None = None,
     ) -> OperatorActionResult:
         if not isinstance(actor, OperatorClaims):
             raise ValueError("OperatorCancelOrderActionExecutor.actor must be an OperatorClaims")
@@ -421,6 +485,7 @@ class OperatorCancelOrderActionExecutor:
             idempotency_key=_cancel_order_idempotency_key(order_id_value, request_id, idempotency_key),
             reason=reason,
             requested_at=requested_time,
+            parameters=parameters or {},
         )
         cancel_command = CancelOrderCommand(
             command_id=_cancel_order_command_id(order_id_value, idempotency_key),
@@ -462,6 +527,8 @@ class OperatorCancelOrderActionExecutor:
             "orderId": str(handler_result.order_id),
             "reason": action_command.reason,
         }
+        if action_command.parameters:
+            details["parameters"] = dict(action_command.parameters)
         if handler_result.duplicate_decision is not None:
             details["duplicateDecision"] = handler_result.duplicate_decision.value
 
@@ -551,6 +618,7 @@ class OperatorOutboxActionExecutor:
         request_id: str,
         requested_at: datetime | None = None,
         idempotency_key: str | None = None,
+        parameters: Mapping[str, Any] | None = None,
     ) -> OperatorActionResult:
         requested_time = _require_aware_datetime(
             requested_at or datetime.now(UTC),
@@ -586,6 +654,7 @@ class OperatorOutboxActionExecutor:
             request_id=request_id,
             requested_at=requested_time,
             idempotency_key=idempotency_key,
+            parameters=parameters,
         )
         retry_request = OperatorOutboxRetryRequest(
             message_kind=message_kind,
@@ -611,6 +680,7 @@ class OperatorOutboxActionExecutor:
         request_id: str,
         requested_at: datetime | None = None,
         idempotency_key: str | None = None,
+        parameters: Mapping[str, Any] | None = None,
     ) -> OperatorActionResult:
         requested_time = _require_aware_datetime(
             requested_at or datetime.now(UTC),
@@ -646,6 +716,7 @@ class OperatorOutboxActionExecutor:
             request_id=request_id,
             requested_at=requested_time,
             idempotency_key=idempotency_key,
+            parameters=parameters,
         )
         replay_request = OperatorMessageReplayRequest(
             message_kind=message_kind,
@@ -684,6 +755,11 @@ class OperatorOutboxActionExecutor:
         if port_result.status is OperatorOutboxActionStatus.DUPLICATE_IGNORED:
             details["duplicateDecision"] = OperatorOutboxActionStatus.DUPLICATE_IGNORED.value
         details.update(port_result.details)
+        body_parameters = {
+            key: value for key, value in action_command.parameters.items() if key != "messageKind"
+        }
+        if body_parameters:
+            details["parameters"] = body_parameters
         if idempotency_records_deleted is not None:
             details["idempotencyRecordsDeleted"] = idempotency_records_deleted
 
@@ -825,6 +901,124 @@ class OperatorOutboxActionExecutor:
         return _require_text(str(audit_id), "OperatorActionAuditRepository.record")
 
 
+def _claims_from_request(request: ApiRequest) -> OperatorClaims:
+    headers = _lower_headers(request.headers)
+    return OperatorClaims(
+        user_id=_optional_text(headers.get("x-user-id")),
+        role=_optional_role(headers.get("x-user-role")),
+        scopes=tuple(_csv_values(headers.get("x-user-scopes"))),
+    )
+
+
+def _lookup_value(request: ApiRequest, key: str) -> str:
+    value = _optional_text(request.query.get(key))
+    if value is not None:
+        return value
+    raise ValueError(f"{key} is required")
+
+
+def _body_mapping(request: ApiRequest) -> Mapping[str, JsonValue]:
+    if request.body is None:
+        return {}
+    if not isinstance(request.body, Mapping):
+        raise ValueError("request body must be a JSON object")
+    return request.body
+
+
+def _required_body_text(body: Mapping[str, JsonValue], key: str, *, fallback_key: str | None = None) -> str:
+    value = body.get(key)
+    if value is None and fallback_key is not None:
+        value = body.get(fallback_key)
+    if value is None:
+        raise ValueError(f"{key} is required")
+    return _require_text(str(value), key)
+
+
+def _optional_body_text(body: Mapping[str, JsonValue], key: str) -> str | None:
+    value = body.get(key)
+    if value is None:
+        return None
+    return _require_text(str(value), key)
+
+
+def _optional_body_mapping(body: Mapping[str, JsonValue], key: str) -> Mapping[str, JsonValue]:
+    value = body.get(key)
+    if value is None:
+        return {}
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{key} must be a JSON object")
+    return _to_json_safe_mapping(value, key)
+
+
+def _action_result_response(result: OperatorActionResult, request_id: str) -> ApiResponse:
+    return json_response(
+        result.to_payload(),
+        status_code=_status_code_for_action_result(result),
+        request_id=request_id,
+    )
+
+
+def _status_code_for_action_result(result: OperatorActionResult) -> int:
+    if result.status is OperatorActionResultStatus.ACCEPTED:
+        return 202
+    if result.status is OperatorActionResultStatus.DUPLICATE:
+        return 200
+
+    error_code = _result_error_code(result)
+    if error_code == "OPERATOR_FORBIDDEN":
+        return 403
+    if error_code == "OPERATOR_ACTION_VALIDATION_FAILED":
+        return 400
+    return 409
+
+
+def _result_error_code(result: OperatorActionResult) -> str | None:
+    value = result.details.get("errorCode")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
+def _validation_error_response(message: str, request_id: str) -> ApiResponse:
+    return json_response(
+        {"error": {"code": "OPERATOR_ACTION_VALIDATION_FAILED", "message": message}},
+        status_code=400,
+        request_id=request_id,
+    )
+
+
+def _lower_headers(headers: Mapping[str, str]) -> dict[str, str]:
+    return {key.lower(): value for key, value in headers.items()}
+
+
+def _csv_values(value: object) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        return tuple(part.strip() for part in value.split(",") if part.strip())
+    if isinstance(value, list | tuple):
+        values: list[str] = []
+        for item in value:
+            values.extend(_csv_values(item))
+        return tuple(values)
+    raise ValueError("header list values must be strings")
+
+
+def _optional_role(value: object) -> UserRole | None:
+    text = _optional_text(value)
+    if text is None:
+        return None
+    return UserRole(text)
+
+
+def _optional_text(value: object) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("values must be non-empty strings")
+    return value.strip()
+
+
 def _validate_action_target(action: OperatorActionName, target: OperatorActionTarget) -> None:
     expected = {
         OperatorActionName.CANCEL_ORDER: OperatorActionTargetKind.ORDER,
@@ -892,8 +1086,11 @@ def _build_outbox_action_command(
     request_id: str,
     requested_at: datetime,
     idempotency_key: str | None,
+    parameters: Mapping[str, Any] | None,
 ) -> OperatorActionCommand:
     kind = _coerce_outbox_message_kind(message_kind, "message_kind")
+    action_parameters = _to_json_safe_mapping(parameters or {}, "OperatorOutboxActionExecutor.parameters")
+    action_parameters["messageKind"] = kind.value
     return OperatorActionCommand(
         action=action,
         target=OperatorActionTarget(target_kind, _require_text(message_identity, "message_identity")),
@@ -902,7 +1099,7 @@ def _build_outbox_action_command(
         idempotency_key=_outbox_action_idempotency_key(action, kind.value, message_identity, request_id, idempotency_key),
         reason=reason,
         requested_at=requested_at,
-        parameters={"messageKind": kind.value},
+        parameters=action_parameters,
     )
 
 
@@ -1017,6 +1214,7 @@ def _require_text(value: str, field_name: str) -> str:
 __all__ = [
     "AdminRoleOperatorActionPolicy",
     "CancelOrderCommandHandler",
+    "OperatorActionApi",
     "OperatorActionAuditRepository",
     "OperatorActionAuditRecord",
     "OperatorActionCommand",
