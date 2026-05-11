@@ -18,7 +18,7 @@ from token_payments.contexts.order.application import (
     OrderCommandResult,
     OrderCommandStatus,
 )
-from token_payments.shared.domain import CheckoutCommandName, CommandId, MessageId, OrderId
+from token_payments.shared.domain import CheckoutCommandName, CommandId, MessageId, OrderId, OutboxMessageKind
 
 from .contracts import JsonValue
 from .operator import OperatorClaims
@@ -40,6 +40,13 @@ class OperatorActionResultStatus(StrEnum):
     ACCEPTED = "accepted"
     DUPLICATE = "duplicate"
     REJECTED = "rejected"
+
+
+class OperatorOutboxActionStatus(StrEnum):
+    RECORDED = "RECORDED"
+    RETRYABLE = "RETRYABLE"
+    DUPLICATE_IGNORED = "DUPLICATE_IGNORED"
+    REJECTED = "REJECTED"
 
 
 @dataclass(frozen=True)
@@ -230,6 +237,149 @@ class OperatorActionAuditRepository(Protocol):
         ...
 
 
+@dataclass(frozen=True)
+class OperatorOutboxRetryRequest:
+    message_kind: OutboxMessageKind | str
+    message_identity: str
+    reason: str
+    actor: OperatorClaims
+    request_id: str
+    idempotency_key: str
+    requested_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "message_kind",
+            _coerce_outbox_message_kind(self.message_kind, "OperatorOutboxRetryRequest.message_kind"),
+        )
+        object.__setattr__(
+            self,
+            "message_identity",
+            _require_text(self.message_identity, "OperatorOutboxRetryRequest.message_identity"),
+        )
+        object.__setattr__(self, "reason", _require_text(self.reason, "OperatorOutboxRetryRequest.reason"))
+        if not isinstance(self.actor, OperatorClaims):
+            raise ValueError("OperatorOutboxRetryRequest.actor must be an OperatorClaims")
+        object.__setattr__(
+            self,
+            "request_id",
+            _require_text(self.request_id, "OperatorOutboxRetryRequest.request_id"),
+        )
+        object.__setattr__(
+            self,
+            "idempotency_key",
+            _require_text(self.idempotency_key, "OperatorOutboxRetryRequest.idempotency_key"),
+        )
+        object.__setattr__(
+            self,
+            "requested_at",
+            _require_aware_datetime(self.requested_at, "OperatorOutboxRetryRequest.requested_at"),
+        )
+
+
+@dataclass(frozen=True)
+class OperatorMessageReplayRequest:
+    message_kind: OutboxMessageKind | str
+    message_identity: str
+    reason: str
+    actor: OperatorClaims
+    request_id: str
+    idempotency_key: str
+    requested_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "message_kind",
+            _coerce_outbox_message_kind(self.message_kind, "OperatorMessageReplayRequest.message_kind"),
+        )
+        object.__setattr__(
+            self,
+            "message_identity",
+            _require_text(self.message_identity, "OperatorMessageReplayRequest.message_identity"),
+        )
+        object.__setattr__(self, "reason", _require_text(self.reason, "OperatorMessageReplayRequest.reason"))
+        if not isinstance(self.actor, OperatorClaims):
+            raise ValueError("OperatorMessageReplayRequest.actor must be an OperatorClaims")
+        object.__setattr__(
+            self,
+            "request_id",
+            _require_text(self.request_id, "OperatorMessageReplayRequest.request_id"),
+        )
+        object.__setattr__(
+            self,
+            "idempotency_key",
+            _require_text(self.idempotency_key, "OperatorMessageReplayRequest.idempotency_key"),
+        )
+        object.__setattr__(
+            self,
+            "requested_at",
+            _require_aware_datetime(self.requested_at, "OperatorMessageReplayRequest.requested_at"),
+        )
+
+
+@dataclass(frozen=True)
+class OperatorOutboxActionPortResult:
+    status: OperatorOutboxActionStatus | str
+    message_kind: OutboxMessageKind | str
+    message_identity: str
+    request_id: str
+    idempotency_key: str
+    summary: str
+    details: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.status, OperatorOutboxActionStatus):
+            object.__setattr__(
+                self,
+                "status",
+                OperatorOutboxActionStatus(
+                    _require_text(str(self.status), "OperatorOutboxActionPortResult.status")
+                ),
+            )
+        object.__setattr__(
+            self,
+            "message_kind",
+            _coerce_outbox_message_kind(self.message_kind, "OperatorOutboxActionPortResult.message_kind"),
+        )
+        object.__setattr__(
+            self,
+            "message_identity",
+            _require_text(self.message_identity, "OperatorOutboxActionPortResult.message_identity"),
+        )
+        object.__setattr__(
+            self,
+            "request_id",
+            _require_text(self.request_id, "OperatorOutboxActionPortResult.request_id"),
+        )
+        object.__setattr__(
+            self,
+            "idempotency_key",
+            _require_text(self.idempotency_key, "OperatorOutboxActionPortResult.idempotency_key"),
+        )
+        object.__setattr__(
+            self,
+            "summary",
+            _require_text(self.summary, "OperatorOutboxActionPortResult.summary"),
+        )
+        object.__setattr__(
+            self,
+            "details",
+            MappingProxyType(_to_json_safe_mapping(self.details, "OperatorOutboxActionPortResult.details")),
+        )
+
+
+class OperatorOutboxRetryPort(Protocol):
+    def request_retry(self, request: OperatorOutboxRetryRequest) -> OperatorOutboxActionPortResult:
+        ...
+
+
+class OperatorMessageReplayPort(Protocol):
+    def request_replay(self, request: OperatorMessageReplayRequest) -> OperatorOutboxActionPortResult:
+        ...
+
+
 class OperatorCancelOrderActionExecutor:
     """Runtime-neutral operator action executor for manual order cancellation."""
 
@@ -375,6 +525,306 @@ class OperatorCancelOrderActionExecutor:
         return _require_text(str(audit_id), "OperatorActionAuditRepository.record")
 
 
+class OperatorOutboxActionExecutor:
+    """Runtime-neutral operator actions for outbox retry and message replay intents."""
+
+    def __init__(
+        self,
+        retry_port: OperatorOutboxRetryPort,
+        replay_port: OperatorMessageReplayPort,
+        *,
+        policy: OperatorActionPolicy | None = None,
+        audit_repository: OperatorActionAuditRepository | None = None,
+    ) -> None:
+        self._retry_port = retry_port
+        self._replay_port = replay_port
+        self._policy = policy or AdminRoleOperatorActionPolicy()
+        self._audit_repository = audit_repository
+
+    def retry_outbox_message(
+        self,
+        *,
+        actor: OperatorClaims,
+        message_kind: OutboxMessageKind | str,
+        message_identity: str,
+        reason: str,
+        request_id: str,
+        requested_at: datetime | None = None,
+        idempotency_key: str | None = None,
+    ) -> OperatorActionResult:
+        requested_time = _require_aware_datetime(
+            requested_at or datetime.now(UTC),
+            "OperatorOutboxActionExecutor.requested_at",
+        )
+        validation_error = _validate_outbox_action_input(
+            message_kind=message_kind,
+            message_identity=message_identity,
+            reason=reason,
+        )
+        if validation_error is not None:
+            return self._validation_rejected_result(
+                action=OperatorActionName.RETRY_OUTBOX_MESSAGE,
+                target_kind=OperatorActionTargetKind.OUTBOX_MESSAGE,
+                actor=actor,
+                message_kind=message_kind,
+                message_identity=message_identity,
+                reason=reason,
+                request_id=request_id,
+                requested_at=requested_time,
+                idempotency_key=idempotency_key,
+                invalid_field=validation_error[0],
+                validation_message=validation_error[1],
+            )
+
+        action_command = _build_outbox_action_command(
+            action=OperatorActionName.RETRY_OUTBOX_MESSAGE,
+            target_kind=OperatorActionTargetKind.OUTBOX_MESSAGE,
+            actor=actor,
+            message_kind=message_kind,
+            message_identity=message_identity,
+            reason=reason,
+            request_id=request_id,
+            requested_at=requested_time,
+            idempotency_key=idempotency_key,
+        )
+        retry_request = OperatorOutboxRetryRequest(
+            message_kind=message_kind,
+            message_identity=message_identity,
+            reason=action_command.reason,
+            actor=actor,
+            request_id=action_command.request_id,
+            idempotency_key=action_command.idempotency_key,
+            requested_at=requested_time,
+        )
+        if not self._policy.can_execute_action(action_command.actor, action_command.action):
+            return self._forbidden_result(action_command, retry_request.message_kind, retry_request.message_identity)
+
+        return self._execute(action_command, self._retry_port.request_retry(retry_request))
+
+    def replay_message(
+        self,
+        *,
+        actor: OperatorClaims,
+        message_kind: OutboxMessageKind | str,
+        message_identity: str,
+        reason: str,
+        request_id: str,
+        requested_at: datetime | None = None,
+        idempotency_key: str | None = None,
+    ) -> OperatorActionResult:
+        requested_time = _require_aware_datetime(
+            requested_at or datetime.now(UTC),
+            "OperatorOutboxActionExecutor.requested_at",
+        )
+        validation_error = _validate_outbox_action_input(
+            message_kind=message_kind,
+            message_identity=message_identity,
+            reason=reason,
+        )
+        if validation_error is not None:
+            return self._validation_rejected_result(
+                action=OperatorActionName.REPLAY_MESSAGE,
+                target_kind=OperatorActionTargetKind.MESSAGE,
+                actor=actor,
+                message_kind=message_kind,
+                message_identity=message_identity,
+                reason=reason,
+                request_id=request_id,
+                requested_at=requested_time,
+                idempotency_key=idempotency_key,
+                invalid_field=validation_error[0],
+                validation_message=validation_error[1],
+            )
+
+        action_command = _build_outbox_action_command(
+            action=OperatorActionName.REPLAY_MESSAGE,
+            target_kind=OperatorActionTargetKind.MESSAGE,
+            actor=actor,
+            message_kind=message_kind,
+            message_identity=message_identity,
+            reason=reason,
+            request_id=request_id,
+            requested_at=requested_time,
+            idempotency_key=idempotency_key,
+        )
+        replay_request = OperatorMessageReplayRequest(
+            message_kind=message_kind,
+            message_identity=message_identity,
+            reason=action_command.reason,
+            actor=actor,
+            request_id=action_command.request_id,
+            idempotency_key=action_command.idempotency_key,
+            requested_at=requested_time,
+        )
+        if not self._policy.can_execute_action(action_command.actor, action_command.action):
+            return self._forbidden_result(action_command, replay_request.message_kind, replay_request.message_identity)
+
+        return self._execute(
+            action_command,
+            self._replay_port.request_replay(replay_request),
+            idempotency_records_deleted=False,
+        )
+
+    def _execute(
+        self,
+        action_command: OperatorActionCommand,
+        port_result: OperatorOutboxActionPortResult,
+        *,
+        idempotency_records_deleted: bool | None = None,
+    ) -> OperatorActionResult:
+        status = _operator_status_for_outbox_action(port_result.status)
+        details: dict[str, Any] = {
+            "outboxActionStatus": port_result.status.value,
+            "messageKind": port_result.message_kind.value,
+            "messageIdentity": port_result.message_identity,
+            "requestId": port_result.request_id,
+            "actor": _operator_actor_payload(action_command.actor),
+            "reason": action_command.reason,
+        }
+        if port_result.status is OperatorOutboxActionStatus.DUPLICATE_IGNORED:
+            details["duplicateDecision"] = OperatorOutboxActionStatus.DUPLICATE_IGNORED.value
+        details.update(port_result.details)
+        if idempotency_records_deleted is not None:
+            details["idempotencyRecordsDeleted"] = idempotency_records_deleted
+
+        audit_id = self._record_audit(action_command, status, action_command.reason)
+        return OperatorActionResult(
+            status=status,
+            action=action_command.action,
+            target=action_command.target,
+            idempotency_key=action_command.idempotency_key,
+            message_id=port_result.message_identity,
+            audit_id=audit_id,
+            summary=port_result.summary,
+            details=details,
+        )
+
+    def _forbidden_result(
+        self,
+        action_command: OperatorActionCommand,
+        message_kind: OutboxMessageKind,
+        message_identity: str,
+    ) -> OperatorActionResult:
+        return self._rejected_result(
+            action_command,
+            summary=f"operator ADMIN role is required to execute {action_command.action.value}",
+            details={
+                "errorCode": "OPERATOR_FORBIDDEN",
+                "messageKind": message_kind.value,
+                "messageIdentity": message_identity,
+                "requestId": action_command.request_id,
+                "actor": _operator_actor_payload(action_command.actor),
+                "reason": action_command.reason,
+            },
+        )
+
+    def _validation_rejected_result(
+        self,
+        *,
+        action: OperatorActionName,
+        target_kind: OperatorActionTargetKind,
+        actor: OperatorClaims,
+        message_kind: OutboxMessageKind | str,
+        message_identity: str,
+        reason: str,
+        request_id: str,
+        requested_at: datetime,
+        idempotency_key: str | None,
+        invalid_field: str,
+        validation_message: str,
+    ) -> OperatorActionResult:
+        target = OperatorActionTarget(target_kind, _safe_target_id(message_identity))
+        summary = f"Invalid operator outbox action request: {validation_message}."
+        safe_request_id = _safe_text(request_id) or "<missing-request-id>"
+        safe_reason = _safe_text(reason) or summary
+        safe_message_kind = _safe_text(_safe_message_kind_text(message_kind)) or "<invalid-kind>"
+        safe_idempotency_key = _safe_text(idempotency_key) or _outbox_action_idempotency_key(
+            action,
+            safe_message_kind,
+            target.id,
+            safe_request_id,
+            None,
+        )
+        details = {
+            "errorCode": "OPERATOR_ACTION_VALIDATION_FAILED",
+            "invalidField": invalid_field,
+            "validationError": validation_message,
+            "messageKind": safe_message_kind,
+            "messageIdentity": message_identity,
+            "requestId": safe_request_id,
+            "actor": _operator_actor_payload(actor) if isinstance(actor, OperatorClaims) else None,
+            "reason": reason,
+        }
+        audit_id = self._record_audit(
+            OperatorActionCommand(
+                action=action,
+                target=target,
+                actor=actor,
+                request_id=safe_request_id,
+                idempotency_key=safe_idempotency_key,
+                reason=safe_reason,
+                requested_at=requested_at,
+                parameters={"messageKind": safe_message_kind},
+            ),
+            OperatorActionResultStatus.REJECTED,
+            safe_reason,
+        )
+        return OperatorActionResult(
+            status=OperatorActionResultStatus.REJECTED,
+            action=action,
+            target=target,
+            idempotency_key=safe_idempotency_key,
+            message_id=_safe_text(message_identity),
+            audit_id=audit_id,
+            summary=summary,
+            details=details,
+        )
+
+    def _rejected_result(
+        self,
+        action_command: OperatorActionCommand,
+        *,
+        summary: str,
+        details: Mapping[str, Any],
+    ) -> OperatorActionResult:
+        audit_id = self._record_audit(action_command, OperatorActionResultStatus.REJECTED, action_command.reason)
+        return OperatorActionResult(
+            status=OperatorActionResultStatus.REJECTED,
+            action=action_command.action,
+            target=action_command.target,
+            idempotency_key=action_command.idempotency_key,
+            message_id=action_command.target.id,
+            audit_id=audit_id,
+            summary=summary,
+            details=details,
+        )
+
+    def _record_audit(
+        self,
+        action_command: OperatorActionCommand,
+        outcome: OperatorActionResultStatus,
+        reason: str,
+    ) -> str | None:
+        if self._audit_repository is None:
+            return None
+
+        audit_id = self._audit_repository.record(
+            OperatorActionAuditRecord(
+                actor=action_command.actor,
+                action=action_command.action,
+                target=action_command.target,
+                idempotency_key=action_command.idempotency_key,
+                request_id=action_command.request_id,
+                outcome=outcome,
+                reason=reason,
+                recorded_at=action_command.requested_at,
+            )
+        )
+        if audit_id is None:
+            return None
+        return _require_text(str(audit_id), "OperatorActionAuditRepository.record")
+
+
 def _validate_action_target(action: OperatorActionName, target: OperatorActionTarget) -> None:
     expected = {
         OperatorActionName.CANCEL_ORDER: OperatorActionTargetKind.ORDER,
@@ -399,6 +849,12 @@ def _coerce_message_id(value: MessageId | str) -> MessageId:
     return value if isinstance(value, MessageId) else MessageId(value)
 
 
+def _coerce_outbox_message_kind(value: OutboxMessageKind | str, field_name: str) -> OutboxMessageKind:
+    if isinstance(value, OutboxMessageKind):
+        return value
+    return OutboxMessageKind(_require_text(str(value), field_name))
+
+
 def _cancel_order_idempotency_key(order_id: OrderId, request_id: str, idempotency_key: str | None) -> str:
     if idempotency_key is not None:
         return _require_text(idempotency_key, "OperatorCancelOrderActionExecutor.idempotency_key")
@@ -415,6 +871,95 @@ def _operator_status_for_order_command(status: OrderCommandStatus) -> OperatorAc
     if status is OrderCommandStatus.DUPLICATE_IGNORED:
         return OperatorActionResultStatus.DUPLICATE
     return OperatorActionResultStatus.ACCEPTED
+
+
+def _operator_status_for_outbox_action(status: OperatorOutboxActionStatus) -> OperatorActionResultStatus:
+    if status is OperatorOutboxActionStatus.DUPLICATE_IGNORED:
+        return OperatorActionResultStatus.DUPLICATE
+    if status is OperatorOutboxActionStatus.REJECTED:
+        return OperatorActionResultStatus.REJECTED
+    return OperatorActionResultStatus.ACCEPTED
+
+
+def _build_outbox_action_command(
+    *,
+    action: OperatorActionName,
+    target_kind: OperatorActionTargetKind,
+    actor: OperatorClaims,
+    message_kind: OutboxMessageKind | str,
+    message_identity: str,
+    reason: str,
+    request_id: str,
+    requested_at: datetime,
+    idempotency_key: str | None,
+) -> OperatorActionCommand:
+    kind = _coerce_outbox_message_kind(message_kind, "message_kind")
+    return OperatorActionCommand(
+        action=action,
+        target=OperatorActionTarget(target_kind, _require_text(message_identity, "message_identity")),
+        actor=actor,
+        request_id=request_id,
+        idempotency_key=_outbox_action_idempotency_key(action, kind.value, message_identity, request_id, idempotency_key),
+        reason=reason,
+        requested_at=requested_at,
+        parameters={"messageKind": kind.value},
+    )
+
+
+def _outbox_action_idempotency_key(
+    action: OperatorActionName,
+    message_kind: str,
+    message_identity: str,
+    request_id: str,
+    idempotency_key: str | None,
+) -> str:
+    if idempotency_key is not None:
+        return _require_text(idempotency_key, "OperatorOutboxActionExecutor.idempotency_key")
+    return (
+        f"operator:{action.value}:{_require_text(message_kind, 'message_kind')}:"
+        f"{_require_text(message_identity, 'message_identity')}:"
+        f"{_require_text(request_id, 'OperatorOutboxActionExecutor.request_id')}"
+    )
+
+
+def _validate_outbox_action_input(
+    *,
+    message_kind: OutboxMessageKind | str,
+    message_identity: str,
+    reason: str,
+) -> tuple[str, str] | None:
+    try:
+        _coerce_outbox_message_kind(message_kind, "messageKind")
+    except ValueError as exc:
+        return ("messageKind", str(exc))
+    if _safe_text(message_identity) is None:
+        return ("messageIdentity", "messageIdentity must be a non-empty string")
+    if _safe_text(reason) is None:
+        return ("reason", "reason must be a non-empty string")
+    return None
+
+
+def _operator_actor_payload(actor: OperatorClaims) -> dict[str, JsonValue]:
+    return {
+        "userId": actor.user_id,
+        "role": actor.role.value if isinstance(actor.role, UserRole) else actor.role,
+        "scopes": list(actor.scopes),
+    }
+
+
+def _safe_message_kind_text(value: OutboxMessageKind | str) -> str:
+    return value.value if isinstance(value, OutboxMessageKind) else str(value)
+
+
+def _safe_target_id(value: str) -> str:
+    return _safe_text(value) or "<empty>"
+
+
+def _safe_text(value: str | None) -> str | None:
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    return stripped or None
 
 
 def _to_json_safe_mapping(value: Mapping[str, Any], field_name: str) -> dict[str, JsonValue]:
@@ -482,4 +1027,11 @@ __all__ = [
     "OperatorActionTarget",
     "OperatorActionTargetKind",
     "OperatorCancelOrderActionExecutor",
+    "OperatorMessageReplayPort",
+    "OperatorMessageReplayRequest",
+    "OperatorOutboxActionExecutor",
+    "OperatorOutboxActionPortResult",
+    "OperatorOutboxActionStatus",
+    "OperatorOutboxRetryPort",
+    "OperatorOutboxRetryRequest",
 ]

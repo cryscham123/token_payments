@@ -41,6 +41,13 @@ from .operator_actions import (
     OperatorActionTarget,
     OperatorActionTargetKind,
     OperatorCancelOrderActionExecutor,
+    OperatorMessageReplayPort,
+    OperatorMessageReplayRequest,
+    OperatorOutboxActionExecutor,
+    OperatorOutboxActionPortResult,
+    OperatorOutboxActionStatus,
+    OperatorOutboxRetryPort,
+    OperatorOutboxRetryRequest,
 )
 from .orders import OrdersApi
 from .payments import PaymentsApi
@@ -77,6 +84,13 @@ __all__ = [
     "OperatorApi",
     "OperatorClaims",
     "OperatorCancelOrderActionExecutor",
+    "OperatorMessageReplayPort",
+    "OperatorMessageReplayRequest",
+    "OperatorOutboxActionExecutor",
+    "OperatorOutboxActionPortResult",
+    "OperatorOutboxActionStatus",
+    "OperatorOutboxRetryPort",
+    "OperatorOutboxRetryRequest",
     "OrdersApi",
     "PAYMENT_HTTP_ROUTES",
     "PaymentsApi",
