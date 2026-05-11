@@ -13,7 +13,10 @@
     {
       "step": 1,
       "name": "docker-live-smoke-execution-guardrails",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-11T15:36:02+0900",
+      "completed_at": "2026-05-11T15:41:42+0900",
+      "summary": "Added explicit --confirm-live-docker guarded execution to scripts/docker_live_smoke.py with .env validation, .env.example rejection, bounded shell-free subprocess calls, redacted output capture, and cleanup-on-live-run failure/success coverage."
     },
     {
       "step": 2,
