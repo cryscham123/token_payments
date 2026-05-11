@@ -42,10 +42,10 @@ class BrowserPreviewRequestHandler(BaseHTTPRequestHandler):
     def _handle(self, *, send_body: bool) -> None:
         path = urlsplit(self.path).path
         if path in {"/", "/customer"}:
-            self._send_html(render_ui_preview("customer")["html"], send_body=send_body)
+            self._send_html(render_browser_preview_document("customer"), send_body=send_body)
             return
         if path == "/operator":
-            self._send_html(render_ui_preview("operator")["html"], send_body=send_body)
+            self._send_html(render_browser_preview_document("operator"), send_body=send_body)
             return
         if path == "/healthz":
             self._send_json(_health_payload(), send_body=send_body)
@@ -111,6 +111,36 @@ def serve_browser_preview(
         server.server_close()
 
 
+def render_browser_preview_document(view: str) -> str:
+    """Return the HTML document served by browser preview routes."""
+
+    preview = render_ui_preview(view)
+    html = str(preview["html"])
+    route = str(preview.get("view", view))
+    samples = preview.get("samples")
+    if route != "customer" or not isinstance(samples, list) or len(samples) <= 1:
+        return html
+
+    scenario_sections = []
+    for sample in samples[1:]:
+        if not isinstance(sample, dict):
+            continue
+        sample_name = _escape_html(str(sample.get("name", "customer-preview-sample")))
+        sample_html = str(sample.get("html", ""))
+        scenario_sections.append(
+            '<section class="tp-panel" data-preview-sample="'
+            + sample_name
+            + '"><h2 class="tp-section-title">'
+            + sample_name
+            + "</h2>"
+            + _extract_main_inner_html(sample_html)
+            + "</section>"
+        )
+    if not scenario_sections:
+        return html
+    return html.replace("</main>", "\n".join(scenario_sections) + "\n</main>", 1)
+
+
 def _health_payload() -> dict[str, object]:
     return {
         "component": "browser-preview",
@@ -135,11 +165,23 @@ def _escape_html(value: str) -> str:
     )
 
 
+def _extract_main_inner_html(html: str) -> str:
+    start = html.find("<main ")
+    if start == -1:
+        return html
+    body_start = html.find(">", start)
+    body_end = html.rfind("</main>")
+    if body_start == -1 or body_end == -1 or body_end <= body_start:
+        return html
+    return html[body_start + 1 : body_end].strip()
+
+
 __all__ = [
     "DEFAULT_BROWSER_PREVIEW_HOST",
     "DEFAULT_BROWSER_PREVIEW_PORT",
     "BrowserPreviewHttpServer",
     "BrowserPreviewRequestHandler",
     "build_browser_preview_server",
+    "render_browser_preview_document",
     "serve_browser_preview",
 ]
