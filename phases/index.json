@@ -42,7 +42,8 @@
     },
     {
       "dir": "8-operator-action-endpoints",
-      "status": "pending"
+      "status": "completed",
+      "completed_at": "2026-05-11T14:41:07+0900"
     }
   ]
 }
