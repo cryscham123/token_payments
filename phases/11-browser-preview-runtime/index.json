@@ -13,7 +13,10 @@
     {
       "step": 1,
       "name": "browser-preview-smoke-checklist",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-11T16:07:52+0900",
+      "summary": "Added a stdlib browser preview smoke runner that verifies preview routes, emits bounded manual browser URLs/checks JSON, supports base-url and open-browser modes, and uses a restricted-environment fallback when loopback binding is unavailable.",
+      "completed_at": "2026-05-11T16:17:22+0900"
     },
     {
       "step": 2,
