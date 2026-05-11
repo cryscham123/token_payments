@@ -185,7 +185,7 @@ def test_phase_9_completed_step_summaries_reference_concrete_docker_artifacts() 
             assert term in summary
 
     phase9 = next(phase for phase in top_index["phases"] if phase["dir"] == "9-live-docker-compose-integration")
-    assert phase9["status"] == "pending"
+    assert phase9["status"] == "completed"
 
 
 def _contains_only_json_primitives(value: Any) -> bool:
