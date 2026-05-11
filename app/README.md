@@ -28,6 +28,20 @@ docker compose --env-file .env.example --profile runtime config --services
 PYTHONPATH=app python3 -m token_payments smoke docker-runtime-readiness
 ```
 
+Docker live smoke runner gives the automated harness a bounded public contract for the approved live sequence without opening Docker by default. Automated harness commands verify the dry-run plan and the refusal path.
+
+```bash
+python3 scripts/docker_live_smoke.py --plan
+python3 scripts/docker_live_smoke.py --execute
+```
+
+`--execute` by itself returns bounded refusal JSON and does not start Docker. Real live Docker execution is manual/approval-only: create the local env file, then pass the explicit live confirmation flag. The cleanup command is attempted even when a live step fails.
+
+```bash
+cp .env.example .env
+python3 scripts/docker_live_smoke.py --execute --confirm-live-docker
+```
+
 Live local Docker execution is manual/approval-only. Run it in this order when Docker daemon access is explicitly available.
 
 ```bash
