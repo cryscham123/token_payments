@@ -28,10 +28,22 @@ from .http import (
     register_payment_routes,
 )
 from .operator import AdminRoleOperatorPolicy, OperatorAccessPolicy, OperatorApi, OperatorClaims
+from .operator_actions import (
+    AdminRoleOperatorActionPolicy,
+    OperatorActionAuditRecord,
+    OperatorActionCommand,
+    OperatorActionName,
+    OperatorActionPolicy,
+    OperatorActionResult,
+    OperatorActionResultStatus,
+    OperatorActionTarget,
+    OperatorActionTargetKind,
+)
 from .orders import OrdersApi
 from .payments import PaymentsApi
 
 __all__ = [
+    "AdminRoleOperatorActionPolicy",
     "AdminRoleOperatorPolicy",
     "AUTH_HTTP_ROUTES",
     "AuthApi",
@@ -49,6 +61,14 @@ __all__ = [
     "ORDER_HTTP_ROUTES",
     "OPERATOR_HTTP_ROUTES",
     "OperatorAccessPolicy",
+    "OperatorActionAuditRecord",
+    "OperatorActionCommand",
+    "OperatorActionName",
+    "OperatorActionPolicy",
+    "OperatorActionResult",
+    "OperatorActionResultStatus",
+    "OperatorActionTarget",
+    "OperatorActionTargetKind",
     "OperatorApi",
     "OperatorClaims",
     "OrdersApi",
