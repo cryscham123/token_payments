@@ -37,7 +37,10 @@
     {
       "step": 4,
       "name": "wsgi-runtime-preview",
-      "status": "pending"
+      "status": "error",
+      "started_at": "2026-05-11T12:24:07+0900",
+      "error_message": "[3회 시도 후 실패] Step did not update status",
+      "failed_at": "2026-05-11T12:24:29+0900"
     },
     {
       "step": 5,
