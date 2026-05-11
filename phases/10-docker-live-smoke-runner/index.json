@@ -1,0 +1,25 @@
+{
+  "project": "Token Payments",
+  "phase": "10-docker-live-smoke-runner",
+  "steps": [
+    {
+      "step": 0,
+      "name": "docker-live-smoke-plan-contract",
+      "status": "completed",
+      "started_at": "2026-05-11T15:32:06+0900",
+      "completed_at": "2026-05-11T15:36:02+0900",
+      "summary": "Added scripts/docker_live_smoke.py dry-run planner and tests covering bounded JSON plan/default mode, argv/display command sequence, cleanup command, sensitive-value redaction, and JSON rejection for --execute without starting Docker."
+    },
+    {
+      "step": 1,
+      "name": "docker-live-smoke-execution-guardrails",
+      "status": "pending"
+    },
+    {
+      "step": 2,
+      "name": "docker-live-smoke-public-verification",
+      "status": "pending"
+    }
+  ],
+  "created_at": "2026-05-11T15:32:06+0900"
+}
