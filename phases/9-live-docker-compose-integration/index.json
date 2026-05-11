@@ -29,7 +29,10 @@
     {
       "step": 3,
       "name": "docker-compose-config-validation",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-11T14:59:46+0900",
+      "completed_at": "2026-05-11T15:06:21+0900",
+      "summary": "Added daemon-less Docker Compose config validation tests for .env.example service resolution, documented config commands, and extended docker-runtime-readiness smoke details with the compose config validation command without using up/run/build or Docker socket access."
     },
     {
       "step": 4,
