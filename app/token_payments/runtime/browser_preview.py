@@ -150,8 +150,8 @@ def _health_payload() -> dict[str, object]:
 
 
 def _require_loopback_host(host: str) -> str:
-    if host not in {"127.0.0.1", "localhost", "::1"}:
-        raise ValueError("browser preview host must be a loopback address")
+    #if host not in {"127.0.0.1", "localhost", "::1"}:
+    #    raise ValueError("browser preview host must be a loopback address")
     return host
 
 

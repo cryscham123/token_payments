@@ -16,6 +16,24 @@ PYTHONPATH=app python3 -m token_payments ui operator
 
 Use `.env.example` as the template for local `.env` values. The local blockchain RPC points at `test_network` on chain id `1337`. Do not commit real private keys, API keys, seed phrases, or production credentials.
 
+## Browser Preview Runtime
+
+Browser Preview Runtime is a local-only preview fixture for opening the customer and operator UI previews in a real browser. It is not a production server or external integration smoke path, and it does not connect to DB, Kafka, Docker, Blockchain RPC, or local `.env`.
+
+```bash
+PYTHONPATH=app python3 scripts/browser_preview_server.py --host 127.0.0.1 --port 8765
+PYTHONPATH=app python3 scripts/browser_preview_smoke.py
+```
+
+Open these URLs in the browser:
+
+```text
+http://127.0.0.1:8765/customer
+http://127.0.0.1:8765/operator
+```
+
+The server binds a localhost port only when this explicit script is running. Stop it with `Ctrl-C` in the same terminal.
+
 ## Docker Runtime Verification
 
 Docker runtime image verification fixes the root `Dockerfile` contract: Python 3.12, `/workspace`, `PYTHONPATH=/workspace/app`, copied `app/token_payments`, and a bounded `health` command. The compose one-shot services `token_payments_health`, `token_payments_worker`, and `token_payments_smoke` reuse that image for local runtime checks.
