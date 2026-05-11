@@ -21,6 +21,15 @@ from token_payments.contexts.inventory.application import (  # noqa: E402
     ReleaseInventoryCommand,
     ReserveInventoryCommand,
 )
+from token_payments.contexts.order.adapter.kafka import (  # noqa: E402
+    OrderKafkaCommandListener,
+    OrderStatusKafkaEventListener,
+)
+from token_payments.contexts.order.application import (  # noqa: E402
+    CancelOrderCommand,
+    OrderProjectionStatus,
+    OrderStatusEventProjector,
+)
 from token_payments.contexts.payment.adapter.kafka import PaymentKafkaCommandListener  # noqa: E402
 from token_payments.contexts.payment.application import (  # noqa: E402
     InitiatePaymentCommand,
@@ -248,6 +257,52 @@ def test_command_listeners_deserialize_and_dispatch_supported_context_commands()
     assert approval_command.store_id == STORE_ID
     assert approval_command.owner_user_id == OWNER_USER_ID
 
+    order_handler = FakeOrderCommandHandler()
+    cancel_id = CommandId.for_order_action(ORDER_ID, CheckoutCommandName.CANCEL_ORDER)
+    OrderKafkaCommandListener(
+        command_handler=order_handler,
+        processed_commands=FakeProcessedCommandRepository(),
+    ).handle(
+        _command_message(
+            CheckoutCommandName.CANCEL_ORDER,
+            cancel_id,
+            {
+                "reason": "payment expired before signature",
+                "requestedAt": NOW.isoformat(),
+            },
+        )
+    )
+    cancel_command = order_handler.cancel_calls[0]
+    assert isinstance(cancel_command, CancelOrderCommand)
+    assert cancel_command.command_id == cancel_id
+    assert cancel_command.order_id == ORDER_ID
+    assert cancel_command.reason == "payment expired before signature"
+    assert cancel_command.causation_id == str(MESSAGE_ID)
+
+
+def test_order_status_event_listener_projects_payment_and_store_events() -> None:
+    projector = FakeOrderStatusEventProjector()
+    listener = OrderStatusKafkaEventListener(projector=projector)
+
+    result = listener.handle(
+        _event_message(
+            CheckoutEventName.PAYMENT_CONFIRMED,
+            {
+                "paymentId": str(PAYMENT_ID),
+                "txHash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            },
+        )
+    )
+
+    event = projector.events[0]
+    assert result.message_id == MESSAGE_ID
+    assert result.order_id == ORDER_ID
+    assert result.projector_result.status == OrderProjectionStatus.PAYMENT_CONFIRMED
+    assert event.name == CheckoutEventName.PAYMENT_CONFIRMED
+    assert event.order_id == ORDER_ID
+    assert event.payment_id == PAYMENT_ID
+    assert event.metadata.correlation_id == str(ORDER_ID)
+
 
 def test_checkout_listener_ignores_duplicate_message_before_outbox_side_effects() -> None:
     processed_messages = FakeProcessedMessageRepository(
@@ -291,6 +346,29 @@ def test_command_listener_ignores_duplicate_command_before_handler_side_effects(
     assert result.duplicate_decision == IdempotencyDecision.IGNORE_DUPLICATE
     assert handler.refund_calls == []
     assert processed_commands.records == []
+
+
+def test_order_command_listener_ignores_duplicate_before_handler_side_effects() -> None:
+    command_id = CommandId.for_order_action(ORDER_ID, CheckoutCommandName.CANCEL_ORDER)
+    processed_commands = FakeProcessedCommandRepository(
+        existing={(FakeOrderCommandHandler.HANDLER_NAME, str(command_id))}
+    )
+    handler = FakeOrderCommandHandler()
+    listener = OrderKafkaCommandListener(command_handler=handler, processed_commands=processed_commands)
+
+    result = listener.handle(
+        _command_message(
+            CheckoutCommandName.CANCEL_ORDER,
+            command_id,
+            {
+                "reason": "payment expired before signature",
+                "requestedAt": NOW.isoformat(),
+            },
+        )
+    )
+
+    assert result.duplicate_decision == IdempotencyDecision.IGNORE_DUPLICATE
+    assert handler.cancel_calls == []
 
 
 def test_malformed_payload_is_rejected_before_dispatch_or_processed_record() -> None:
@@ -441,6 +519,40 @@ class FakeStoreApprovalService:
     def request_store_approval(self, command: RequestStoreApprovalCommand) -> FakeHandlerResult:
         self.calls.append(command)
         return FakeHandlerResult(command.command_id, command.order_id)
+
+
+class FakeOrderCommandHandler:
+    HANDLER_NAME = "order-command-handler"
+
+    def __init__(self) -> None:
+        self.cancel_calls: list[CancelOrderCommand] = []
+
+    def cancel_order(self, command: CancelOrderCommand) -> FakeHandlerResult:
+        self.cancel_calls.append(command)
+        return FakeHandlerResult(command.command_id, command.order_id)
+
+
+@dataclass(frozen=True)
+class FakeProjectionResult:
+    message_id: MessageId
+    order_id: OrderId
+    status: OrderProjectionStatus
+    duplicate_decision: IdempotencyDecision | None = None
+
+
+class FakeOrderStatusEventProjector:
+    CONSUMER_NAME = OrderStatusEventProjector.CONSUMER_NAME
+
+    def __init__(self) -> None:
+        self.events: list[Any] = []
+
+    def project(self, event: Any) -> FakeProjectionResult:
+        self.events.append(event)
+        return FakeProjectionResult(
+            message_id=event.metadata.message_id,
+            order_id=event.order_id,
+            status=OrderProjectionStatus.PAYMENT_CONFIRMED,
+        )
 
 
 class FakeProcessedMessageRepository:

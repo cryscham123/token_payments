@@ -1,5 +1,11 @@
 """Order adapter layer."""
 
+from .kafka import (
+    OrderKafkaCommandListener,
+    OrderKafkaCommandListenerResult,
+    OrderStatusKafkaEventListener,
+    OrderStatusKafkaEventListenerResult,
+)
 from .postgres import (
     PostgresCheckoutTrackingQuery,
     PostgresCustomerRepository,
@@ -8,6 +14,10 @@ from .postgres import (
 )
 
 __all__ = [
+    "OrderKafkaCommandListener",
+    "OrderKafkaCommandListenerResult",
+    "OrderStatusKafkaEventListener",
+    "OrderStatusKafkaEventListenerResult",
     "PostgresCheckoutTrackingQuery",
     "PostgresCustomerRepository",
     "PostgresOrderRepository",

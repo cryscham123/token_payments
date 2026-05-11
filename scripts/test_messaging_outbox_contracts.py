@@ -36,6 +36,7 @@ def test_checkout_message_names_cover_process_manager_sequence() -> None:
         "PaymentExpiredEvent",
         "OrderApprovedEvent",
         "OrderRejectedEvent",
+        "OrderCancelledEvent",
     }
     assert {command.value for command in CheckoutCommandName} == {
         "ReserveInventoryCommand",

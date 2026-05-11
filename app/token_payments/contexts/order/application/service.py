@@ -17,8 +17,10 @@ from token_payments.shared.domain import (
     OrderId,
     OutboxMessage,
     ProcessedCommand,
+    ProcessedMessage,
     ProductId,
 )
+from token_payments.shared.domain import MessageId, PaymentId
 
 from .commands import CancelOrderCommand, CreateOrderCommand
 from .ports import (
@@ -27,6 +29,7 @@ from .ports import (
     OrderRepository,
     OutboxMessageRepository,
     ProcessedCommandRepository,
+    ProcessedMessageRepository,
     StoreRepository,
 )
 
@@ -78,6 +81,70 @@ class OrderCommandResult:
     status: OrderCommandStatus
     order: Order | None = None
     outbox_message: OutboxMessage | None = None
+    duplicate_decision: IdempotencyDecision | None = None
+
+
+class OrderProjectionStatus(StrEnum):
+    PAYMENT_CONFIRMED = "PAYMENT_CONFIRMED"
+    ORDER_APPROVED = "ORDER_APPROVED"
+    ALREADY_APPLIED = "ALREADY_APPLIED"
+    IGNORED = "IGNORED"
+    DUPLICATE_IGNORED = "DUPLICATE_IGNORED"
+
+
+class OrderProjectionRejectionReason(StrEnum):
+    ORDER_NOT_FOUND = "ORDER_NOT_FOUND"
+    INVALID_STATE = "INVALID_STATE"
+    INVALID_EVENT = "INVALID_EVENT"
+
+
+class OrderProjectionRejected(Exception):
+    def __init__(
+        self,
+        reason: OrderProjectionRejectionReason,
+        message_id: MessageId,
+        order_id: OrderId,
+        message: str,
+    ) -> None:
+        super().__init__(message)
+        self.reason = reason
+        self.message_id = message_id
+        self.order_id = order_id
+
+
+@dataclass(frozen=True)
+class OrderStatusEvent:
+    metadata: EventMetadata
+    order_id: OrderId
+    payment_id: PaymentId | None = None
+    reason: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.metadata, EventMetadata):
+            raise ValueError("OrderStatusEvent.metadata must be an EventMetadata")
+        if not isinstance(self.order_id, OrderId):
+            raise ValueError("OrderStatusEvent.order_id must be an OrderId")
+        if self.payment_id is not None and not isinstance(self.payment_id, PaymentId):
+            raise ValueError("OrderStatusEvent.payment_id must be a PaymentId or None")
+        if self.reason is not None:
+            object.__setattr__(self, "reason", _require_text(self.reason, "OrderStatusEvent.reason"))
+
+    @property
+    def name(self) -> CheckoutEventName | str:
+        if isinstance(self.metadata.name, CheckoutEventName):
+            return self.metadata.name
+        try:
+            return CheckoutEventName(str(self.metadata.name))
+        except ValueError:
+            return self.metadata.name
+
+
+@dataclass(frozen=True)
+class OrderProjectionResult:
+    message_id: MessageId
+    order_id: OrderId
+    status: OrderProjectionStatus
+    order: Order | None = None
     duplicate_decision: IdempotencyDecision | None = None
 
 
@@ -208,6 +275,131 @@ class OrderCommandHandler:
                 handler=self.HANDLER_NAME,
                 processed_at=command.requested_at,
                 order_id=command.order_id,
+            )
+        )
+
+
+class OrderStatusEventProjector:
+    CONSUMER_NAME = "order-status-projector"
+
+    def __init__(
+        self,
+        orders: OrderRepository,
+        processed_messages: ProcessedMessageRepository,
+    ) -> None:
+        self._orders = orders
+        self._processed_messages = processed_messages
+
+    def project(self, event: OrderStatusEvent) -> OrderProjectionResult:
+        if self._processed_messages.was_processed(event.metadata.message_id, self.CONSUMER_NAME):
+            return OrderProjectionResult(
+                message_id=event.metadata.message_id,
+                order_id=event.order_id,
+                status=OrderProjectionStatus.DUPLICATE_IGNORED,
+                duplicate_decision=IdempotencyDecision.IGNORE_DUPLICATE,
+            )
+
+        if event.name is CheckoutEventName.PAYMENT_CONFIRMED:
+            result = self._project_payment_confirmed(event)
+        elif event.name is CheckoutEventName.ORDER_APPROVED:
+            result = self._project_order_approved(event)
+        elif event.name in {
+            CheckoutEventName.PAYMENT_FAILED,
+            CheckoutEventName.PAYMENT_EXPIRED,
+            CheckoutEventName.ORDER_REJECTED,
+            CheckoutEventName.ORDER_CANCELLED,
+        }:
+            result = OrderProjectionResult(
+                message_id=event.metadata.message_id,
+                order_id=event.order_id,
+                status=OrderProjectionStatus.IGNORED,
+            )
+        else:
+            result = OrderProjectionResult(
+                message_id=event.metadata.message_id,
+                order_id=event.order_id,
+                status=OrderProjectionStatus.IGNORED,
+            )
+
+        self._record_processed(event)
+        return result
+
+    def _project_payment_confirmed(self, event: OrderStatusEvent) -> OrderProjectionResult:
+        if event.payment_id is None:
+            raise OrderProjectionRejected(
+                reason=OrderProjectionRejectionReason.INVALID_EVENT,
+                message_id=event.metadata.message_id,
+                order_id=event.order_id,
+                message="PaymentConfirmedEvent requires payment_id",
+            )
+
+        order = self._load_order(event)
+        if order.status is OrderStatus.PENDING:
+            paid = order.confirm_payment(event.payment_id)
+            self._orders.save(paid)
+            return OrderProjectionResult(
+                message_id=event.metadata.message_id,
+                order_id=event.order_id,
+                status=OrderProjectionStatus.PAYMENT_CONFIRMED,
+                order=paid,
+            )
+        if order.status in {OrderStatus.PAID, OrderStatus.APPROVED} and order.payment_id == event.payment_id:
+            return OrderProjectionResult(
+                message_id=event.metadata.message_id,
+                order_id=event.order_id,
+                status=OrderProjectionStatus.ALREADY_APPLIED,
+                order=order,
+            )
+        raise OrderProjectionRejected(
+            reason=OrderProjectionRejectionReason.INVALID_STATE,
+            message_id=event.metadata.message_id,
+            order_id=event.order_id,
+            message=f"cannot project PaymentConfirmedEvent for order in {order.status} status",
+        )
+
+    def _project_order_approved(self, event: OrderStatusEvent) -> OrderProjectionResult:
+        order = self._load_order(event)
+        if order.status is OrderStatus.PAID:
+            approved = order.approve()
+            self._orders.save(approved)
+            return OrderProjectionResult(
+                message_id=event.metadata.message_id,
+                order_id=event.order_id,
+                status=OrderProjectionStatus.ORDER_APPROVED,
+                order=approved,
+            )
+        if order.status is OrderStatus.APPROVED:
+            return OrderProjectionResult(
+                message_id=event.metadata.message_id,
+                order_id=event.order_id,
+                status=OrderProjectionStatus.ALREADY_APPLIED,
+                order=order,
+            )
+        raise OrderProjectionRejected(
+            reason=OrderProjectionRejectionReason.INVALID_STATE,
+            message_id=event.metadata.message_id,
+            order_id=event.order_id,
+            message=f"cannot project OrderApprovedEvent for order in {order.status} status",
+        )
+
+    def _load_order(self, event: OrderStatusEvent) -> Order:
+        order = self._orders.get(event.order_id)
+        if order is None:
+            raise OrderProjectionRejected(
+                reason=OrderProjectionRejectionReason.ORDER_NOT_FOUND,
+                message_id=event.metadata.message_id,
+                order_id=event.order_id,
+                message=f"order {event.order_id} was not found",
+            )
+        return order
+
+    def _record_processed(self, event: OrderStatusEvent) -> None:
+        self._processed_messages.record(
+            ProcessedMessage.record(
+                message_id=event.metadata.message_id,
+                consumer=self.CONSUMER_NAME,
+                processed_at=event.metadata.occurred_at,
+                order_id=event.order_id,
             )
         )
 
@@ -373,3 +565,9 @@ def _crypto_payload(value: Crypto) -> dict[str, Any]:
 
 def _chain_payload(value: Crypto) -> dict[str, Any]:
     return {"chainId": value.chain_id, "name": f"chain-{value.chain_id}"}
+
+
+def _require_text(value: str, field_name: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field_name} must be a non-empty string")
+    return value.strip()
