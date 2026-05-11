@@ -7,6 +7,7 @@ from .http import (
     AUTH_HTTP_ROUTES,
     CHECKOUT_HTTP_ROUTES,
     ORDER_HTTP_ROUTES,
+    OPERATOR_HTTP_ROUTES,
     PAYMENT_HTTP_ROUTES,
     HttpHandler,
     HttpRequest,
@@ -17,6 +18,7 @@ from .http import (
     register_auth_routes,
     register_checkout_routes,
     register_order_routes,
+    register_operator_routes,
     register_payment_routes,
 )
 from .operator import AdminRoleOperatorPolicy, OperatorAccessPolicy, OperatorApi, OperatorClaims
@@ -39,6 +41,7 @@ __all__ = [
     "HttpRouter",
     "JsonValue",
     "ORDER_HTTP_ROUTES",
+    "OPERATOR_HTTP_ROUTES",
     "OperatorAccessPolicy",
     "OperatorApi",
     "OperatorClaims",
@@ -49,5 +52,6 @@ __all__ = [
     "register_auth_routes",
     "register_checkout_routes",
     "register_order_routes",
+    "register_operator_routes",
     "register_payment_routes",
 ]
