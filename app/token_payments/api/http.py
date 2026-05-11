@@ -108,6 +108,24 @@ class HttpRoute:
         return params
 
 
+@dataclass(frozen=True)
+class HttpRouteSpec:
+    """Stable public route contract used by framework adapters and docs."""
+
+    method: str
+    path: str
+    operation_id: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "method", _require_text(self.method, "HttpRouteSpec.method").upper())
+        path = _require_text(self.path, "HttpRouteSpec.path")
+        if not path.startswith("/"):
+            raise ValueError("HttpRouteSpec.path must start with /")
+        _validate_template_segments(path)
+        object.__setattr__(self, "path", path)
+        object.__setattr__(self, "operation_id", _require_text(self.operation_id, "HttpRouteSpec.operation_id"))
+
+
 class HttpRouter:
     """Small route dispatcher for framework-neutral API facades."""
 
@@ -228,6 +246,30 @@ class HttpRouter:
             api_kwargs["received_at"] = request.received_at
 
         return HttpResponse.from_api_response(route.handler(ApiRequest(**api_kwargs)))
+
+
+def register_auth_routes(router: HttpRouter, auth_api: Any) -> tuple[HttpRoute, ...]:
+    """Register AuthApi facade routes on an existing router."""
+
+    return (
+        _add_manifest_route(router, AUTH_HTTP_ROUTES["request_login_challenge"], auth_api.request_login_challenge),
+        _add_manifest_route(router, AUTH_HTTP_ROUTES["login_with_metamask"], auth_api.login_with_metamask),
+        _add_manifest_route(router, AUTH_HTTP_ROUTES["refresh_session"], auth_api.refresh_session),
+        _add_manifest_route(router, AUTH_HTTP_ROUTES["logout"], auth_api.logout),
+        _add_manifest_route(router, AUTH_HTTP_ROUTES["current_user"], auth_api.current_user),
+    )
+
+
+def register_order_routes(router: HttpRouter, orders_api: Any) -> tuple[HttpRoute, ...]:
+    """Register OrdersApi facade routes on an existing router."""
+
+    return (
+        _add_manifest_route(router, ORDER_HTTP_ROUTES["create_order"], orders_api.create_order),
+    )
+
+
+def _add_manifest_route(router: HttpRouter, spec: HttpRouteSpec, handler: HttpHandler) -> HttpRoute:
+    return router.add_route(spec.method, spec.path, handler, operation_id=spec.operation_id)
 
 
 @dataclass(frozen=True)
@@ -398,10 +440,32 @@ def _require_text(value: str | None, field_name: str) -> str:
     return value.strip()
 
 
+AUTH_HTTP_ROUTES: Mapping[str, HttpRouteSpec] = MappingProxyType(
+    {
+        "request_login_challenge": HttpRouteSpec("POST", "/auth/challenges", "requestLoginChallenge"),
+        "login_with_metamask": HttpRouteSpec("POST", "/auth/sessions", "loginWithMetaMask"),
+        "refresh_session": HttpRouteSpec("POST", "/auth/sessions/refresh", "refreshSession"),
+        "logout": HttpRouteSpec("DELETE", "/auth/sessions", "logout"),
+        "current_user": HttpRouteSpec("GET", "/auth/me", "getCurrentUser"),
+    }
+)
+
+ORDER_HTTP_ROUTES: Mapping[str, HttpRouteSpec] = MappingProxyType(
+    {
+        "create_order": HttpRouteSpec("POST", "/orders", "createOrder"),
+    }
+)
+
+
 __all__ = [
+    "AUTH_HTTP_ROUTES",
     "HttpHandler",
     "HttpRequest",
     "HttpResponse",
     "HttpRoute",
+    "HttpRouteSpec",
     "HttpRouter",
+    "ORDER_HTTP_ROUTES",
+    "register_auth_routes",
+    "register_order_routes",
 ]
