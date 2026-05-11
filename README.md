@@ -43,32 +43,44 @@ PYTHONPATH=app .venv/bin/python -m token_payments health
 PYTHONPATH=app python3 -m token_payments ui
 PYTHONPATH=app python3 -m token_payments ui customer
 PYTHONPATH=app python3 -m token_payments ui operator
-docker compose --env-file .env up -d postgres kafka kafka-ui pgweb test_network
 ```
 
 `ui` preview command는 long-running HTTP server를 시작하지 않고 bounded JSON을 반환한다. HTML preview는 runtime `CommandDispatchResult.details.preview` 아래에 들어가며, `ApiResponse` 계약이 아니라 로컬 customer/operator UI phase 확인용 fixture 계약이다.
 
-로컬 Docker smoke는 committed config readiness를 먼저 확인한 뒤 사람이 직접 컨테이너를 기동한다.
+## Docker Runtime Verification
 
-Docker daemon 없이 compose 파일 해석만 확인하려면 committed `.env.example`으로 config validation을 실행한다.
+Docker runtime image 계약은 루트 `Dockerfile`이 Python 3.12 기반으로 `app/token_payments`만 `/workspace/app/token_payments`에 복사하고 `PYTHONPATH=/workspace/app`에서 bounded `health` command를 실행하는지 고정한다. `docker-compose.yml`은 같은 image를 쓰는 compose one-shot services `token_payments_health`, `token_payments_worker`, `token_payments_smoke`를 제공한다.
+
+Docker daemon/socket 권한이 없는 automated harness에서는 live container 실행이 아니라 static/config/smoke contract를 검증한다. Docker daemon 없이 compose 파일 해석만 확인하려면 committed `.env.example`으로 daemon-less compose config validation을 실행한다.
 
 ```bash
 docker compose --env-file .env.example config --services
 docker compose --env-file .env.example --profile runtime config --services
 ```
 
+Docker runtime smoke는 live Docker/Kafka/PostgreSQL client를 열지 않고 committed 파일과 수동 실행 순서를 JSON contract로 검증한다.
+
+```bash
+PYTHONPATH=app python3 -m token_payments smoke docker-runtime-readiness
+```
+
+Live local Docker 실행은 수동/승인 필요 작업이다. 필요한 경우 다음 순서로만 실행한다.
+
 ```bash
 cp .env.example .env
-PYTHONPATH=app python3 -m token_payments smoke compose-readiness
+docker compose --env-file .env --profile runtime config --services
 docker compose --env-file .env up -d postgres kafka kafka-ui pgweb test_network
-PYTHONPATH=app python3 -m token_payments health
-PYTHONPATH=app python3 -m token_payments worker
-PYTHONPATH=app python3 -m token_payments ui customer
-PYTHONPATH=app python3 -m token_payments ui operator
-PYTHONPATH=app python3 -m token_payments smoke happy-path-checkout
-PYTHONPATH=app python3 -m token_payments smoke compensation-checkout
+docker compose --env-file .env --profile runtime run --rm token_payments_health
+docker compose --env-file .env --profile runtime run --rm token_payments_worker
+docker compose --env-file .env --profile smoke run --rm token_payments_smoke
 docker compose --env-file .env down
 ```
+
+Docker 이후 다음 phase 후보:
+
+- ASGI/FastAPI thin adapter: 기존 framework-neutral route manifest와 facade contract를 유지하면서 production ASGI adapter를 얇게 추가한다.
+- live Docker e2e with approved daemon: 승인된 Docker daemon 환경에서 schema, Kafka publish/consume, runtime one-shot smoke를 실제 컨테이너로 확인한다.
+- operator action UI wiring: 운영 dashboard의 cancel/retry/replay control을 기존 operator action endpoint와 audit 결과에 연결한다.
 
 ## Foundation 검증
 
