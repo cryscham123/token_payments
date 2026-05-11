@@ -13,7 +13,10 @@
     {
       "step": 1,
       "name": "operator-cancel-order-action",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-11T14:13:15+0900",
+      "summary": "Connected ADMIN cancelOrder operator actions to CancelOrderCommand/OrderCommandHandler with deterministic command ids, handler result mapping, rejection handling, audit recording, and focused contract tests.",
+      "completed_at": "2026-05-11T14:18:59+0900"
     },
     {
       "step": 2,
