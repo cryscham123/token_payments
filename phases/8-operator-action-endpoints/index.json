@@ -37,7 +37,10 @@
     {
       "step": 4,
       "name": "operator-action-phase-verification",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-11T14:36:01+0900",
+      "completed_at": "2026-05-11T14:41:07+0900",
+      "summary": "Added operator action public contract tests and README/app README documentation to verify public exports, phase 7 plus phase 8 route manifests, framework-neutral import boundaries, bounded api/serve-api previews, and next phase candidates without starting live Docker/Kafka publish."
     }
   ],
   "created_at": "2026-05-11T14:08:16+0900"
