@@ -1,0 +1,40 @@
+{
+  "project": "Token Payments",
+  "phase": "7-http-framework-adapter",
+  "steps": [
+    {
+      "step": 0,
+      "name": "http-adapter-contract-foundation",
+      "status": "completed",
+      "started_at": "2026-05-11T12:03:56+0900",
+      "completed_at": "2026-05-11T12:09:25+0900",
+      "summary": "Added framework-neutral HttpRequest/HttpRoute/HttpRouter/HttpResponse foundation with JSON decode errors, route miss/method mismatch responses, deterministic request ids, response byte serialization, and public API exports."
+    },
+    {
+      "step": 1,
+      "name": "auth-order-http-routes",
+      "status": "pending"
+    },
+    {
+      "step": 2,
+      "name": "checkout-payment-http-routes",
+      "status": "pending"
+    },
+    {
+      "step": 3,
+      "name": "operator-http-routes",
+      "status": "pending"
+    },
+    {
+      "step": 4,
+      "name": "wsgi-runtime-preview",
+      "status": "pending"
+    },
+    {
+      "step": 5,
+      "name": "http-adapter-phase-verification",
+      "status": "pending"
+    }
+  ],
+  "created_at": "2026-05-11T12:03:56+0900"
+}
