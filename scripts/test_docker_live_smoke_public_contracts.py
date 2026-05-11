@@ -100,7 +100,7 @@ def test_readmes_document_live_smoke_runner_commands_and_refusal_behavior() -> N
             assert phrase in text, f"{path.relative_to(ROOT)} must document {phrase!r}"
 
 
-def test_phase_10_metadata_closes_public_verification_without_top_level_completion() -> None:
+def test_phase_10_metadata_closes_public_verification_and_top_level_completion() -> None:
     phase_index = json.loads((ROOT / "phases/10-docker-live-smoke-runner/index.json").read_text(encoding="utf-8"))
     top_index = json.loads((ROOT / "phases/index.json").read_text(encoding="utf-8"))
     step2 = next(step for step in phase_index["steps"] if step["step"] == 2)
@@ -125,7 +125,8 @@ def test_phase_10_metadata_closes_public_verification_without_top_level_completi
         assert term in completed_summary_text
 
     phase10 = next(phase for phase in top_index["phases"] if phase["dir"] == "10-docker-live-smoke-runner")
-    assert phase10["status"] == "pending"
+    assert phase10["status"] == "completed"
+    assert phase10.get("completed_at")
 
 
 def _run_plan() -> dict[str, Any]:
