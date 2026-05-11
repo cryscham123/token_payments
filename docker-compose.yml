@@ -129,6 +129,7 @@ services:
     command: ["python", "-m", "token_payments", "smoke", "compose-readiness"]
     restart: "no"
     profiles:
+      - runtime
       - smoke
     depends_on:
       postgres:

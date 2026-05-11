@@ -50,6 +50,13 @@ docker compose --env-file .env up -d postgres kafka kafka-ui pgweb test_network
 
 로컬 Docker smoke는 committed config readiness를 먼저 확인한 뒤 사람이 직접 컨테이너를 기동한다.
 
+Docker daemon 없이 compose 파일 해석만 확인하려면 committed `.env.example`으로 config validation을 실행한다.
+
+```bash
+docker compose --env-file .env.example config --services
+docker compose --env-file .env.example --profile runtime config --services
+```
+
 ```bash
 cp .env.example .env
 PYTHONPATH=app python3 -m token_payments smoke compose-readiness

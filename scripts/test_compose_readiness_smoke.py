@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT / "app"))
 
 
 REQUIRED_ENV_KEYS = [
+    "COMPOSE_PROFILES",
     "TEST_NETWORK_PRIVATE_KEY",
     "TEST_NETWORK_ACCOUNT",
     "TEST_NETWORK_NETWORK_ID",

@@ -17,6 +17,7 @@ RUN_COMMANDS = [
     "docker compose --env-file .env --profile runtime run --rm token_payments_worker",
     "docker compose --env-file .env --profile smoke run --rm token_payments_smoke",
 ]
+COMPOSE_CONFIG_VALIDATION_COMMAND = "docker compose --env-file .env.example config --services"
 
 
 def test_docker_runtime_readiness_scenario_is_registered() -> None:
@@ -38,8 +39,8 @@ def test_docker_runtime_readiness_smoke_validates_static_contracts_without_docke
     assert result["scenario"] == SCENARIO
     assert result["status"] == "passed"
     assert result["summary"] == (
-        "docker runtime readiness validated image, dockerignore, env path, and compose one-shot "
-        "commands without starting Docker"
+        "docker runtime readiness validated image, dockerignore, env path, compose config command, "
+        "and compose one-shot commands without starting Docker"
     )
     assert [step["name"] for step in result["steps"]] == [
         "Dockerfile runtime image contract",
@@ -109,7 +110,7 @@ def test_docker_runtime_readiness_smoke_validates_static_contracts_without_docke
             "pythonPath": "/workspace/app",
             "command": ["python", "-m", "token_payments", "smoke", "compose-readiness"],
             "restart": "no",
-            "profiles": ["smoke"],
+            "profiles": ["runtime", "smoke"],
             "dependsOn": {
                 "postgres": "service_healthy",
                 "kafka": "service_started",
@@ -118,6 +119,12 @@ def test_docker_runtime_readiness_smoke_validates_static_contracts_without_docke
         },
     }
     assert details["compose"]["runCommands"] == RUN_COMMANDS
+    assert details["compose"]["composeConfigValidationCommand"] == {
+        "command": COMPOSE_CONFIG_VALIDATION_COMMAND,
+        "daemonless": True,
+        "usesDockerSocket": False,
+        "forbiddenCommands": ["up", "run", "build"],
+    }
     assert "docker compose --env-file .env down" in details["manualLiveCommands"]
     assert _contains_only_json_primitives(result)
     json.dumps(result)
@@ -148,6 +155,10 @@ def test_docker_runtime_readiness_cli_outputs_bounded_json() -> None:
     assert payload["details"]["smoke"]["details"]["dockerStarted"] is False
     assert payload["details"]["smoke"]["details"]["networkCalls"] is False
     assert payload["details"]["smoke"]["details"]["compose"]["runCommands"] == RUN_COMMANDS
+    assert (
+        payload["details"]["smoke"]["details"]["compose"]["composeConfigValidationCommand"]["command"]
+        == COMPOSE_CONFIG_VALIDATION_COMMAND
+    )
     assert len(completed.stdout) < 20000
 
 
