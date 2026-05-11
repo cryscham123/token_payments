@@ -12,32 +12,39 @@ PYTHONPATH=app .venv/bin/python -m token_payments api
 PYTHONPATH=app python3 -m token_payments ui
 PYTHONPATH=app python3 -m token_payments ui customer
 PYTHONPATH=app python3 -m token_payments ui operator
-docker compose --env-file .env up -d postgres kafka kafka-ui pgweb test_network
 ```
 
 Use `.env.example` as the template for local `.env` values. The local blockchain RPC points at `test_network` on chain id `1337`. Do not commit real private keys, API keys, seed phrases, or production credentials.
 
-Daemon-less compose config validation uses committed placeholders and only resolves service names.
+## Docker Runtime Verification
+
+Docker runtime image verification fixes the root `Dockerfile` contract: Python 3.12, `/workspace`, `PYTHONPATH=/workspace/app`, copied `app/token_payments`, and a bounded `health` command. The compose one-shot services `token_payments_health`, `token_payments_worker`, and `token_payments_smoke` reuse that image for local runtime checks.
+
+Automated harness verification does not require Docker daemon/socket access. It checks static/config/smoke contract coverage, including daemon-less compose config validation, committed runtime service definitions, and the `docker-runtime-readiness` smoke payload instead of starting live containers.
 
 ```bash
 docker compose --env-file .env.example config --services
 docker compose --env-file .env.example --profile runtime config --services
+PYTHONPATH=app python3 -m token_payments smoke docker-runtime-readiness
 ```
 
-Local Docker smoke order:
+Live local Docker execution is manual/approval-only. Run it in this order when Docker daemon access is explicitly available.
 
 ```bash
 cp .env.example .env
-PYTHONPATH=app python3 -m token_payments smoke compose-readiness
+docker compose --env-file .env --profile runtime config --services
 docker compose --env-file .env up -d postgres kafka kafka-ui pgweb test_network
-PYTHONPATH=app python3 -m token_payments health
-PYTHONPATH=app python3 -m token_payments worker
-PYTHONPATH=app python3 -m token_payments ui customer
-PYTHONPATH=app python3 -m token_payments ui operator
-PYTHONPATH=app python3 -m token_payments smoke happy-path-checkout
-PYTHONPATH=app python3 -m token_payments smoke compensation-checkout
+docker compose --env-file .env --profile runtime run --rm token_payments_health
+docker compose --env-file .env --profile runtime run --rm token_payments_worker
+docker compose --env-file .env --profile smoke run --rm token_payments_smoke
 docker compose --env-file .env down
 ```
+
+Docker phase next candidates:
+
+- ASGI/FastAPI thin adapter: add a thin production ASGI layer while preserving the current framework-neutral API route manifest.
+- live Docker e2e with approved daemon: run the committed compose stack with explicit daemon approval and verify schema, Kafka, and one-shot runtime smoke.
+- operator action UI wiring: connect the dashboard action controls to the existing cancel/retry/replay endpoint and audit result contracts.
 
 ## Verification Commands
 

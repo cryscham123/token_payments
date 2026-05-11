@@ -91,6 +91,7 @@ DOCKER_RUNTIME_COMPOSE_CONFIG_VALIDATION_COMMAND = (
 )
 DOCKER_RUNTIME_MANUAL_LIVE_COMMANDS = (
     "cp .env.example .env",
+    "docker compose --env-file .env --profile runtime config --services",
     "docker compose --env-file .env up -d postgres kafka kafka-ui pgweb test_network",
     *DOCKER_RUNTIME_RUN_COMMANDS,
     "docker compose --env-file .env down",
