@@ -135,6 +135,28 @@ Next phase candidates:
 - HTTP framework adapter: wire the framework-neutral API facade to real ASGI/WSGI route handlers while preserving the existing `ApiRequest`/`ApiResponse` contracts.
 - order status projection/handler gap: wire `CancelOrderCommand` and the order status update handler for payment/store approval events so compensation flows update order state end to end.
 
+## Order Lifecycle Compensation
+
+Order lifecycle compensation closes the remaining compensation gap. `PaymentConfirmedEvent` and `OrderApprovedEvent` are projected into order `PAID`/`APPROVED` state, while payment failure, payment expiration, and store rejection drive `CancelOrderCommand` through the order command handler. In smoke output, `cancelOrderHandlerWired=true` means every compensation sub-scenario reached final order status `CANCELLED` through the real handler path.
+
+```bash
+python3 -m pytest \
+  scripts/test_order_lifecycle_compensation.py \
+  scripts/test_order_status_event_projector.py \
+  scripts/test_order_lifecycle_public_contracts.py \
+  scripts/test_happy_path_checkout_e2e.py \
+  scripts/test_compensation_checkout_e2e.py
+PYTHONPATH=app python3 -m token_payments smoke happy-path-checkout
+PYTHONPATH=app python3 -m token_payments smoke compensation-checkout
+python3 scripts/validate_phases.py
+```
+
+Next phase candidates:
+
+- HTTP framework adapter: wire the framework-neutral API facade to ASGI/WSGI route handlers.
+- real docker compose integration: start local containers and verify schema, Kafka publish/consume, and bounded smoke commands against live infrastructure.
+- operator order lifecycle observability: expose cancellation reason, compensation idempotency, and replay state in operator views.
+
 ## API / Worker Runtime Contracts
 
 The API layer exposes framework-neutral facades: `AuthApi`, `OrdersApi`, `CheckoutApi`, `PaymentsApi`, and `OperatorApi`. They accept `ApiRequest` and return `ApiResponse` so a later HTTP framework can adapt them without changing the application contracts.

@@ -34,7 +34,7 @@ def test_compensation_checkout_smoke_runs_failure_expiration_and_rejection_flows
         "paymentSignatureExpiration",
         "storeRejectionAfterPaymentConfirmation",
     }
-    assert details["cancelOrderHandlerWired"] is False
+    assert details["cancelOrderHandlerWired"] is True
 
     failure = sub_scenarios["paymentReceiptFailure"]
     assert failure["triggerEvent"] == "PaymentFailedEvent"
@@ -45,8 +45,9 @@ def test_compensation_checkout_smoke_runs_failure_expiration_and_rejection_flows
     assert failure["duplicateEventReplay"]["ignoredByProcessedMessageRepository"] is True
     assert failure["duplicateEventReplay"]["sameDirectDecisionIdsOnReplay"] is True
     assert failure["duplicateCommandResults"]["ReleaseInventoryCommand"] == "DUPLICATE_IGNORED"
-    assert failure["duplicateCommandResults"]["CancelOrderCommand"] == "HANDLER_NOT_WIRED"
+    assert failure["duplicateCommandResults"]["CancelOrderCommand"] == "DUPLICATE_IGNORED"
     assert failure["finalInventory"] == {"availableStock": 10, "reservedStock": 0}
+    assert failure["finalOrderStatus"] == "CANCELLED"
 
     expiration = sub_scenarios["paymentSignatureExpiration"]
     assert expiration["triggerEvent"] == "PaymentExpiredEvent"
@@ -55,9 +56,10 @@ def test_compensation_checkout_smoke_runs_failure_expiration_and_rejection_flows
         "CancelOrderCommand": "018f33aa-9e6d-73d8-9dc3-47d6cdcc8c21:CancelOrderCommand",
     }
     assert expiration["duplicateCommandResults"]["ReleaseInventoryCommand"] == "DUPLICATE_IGNORED"
-    assert expiration["duplicateCommandResults"]["CancelOrderCommand"] == "HANDLER_NOT_WIRED"
+    assert expiration["duplicateCommandResults"]["CancelOrderCommand"] == "DUPLICATE_IGNORED"
     assert expiration["finalPaymentStatus"] == "EXPIRED"
     assert expiration["finalInventory"] == {"availableStock": 10, "reservedStock": 0}
+    assert expiration["finalOrderStatus"] == "CANCELLED"
 
     rejection = sub_scenarios["storeRejectionAfterPaymentConfirmation"]
     assert rejection["triggerEvent"] == "OrderRejectedEvent"
@@ -68,10 +70,11 @@ def test_compensation_checkout_smoke_runs_failure_expiration_and_rejection_flows
     }
     assert rejection["duplicateCommandResults"]["RefundPaymentCommand"] == "DUPLICATE_IGNORED"
     assert rejection["duplicateCommandResults"]["ReleaseInventoryCommand"] == "DUPLICATE_IGNORED"
-    assert rejection["duplicateCommandResults"]["CancelOrderCommand"] == "HANDLER_NOT_WIRED"
+    assert rejection["duplicateCommandResults"]["CancelOrderCommand"] == "DUPLICATE_IGNORED"
     assert rejection["finalPaymentStatus"] == "REFUNDED"
     assert rejection["finalStoreApprovalStatus"] == "REJECTED"
     assert rejection["finalInventory"] == {"availableStock": 10, "reservedStock": 0}
+    assert rejection["finalOrderStatus"] == "CANCELLED"
 
     assert details["duplicateSummary"] == {
         "duplicateEventReplaysIgnored": 3,
@@ -79,7 +82,7 @@ def test_compensation_checkout_smoke_runs_failure_expiration_and_rejection_flows
         "duplicateCommandResults": {
             "ReleaseInventoryCommand": ["DUPLICATE_IGNORED", "DUPLICATE_IGNORED", "DUPLICATE_IGNORED"],
             "RefundPaymentCommand": ["DUPLICATE_IGNORED"],
-            "CancelOrderCommand": ["HANDLER_NOT_WIRED", "HANDLER_NOT_WIRED", "HANDLER_NOT_WIRED"],
+            "CancelOrderCommand": ["DUPLICATE_IGNORED", "DUPLICATE_IGNORED", "DUPLICATE_IGNORED"],
         },
     }
     json.dumps(result)
@@ -106,5 +109,5 @@ def test_compensation_checkout_smoke_cli_outputs_bounded_json() -> None:
     assert payload["status"] == "SUCCEEDED"
     assert payload["details"]["smoke"]["scenario"] == "compensation-checkout"
     assert payload["details"]["smoke"]["status"] == "passed"
-    assert payload["details"]["smoke"]["details"]["cancelOrderHandlerWired"] is False
+    assert payload["details"]["smoke"]["details"]["cancelOrderHandlerWired"] is True
     assert len(completed.stdout) < 20000

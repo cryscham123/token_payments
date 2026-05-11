@@ -249,3 +249,25 @@ docker compose --env-file .env down
 - real docker compose integration: 컨테이너를 실제로 기동하고, DB schema applied by app/postgres/init.d/001-token-payments-schema.sql 상태를 확인하며, Kafka topic publish/consume과 bounded runtime smoke command chain을 검증한다.
 - HTTP framework adapter: framework-neutral API facade를 실제 ASGI/WSGI route로 연결하고 auth/order/checkout/payment/operator endpoint contract를 HTTP response로 고정한다.
 - order status projection/handler gap: `CancelOrderCommand` 처리와 payment/store approval event 기반 order status update handler wiring을 추가해 compensation smoke의 남은 gap을 닫는다.
+
+## Order Lifecycle Compensation 검증
+
+Order lifecycle compensation phase는 보상 flow의 남은 `CancelOrderCommand` gap을 닫는다. `PaymentConfirmedEvent`와 `OrderApprovedEvent`는 order status projector가 `PAID`/`APPROVED`로 반영하고, `PaymentFailedEvent`, `PaymentExpiredEvent`, `OrderRejectedEvent` 이후의 최종 취소는 order command handler가 처리한다. Compensation smoke의 `cancelOrderHandlerWired=true`는 세 보상 sub-scenario가 실제 cancel handler를 호출하고 최종 order status를 `CANCELLED`까지 갱신한다는 의미다.
+
+```bash
+python3 -m pytest \
+  scripts/test_order_lifecycle_compensation.py \
+  scripts/test_order_status_event_projector.py \
+  scripts/test_order_lifecycle_public_contracts.py \
+  scripts/test_happy_path_checkout_e2e.py \
+  scripts/test_compensation_checkout_e2e.py
+PYTHONPATH=app python3 -m token_payments smoke happy-path-checkout
+PYTHONPATH=app python3 -m token_payments smoke compensation-checkout
+python3 scripts/validate_phases.py
+```
+
+다음 phase 후보:
+
+- HTTP framework adapter: framework-neutral API facade를 실제 ASGI/WSGI route로 연결하고 auth/order/checkout/payment/operator endpoint contract를 HTTP response로 고정한다.
+- real docker compose integration: 컨테이너를 실제로 기동하고 DB schema 적용, Kafka topic publish/consume, bounded runtime smoke command chain을 검증한다.
+- operator order lifecycle observability: cancellation reason, compensation command idempotency, replay 상태를 operator API/UI에서 조회할 수 있게 한다.

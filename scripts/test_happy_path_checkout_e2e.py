@@ -37,6 +37,11 @@ def test_happy_path_checkout_smoke_runs_real_application_flow() -> None:
     assert details["paymentId"] == "018f33aa-9e6d-73d8-9dc3-47d6cdcc6c25"
     assert details["finalOrderStatus"] == "APPROVED"
     assert details["finalStoreApprovalStatus"] == "APPROVED"
+    assert details["orderStatusProjector"] == {
+        "PaymentConfirmedEvent": "PAYMENT_CONFIRMED",
+        "OrderApprovedEvent": "ORDER_APPROVED",
+        "processedMessageCount": 2,
+    }
     assert details["savedOutboxEventNames"] == [
         "OrderCreatedEvent",
         "InventoryReservedEvent",

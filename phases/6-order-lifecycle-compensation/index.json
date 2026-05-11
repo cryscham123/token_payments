@@ -13,26 +13,36 @@
     {
       "step": 1,
       "name": "order-status-event-projector",
-      "status": "error",
+      "status": "completed",
       "started_at": "2026-05-11T08:44:19+0900",
-      "error_message": "[3회 시도 후 실패] Step did not update status",
-      "failed_at": "2026-05-11T08:44:35+0900"
+      "completed_at": "2026-05-11T08:50:30+0900",
+      "summary": "PaymentConfirmedEvent/OrderApprovedEvent를 order PAID/APPROVED 상태로 반영하는 OrderStatusEventProjector와 processed-message 멱등 contract를 추가하고 보상 trigger event는 cancel handler 책임으로 ignored 처리했다."
     },
     {
       "step": 2,
       "name": "order-lifecycle-adapter-wiring",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-11T08:50:30+0900",
+      "completed_at": "2026-05-11T08:51:50+0900",
+      "summary": "order.commands CancelOrderCommand listener와 payment/store approval event를 order status projector로 전달하는 Kafka adapter를 추가하고 OrderCancelledEvent topic resolver/export contract를 연결했다."
     },
     {
       "step": 3,
       "name": "compensation-smoke-gap-closure",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-11T08:51:50+0900",
+      "completed_at": "2026-05-11T08:53:00+0900",
+      "summary": "happy-path smoke의 수동 order 상태 변경을 projector로 대체하고 compensation smoke가 실제 CancelOrderCommand handler를 호출해 세 보상 sub-scenario 모두 finalOrderStatus=CANCELLED와 cancelOrderHandlerWired=true를 반환하게 했다."
     },
     {
       "step": 4,
       "name": "order-lifecycle-phase-verification",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-11T08:53:00+0900",
+      "completed_at": "2026-05-11T08:54:38+0900",
+      "summary": "order lifecycle public contract 테스트와 README/app README 문서화를 추가해 handler/projector/adapter export, wired compensation smoke, 다음 HTTP adapter/live compose/operator observability 후보를 검증했다."
     }
   ],
-  "created_at": "2026-05-11T08:37:49+0900"
+  "created_at": "2026-05-11T08:37:49+0900",
+  "completed_at": "2026-05-11T08:54:38+0900"
 }

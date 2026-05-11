@@ -6,7 +6,17 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from token_payments.contexts.order.domain import Customer, Order, Store
-from token_payments.shared.domain import CommandId, Crypto, OrderId, OutboxMessage, ProcessedCommand, StoreId, UserId
+from token_payments.shared.domain import (
+    CommandId,
+    Crypto,
+    MessageId,
+    OrderId,
+    OutboxMessage,
+    ProcessedCommand,
+    ProcessedMessage,
+    StoreId,
+    UserId,
+)
 
 from .commands import CreateOrderCommand
 
@@ -46,6 +56,14 @@ class ProcessedCommandRepository(Protocol):
         ...
 
     def record(self, processed_command: ProcessedCommand) -> None:
+        ...
+
+
+class ProcessedMessageRepository(Protocol):
+    def was_processed(self, message_id: MessageId, consumer: str) -> bool:
+        ...
+
+    def record(self, processed_message: ProcessedMessage) -> None:
         ...
 
 

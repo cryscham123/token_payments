@@ -32,7 +32,8 @@
     },
     {
       "dir": "6-order-lifecycle-compensation",
-      "status": "pending"
+      "status": "completed",
+      "completed_at": "2026-05-11T08:54:38+0900"
     }
   ]
 }

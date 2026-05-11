@@ -8,6 +8,7 @@ from .ports import (
     OrderUseCase,
     OutboxMessageRepository,
     ProcessedCommandRepository,
+    ProcessedMessageRepository,
     StoreRepository,
 )
 from .queries import (
@@ -26,6 +27,12 @@ from .service import (
     OrderCommandResult,
     OrderCommandStatus,
     OrderErrorCode,
+    OrderProjectionRejected,
+    OrderProjectionRejectionReason,
+    OrderProjectionResult,
+    OrderProjectionStatus,
+    OrderStatusEvent,
+    OrderStatusEventProjector,
 )
 
 __all__ = [
@@ -46,10 +53,17 @@ __all__ = [
     "OrderCommandStatus",
     "OrderCreationResult",
     "OrderErrorCode",
+    "OrderProjectionRejected",
+    "OrderProjectionRejectionReason",
+    "OrderProjectionResult",
+    "OrderProjectionStatus",
     "OrderRepository",
+    "OrderStatusEvent",
+    "OrderStatusEventProjector",
     "OrderUseCase",
     "OutboxStatusSnapshot",
     "OutboxMessageRepository",
     "ProcessedCommandRepository",
+    "ProcessedMessageRepository",
     "StoreRepository",
 ]

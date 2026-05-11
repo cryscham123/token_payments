@@ -177,8 +177,10 @@ def test_checkout_process_manager_is_pure_domain_logic_without_adapters() -> Non
     }
 
     for context_path in (
-        ROOT / "app/token_payments/contexts/order",
-        ROOT / "app/token_payments/contexts/checkout",
+        ROOT / "app/token_payments/contexts/order/domain",
+        ROOT / "app/token_payments/contexts/order/application",
+        ROOT / "app/token_payments/contexts/checkout/domain",
+        ROOT / "app/token_payments/contexts/checkout/application",
     ):
         for path in context_path.glob("**/*.py"):
             tree = ast.parse(path.read_text(encoding="utf-8"))
