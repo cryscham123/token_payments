@@ -54,6 +54,10 @@
       "dir": "10-docker-live-smoke-runner",
       "status": "completed",
       "completed_at": "2026-05-11T15:45:33+0900"
+    },
+    {
+      "dir": "11-browser-preview-runtime",
+      "status": "pending"
     }
   ]
 }
