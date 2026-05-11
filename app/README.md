@@ -157,6 +157,29 @@ Next phase candidates:
 - real docker compose integration: start local containers and verify schema, Kafka publish/consume, and bounded smoke commands against live infrastructure.
 - operator order lifecycle observability: expose cancellation reason, compensation idempotency, and replay state in operator views.
 
+## HTTP Framework Adapter
+
+The HTTP adapter phase exposes the framework-neutral facades through stable route specs, registration helpers, a deterministic route manifest, and a WSGI-compatible callable. The `api` and `serve-api` commands return a bounded HTTP adapter preview as JSON; they do not start a long-running server or bind a network port.
+
+```bash
+python3 -m pytest \
+  scripts/test_http_adapter_contract_foundation.py \
+  scripts/test_auth_order_http_routes.py \
+  scripts/test_checkout_payment_http_routes.py \
+  scripts/test_operator_http_routes.py \
+  scripts/test_wsgi_runtime_preview.py \
+  scripts/test_http_adapter_public_contracts.py
+PYTHONPATH=app python3 -m token_payments api
+PYTHONPATH=app python3 -m token_payments serve-api
+python3 scripts/validate_phases.py
+```
+
+Next phase candidates:
+
+- real docker compose integration: start the committed compose stack and verify schema, Kafka publish/consume, and bounded smoke commands against live infrastructure.
+- ASGI/FastAPI thin adapter: add a production framework adapter while preserving the existing route manifest and facade contracts.
+- operator lifecycle action endpoints: expose cancel, retry, and replay commands with policy, idempotency, and audit behavior.
+
 ## API / Worker Runtime Contracts
 
 The API layer exposes framework-neutral facades: `AuthApi`, `OrdersApi`, `CheckoutApi`, `PaymentsApi`, and `OperatorApi`. They accept `ApiRequest` and return `ApiResponse` so a later HTTP framework can adapt them without changing the application contracts.

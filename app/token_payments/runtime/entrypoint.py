@@ -54,11 +54,7 @@ class ContractRuntimeContainer:
                 details={"config": self.config.to_dict(), "worker": summary.to_dict()},
             )
         if command_name in {"api", "serve-api"}:
-            return CommandDispatchResult.succeeded(
-                command=command_name,
-                summary=f"{command_name} command accepted; long-running startup is not wired in this phase",
-                details={"config": self.config.to_dict()},
-            )
+            return self._dispatch_api_preview(command_name)
         if command_name == "ui":
             return self._dispatch_ui_preview(command_parts[1] if len(command_parts) > 1 else None)
         if command_name == "smoke":
@@ -93,6 +89,25 @@ class ContractRuntimeContainer:
             command="ui",
             summary=f"rendered {preview['view']} ui preview with {sample_count} sample(s)",
             details={"preview": preview},
+        )
+
+    def _dispatch_api_preview(self, command_name: str) -> CommandDispatchResult:
+        from token_payments.api import http_route_manifest
+
+        routes = list(http_route_manifest())
+        return CommandDispatchResult.succeeded(
+            command=command_name,
+            summary=f"{command_name} route manifest listed {len(routes)} route(s); server was not started",
+            details={
+                "config": self.config.to_dict(),
+                "http": {
+                    "adapter": "framework-neutral-wsgi",
+                    "longRunning": False,
+                    "routeCount": len(routes),
+                    "routes": routes,
+                    "wsgiFactory": "token_payments.api.build_wsgi_app",
+                },
+            },
         )
 
     def _dispatch_smoke(self, scenario: str | None) -> CommandDispatchResult:

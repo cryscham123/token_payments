@@ -1,0 +1,107 @@
+from __future__ import annotations
+
+import importlib
+import sys
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "app"))
+
+
+def test_http_adapter_public_exports_cover_router_routes_wsgi_and_manifest_helpers() -> None:
+    import token_payments.api as api
+
+    expected_exports = {
+        "AUTH_HTTP_ROUTES",
+        "CHECKOUT_HTTP_ROUTES",
+        "ORDER_HTTP_ROUTES",
+        "OPERATOR_HTTP_ROUTES",
+        "PAYMENT_HTTP_ROUTES",
+        "HttpRequest",
+        "HttpResponse",
+        "HttpRoute",
+        "HttpRouteSpec",
+        "HttpRouter",
+        "build_wsgi_app",
+        "describe_http_routes",
+        "http_route_manifest",
+        "list_http_route_specs",
+        "register_auth_routes",
+        "register_checkout_routes",
+        "register_order_routes",
+        "register_operator_routes",
+        "register_payment_routes",
+    }
+
+    assert expected_exports <= set(api.__all__)
+    assert all(hasattr(api, name) for name in expected_exports)
+
+
+def test_http_route_manifest_includes_every_phase_7_route_family() -> None:
+    from token_payments.api import describe_http_routes, http_route_manifest
+
+    manifest = list(http_route_manifest())
+    described = list(describe_http_routes())
+
+    assert described == manifest
+    assert len(manifest) == 13
+    assert {entry["operationId"] for entry in manifest} == {
+        "requestLoginChallenge",
+        "loginWithMetaMask",
+        "refreshSession",
+        "logout",
+        "getCurrentUser",
+        "createOrder",
+        "getCheckoutTrackingByTrackingId",
+        "getCheckoutTrackingByOrderId",
+        "submitTransactionHash",
+        "getOperatorDashboard",
+        "getOperatorOrderDetail",
+        "getOperatorPaymentDetail",
+        "getOperatorOutboxDetail",
+    }
+    assert {entry["path"].split("/")[1] for entry in manifest} == {
+        "auth",
+        "orders",
+        "checkouts",
+        "payments",
+        "operator",
+    }
+
+
+def test_existing_api_runtime_ui_and_e2e_public_contract_imports_still_resolve() -> None:
+    modules = (
+        "token_payments.api",
+        "token_payments.api.auth",
+        "token_payments.api.checkout",
+        "token_payments.api.operator",
+        "token_payments.api.orders",
+        "token_payments.api.payments",
+        "token_payments.runtime",
+        "token_payments.runtime.smoke",
+        "token_payments.ui.preview",
+    )
+
+    for module_name in modules:
+        module = importlib.import_module(module_name)
+        assert module is not None
+
+
+def test_readmes_document_http_adapter_preview_and_next_phase_candidates() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    app_readme = (ROOT / "app/README.md").read_text(encoding="utf-8")
+
+    for text in (
+        "scripts/test_wsgi_runtime_preview.py",
+        "scripts/test_http_adapter_public_contracts.py",
+        "PYTHONPATH=app python3 -m token_payments api",
+        "PYTHONPATH=app python3 -m token_payments serve-api",
+        "bounded HTTP adapter preview",
+        "long-running server",
+        "real docker compose integration",
+        "ASGI/FastAPI thin adapter",
+        "operator lifecycle action endpoints",
+    ):
+        assert text in readme
+        assert text in app_readme
