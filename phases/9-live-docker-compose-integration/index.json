@@ -13,7 +13,10 @@
     {
       "step": 1,
       "name": "compose-runtime-service-contract",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-11T14:51:32+0900",
+      "completed_at": "2026-05-11T14:54:29+0900",
+      "summary": "Added Docker Compose one-shot runtime service contracts for token_payments_health, token_payments_worker, and token_payments_smoke sharing the root Dockerfile image, .env, /workspace/app PYTHONPATH, bounded commands, no restart policy, and explicit postgres/kafka/test_network dependencies."
     },
     {
       "step": 2,
