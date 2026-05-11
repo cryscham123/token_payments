@@ -1,0 +1,35 @@
+{
+  "project": "Token Payments",
+  "phase": "9-live-docker-compose-integration",
+  "steps": [
+    {
+      "step": 0,
+      "name": "docker-runtime-image-contract",
+      "status": "completed",
+      "started_at": "2026-05-11T14:47:43+0900",
+      "completed_at": "2026-05-11T14:51:32+0900",
+      "summary": "Added root Dockerfile and .dockerignore plus static Docker runtime image contract tests covering Python 3.12 base image, /workspace/app PYTHONPATH, bounded health CMD, and excluded env/data/git/cache/phase artifacts without requiring Docker daemon execution."
+    },
+    {
+      "step": 1,
+      "name": "compose-runtime-service-contract",
+      "status": "pending"
+    },
+    {
+      "step": 2,
+      "name": "docker-runtime-smoke-scenario",
+      "status": "pending"
+    },
+    {
+      "step": 3,
+      "name": "docker-compose-config-validation",
+      "status": "pending"
+    },
+    {
+      "step": 4,
+      "name": "docker-phase-public-verification",
+      "status": "pending"
+    }
+  ],
+  "created_at": "2026-05-11T14:47:43+0900"
+}
