@@ -74,3 +74,66 @@ services:
     depends_on:
       kafka:
         condition: service_started
+
+  token_payments_health:
+    image: token_payments_runtime
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/workspace/app
+    command: ["python", "-m", "token_payments", "health"]
+    restart: "no"
+    profiles:
+      - runtime
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      test_network:
+        condition: service_started
+
+  token_payments_worker:
+    image: token_payments_runtime
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/workspace/app
+    command: ["python", "-m", "token_payments", "worker"]
+    restart: "no"
+    profiles:
+      - runtime
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      test_network:
+        condition: service_started
+
+  token_payments_smoke:
+    image: token_payments_runtime
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/workspace/app
+    command: ["python", "-m", "token_payments", "smoke", "compose-readiness"]
+    restart: "no"
+    profiles:
+      - smoke
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      test_network:
+        condition: service_started
