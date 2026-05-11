@@ -44,6 +44,10 @@
       "dir": "8-operator-action-endpoints",
       "status": "completed",
       "completed_at": "2026-05-11T14:41:07+0900"
+    },
+    {
+      "dir": "9-live-docker-compose-integration",
+      "status": "pending"
     }
   ]
 }
