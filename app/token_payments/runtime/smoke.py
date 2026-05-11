@@ -24,6 +24,7 @@ AVAILABLE_SMOKE_SCENARIOS = (
     "docker-runtime-readiness",
 )
 COMPOSE_READINESS_REQUIRED_ENV_KEYS = (
+    "COMPOSE_PROFILES",
     "TEST_NETWORK_PRIVATE_KEY",
     "TEST_NETWORK_ACCOUNT",
     "TEST_NETWORK_NETWORK_ID",
@@ -85,6 +86,9 @@ DOCKER_RUNTIME_RUN_COMMANDS = (
     "docker compose --env-file .env --profile runtime run --rm token_payments_worker",
     "docker compose --env-file .env --profile smoke run --rm token_payments_smoke",
 )
+DOCKER_RUNTIME_COMPOSE_CONFIG_VALIDATION_COMMAND = (
+    "docker compose --env-file .env.example config --services"
+)
 DOCKER_RUNTIME_MANUAL_LIVE_COMMANDS = (
     "cp .env.example .env",
     "docker compose --env-file .env up -d postgres kafka kafka-ui pgweb test_network",
@@ -131,7 +135,7 @@ DOCKER_RUNTIME_SERVICES: Mapping[str, Mapping[str, Any]] = MappingProxyType(
             "pythonPath": "/workspace/app",
             "command": ["python", "-m", "token_payments", "smoke", "compose-readiness"],
             "restart": "no",
-            "profiles": ["smoke"],
+            "profiles": ["runtime", "smoke"],
             "dependsOn": {
                 "postgres": "service_healthy",
                 "kafka": "service_started",
@@ -913,6 +917,12 @@ def _run_docker_runtime_readiness() -> SmokeScenarioResult:
             "path": _relative_path(compose_path, root),
             "runtimeServices": runtime_services,
             "runCommands": list(DOCKER_RUNTIME_RUN_COMMANDS),
+            "composeConfigValidationCommand": {
+                "command": DOCKER_RUNTIME_COMPOSE_CONFIG_VALIDATION_COMMAND,
+                "daemonless": True,
+                "usesDockerSocket": False,
+                "forbiddenCommands": ["up", "run", "build"],
+            },
         },
         "manualLiveCommands": list(DOCKER_RUNTIME_MANUAL_LIVE_COMMANDS),
     }
@@ -933,7 +943,11 @@ def _run_docker_runtime_readiness() -> SmokeScenarioResult:
         _compose_readiness_step(
             "compose runtime service contract",
             "committed compose runtime services use bounded one-shot commands without starting Docker",
-            {"runtimeServices": runtime_services, "runCommands": list(DOCKER_RUNTIME_RUN_COMMANDS)},
+            {
+                "runtimeServices": runtime_services,
+                "runCommands": list(DOCKER_RUNTIME_RUN_COMMANDS),
+                "composeConfigValidationCommand": DOCKER_RUNTIME_COMPOSE_CONFIG_VALIDATION_COMMAND,
+            },
             compose_errors + env_errors,
         ),
         _compose_readiness_step(
@@ -960,8 +974,8 @@ def _run_docker_runtime_readiness() -> SmokeScenarioResult:
         result=SmokeResult(
             status=SmokeStatus.PASSED,
             summary=(
-                "docker runtime readiness validated image, dockerignore, env path, and compose one-shot "
-                "commands without starting Docker"
+                "docker runtime readiness validated image, dockerignore, env path, compose config command, "
+                "and compose one-shot commands without starting Docker"
             ),
         ),
         steps=steps,

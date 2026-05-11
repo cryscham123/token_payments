@@ -17,6 +17,13 @@ docker compose --env-file .env up -d postgres kafka kafka-ui pgweb test_network
 
 Use `.env.example` as the template for local `.env` values. The local blockchain RPC points at `test_network` on chain id `1337`. Do not commit real private keys, API keys, seed phrases, or production credentials.
 
+Daemon-less compose config validation uses committed placeholders and only resolves service names.
+
+```bash
+docker compose --env-file .env.example config --services
+docker compose --env-file .env.example --profile runtime config --services
+```
+
 Local Docker smoke order:
 
 ```bash
