@@ -64,6 +64,20 @@ Docker runtime smoke는 live Docker/Kafka/PostgreSQL client를 열지 않고 com
 PYTHONPATH=app python3 -m token_payments smoke docker-runtime-readiness
 ```
 
+Docker live smoke runner는 automated harness에서 실제 Docker를 시작하지 않는 공개 계약을 제공한다. Automated harness commands는 dry-run 계획과 승인 없는 실행 거부를 모두 검증한다.
+
+```bash
+python3 scripts/docker_live_smoke.py --plan
+python3 scripts/docker_live_smoke.py --execute
+```
+
+`--execute` by itself returns bounded refusal JSON and does not start Docker. 실제 live Docker 실행은 명시 승인/수동 작업으로 분리하며, 로컬 `.env`를 만든 뒤 승인 플래그를 함께 전달할 때만 컨테이너 명령을 실행한다. live 실행 중 실패하더라도 cleanup command is attempted even when a live step fails.
+
+```bash
+cp .env.example .env
+python3 scripts/docker_live_smoke.py --execute --confirm-live-docker
+```
+
 Live local Docker 실행은 수동/승인 필요 작업이다. 필요한 경우 다음 순서로만 실행한다.
 
 ```bash
