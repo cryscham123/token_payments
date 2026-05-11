@@ -29,7 +29,10 @@
     {
       "step": 3,
       "name": "operator-action-http-routes",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-11T14:27:42+0900",
+      "completed_at": "2026-05-11T14:36:01+0900",
+      "summary": "Connected cancelOrder/retryOutboxMessage/replayMessage operator actions to framework-neutral HTTP routes, public route manifests, WSGI previews, and JSON response mappings for accepted, duplicate, rejected, validation, and forbidden outcomes."
     },
     {
       "step": 4,
