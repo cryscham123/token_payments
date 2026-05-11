@@ -281,6 +281,7 @@ def list_http_route_specs() -> tuple[HttpRouteSpec, ...]:
         *CHECKOUT_HTTP_ROUTES.values(),
         *PAYMENT_HTTP_ROUTES.values(),
         *OPERATOR_HTTP_ROUTES.values(),
+        *OPERATOR_ACTION_HTTP_ROUTES.values(),
     )
 
 
@@ -375,6 +376,28 @@ def register_operator_routes(router: HttpRouter, operator_api: Any) -> tuple[Htt
             router,
             OPERATOR_HTTP_ROUTES["get_outbox_detail"],
             operator_api.get_outbox_message,
+        ),
+    )
+
+
+def register_operator_action_routes(router: HttpRouter, operator_action_api: Any) -> tuple[HttpRoute, ...]:
+    """Register operator lifecycle action facade routes on an existing router."""
+
+    return (
+        _add_manifest_route(
+            router,
+            OPERATOR_ACTION_HTTP_ROUTES["cancel_order"],
+            operator_action_api.cancel_order,
+        ),
+        _add_manifest_route(
+            router,
+            OPERATOR_ACTION_HTTP_ROUTES["retry_outbox_message"],
+            operator_action_api.retry_outbox_message,
+        ),
+        _add_manifest_route(
+            router,
+            OPERATOR_ACTION_HTTP_ROUTES["replay_message"],
+            operator_action_api.replay_message,
         ),
     )
 
@@ -657,6 +680,23 @@ OPERATOR_HTTP_ROUTES: Mapping[str, HttpRouteSpec] = MappingProxyType(
 )
 
 
+OPERATOR_ACTION_HTTP_ROUTES: Mapping[str, HttpRouteSpec] = MappingProxyType(
+    {
+        "cancel_order": HttpRouteSpec("POST", "/operator/orders/{orderId}/cancel", "cancelOperatorOrder"),
+        "retry_outbox_message": HttpRouteSpec(
+            "POST",
+            "/operator/outbox/{messageId}/retry",
+            "retryOperatorOutboxMessage",
+        ),
+        "replay_message": HttpRouteSpec(
+            "POST",
+            "/operator/messages/{messageId}/replay",
+            "replayOperatorMessage",
+        ),
+    }
+)
+
+
 __all__ = [
     "AUTH_HTTP_ROUTES",
     "CHECKOUT_HTTP_ROUTES",
@@ -667,6 +707,7 @@ __all__ = [
     "HttpRouteSpec",
     "HttpRouter",
     "ORDER_HTTP_ROUTES",
+    "OPERATOR_ACTION_HTTP_ROUTES",
     "OPERATOR_HTTP_ROUTES",
     "PAYMENT_HTTP_ROUTES",
     "WsgiApplication",
@@ -678,6 +719,7 @@ __all__ = [
     "register_auth_routes",
     "register_checkout_routes",
     "register_order_routes",
+    "register_operator_action_routes",
     "register_operator_routes",
     "register_payment_routes",
 ]
