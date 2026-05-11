@@ -12,6 +12,13 @@ from typing import Any, Mapping, Protocol
 from uuid import UUID
 
 from token_payments.contexts.auth.domain import UserRole
+from token_payments.contexts.order.application import (
+    CancelOrderCommand,
+    OrderCommandRejected,
+    OrderCommandResult,
+    OrderCommandStatus,
+)
+from token_payments.shared.domain import CheckoutCommandName, CommandId, MessageId, OrderId
 
 from .contracts import JsonValue
 from .operator import OperatorClaims
@@ -213,6 +220,161 @@ class AdminRoleOperatorActionPolicy:
         return claims.role is UserRole.ADMIN
 
 
+class CancelOrderCommandHandler(Protocol):
+    def cancel_order(self, command: CancelOrderCommand) -> OrderCommandResult:
+        ...
+
+
+class OperatorActionAuditRepository(Protocol):
+    def record(self, audit_record: OperatorActionAuditRecord) -> str | None:
+        ...
+
+
+class OperatorCancelOrderActionExecutor:
+    """Runtime-neutral operator action executor for manual order cancellation."""
+
+    def __init__(
+        self,
+        command_handler: CancelOrderCommandHandler,
+        *,
+        policy: OperatorActionPolicy | None = None,
+        audit_repository: OperatorActionAuditRepository | None = None,
+    ) -> None:
+        self._command_handler = command_handler
+        self._policy = policy or AdminRoleOperatorActionPolicy()
+        self._audit_repository = audit_repository
+
+    def cancel_order(
+        self,
+        *,
+        actor: OperatorClaims,
+        order_id: OrderId | str,
+        reason: str,
+        request_id: str,
+        requested_at: datetime | None = None,
+        idempotency_key: str | None = None,
+        event_message_id: MessageId | str | None = None,
+    ) -> OperatorActionResult:
+        if not isinstance(actor, OperatorClaims):
+            raise ValueError("OperatorCancelOrderActionExecutor.actor must be an OperatorClaims")
+
+        requested_time = _require_aware_datetime(
+            requested_at or datetime.now(UTC),
+            "OperatorCancelOrderActionExecutor.requested_at",
+        )
+        order_id_value = _coerce_order_id(order_id)
+        action_command = OperatorActionCommand(
+            action=OperatorActionName.CANCEL_ORDER,
+            target=OperatorActionTarget(OperatorActionTargetKind.ORDER, str(order_id_value)),
+            actor=actor,
+            request_id=request_id,
+            idempotency_key=_cancel_order_idempotency_key(order_id_value, request_id, idempotency_key),
+            reason=reason,
+            requested_at=requested_time,
+        )
+        cancel_command = CancelOrderCommand(
+            command_id=_cancel_order_command_id(order_id_value, idempotency_key),
+            order_id=order_id_value,
+            reason=action_command.reason,
+            requested_at=requested_time,
+            causation_id=action_command.request_id,
+            event_message_id=_coerce_message_id(event_message_id) if event_message_id is not None else MessageId.new(),
+        )
+        return self._execute(action_command, cancel_command)
+
+    def _execute(self, action_command: OperatorActionCommand, cancel_command: CancelOrderCommand) -> OperatorActionResult:
+        if not self._policy.can_execute_action(action_command.actor, action_command.action):
+            return self._rejected_result(
+                action_command,
+                cancel_command,
+                summary="operator ADMIN role is required to execute cancelOrder",
+                details={"errorCode": "OPERATOR_FORBIDDEN", "orderId": str(cancel_command.order_id)},
+            )
+
+        try:
+            handler_result = self._command_handler.cancel_order(cancel_command)
+        except OrderCommandRejected as exc:
+            return self._rejected_result(
+                action_command,
+                cancel_command,
+                summary=str(exc),
+                details={
+                    "rejectionReason": exc.reason.value,
+                    "orderId": str(exc.order_id),
+                    "reason": action_command.reason,
+                },
+            )
+
+        status = _operator_status_for_order_command(handler_result.status)
+        summary = f"{handler_result.status.value} for order {handler_result.order_id}."
+        details: dict[str, Any] = {
+            "handlerStatus": handler_result.status.value,
+            "orderId": str(handler_result.order_id),
+            "reason": action_command.reason,
+        }
+        if handler_result.duplicate_decision is not None:
+            details["duplicateDecision"] = handler_result.duplicate_decision.value
+
+        audit_id = self._record_audit(action_command, status, summary)
+        return OperatorActionResult(
+            status=status,
+            action=action_command.action,
+            target=action_command.target,
+            idempotency_key=action_command.idempotency_key,
+            command_id=str(cancel_command.command_id),
+            message_id=str(cancel_command.event_message_id),
+            audit_id=audit_id,
+            summary=summary,
+            details=details,
+        )
+
+    def _rejected_result(
+        self,
+        action_command: OperatorActionCommand,
+        cancel_command: CancelOrderCommand,
+        *,
+        summary: str,
+        details: Mapping[str, Any],
+    ) -> OperatorActionResult:
+        audit_id = self._record_audit(action_command, OperatorActionResultStatus.REJECTED, summary)
+        return OperatorActionResult(
+            status=OperatorActionResultStatus.REJECTED,
+            action=action_command.action,
+            target=action_command.target,
+            idempotency_key=action_command.idempotency_key,
+            command_id=str(cancel_command.command_id),
+            message_id=str(cancel_command.event_message_id),
+            audit_id=audit_id,
+            summary=summary,
+            details=details,
+        )
+
+    def _record_audit(
+        self,
+        action_command: OperatorActionCommand,
+        outcome: OperatorActionResultStatus,
+        reason: str,
+    ) -> str | None:
+        if self._audit_repository is None:
+            return None
+
+        audit_id = self._audit_repository.record(
+            OperatorActionAuditRecord(
+                actor=action_command.actor,
+                action=action_command.action,
+                target=action_command.target,
+                idempotency_key=action_command.idempotency_key,
+                request_id=action_command.request_id,
+                outcome=outcome,
+                reason=reason,
+                recorded_at=action_command.requested_at,
+            )
+        )
+        if audit_id is None:
+            return None
+        return _require_text(str(audit_id), "OperatorActionAuditRepository.record")
+
+
 def _validate_action_target(action: OperatorActionName, target: OperatorActionTarget) -> None:
     expected = {
         OperatorActionName.CANCEL_ORDER: OperatorActionTargetKind.ORDER,
@@ -227,6 +389,32 @@ def _coerce_action(value: OperatorActionName | str, field_name: str) -> Operator
     if isinstance(value, OperatorActionName):
         return value
     return OperatorActionName(_require_text(str(value), field_name))
+
+
+def _coerce_order_id(value: OrderId | str) -> OrderId:
+    return value if isinstance(value, OrderId) else OrderId(value)
+
+
+def _coerce_message_id(value: MessageId | str) -> MessageId:
+    return value if isinstance(value, MessageId) else MessageId(value)
+
+
+def _cancel_order_idempotency_key(order_id: OrderId, request_id: str, idempotency_key: str | None) -> str:
+    if idempotency_key is not None:
+        return _require_text(idempotency_key, "OperatorCancelOrderActionExecutor.idempotency_key")
+    return f"operator:cancelOrder:{order_id}:{_require_text(request_id, 'OperatorCancelOrderActionExecutor.request_id')}"
+
+
+def _cancel_order_command_id(order_id: OrderId, idempotency_key: str | None) -> CommandId:
+    if idempotency_key is not None:
+        return CommandId(_require_text(idempotency_key, "OperatorCancelOrderActionExecutor.idempotency_key"))
+    return CommandId.for_order_action(order_id, CheckoutCommandName.CANCEL_ORDER)
+
+
+def _operator_status_for_order_command(status: OrderCommandStatus) -> OperatorActionResultStatus:
+    if status is OrderCommandStatus.DUPLICATE_IGNORED:
+        return OperatorActionResultStatus.DUPLICATE
+    return OperatorActionResultStatus.ACCEPTED
 
 
 def _to_json_safe_mapping(value: Mapping[str, Any], field_name: str) -> dict[str, JsonValue]:
@@ -283,6 +471,8 @@ def _require_text(value: str, field_name: str) -> str:
 
 __all__ = [
     "AdminRoleOperatorActionPolicy",
+    "CancelOrderCommandHandler",
+    "OperatorActionAuditRepository",
     "OperatorActionAuditRecord",
     "OperatorActionCommand",
     "OperatorActionName",
@@ -291,4 +481,5 @@ __all__ = [
     "OperatorActionResultStatus",
     "OperatorActionTarget",
     "OperatorActionTargetKind",
+    "OperatorCancelOrderActionExecutor",
 ]

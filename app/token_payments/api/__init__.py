@@ -30,6 +30,8 @@ from .http import (
 from .operator import AdminRoleOperatorPolicy, OperatorAccessPolicy, OperatorApi, OperatorClaims
 from .operator_actions import (
     AdminRoleOperatorActionPolicy,
+    CancelOrderCommandHandler,
+    OperatorActionAuditRepository,
     OperatorActionAuditRecord,
     OperatorActionCommand,
     OperatorActionName,
@@ -38,6 +40,7 @@ from .operator_actions import (
     OperatorActionResultStatus,
     OperatorActionTarget,
     OperatorActionTargetKind,
+    OperatorCancelOrderActionExecutor,
 )
 from .orders import OrdersApi
 from .payments import PaymentsApi
@@ -51,6 +54,7 @@ __all__ = [
     "ApiResponse",
     "CHECKOUT_HTTP_ROUTES",
     "CheckoutApi",
+    "CancelOrderCommandHandler",
     "HttpHandler",
     "HttpRequest",
     "HttpResponse",
@@ -61,6 +65,7 @@ __all__ = [
     "ORDER_HTTP_ROUTES",
     "OPERATOR_HTTP_ROUTES",
     "OperatorAccessPolicy",
+    "OperatorActionAuditRepository",
     "OperatorActionAuditRecord",
     "OperatorActionCommand",
     "OperatorActionName",
@@ -71,6 +76,7 @@ __all__ = [
     "OperatorActionTargetKind",
     "OperatorApi",
     "OperatorClaims",
+    "OperatorCancelOrderActionExecutor",
     "OrdersApi",
     "PAYMENT_HTTP_ROUTES",
     "PaymentsApi",
