@@ -21,7 +21,10 @@
     {
       "step": 2,
       "name": "docker-runtime-smoke-scenario",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-11T14:54:29+0900",
+      "completed_at": "2026-05-11T14:59:46+0900",
+      "summary": "Added docker-runtime-readiness smoke scenario and tests that statically validate Dockerfile, .dockerignore, .env.example, compose one-shot runtime services, ordered manual run commands, and bounded JSON CLI output without starting Docker or opening network clients."
     },
     {
       "step": 3,
