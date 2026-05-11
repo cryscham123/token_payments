@@ -6,8 +6,10 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
+import json
 import math
 from pathlib import Path
+import shlex
 from types import MappingProxyType
 from typing import Any, Callable, Mapping, Sequence
 from uuid import UUID
@@ -15,7 +17,12 @@ from uuid import UUID
 
 SMOKE_CONTRACT = "CommandDispatchResult.details.smoke"
 UNKNOWN_SMOKE_SCENARIO_ERROR = "UNKNOWN_SMOKE_SCENARIO"
-AVAILABLE_SMOKE_SCENARIOS = ("happy-path-checkout", "compensation-checkout", "compose-readiness")
+AVAILABLE_SMOKE_SCENARIOS = (
+    "happy-path-checkout",
+    "compensation-checkout",
+    "compose-readiness",
+    "docker-runtime-readiness",
+)
 COMPOSE_READINESS_REQUIRED_ENV_KEYS = (
     "TEST_NETWORK_PRIVATE_KEY",
     "TEST_NETWORK_ACCOUNT",
@@ -62,6 +69,76 @@ COMPOSE_READINESS_COMMAND_SEQUENCE = (
     "ui operator",
     "smoke happy-path-checkout",
     "smoke compensation-checkout",
+)
+DOCKER_RUNTIME_REQUIRED_DOCKERIGNORE_PATTERNS = (
+    ".env",
+    ".venv",
+    "**/data",
+    "phases/**/step*-output.json",
+    "phases/**/phase*-output.json",
+    ".git",
+    "__pycache__",
+    ".pytest_cache",
+)
+DOCKER_RUNTIME_RUN_COMMANDS = (
+    "docker compose --env-file .env --profile runtime run --rm token_payments_health",
+    "docker compose --env-file .env --profile runtime run --rm token_payments_worker",
+    "docker compose --env-file .env --profile smoke run --rm token_payments_smoke",
+)
+DOCKER_RUNTIME_MANUAL_LIVE_COMMANDS = (
+    "cp .env.example .env",
+    "docker compose --env-file .env up -d postgres kafka kafka-ui pgweb test_network",
+    *DOCKER_RUNTIME_RUN_COMMANDS,
+    "docker compose --env-file .env down",
+)
+DOCKER_RUNTIME_SERVICES: Mapping[str, Mapping[str, Any]] = MappingProxyType(
+    {
+        "token_payments_health": {
+            "image": "token_payments_runtime",
+            "buildContext": ".",
+            "dockerfile": "Dockerfile",
+            "envFile": [".env"],
+            "pythonPath": "/workspace/app",
+            "command": ["python", "-m", "token_payments", "health"],
+            "restart": "no",
+            "profiles": ["runtime"],
+            "dependsOn": {
+                "postgres": "service_healthy",
+                "kafka": "service_started",
+                "test_network": "service_started",
+            },
+        },
+        "token_payments_worker": {
+            "image": "token_payments_runtime",
+            "buildContext": ".",
+            "dockerfile": "Dockerfile",
+            "envFile": [".env"],
+            "pythonPath": "/workspace/app",
+            "command": ["python", "-m", "token_payments", "worker"],
+            "restart": "no",
+            "profiles": ["runtime"],
+            "dependsOn": {
+                "postgres": "service_healthy",
+                "kafka": "service_started",
+                "test_network": "service_started",
+            },
+        },
+        "token_payments_smoke": {
+            "image": "token_payments_runtime",
+            "buildContext": ".",
+            "dockerfile": "Dockerfile",
+            "envFile": [".env"],
+            "pythonPath": "/workspace/app",
+            "command": ["python", "-m", "token_payments", "smoke", "compose-readiness"],
+            "restart": "no",
+            "profiles": ["smoke"],
+            "dependsOn": {
+                "postgres": "service_healthy",
+                "kafka": "service_started",
+                "test_network": "service_started",
+            },
+        },
+    }
 )
 
 JsonValue = None | bool | int | float | str | list["JsonValue"] | dict[str, "JsonValue"]
@@ -799,6 +876,92 @@ def _run_compose_readiness() -> SmokeScenarioResult:
             summary=(
                 "compose readiness validated committed env, compose, path, and runtime command contracts "
                 "without starting Docker"
+            ),
+        ),
+        steps=steps,
+        details=details,
+    )
+
+
+def _run_docker_runtime_readiness() -> SmokeScenarioResult:
+    root = _repository_root()
+    dockerfile_path = root / "Dockerfile"
+    dockerignore_path = root / ".dockerignore"
+    env_path = root / ".env.example"
+    compose_path = root / "docker-compose.yml"
+
+    image_contract, image_errors = _docker_runtime_image_contract(dockerfile_path, root)
+    dockerignore_contract, dockerignore_errors = _docker_runtime_dockerignore_contract(dockerignore_path, root)
+    env_errors = [f"{_relative_path(env_path, root)} is missing"] if not env_path.exists() else []
+
+    service_blocks, compose_errors = _read_compose_service_blocks(compose_path)
+    runtime_services = {
+        service_name: _docker_runtime_service_contract(service_blocks.get(service_name, ()))
+        for service_name in DOCKER_RUNTIME_SERVICES
+    }
+    compose_errors.extend(_validate_docker_runtime_services(service_blocks, runtime_services))
+
+    details = {
+        "dockerStarted": False,
+        "networkCalls": False,
+        "image": {
+            "contract": image_contract,
+            "dockerignore": dockerignore_contract,
+            "envExamplePath": _relative_path(env_path, root),
+        },
+        "compose": {
+            "path": _relative_path(compose_path, root),
+            "runtimeServices": runtime_services,
+            "runCommands": list(DOCKER_RUNTIME_RUN_COMMANDS),
+        },
+        "manualLiveCommands": list(DOCKER_RUNTIME_MANUAL_LIVE_COMMANDS),
+    }
+    errors = image_errors + dockerignore_errors + env_errors + compose_errors
+    steps = (
+        _compose_readiness_step(
+            "Dockerfile runtime image contract",
+            "committed Dockerfile exposes the bounded Python runtime image contract",
+            image_contract,
+            image_errors,
+        ),
+        _compose_readiness_step(
+            ".dockerignore runtime context contract",
+            "committed dockerignore excludes local env, git, cache, data, and phase outputs",
+            dockerignore_contract,
+            dockerignore_errors,
+        ),
+        _compose_readiness_step(
+            "compose runtime service contract",
+            "committed compose runtime services use bounded one-shot commands without starting Docker",
+            {"runtimeServices": runtime_services, "runCommands": list(DOCKER_RUNTIME_RUN_COMMANDS)},
+            compose_errors + env_errors,
+        ),
+        _compose_readiness_step(
+            "manual live command contract",
+            "manual live Docker commands are documented as explicit local commands",
+            {"manualLiveCommands": list(DOCKER_RUNTIME_MANUAL_LIVE_COMMANDS)},
+            (),
+        ),
+    )
+
+    if errors:
+        return SmokeScenarioResult(
+            scenario="docker-runtime-readiness",
+            result=SmokeResult(
+                status=SmokeStatus.FAILED,
+                summary="docker runtime readiness found committed Docker or compose contract violations",
+            ),
+            steps=steps,
+            details=details | {"errors": errors},
+        )
+
+    return SmokeScenarioResult(
+        scenario="docker-runtime-readiness",
+        result=SmokeResult(
+            status=SmokeStatus.PASSED,
+            summary=(
+                "docker runtime readiness validated image, dockerignore, env path, and compose one-shot "
+                "commands without starting Docker"
             ),
         ),
         steps=steps,
@@ -1704,6 +1867,133 @@ def _validate_compose_contracts(
     return errors
 
 
+def _docker_runtime_image_contract(path: Path, root: Path) -> tuple[dict[str, JsonValue], list[str]]:
+    contract: dict[str, JsonValue] = {
+        "dockerfile": _relative_path(path, root),
+        "baseImage": None,
+        "workdir": None,
+        "pythonPath": None,
+        "packageCopySource": None,
+        "packageCopyDestination": None,
+        "cmd": [],
+    }
+    if not path.exists():
+        return contract, [f"{_relative_path(path, root)} is missing"]
+
+    dockerfile = path.read_text(encoding="utf-8")
+    copy_pairs = _dockerfile_copy_pairs(dockerfile)
+    package_copy = next(
+        (
+            (source, destination)
+            for source, destination in copy_pairs
+            if source == "app/token_payments" and destination == "/workspace/app/token_payments"
+        ),
+        None,
+    )
+    if package_copy is not None:
+        package_copy_source, package_copy_destination = package_copy
+    else:
+        package_copy_source, package_copy_destination = (None, None)
+
+    contract = {
+        "dockerfile": _relative_path(path, root),
+        "baseImage": _dockerfile_first_token(dockerfile, "FROM"),
+        "workdir": _dockerfile_first_value(dockerfile, "WORKDIR"),
+        "pythonPath": _dockerfile_env_value(dockerfile, "PYTHONPATH"),
+        "packageCopySource": package_copy_source,
+        "packageCopyDestination": package_copy_destination,
+        "cmd": _dockerfile_json_instruction(dockerfile, "CMD"),
+    }
+    expected = {
+        "dockerfile": "Dockerfile",
+        "baseImage": "python:3.12-slim",
+        "workdir": "/workspace",
+        "pythonPath": "/workspace/app",
+        "packageCopySource": "app/token_payments",
+        "packageCopyDestination": "/workspace/app/token_payments",
+        "cmd": ["python", "-m", "token_payments", "health"],
+    }
+    errors = [
+        f"Dockerfile {field} must be {expected_value!r}, got {contract[field]!r}"
+        for field, expected_value in expected.items()
+        if contract[field] != expected_value
+    ]
+    if _dockerfile_instruction_values(dockerfile, "ADD"):
+        errors.append("Dockerfile must not use ADD")
+    return contract, errors
+
+
+def _docker_runtime_dockerignore_contract(path: Path, root: Path) -> tuple[dict[str, JsonValue], list[str]]:
+    contract = {
+        "path": _relative_path(path, root),
+        "excludesLocalEnv": False,
+        "excludesGit": False,
+        "excludesCache": False,
+        "excludesPhaseOutputs": False,
+    }
+    if not path.exists():
+        return contract, [f"{_relative_path(path, root)} is missing"]
+
+    patterns = _dockerignore_patterns(path.read_text(encoding="utf-8"))
+    pattern_set = set(patterns)
+    contract = {
+        "path": _relative_path(path, root),
+        "excludesLocalEnv": {".env", ".venv", "**/data"} <= pattern_set,
+        "excludesGit": ".git" in pattern_set,
+        "excludesCache": {"__pycache__", ".pytest_cache"} <= pattern_set,
+        "excludesPhaseOutputs": {
+            "phases/**/step*-output.json",
+            "phases/**/phase*-output.json",
+        }
+        <= pattern_set,
+    }
+    errors = [
+        f".dockerignore is missing required pattern {pattern}"
+        for pattern in DOCKER_RUNTIME_REQUIRED_DOCKERIGNORE_PATTERNS
+        if pattern not in pattern_set
+    ]
+    return contract, errors
+
+
+def _docker_runtime_service_contract(block: tuple[str, ...]) -> dict[str, JsonValue]:
+    environment = [str(value) for value in _compose_list_for_key(block, "environment")]
+    python_path = next(
+        (value.split("=", 1)[1] for value in environment if value.startswith("PYTHONPATH=")),
+        None,
+    )
+    return {
+        "image": _compose_scalar_for_key(block, "image"),
+        "buildContext": _compose_nested_scalar(block, "build", "context"),
+        "dockerfile": _compose_nested_scalar(block, "build", "dockerfile"),
+        "envFile": _compose_list_for_key(block, "env_file"),
+        "pythonPath": python_path,
+        "command": _compose_json_list_for_key(block, "command"),
+        "restart": _compose_scalar_for_key(block, "restart"),
+        "profiles": _compose_list_for_key(block, "profiles"),
+        "dependsOn": _compose_depends_on_conditions(block),
+    }
+
+
+def _validate_docker_runtime_services(
+    service_blocks: Mapping[str, tuple[str, ...]],
+    runtime_services: Mapping[str, Mapping[str, Any]],
+) -> list[str]:
+    errors = [
+        f"docker-compose.yml is missing required runtime service {service_name}"
+        for service_name in DOCKER_RUNTIME_SERVICES
+        if service_name not in service_blocks
+    ]
+    for service_name, expected in DOCKER_RUNTIME_SERVICES.items():
+        actual = runtime_services.get(service_name, {})
+        for field, expected_value in expected.items():
+            if actual.get(field) != expected_value:
+                errors.append(
+                    f"docker-compose.yml service {service_name} field {field} "
+                    f"must be {expected_value!r}, got {actual.get(field)!r}"
+                )
+    return errors
+
+
 def _compose_service_contract(block: tuple[str, ...]) -> dict[str, JsonValue]:
     env_file = _compose_list_for_key(block, "env_file")
     volumes = _compose_list_for_key(block, "volumes")
@@ -1795,6 +2085,16 @@ def _compose_nested_scalar(block: tuple[str, ...], parent_key: str, child_key: s
     return None
 
 
+def _compose_json_list_for_key(block: tuple[str, ...], key: str) -> list[JsonValue]:
+    value = _compose_scalar_for_key(block, key)
+    if value is None:
+        return []
+    parsed = json.loads(value)
+    if not isinstance(parsed, list):
+        return []
+    return [str(item) for item in parsed]
+
+
 def _compose_mapping_keys_for_key(block: tuple[str, ...], key: str) -> list[JsonValue]:
     base_indent = _compose_base_indent(block)
     if base_indent is None:
@@ -1817,6 +2117,37 @@ def _compose_mapping_keys_for_key(block: tuple[str, ...], key: str) -> list[Json
                 keys.append(nested_stripped[:-1])
         return keys
     return []
+
+
+def _compose_depends_on_conditions(block: tuple[str, ...]) -> dict[str, JsonValue]:
+    base_indent = _compose_base_indent(block)
+    if base_indent is None:
+        return {}
+    for index, line in enumerate(block):
+        stripped = line.strip()
+        indent = _indent_width(line)
+        if indent != base_indent or not stripped.startswith("depends_on:"):
+            continue
+
+        dependencies: dict[str, JsonValue] = {}
+        current_dependency: str | None = None
+        for nested in block[index + 1 :]:
+            nested_stripped = nested.strip()
+            if not nested_stripped or nested_stripped.startswith("#"):
+                continue
+            nested_indent = _indent_width(nested)
+            if nested_indent <= indent:
+                break
+            if nested_stripped.endswith(":") and not nested_stripped.startswith("- "):
+                current_dependency = nested_stripped[:-1]
+                dependencies[current_dependency] = None
+                continue
+            if current_dependency and nested_stripped.startswith("condition:"):
+                dependencies[current_dependency] = _unquote_yamlish_value(
+                    nested_stripped[len("condition:") :].strip()
+                )
+        return dependencies
+    return {}
 
 
 def _compose_readiness_step(
@@ -1845,6 +2176,85 @@ def _unquote_yamlish_value(value: str) -> str:
     if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
         return value[1:-1]
     return value
+
+
+def _dockerfile_instruction_values(dockerfile: str, instruction: str) -> list[str]:
+    prefix = instruction.upper()
+    values: list[str] = []
+    for raw_line in dockerfile.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        command, _, payload = line.partition(" ")
+        if command.upper() == prefix:
+            values.append(payload.strip())
+    return values
+
+
+def _dockerfile_first_value(dockerfile: str, instruction: str) -> str | None:
+    values = _dockerfile_instruction_values(dockerfile, instruction)
+    return values[0] if values else None
+
+
+def _dockerfile_first_token(dockerfile: str, instruction: str) -> str | None:
+    value = _dockerfile_first_value(dockerfile, instruction)
+    if value is None:
+        return None
+    return shlex.split(value)[0]
+
+
+def _dockerfile_env_value(dockerfile: str, key: str) -> str | None:
+    for value in _dockerfile_instruction_values(dockerfile, "ENV"):
+        if value.startswith(f"{key}="):
+            return value.split("=", 1)[1]
+        parts = shlex.split(value)
+        if len(parts) >= 2 and parts[0] == key:
+            return parts[1]
+    return None
+
+
+def _dockerfile_json_instruction(dockerfile: str, instruction: str) -> list[JsonValue]:
+    value = _dockerfile_first_value(dockerfile, instruction)
+    if value is None:
+        return []
+    parsed = json.loads(value)
+    if not isinstance(parsed, list):
+        return []
+    return [str(item) for item in parsed]
+
+
+def _dockerfile_copy_pairs(dockerfile: str) -> list[tuple[str, str]]:
+    pairs: list[tuple[str, str]] = []
+    for value in _dockerfile_instruction_values(dockerfile, "COPY"):
+        if value.startswith("["):
+            parts = [str(item) for item in json.loads(value)]
+        else:
+            parts = [part for part in shlex.split(value) if not part.startswith("--")]
+        if len(parts) < 2:
+            continue
+        destination = _normalize_docker_path(parts[-1])
+        for source in parts[:-1]:
+            pairs.append((_normalize_docker_path(source), destination))
+    return pairs
+
+
+def _normalize_docker_path(value: str) -> str:
+    normalized = value.strip()
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    if normalized != "/":
+        normalized = normalized.rstrip("/")
+    return normalized
+
+
+def _dockerignore_patterns(dockerignore: str) -> list[str]:
+    patterns: list[str] = []
+    for raw_line in dockerignore.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        patterns.append(line.rstrip("/"))
+    return patterns
 
 
 def _relative_path(path: Path, root: Path) -> str:
@@ -2068,6 +2478,7 @@ _SMOKE_RUNNERS: Mapping[str, SmokeRunner] = MappingProxyType(
         "happy-path-checkout": _run_happy_path_checkout,
         "compensation-checkout": _run_compensation_checkout,
         "compose-readiness": _run_compose_readiness,
+        "docker-runtime-readiness": _run_docker_runtime_readiness,
     }
 )
 
