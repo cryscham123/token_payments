@@ -268,6 +268,35 @@ def register_order_routes(router: HttpRouter, orders_api: Any) -> tuple[HttpRout
     )
 
 
+def register_checkout_routes(router: HttpRouter, checkout_api: Any) -> tuple[HttpRoute, ...]:
+    """Register CheckoutApi facade routes on an existing router."""
+
+    return (
+        _add_manifest_route(
+            router,
+            CHECKOUT_HTTP_ROUTES["get_tracking_by_tracking_id"],
+            checkout_api.get_tracking,
+        ),
+        _add_manifest_route(
+            router,
+            CHECKOUT_HTTP_ROUTES["get_tracking_by_order_id"],
+            checkout_api.get_tracking,
+        ),
+    )
+
+
+def register_payment_routes(router: HttpRouter, payments_api: Any) -> tuple[HttpRoute, ...]:
+    """Register PaymentsApi facade routes on an existing router."""
+
+    return (
+        _add_manifest_route(
+            router,
+            PAYMENT_HTTP_ROUTES["submit_transaction_hash"],
+            payments_api.submit_transaction_hash,
+        ),
+    )
+
+
 def _add_manifest_route(router: HttpRouter, spec: HttpRouteSpec, handler: HttpHandler) -> HttpRoute:
     return router.add_route(spec.method, spec.path, handler, operation_id=spec.operation_id)
 
@@ -456,9 +485,35 @@ ORDER_HTTP_ROUTES: Mapping[str, HttpRouteSpec] = MappingProxyType(
     }
 )
 
+CHECKOUT_HTTP_ROUTES: Mapping[str, HttpRouteSpec] = MappingProxyType(
+    {
+        "get_tracking_by_tracking_id": HttpRouteSpec(
+            "GET",
+            "/checkouts/tracking/{trackingId}",
+            "getCheckoutTrackingByTrackingId",
+        ),
+        "get_tracking_by_order_id": HttpRouteSpec(
+            "GET",
+            "/checkouts/orders/{orderId}",
+            "getCheckoutTrackingByOrderId",
+        ),
+    }
+)
+
+PAYMENT_HTTP_ROUTES: Mapping[str, HttpRouteSpec] = MappingProxyType(
+    {
+        "submit_transaction_hash": HttpRouteSpec(
+            "POST",
+            "/payments/transaction-hashes",
+            "submitTransactionHash",
+        ),
+    }
+)
+
 
 __all__ = [
     "AUTH_HTTP_ROUTES",
+    "CHECKOUT_HTTP_ROUTES",
     "HttpHandler",
     "HttpRequest",
     "HttpResponse",
@@ -466,6 +521,9 @@ __all__ = [
     "HttpRouteSpec",
     "HttpRouter",
     "ORDER_HTTP_ROUTES",
+    "PAYMENT_HTTP_ROUTES",
     "register_auth_routes",
+    "register_checkout_routes",
     "register_order_routes",
+    "register_payment_routes",
 ]

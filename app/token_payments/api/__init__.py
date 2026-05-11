@@ -5,7 +5,9 @@ from .checkout import CheckoutApi
 from .contracts import ApiRequest, ApiResponse, JsonValue, json_response
 from .http import (
     AUTH_HTTP_ROUTES,
+    CHECKOUT_HTTP_ROUTES,
     ORDER_HTTP_ROUTES,
+    PAYMENT_HTTP_ROUTES,
     HttpHandler,
     HttpRequest,
     HttpResponse,
@@ -13,7 +15,9 @@ from .http import (
     HttpRouteSpec,
     HttpRouter,
     register_auth_routes,
+    register_checkout_routes,
     register_order_routes,
+    register_payment_routes,
 )
 from .operator import AdminRoleOperatorPolicy, OperatorAccessPolicy, OperatorApi, OperatorClaims
 from .orders import OrdersApi
@@ -25,6 +29,7 @@ __all__ = [
     "AuthApi",
     "ApiRequest",
     "ApiResponse",
+    "CHECKOUT_HTTP_ROUTES",
     "CheckoutApi",
     "HttpHandler",
     "HttpRequest",
@@ -38,8 +43,11 @@ __all__ = [
     "OperatorApi",
     "OperatorClaims",
     "OrdersApi",
+    "PAYMENT_HTTP_ROUTES",
     "PaymentsApi",
     "json_response",
     "register_auth_routes",
+    "register_checkout_routes",
     "register_order_routes",
+    "register_payment_routes",
 ]
