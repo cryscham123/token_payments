@@ -29,7 +29,10 @@
     {
       "step": 3,
       "name": "operator-http-routes",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-11T12:19:19+0900",
+      "completed_at": "2026-05-11T12:24:07+0900",
+      "summary": "Added operator dashboard/detail HTTP route manifest and registration helper, preserving ADMIN policy errors plus order lifecycle, payment failure, and outbox retry observability payload fields."
     },
     {
       "step": 4,
