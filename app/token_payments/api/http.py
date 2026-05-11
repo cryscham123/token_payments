@@ -297,6 +297,33 @@ def register_payment_routes(router: HttpRouter, payments_api: Any) -> tuple[Http
     )
 
 
+def register_operator_routes(router: HttpRouter, operator_api: Any) -> tuple[HttpRoute, ...]:
+    """Register OperatorApi facade routes on an existing router."""
+
+    return (
+        _add_manifest_route(
+            router,
+            OPERATOR_HTTP_ROUTES["get_dashboard"],
+            operator_api.get_dashboard,
+        ),
+        _add_manifest_route(
+            router,
+            OPERATOR_HTTP_ROUTES["get_order_detail"],
+            operator_api.get_order,
+        ),
+        _add_manifest_route(
+            router,
+            OPERATOR_HTTP_ROUTES["get_payment_detail"],
+            operator_api.get_payment,
+        ),
+        _add_manifest_route(
+            router,
+            OPERATOR_HTTP_ROUTES["get_outbox_detail"],
+            operator_api.get_outbox_message,
+        ),
+    )
+
+
 def _add_manifest_route(router: HttpRouter, spec: HttpRouteSpec, handler: HttpHandler) -> HttpRoute:
     return router.add_route(spec.method, spec.path, handler, operation_id=spec.operation_id)
 
@@ -511,6 +538,16 @@ PAYMENT_HTTP_ROUTES: Mapping[str, HttpRouteSpec] = MappingProxyType(
 )
 
 
+OPERATOR_HTTP_ROUTES: Mapping[str, HttpRouteSpec] = MappingProxyType(
+    {
+        "get_dashboard": HttpRouteSpec("GET", "/operator/dashboard", "getOperatorDashboard"),
+        "get_order_detail": HttpRouteSpec("GET", "/operator/orders/{orderId}", "getOperatorOrderDetail"),
+        "get_payment_detail": HttpRouteSpec("GET", "/operator/payments/{paymentId}", "getOperatorPaymentDetail"),
+        "get_outbox_detail": HttpRouteSpec("GET", "/operator/outbox/{messageId}", "getOperatorOutboxDetail"),
+    }
+)
+
+
 __all__ = [
     "AUTH_HTTP_ROUTES",
     "CHECKOUT_HTTP_ROUTES",
@@ -521,9 +558,11 @@ __all__ = [
     "HttpRouteSpec",
     "HttpRouter",
     "ORDER_HTTP_ROUTES",
+    "OPERATOR_HTTP_ROUTES",
     "PAYMENT_HTTP_ROUTES",
     "register_auth_routes",
     "register_checkout_routes",
     "register_order_routes",
+    "register_operator_routes",
     "register_payment_routes",
 ]
