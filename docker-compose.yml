@@ -89,3 +89,21 @@ services:
       - 443:443
       - 80:80
     restart: always
+
+  redis:
+    container_name: redis
+    image: redis:alpine
+    expose:
+      - "6379"
+    command: [ "redis-server" ]
+    volumes:
+      - ${PWD}/app/redis/data:/data
+
+  redisinsight:
+    container_name: redisinsight
+    image: redis/redisinsight
+    ports:
+      - 5540:5540
+    depends_on:
+      redis:
+        condition: service_started
