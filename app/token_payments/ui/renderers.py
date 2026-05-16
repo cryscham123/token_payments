@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from html import escape
+import json
 from typing import Any, Iterable, Mapping
 
 from .models import (
@@ -12,6 +13,7 @@ from .models import (
     CheckoutViewModel,
     CopyToken,
     MoneyView,
+    OperatorActionIntent,
     OperatorDashboardViewModel,
     OperatorDetailView,
     OperatorFilterState,
@@ -252,6 +254,58 @@ body {
 .tp-action-note {
   color: var(--tp-muted);
   font-size: 12px;
+}
+
+.tp-operator-actions {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--tp-border);
+}
+
+.tp-operator-action-list {
+  display: grid;
+  gap: 8px;
+}
+
+.tp-operator-action-row {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  min-height: 64px;
+  padding: 8px 0;
+  border-top: 1px solid var(--tp-surface-muted);
+}
+
+.tp-operator-action-row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.tp-operator-action-button {
+  justify-self: start;
+  min-width: 180px;
+  padding: 0 12px;
+}
+
+.tp-operator-action-meta {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  color: var(--tp-muted);
+  font-size: 12px;
+}
+
+.tp-operator-action-endpoint {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  color: var(--tp-body);
+}
+
+.tp-operator-action-disabled {
+  color: var(--tp-danger);
 }
 
 .tp-line-items {
@@ -509,7 +563,7 @@ def render_operator_dashboard(view: OperatorDashboardViewModel) -> RenderedHtml:
     <div>
       <h1 class="tp-title">Operator Dashboard</h1>
       <span class="tp-value">Orders, payments, inventory, store approvals, outbox, workers, errors</span>
-      <span class="tp-readonly-note">read-only observability; retry candidates are displayed only</span>
+      <span class="tp-readonly-note">read-only observability; action endpoint intents are displayed for operator wiring, but no live execution runs from preview rendering</span>
     </div>
     {render_status_badge(_operator_surface_status(view))}
   </header>
@@ -526,6 +580,7 @@ def render_operator_dashboard(view: OperatorDashboardViewModel) -> RenderedHtml:
     </div>
     <aside class="tp-panel">
       {_detail_html(view.detail)}
+      {_operator_actions_html(view.actions)}
     </aside>
   </section>
 </main>
@@ -652,6 +707,57 @@ def _detail_html(detail: OperatorDetailView | None) -> str:
     if detail is None:
         return '<h2 class="tp-section-title">Detail</h2><span class="tp-value">No selection</span>'
     return f'<h2 class="tp-section-title">{_esc(detail.title)}</h2>{_definition_html(detail.fields, "tp-detail-list")}'
+
+
+def _operator_actions_html(actions: tuple[OperatorActionIntent, ...]) -> str:
+    if not actions:
+        return (
+            '<section class="tp-operator-actions" data-region="operator-actions">'
+            '<h2 class="tp-section-title">Operator Actions</h2>'
+            '<span class="tp-value">No eligible action intents</span>'
+            "</section>"
+        )
+    rendered = "".join(_operator_action_html(action) for action in actions)
+    return (
+        '<section class="tp-operator-actions" data-region="operator-actions">'
+        '<h2 class="tp-section-title">Operator Actions</h2>'
+        f'<div class="tp-operator-action-list">{rendered}</div>'
+        "</section>"
+    )
+
+
+def _operator_action_html(action: OperatorActionIntent) -> str:
+    kind_class = {
+        "primary": " tp-button-primary",
+        "danger": " tp-button-danger",
+        "secondary": "",
+    }[action.kind]
+    disabled = ' disabled aria-disabled="true"' if not action.enabled else ' aria-disabled="false"'
+    disabled_reason = (
+        '<span class="tp-operator-action-disabled">Disabled: action is not currently eligible for this target</span>'
+        if not action.enabled
+        else ""
+    )
+    body_template = _json_attr(action.body_template)
+    return f"""
+<div class="tp-operator-action-row" data-target-kind="{_esc(action.target_kind)}">
+  <button class="tp-button{kind_class} tp-operator-action-button" type="button"
+    data-action-id="{_esc(action.action_id)}"
+    data-method="{_esc(action.method)}"
+    data-endpoint="{_esc(action.endpoint)}"
+    data-operation-id="{_esc(action.operation_id)}"
+    data-target-kind="{_esc(action.target_kind)}"
+    data-target-id="{_esc(action.target_id)}"
+    data-confirmation="{_esc(action.confirmation)}"
+    data-body-template="{body_template}"{disabled}>{_esc(action.label)}</button>
+  <div class="tp-operator-action-meta">
+    <span>{_esc(action.operation_id)}</span>
+    <span class="tp-operator-action-endpoint">{_esc(action.method)} {_esc(action.endpoint)}</span>
+    <span>{_esc(action.confirmation)}</span>
+    {disabled_reason}
+  </div>
+</div>
+"""
 
 
 def _definition_html(fields: Mapping[str, Any], class_name: str) -> str:
@@ -840,6 +946,10 @@ def _action_label(action: str) -> str:
 
 def _esc(value: object) -> str:
     return escape(str(value), quote=True)
+
+
+def _json_attr(value: Mapping[str, Any]) -> str:
+    return _esc(json.dumps(value, ensure_ascii=True, separators=(",", ":"), sort_keys=True))
 
 
 __all__ = [

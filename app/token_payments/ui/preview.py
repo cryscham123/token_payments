@@ -401,7 +401,7 @@ def _operator_payload() -> dict[str, object]:
                 "trackingId": "tracking-preview-expired",
                 "customerId": "customer-preview-002",
                 "storeId": "store-preview-001",
-                "status": "CANCELLED",
+                "status": "CANCELLING",
                 "paymentId": "payment-preview-expired",
                 "paymentStatus": "EXPIRED",
                 "totalAmount": _money("18.00", "USDC", decimals=6),
@@ -481,6 +481,13 @@ def _operator_payload() -> dict[str, object]:
                 "retryReason": "FAILED rows are reclaimed by the outbox relay retry policy",
                 "createdAt": "2026-05-10T10:14:00+00:00",
                 "updatedAt": "2026-05-10T10:17:00+00:00",
+            }
+        ],
+        "replayMessages": [
+            {
+                "messageId": "kafka:payments.events:0:81",
+                "kind": "EVENT",
+                "reason": "operator dashboard replay requested after handler fix",
             }
         ],
         "workers": [
