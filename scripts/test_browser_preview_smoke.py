@@ -90,6 +90,9 @@ def test_default_cli_starts_ephemeral_preview_server_and_outputs_manual_checklis
     assert "data-view=\"operator\"" in checks["operator-html"]["summary"]
     assert "Operator Dashboard" in checks["operator-html"]["summary"]
     assert "Retry candidate" in checks["operator-html"]["summary"]
+    assert "cancelOperatorOrder" in checks["operator-html"]["summary"]
+    assert "retryOperatorOutboxMessage" in checks["operator-html"]["summary"]
+    assert "replayOperatorMessage" in checks["operator-html"]["summary"]
     assert "localEnv" not in json.dumps(payload)
 
 
@@ -236,7 +239,11 @@ def _passing_fetch(url: str) -> dict[str, object]:
         return {
             "statusCode": 200,
             "headers": {"Content-Type": "text/html; charset=utf-8"},
-            "body": '<!doctype html><main data-view="operator"><h1>Operator Dashboard</h1>Retry candidate outbox-relay</main>',
+            "body": (
+                '<!doctype html><main data-view="operator"><h1>Operator Dashboard</h1>'
+                "Retry candidate cancelOperatorOrder retryOperatorOutboxMessage "
+                "replayOperatorMessage outbox-relay</main>"
+            ),
         }
     if url.endswith("/healthz"):
         return {

@@ -54,6 +54,9 @@ def test_browser_preview_server_http_routes_are_browser_openable() -> None:
     assert 'data-view="operator"' in operator["body"]
     assert "Operator Dashboard" in operator["body"]
     assert "Retry candidate" in operator["body"]
+    assert "cancelOperatorOrder" in operator["body"]
+    assert "retryOperatorOutboxMessage" in operator["body"]
+    assert "replayOperatorMessage" in operator["body"]
     assert "outbox-relay" in operator["body"]
 
 

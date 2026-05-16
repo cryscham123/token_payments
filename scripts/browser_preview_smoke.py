@@ -151,7 +151,15 @@ def _run_checks(
         _check_html(
             name="operator-html",
             url=f"{base_url}/operator",
-            required_text=("data-view=\"operator\"", "Operator Dashboard", "Retry candidate", "outbox-relay"),
+            required_text=(
+                "data-view=\"operator\"",
+                "Operator Dashboard",
+                "Retry candidate",
+                "cancelOperatorOrder",
+                "retryOperatorOutboxMessage",
+                "replayOperatorMessage",
+                "outbox-relay",
+            ),
             fetch=fetch_route,
         ),
         _check_health_json(f"{base_url}/healthz", fetch=fetch_route),

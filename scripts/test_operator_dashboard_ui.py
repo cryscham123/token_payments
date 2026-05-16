@@ -103,7 +103,8 @@ def test_operator_dashboard_html_renders_read_only_dense_status_surface_and_copy
     assert "InventoryReservedEvent" in html
     assert "OrderRejectedEvent" in html
     assert "Retry candidate" in html
-    assert "read-only" in html
+    assert "read-only observability; action endpoint intents are displayed" in html
+    assert "no live execution runs from preview rendering" in html
 
     assert "25.00 USDC" in html
     assert "0.0100 ETH" in html
@@ -111,9 +112,11 @@ def test_operator_dashboard_html_renders_read_only_dense_status_surface_and_copy
     assert 'class="tp-mono tp-copy-value"' in html
     assert f'data-copy-value="{TX_HASH}"' in html
     assert "Copy tx hash" in html
-    assert "data-action-id" not in html
-    assert "Retry Refund" not in html
-    assert "Execute retry" not in html
+    assert "Operator Actions" in html
+    assert "data-action-id" in html
+    assert "retryOperatorOutboxMessage" in html
+    assert "<script" not in html.lower()
+    assert "fetch(" not in html
 
 
 def test_operator_dashboard_empty_state_and_healthy_worker_badge() -> None:
