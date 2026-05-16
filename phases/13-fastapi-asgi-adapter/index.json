@@ -1,0 +1,25 @@
+{
+  "project": "Token Payments",
+  "phase": "13-fastapi-asgi-adapter",
+  "steps": [
+    {
+      "step": 0,
+      "name": "asgi-adapter-contract-foundation",
+      "status": "completed",
+      "started_at": "2026-05-17T08:43:41+0900",
+      "completed_at": "2026-05-17T08:48:29+0900",
+      "summary": "Added standard-library ASGI adapter foundation with public ASGI boundary exports, HttpRouter-backed request/response conversion, bounded body collection, router error serialization, and unsupported lifespan/websocket handling without new framework dependencies."
+    },
+    {
+      "step": 1,
+      "name": "fastapi-thin-adapter",
+      "status": "pending"
+    },
+    {
+      "step": 2,
+      "name": "fastapi-runtime-public-contracts",
+      "status": "pending"
+    }
+  ],
+  "created_at": "2026-05-16T20:43:18+0900"
+}
