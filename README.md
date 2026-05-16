@@ -378,3 +378,36 @@ python3 scripts/validate_phases.py
 - ASGI/FastAPI thin adapter: 현재 framework-neutral route manifest와 `build_wsgi_app` 계약을 유지하면서 production framework layer를 얇게 추가한다.
 - live Docker compose integration: committed compose stack을 기동해 DB schema, Kafka publish/consume, bounded runtime smoke command chain을 live local infrastructure에서 검증한다.
 - operator action UI wiring: 운영 dashboard에서 cancel/retry/replay action 버튼과 결과/audit 상태를 기존 action endpoint contract에 연결한다.
+
+## Operator Action UI Wiring
+
+The operator action UI wiring phase exposes cancel/retry/replay controls as UI intents connected to the existing framework-neutral operator action endpoint contract. The cancel/retry/replay controls are UI intents, and they render endpoint metadata, operation ids, target ids, idempotency keys, confirmations, and body templates for operator review; they do not call action APIs from the preview.
+
+Use the browser preview to inspect the operator dashboard action controls:
+
+```bash
+PYTHONPATH=app python3 scripts/browser_preview_server.py --host 127.0.0.1 --port 8765
+PYTHONPATH=app python3 scripts/browser_preview_smoke.py
+```
+
+Open the operator preview at:
+
+```text
+http://127.0.0.1:8765/operator
+```
+
+This is a no live operator action execution boundary. The preview/UI does not open DB, Kafka, Docker, Blockchain RPC, or local `.env`, and it does not publish, replay, mutate orders, or start live infrastructure.
+
+Verification commands:
+
+```bash
+python3 -m pytest scripts/test_operator_action_ui_public_contracts.py scripts/test_operator_action_ui_controls.py scripts/test_operator_action_ui_intents.py scripts/test_operator_action_public_contracts.py scripts/test_browser_preview_public_contracts.py scripts/test_ui_public_contracts.py
+PYTHONPATH=app python3 scripts/browser_preview_smoke.py
+python3 scripts/validate_phases.py
+```
+
+Next phase candidates:
+
+- ASGI/FastAPI thin adapter: add a production framework adapter while preserving the current route manifest and UI intent endpoint metadata.
+- approved live Docker e2e: run the committed Docker/Kafka/PostgreSQL flow only in an explicitly approved live environment.
+- operator action execution audit persistence or advanced operator filters: persist action results/audit trails after approved execution wiring, or add denser filters for actionable orders, retry candidates, replay candidates, and failures.

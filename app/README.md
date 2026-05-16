@@ -255,6 +255,39 @@ Next phase candidates:
 - live Docker compose integration: start the committed compose stack and verify DB schema, Kafka publish/consume, and bounded runtime smoke commands against live local infrastructure.
 - operator action UI wiring: connect dashboard cancel/retry/replay controls to the existing operator action endpoint contract and surface result/audit state.
 
+## Operator Action UI Wiring
+
+The operator action UI wiring phase exposes cancel/retry/replay controls as UI intents connected to the existing framework-neutral operator action endpoint contract. The cancel/retry/replay controls are UI intents, and they render endpoint metadata, operation ids, target ids, idempotency keys, confirmations, and body templates for operator review; they do not call action APIs from the preview.
+
+Use the browser preview to inspect the operator dashboard action controls:
+
+```bash
+PYTHONPATH=app python3 scripts/browser_preview_server.py --host 127.0.0.1 --port 8765
+PYTHONPATH=app python3 scripts/browser_preview_smoke.py
+```
+
+Open the operator preview at:
+
+```text
+http://127.0.0.1:8765/operator
+```
+
+This is a no live operator action execution boundary. The preview/UI does not open DB, Kafka, Docker, Blockchain RPC, or local `.env`, and it does not publish, replay, mutate orders, or start live infrastructure.
+
+Verification commands:
+
+```bash
+python3 -m pytest scripts/test_operator_action_ui_public_contracts.py scripts/test_operator_action_ui_controls.py scripts/test_operator_action_ui_intents.py scripts/test_operator_action_public_contracts.py scripts/test_browser_preview_public_contracts.py scripts/test_ui_public_contracts.py
+PYTHONPATH=app python3 scripts/browser_preview_smoke.py
+python3 scripts/validate_phases.py
+```
+
+Next phase candidates:
+
+- ASGI/FastAPI thin adapter: add a production framework adapter while preserving the current route manifest and UI intent endpoint metadata.
+- approved live Docker e2e: run the committed Docker/Kafka/PostgreSQL flow only in an explicitly approved live environment.
+- operator action execution audit persistence or advanced operator filters: persist action results/audit trails after approved execution wiring, or add denser filters for actionable orders, retry candidates, replay candidates, and failures.
+
 ## API / Worker Runtime Contracts
 
 The API layer exposes framework-neutral facades: `AuthApi`, `OrdersApi`, `CheckoutApi`, `PaymentsApi`, and `OperatorApi`. They accept `ApiRequest` and return `ApiResponse` so a later HTTP framework can adapt them without changing the application contracts.
