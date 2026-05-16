@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any, Mapping
+from urllib.parse import quote
 
 from .models import (
     CheckoutAction,
@@ -11,6 +12,7 @@ from .models import (
     CheckoutViewModel,
     GasEstimateView,
     MoneyView,
+    OperatorActionIntent,
     OperatorDashboardViewModel,
     OperatorDetailView,
     OperatorFilterState,
@@ -19,6 +21,16 @@ from .models import (
     StatusBadge,
 )
 
+
+OPERATOR_ACTION_SOURCE = "operator-dashboard"
+OPERATOR_CANCEL_STATUSES = {
+    "PENDING",
+    "AWAITING_SIGNATURE",
+    "SUBMITTED",
+    "FAILED",
+    "EXPIRED",
+    "CANCELLING",
+}
 
 CHECKOUT_TIMELINE_STAGES = (
     ("ORDER_CREATED", "Order created"),
@@ -88,6 +100,7 @@ def operator_dashboard_from_api_payload(
     *,
     filters: Mapping[str, Any] | None = None,
     detail: Mapping[str, Any] | None = None,
+    actions: tuple[OperatorActionIntent, ...] | None = None,
 ) -> OperatorDashboardViewModel:
     payload = _api_body(payload)
     filter_state = _operator_filters(filters or {})
@@ -106,6 +119,16 @@ def operator_dashboard_from_api_payload(
     errors = tuple(_error_row(item) for item in _mapping_items(payload.get("errors"), "errors"))
     detail_payload = detail if detail is not None else _optional_mapping(payload.get("detail"))
     detail_view = _operator_detail_view(detail_payload) if detail_payload is not None else None
+    action_intents = _operator_action_override(actions)
+    if action_intents is None:
+        action_intents = _operator_action_override_from_payload(payload)
+    if action_intents is None:
+        action_intents = _operator_action_intents(
+            payload=payload,
+            orders=orders,
+            outbox=outbox,
+            detail=detail_payload,
+        )
 
     return OperatorDashboardViewModel(
         filters=filter_state,
@@ -117,6 +140,7 @@ def operator_dashboard_from_api_payload(
         outbox=outbox,
         workers=workers,
         errors=errors,
+        actions=action_intents,
         detail=detail_view,
     )
 
@@ -327,6 +351,250 @@ def _operator_detail_view(payload: Mapping[str, Any]) -> OperatorDetailView:
         title=title,
         fields={str(key): value for key, value in payload.items() if str(key) != "title"},
     )
+
+
+def _operator_action_override(
+    actions: tuple[OperatorActionIntent, ...] | object,
+) -> tuple[OperatorActionIntent, ...] | None:
+    if actions is None:
+        return None
+    if isinstance(actions, tuple) and all(isinstance(action, OperatorActionIntent) for action in actions):
+        return actions
+    return tuple(
+        _operator_action_intent_from_payload(action)
+        for action in _mapping_items(actions, "operator actions")
+    )
+
+
+def _operator_action_override_from_payload(payload: Mapping[str, Any]) -> tuple[OperatorActionIntent, ...] | None:
+    if "operatorActions" in payload:
+        return _operator_action_override(payload.get("operatorActions"))
+    if "actions" in payload:
+        return _operator_action_override(payload.get("actions"))
+    return None
+
+
+def _operator_action_intent_from_payload(payload: Mapping[str, Any]) -> OperatorActionIntent:
+    return OperatorActionIntent(
+        action_id=_text(payload.get("actionId", payload.get("action_id")), "operatorAction.actionId"),
+        label=_text(payload.get("label"), "operatorAction.label"),
+        kind=_optional_text(payload.get("kind")) or "secondary",
+        method=_text(payload.get("method"), "operatorAction.method"),
+        endpoint=_text(payload.get("endpoint"), "operatorAction.endpoint"),
+        operation_id=_text(
+            payload.get("operationId", payload.get("operation_id")),
+            "operatorAction.operationId",
+        ),
+        target_kind=_text(
+            payload.get("targetKind", payload.get("target_kind")),
+            "operatorAction.targetKind",
+        ),
+        target_id=_text(payload.get("targetId", payload.get("target_id")), "operatorAction.targetId"),
+        reason=_text(payload.get("reason"), "operatorAction.reason"),
+        enabled=_bool_value(payload.get("enabled"), default=True),
+        confirmation=_text(payload.get("confirmation"), "operatorAction.confirmation"),
+        idempotency_key=_text(
+            payload.get("idempotencyKey", payload.get("idempotency_key")),
+            "operatorAction.idempotencyKey",
+        ),
+        body_template=_mapping(
+            payload.get("bodyTemplate", payload.get("body_template")),
+            "operatorAction.bodyTemplate",
+        ),
+    )
+
+
+def _operator_action_intents(
+    *,
+    payload: Mapping[str, Any],
+    orders: tuple[OperatorTableRow, ...],
+    outbox: tuple[OperatorTableRow, ...],
+    detail: Mapping[str, Any] | None,
+) -> tuple[OperatorActionIntent, ...]:
+    action_intents: list[OperatorActionIntent] = []
+    seen_action_ids: set[str] = set()
+
+    for order in orders:
+        if order.status.label.upper() in OPERATOR_CANCEL_STATUSES:
+            _append_unique(action_intents, seen_action_ids, _cancel_order_intent(order))
+
+    for row in outbox:
+        status = row.status.label.upper()
+        if row.retry_candidate or status == "FAILED":
+            _append_unique(action_intents, seen_action_ids, _retry_outbox_intent(row))
+
+    detail_replay = _replay_intent_from_detail(detail)
+    if detail_replay is not None:
+        _append_unique(action_intents, seen_action_ids, detail_replay)
+
+    for item in _mapping_items(payload.get("replayMessages", payload.get("replay_messages")), "replayMessages"):
+        replay = _replay_intent_from_payload(item)
+        if replay is not None:
+            _append_unique(action_intents, seen_action_ids, replay)
+
+    return tuple(action_intents)
+
+
+def _append_unique(
+    action_intents: list[OperatorActionIntent],
+    seen_action_ids: set[str],
+    intent: OperatorActionIntent,
+) -> None:
+    if intent.action_id in seen_action_ids:
+        return
+    action_intents.append(intent)
+    seen_action_ids.add(intent.action_id)
+
+
+def _cancel_order_intent(order: OperatorTableRow) -> OperatorActionIntent:
+    order_id = order.identity
+    reason = f"operator dashboard cancel requested for order {order_id}"
+    idempotency_key = f"operator:cancelOrder:{order_id}"
+    route = _operator_action_route("cancel_order")
+    return OperatorActionIntent(
+        action_id=f"cancelOrder:{order_id}",
+        label="Cancel order",
+        kind="danger",
+        method=route.method,
+        endpoint=_route_path("cancel_order", orderId=order_id),
+        operation_id=route.operation_id,
+        target_kind="order",
+        target_id=order_id,
+        reason=reason,
+        enabled=True,
+        confirmation=f"Cancel order {order_id}?",
+        idempotency_key=idempotency_key,
+        body_template=_action_body_template(reason=reason, idempotency_key=idempotency_key),
+    )
+
+
+def _retry_outbox_intent(row: OperatorTableRow) -> OperatorActionIntent:
+    message_id = row.identity
+    message_kind = _message_kind_from_values(
+        row.metadata.get("kind"),
+        row.latest_event,
+        row.primary,
+    )
+    reason = (
+        _optional_text(row.metadata.get("retryReason"))
+        or row.failure_reason
+        or f"operator dashboard retry requested for outbox message {message_id}"
+    )
+    idempotency_key = f"operator:retryOutboxMessage:{message_id}"
+    route = _operator_action_route("retry_outbox_message")
+    return OperatorActionIntent(
+        action_id=f"retryOutboxMessage:{message_id}",
+        label="Retry outbox message",
+        kind="secondary",
+        method=route.method,
+        endpoint=_route_path("retry_outbox_message", messageId=message_id),
+        operation_id=route.operation_id,
+        target_kind="outboxMessage",
+        target_id=message_id,
+        reason=reason,
+        enabled=row.retry_candidate,
+        confirmation=f"Retry outbox message {message_id}?",
+        idempotency_key=idempotency_key,
+        body_template=_action_body_template(
+            reason=reason,
+            idempotency_key=idempotency_key,
+            kind=message_kind,
+        ),
+    )
+
+
+def _replay_intent_from_detail(detail: Mapping[str, Any] | None) -> OperatorActionIntent | None:
+    if detail is None:
+        return None
+    if "replayCandidate" in detail and not _bool_value(detail.get("replayCandidate"), default=False):
+        return None
+    message_id = _optional_text(detail.get("replayMessageId"))
+    if message_id is None and (
+        "messageKind" in detail or "kind" in detail or _bool_value(detail.get("replayCandidate"), default=False)
+    ):
+        message_id = _optional_text(detail.get("messageId"))
+    if message_id is None:
+        return None
+    message_kind = _message_kind_from_values(
+        detail.get("messageKind", detail.get("kind")),
+        detail.get("latestEvent"),
+    )
+    reason = _optional_text(detail.get("replayReason", detail.get("reason"))) or (
+        f"operator dashboard replay requested for message {message_id}"
+    )
+    return _replay_message_intent(message_id=message_id, message_kind=message_kind, reason=reason)
+
+
+def _replay_intent_from_payload(payload: Mapping[str, Any]) -> OperatorActionIntent | None:
+    if "replayCandidate" in payload and not _bool_value(payload.get("replayCandidate"), default=False):
+        return None
+    message_id = _optional_text(payload.get("messageId", payload.get("id")))
+    if message_id is None:
+        return None
+    message_kind = _message_kind_from_values(
+        payload.get("messageKind", payload.get("kind")),
+        payload.get("name", payload.get("latestEvent")),
+    )
+    reason = _optional_text(payload.get("reason")) or f"operator dashboard replay requested for message {message_id}"
+    return _replay_message_intent(message_id=message_id, message_kind=message_kind, reason=reason)
+
+
+def _replay_message_intent(*, message_id: str, message_kind: str, reason: str) -> OperatorActionIntent:
+    idempotency_key = f"operator:replayMessage:{message_id}"
+    route = _operator_action_route("replay_message")
+    return OperatorActionIntent(
+        action_id=f"replayMessage:{message_id}",
+        label="Replay message",
+        kind="secondary",
+        method=route.method,
+        endpoint=_route_path("replay_message", messageId=message_id),
+        operation_id=route.operation_id,
+        target_kind="message",
+        target_id=message_id,
+        reason=reason,
+        enabled=True,
+        confirmation=f"Replay message {message_id}?",
+        idempotency_key=idempotency_key,
+        body_template=_action_body_template(reason=reason, idempotency_key=idempotency_key, kind=message_kind),
+    )
+
+
+def _action_body_template(*, reason: str, idempotency_key: str, kind: str | None = None) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "reason": reason,
+        "idempotencyKey": idempotency_key,
+        "parameters": {"source": OPERATOR_ACTION_SOURCE},
+    }
+    if kind is not None:
+        body["kind"] = kind
+    return body
+
+
+def _route_path(route_key: str, **params: str) -> str:
+    path = _operator_action_route(route_key).path
+    for key, value in params.items():
+        path = path.replace("{" + key + "}", quote(value, safe=""))
+    return path
+
+
+def _operator_action_route(route_key: str):
+    from token_payments.api.http import OPERATOR_ACTION_HTTP_ROUTES
+
+    return OPERATOR_ACTION_HTTP_ROUTES[route_key]
+
+
+def _message_kind_from_values(*values: object) -> str:
+    for value in values:
+        text = _optional_text(value)
+        if text:
+            normalized = text.upper()
+            if normalized in {"EVENT", "COMMAND"}:
+                return normalized
+            if "COMMAND" in normalized:
+                return "COMMAND"
+            if "EVENT" in normalized:
+                return "EVENT"
+    return "EVENT"
 
 
 def _default_checkout_timeline(payload: Mapping[str, Any]) -> tuple[CheckoutTimelineItem, ...]:

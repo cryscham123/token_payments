@@ -148,6 +148,68 @@ class CheckoutAction:
 
 
 @dataclass(frozen=True)
+class OperatorActionIntent:
+    action_id: str
+    label: str
+    kind: str
+    method: str
+    endpoint: str
+    operation_id: str
+    target_kind: str
+    target_id: str
+    reason: str
+    enabled: bool
+    confirmation: str
+    idempotency_key: str
+    body_template: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "action_id", _require_text(self.action_id, "OperatorActionIntent.action_id"))
+        object.__setattr__(self, "label", _require_text(self.label, "OperatorActionIntent.label"))
+        kind = _require_text(self.kind, "OperatorActionIntent.kind")
+        if kind not in {"primary", "secondary", "danger"}:
+            raise ValueError("OperatorActionIntent.kind must be primary, secondary, or danger")
+        object.__setattr__(self, "kind", kind)
+        object.__setattr__(self, "method", _require_text(self.method, "OperatorActionIntent.method").upper())
+        object.__setattr__(
+            self,
+            "endpoint",
+            _require_endpoint_path(self.endpoint, "OperatorActionIntent.endpoint"),
+        )
+        object.__setattr__(
+            self,
+            "operation_id",
+            _require_text(self.operation_id, "OperatorActionIntent.operation_id"),
+        )
+        object.__setattr__(self, "target_kind", _require_text(self.target_kind, "OperatorActionIntent.target_kind"))
+        object.__setattr__(self, "target_id", _require_text(self.target_id, "OperatorActionIntent.target_id"))
+        object.__setattr__(self, "reason", _require_text(self.reason, "OperatorActionIntent.reason"))
+        if not isinstance(self.enabled, bool):
+            raise ValueError("OperatorActionIntent.enabled must be a bool")
+        object.__setattr__(
+            self,
+            "confirmation",
+            _require_text(self.confirmation, "OperatorActionIntent.confirmation"),
+        )
+        object.__setattr__(
+            self,
+            "idempotency_key",
+            _require_text(self.idempotency_key, "OperatorActionIntent.idempotency_key"),
+        )
+        body_template = _readonly_json_mapping(self.body_template, "OperatorActionIntent.body_template")
+        if body_template.get("reason") != self.reason:
+            raise ValueError("OperatorActionIntent.body_template must include matching reason")
+        if body_template.get("idempotencyKey") != self.idempotency_key:
+            raise ValueError("OperatorActionIntent.body_template must include matching idempotencyKey")
+        parameters = body_template.get("parameters")
+        if not isinstance(parameters, Mapping) or parameters.get("source") != "operator-dashboard":
+            raise ValueError(
+                "OperatorActionIntent.body_template must include parameters.source=operator-dashboard"
+            )
+        object.__setattr__(self, "body_template", body_template)
+
+
+@dataclass(frozen=True)
 class CheckoutTimelineItem:
     label: str
     status: StatusBadge | str
@@ -336,6 +398,7 @@ class OperatorDashboardViewModel:
     outbox: tuple[OperatorTableRow, ...] = ()
     workers: tuple[OperatorTableRow, ...] = ()
     errors: tuple[OperatorTableRow, ...] = ()
+    actions: tuple[OperatorActionIntent, ...] = ()
     detail: OperatorDetailView | None = None
 
     def __post_init__(self) -> None:
@@ -349,6 +412,7 @@ class OperatorDashboardViewModel:
         object.__setattr__(self, "outbox", _coerce_tuple(self.outbox, OperatorTableRow, "OperatorDashboardViewModel.outbox"))
         object.__setattr__(self, "workers", _coerce_tuple(self.workers, OperatorTableRow, "OperatorDashboardViewModel.workers"))
         object.__setattr__(self, "errors", _coerce_tuple(self.errors, OperatorTableRow, "OperatorDashboardViewModel.errors"))
+        object.__setattr__(self, "actions", _coerce_tuple(self.actions, OperatorActionIntent, "OperatorDashboardViewModel.actions"))
         if self.detail is not None and not isinstance(self.detail, OperatorDetailView):
             raise ValueError("OperatorDashboardViewModel.detail must be an OperatorDetailView or None")
 
@@ -389,6 +453,13 @@ def _require_non_negative_int(value: int, field_name: str) -> int:
     return value
 
 
+def _require_endpoint_path(value: str, field_name: str) -> str:
+    endpoint = _require_text(value, field_name)
+    if not endpoint.startswith("/") or endpoint.startswith("//") or "://" in endpoint:
+        raise ValueError(f"{field_name} must be an absolute path without origin")
+    return endpoint
+
+
 def _coerce_tuple(values: tuple[object, ...], item_type: type, field_name: str):
     if not isinstance(values, tuple):
         raise ValueError(f"{field_name} must be a tuple")
@@ -406,6 +477,50 @@ def _readonly_mapping(value: Mapping[str, Any], field_name: str) -> Mapping[str,
     return MappingProxyType(output)
 
 
+class _FrozenJsonMapping(dict):
+    def _readonly(self, *_args: object, **_kwargs: object) -> None:
+        raise TypeError("mapping is read-only")
+
+    __setitem__ = _readonly
+    __delitem__ = _readonly
+    clear = _readonly
+    pop = _readonly
+    popitem = _readonly
+    setdefault = _readonly
+    update = _readonly
+    __ior__ = _readonly
+
+    def copy(self) -> dict[str, Any]:
+        return dict(self)
+
+
+def _readonly_json_mapping(value: Mapping[str, Any], field_name: str) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{field_name} must be a mapping")
+    return _freeze_json_value(value, field_name)
+
+
+def _freeze_json_value(value: object, field_name: str) -> Any:
+    if value is None or isinstance(value, str | bool):
+        return value
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    if isinstance(value, float):
+        if value != value or value in {float("inf"), float("-inf")}:
+            raise ValueError(f"{field_name} must contain only finite JSON numbers")
+        return value
+    if isinstance(value, Mapping):
+        return _FrozenJsonMapping(
+            {
+                _require_text(str(key), f"{field_name} key"): _freeze_json_value(item, f"{field_name}.{key}")
+                for key, item in value.items()
+            }
+        )
+    if isinstance(value, list | tuple):
+        return tuple(_freeze_json_value(item, f"{field_name}[]") for item in value)
+    raise ValueError(f"{field_name} must contain only JSON primitive values")
+
+
 __all__ = [
     "CheckoutAction",
     "CheckoutOrderItemView",
@@ -414,6 +529,7 @@ __all__ = [
     "CopyToken",
     "GasEstimateView",
     "MoneyView",
+    "OperatorActionIntent",
     "OperatorDashboardViewModel",
     "OperatorDetailView",
     "OperatorFilterState",
