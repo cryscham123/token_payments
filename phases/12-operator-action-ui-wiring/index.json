@@ -1,0 +1,25 @@
+{
+  "project": "Token Payments",
+  "phase": "12-operator-action-ui-wiring",
+  "steps": [
+    {
+      "step": 0,
+      "name": "operator-action-ui-intents",
+      "status": "completed",
+      "started_at": "2026-05-16T20:17:23+0900",
+      "completed_at": "2026-05-16T20:25:29+0900",
+      "summary": "Added immutable OperatorActionIntent UI contracts and mapper derivation for cancelOrder, retryOutboxMessage, and replayMessage intents from operator dashboard payloads without executing action APIs."
+    },
+    {
+      "step": 1,
+      "name": "operator-action-controls-rendering",
+      "status": "pending"
+    },
+    {
+      "step": 2,
+      "name": "operator-action-ui-public-contracts",
+      "status": "pending"
+    }
+  ],
+  "created_at": "2026-05-16T20:17:23+0900"
+}
