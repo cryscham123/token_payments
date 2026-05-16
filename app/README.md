@@ -36,7 +36,7 @@ The server binds a localhost port only when this explicit script is running. Sto
 
 ## Docker Runtime Verification
 
-Docker runtime image verification fixes the root `Dockerfile` contract: Python 3.12, `/workspace`, `PYTHONPATH=/workspace/app`, copied `app/token_payments`, and a bounded `health` command. The compose one-shot services `token_payments_health`, `token_payments_worker`, and `token_payments_smoke` reuse that image for local runtime checks.
+Docker runtime image verification fixes the root `Dockerfile` contract: Python 3.12, `/workspace`, `PYTHONPATH=/workspace/app`, copied `app/token_payments`, committed static smoke contract files, and a bounded `health` command. The compose one-shot services `token_payments_health`, `token_payments_worker`, and `token_payments_smoke` reuse that image for local runtime checks.
 
 Automated harness verification does not require Docker daemon/socket access. It checks static/config/smoke contract coverage, including daemon-less compose config validation, committed runtime service definitions, and the `docker-runtime-readiness` smoke payload instead of starting live containers.
 
@@ -65,6 +65,7 @@ Live local Docker execution is manual/approval-only. Run it in this order when D
 ```bash
 cp .env.example .env
 docker compose --env-file .env --profile runtime config --services
+docker compose --env-file .env --profile runtime build token_payments_health
 docker compose --env-file .env up -d postgres kafka kafka-ui pgweb test_network
 docker compose --env-file .env --profile runtime run --rm token_payments_health
 docker compose --env-file .env --profile runtime run --rm token_payments_worker
@@ -72,11 +73,11 @@ docker compose --env-file .env --profile smoke run --rm token_payments_smoke
 docker compose --env-file .env down
 ```
 
-Docker phase next candidates:
+Postman-ready API roadmap:
 
-- ASGI/FastAPI thin adapter: add a thin production ASGI layer while preserving the current framework-neutral API route manifest.
-- live Docker e2e with approved daemon: run the committed compose stack with explicit daemon approval and verify schema, Kafka, and one-shot runtime smoke.
-- operator action UI wiring: connect the dashboard action controls to the existing cancel/retry/replay endpoint and audit result contracts.
+- `13-fastapi-asgi-adapter`: add a thin ASGI/FastAPI app factory while preserving the current framework-neutral API route manifest.
+- `14-live-api-runtime-composition`: wire real Auth/Order/Checkout/Payment/Operator facades to PostgreSQL, Kafka, and test network adapters behind a long-running API entrypoint.
+- `15-postman-docker-api-readiness`: add the compose API service, Postman-ready request examples, seed flow, and expected response contracts.
 
 ## Verification Commands
 
@@ -285,8 +286,8 @@ python3 scripts/validate_phases.py
 Next phase candidates:
 
 - ASGI/FastAPI thin adapter: add a production framework adapter while preserving the current route manifest and UI intent endpoint metadata.
-- approved live Docker e2e: run the committed Docker/Kafka/PostgreSQL flow only in an explicitly approved live environment.
-- operator action execution audit persistence or advanced operator filters: persist action results/audit trails after approved execution wiring, or add denser filters for actionable orders, retry candidates, replay candidates, and failures.
+- live API runtime composition: wire the real facades to PostgreSQL, Kafka, and test network adapters behind a long-running API entrypoint.
+- Postman Docker API readiness: add the compose API service, request examples, seed flow, and expected responses for local Postman verification.
 
 ## API / Worker Runtime Contracts
 

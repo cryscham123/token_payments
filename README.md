@@ -67,7 +67,7 @@ http://127.0.0.1:8765/operator
 
 ## Docker Runtime Verification
 
-Docker runtime image 계약은 루트 `Dockerfile`이 Python 3.12 기반으로 `app/token_payments`만 `/workspace/app/token_payments`에 복사하고 `PYTHONPATH=/workspace/app`에서 bounded `health` command를 실행하는지 고정한다. `docker-compose.yml`은 같은 image를 쓰는 compose one-shot services `token_payments_health`, `token_payments_worker`, `token_payments_smoke`를 제공한다.
+Docker runtime image 계약은 루트 `Dockerfile`이 Python 3.12 기반으로 `app/token_payments`를 `/workspace/app/token_payments`에 복사하고, live smoke가 컨테이너 안에서도 같은 static contract를 검증할 수 있도록 `Dockerfile`, `.dockerignore`, `docker-compose.yml`, `.env.example`, DB init script, test network Dockerfile을 함께 복사한다. 기본 command는 `PYTHONPATH=/workspace/app`에서 bounded `health` command를 실행한다. `docker-compose.yml`은 같은 image를 쓰는 compose one-shot services `token_payments_health`, `token_payments_worker`, `token_payments_smoke`를 제공한다.
 
 Docker daemon/socket 권한이 없는 automated harness에서는 live container 실행이 아니라 static/config/smoke contract를 검증한다. Docker daemon 없이 compose 파일 해석만 확인하려면 committed `.env.example`으로 daemon-less compose config validation을 실행한다.
 
@@ -101,6 +101,7 @@ Live local Docker 실행은 수동/승인 필요 작업이다. 필요한 경우 
 ```bash
 cp .env.example .env
 docker compose --env-file .env --profile runtime config --services
+docker compose --env-file .env --profile runtime build token_payments_health
 docker compose --env-file .env up -d postgres kafka kafka-ui pgweb test_network
 docker compose --env-file .env --profile runtime run --rm token_payments_health
 docker compose --env-file .env --profile runtime run --rm token_payments_worker
@@ -108,11 +109,11 @@ docker compose --env-file .env --profile smoke run --rm token_payments_smoke
 docker compose --env-file .env down
 ```
 
-Docker 이후 다음 phase 후보:
+Postman-ready API roadmap:
 
-- ASGI/FastAPI thin adapter: 기존 framework-neutral route manifest와 facade contract를 유지하면서 production ASGI adapter를 얇게 추가한다.
-- live Docker e2e with approved daemon: 승인된 Docker daemon 환경에서 schema, Kafka publish/consume, runtime one-shot smoke를 실제 컨테이너로 확인한다.
-- operator action UI wiring: 운영 dashboard의 cancel/retry/replay control을 기존 operator action endpoint와 audit 결과에 연결한다.
+- `13-fastapi-asgi-adapter`: 기존 framework-neutral route manifest와 facade contract를 유지하면서 ASGI/FastAPI app factory를 얇게 추가한다.
+- `14-live-api-runtime-composition`: 실제 Auth/Order/Checkout/Payment/Operator facade를 PostgreSQL, Kafka, test network adapter와 조립하고 long-running `token_payments_api` runtime entrypoint를 추가한다.
+- `15-postman-docker-api-readiness`: `docker compose up -d ... token_payments_api` 후 Postman에서 호출할 collection/examples, seed flow, expected response contract를 고정한다.
 
 ## Foundation 검증
 
@@ -409,5 +410,5 @@ python3 scripts/validate_phases.py
 Next phase candidates:
 
 - ASGI/FastAPI thin adapter: add a production framework adapter while preserving the current route manifest and UI intent endpoint metadata.
-- approved live Docker e2e: run the committed Docker/Kafka/PostgreSQL flow only in an explicitly approved live environment.
-- operator action execution audit persistence or advanced operator filters: persist action results/audit trails after approved execution wiring, or add denser filters for actionable orders, retry candidates, replay candidates, and failures.
+- live API runtime composition: wire the real facades to PostgreSQL, Kafka, and test network adapters behind a long-running API entrypoint.
+- Postman Docker API readiness: add the compose API service, request examples, seed flow, and expected responses for local Postman verification.

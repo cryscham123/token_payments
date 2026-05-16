@@ -4,7 +4,8 @@ services:
     build:
       context: app/test_network
     env_file:
-      - .env
+      - path: .env
+        required: false
     image: test_network
     init: true
     volumes:
@@ -20,7 +21,8 @@ services:
     restart: always
     init: true
     env_file:
-      - .env
+      - path: .env
+        required: false
     volumes:
       - "${PWD}/app/postgres/data:/var/lib/postgresql"
       - "${PWD}/app/postgres/init.d:/docker-entrypoint-initdb.d"
@@ -39,7 +41,8 @@ services:
       environment:
         - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
       env_file:
-        - .env
+        - path: .env
+          required: false
       ports:
         - "8081:8081"
       depends_on:
@@ -75,12 +78,80 @@ services:
       kafka:
         condition: service_started
 
+  token_payments_health:
+    image: token_payments_runtime
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - PYTHONPATH=/workspace/app
+    command: ["python", "-m", "token_payments", "health"]
+    restart: "no"
+    profiles:
+      - runtime
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      test_network:
+        condition: service_started
+
+  token_payments_worker:
+    image: token_payments_runtime
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - PYTHONPATH=/workspace/app
+    command: ["python", "-m", "token_payments", "worker"]
+    restart: "no"
+    profiles:
+      - runtime
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      test_network:
+        condition: service_started
+
+  token_payments_smoke:
+    image: token_payments_runtime
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - PYTHONPATH=/workspace/app
+    command: ["python", "-m", "token_payments", "smoke", "compose-readiness"]
+    restart: "no"
+    profiles:
+      - runtime
+      - smoke
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      test_network:
+        condition: service_started
+
   nginx:
     container_name: nginx
     build:
       context: app/nginx
     env_file:
-      - .env
+      - path: .env
+        required: false
     image: nginx
     init: true
     volumes:

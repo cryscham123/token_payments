@@ -1,6 +1,7 @@
 """Framework-neutral API DTOs and response helpers."""
 
 from .auth import AuthApi
+from .asgi import AsgiApplication, AsgiReceive, AsgiScope, AsgiSend, build_asgi_app
 from .checkout import CheckoutApi
 from .contracts import ApiRequest, ApiResponse, JsonValue, json_response
 from .http import (
@@ -62,6 +63,10 @@ __all__ = [
     "AuthApi",
     "ApiRequest",
     "ApiResponse",
+    "AsgiApplication",
+    "AsgiReceive",
+    "AsgiScope",
+    "AsgiSend",
     "CHECKOUT_HTTP_ROUTES",
     "CheckoutApi",
     "CancelOrderCommandHandler",
@@ -101,6 +106,7 @@ __all__ = [
     "PaymentsApi",
     "WsgiApplication",
     "WsgiStartResponse",
+    "build_asgi_app",
     "build_wsgi_app",
     "describe_http_routes",
     "http_route_manifest",

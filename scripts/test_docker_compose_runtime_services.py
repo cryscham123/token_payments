@@ -143,9 +143,15 @@ def _list_for_key(block: tuple[str, ...], key: str) -> list[str]:
             if nested_indent <= indent:
                 break
             if nested_stripped.startswith("- "):
-                values.append(_unquote(nested_stripped[2:].strip()))
+                values.append(_list_item_value(nested_stripped[2:].strip()))
         return values
     return []
+
+
+def _list_item_value(value: str) -> str:
+    if value.startswith("path:"):
+        return _unquote(value[len("path:") :].strip())
+    return _unquote(value)
 
 
 def _json_list_for_key(block: tuple[str, ...], key: str) -> list[str]:

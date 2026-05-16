@@ -19,6 +19,10 @@ EXPECTED_SEQUENCE = [
         ["docker", "compose", "--env-file", ".env", "--profile", "runtime", "config", "--services"],
     ),
     (
+        "build-runtime-image",
+        ["docker", "compose", "--env-file", ".env", "--profile", "runtime", "build", "token_payments_health"],
+    ),
+    (
         "start-infrastructure",
         ["docker", "compose", "--env-file", ".env", "up", "-d", "postgres", "kafka", "kafka-ui", "pgweb", "test_network"],
     ),
@@ -144,7 +148,7 @@ def test_live_execution_failure_after_infrastructure_start_runs_cleanup_once(
 
     def fake_run(argv: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
         calls.append(argv)
-        if "token_payments_health" in argv:
+        if "run" in argv and "token_payments_health" in argv:
             return subprocess.CompletedProcess(argv, 23, stdout=f"failed {secret_value}", stderr=f"stderr {secret_value}")
         return subprocess.CompletedProcess(argv, 0, stdout="ok", stderr="")
 
@@ -160,11 +164,12 @@ def test_live_execution_failure_after_infrastructure_start_runs_cleanup_once(
     assert payload["failedStep"] == "runtime-health"
     assert payload["exitCode"] == 23
     assert payload["cleanupExecuted"] is True
-    assert payload["commandCount"] == 4
+    assert payload["commandCount"] == 5
     assert secret_value not in payload_text
     assert calls == [
         EXPECTED_SEQUENCE[0][1],
         EXPECTED_SEQUENCE[1][1],
         EXPECTED_SEQUENCE[2][1],
+        EXPECTED_SEQUENCE[3][1],
         CLEANUP_COMMAND,
     ]
