@@ -13,7 +13,10 @@
     {
       "step": 1,
       "name": "operator-action-controls-rendering",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-16T20:25:29+0900",
+      "completed_at": "2026-05-16T20:31:48+0900",
+      "summary": "Rendered operator dashboard action controls for cancel, retry outbox, and replay intents with safe data attributes and browser preview smoke coverage."
     },
     {
       "step": 2,
