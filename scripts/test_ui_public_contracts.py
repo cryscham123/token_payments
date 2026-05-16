@@ -21,6 +21,7 @@ PUBLIC_EXPORTS = {
     "CopyToken",
     "GasEstimateView",
     "MoneyView",
+    "OperatorActionIntent",
     "OperatorDashboardViewModel",
     "OperatorDetailView",
     "OperatorFilterState",
