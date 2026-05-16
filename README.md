@@ -328,6 +328,8 @@ python3 scripts/validate_phases.py
 
 HTTP framework adapter phase는 framework-neutral API facade를 route manifest, router, WSGI callable로 연결한다. `api`와 `serve-api` CLI command는 bounded HTTP adapter preview를 JSON으로 반환하며, 테스트나 기본 실행 경로에서 long-running server 또는 network port bind를 시작하지 않는다.
 
+FastAPI thin adapter는 optional production adapter다. `token_payments.api`와 `token_payments.api.fastapi` import는 FastAPI 설치를 요구하지 않으며, 실제 FastAPI app을 만들 때만 runtime 환경에 `pip install fastapi`가 필요하다. Automated harness 검증에서는 package install, ASGI server 실행, network port bind를 수행하지 않는다.
+
 ```bash
 python3 -m pytest \
   scripts/test_http_adapter_contract_foundation.py \

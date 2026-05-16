@@ -208,6 +208,8 @@ Next phase candidates:
 
 The HTTP adapter phase exposes the framework-neutral facades through stable route specs, registration helpers, a deterministic route manifest, and a WSGI-compatible callable. The `api` and `serve-api` commands return a bounded HTTP adapter preview as JSON; they do not start a long-running server or bind a network port.
 
+The FastAPI thin adapter is optional production wiring. Importing `token_payments.api` or `token_payments.api.fastapi` does not require FastAPI; building the FastAPI app requires installing `fastapi` in the runtime environment. Automated harness verification does not install packages, start an ASGI server, or bind a network port.
+
 ```bash
 python3 -m pytest \
   scripts/test_http_adapter_contract_foundation.py \

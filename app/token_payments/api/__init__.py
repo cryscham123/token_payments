@@ -1,5 +1,7 @@
 """Framework-neutral API DTOs and response helpers."""
 
+from importlib import import_module as _import_module
+
 from .auth import AuthApi
 from .asgi import AsgiApplication, AsgiReceive, AsgiScope, AsgiSend, build_asgi_app
 from .checkout import CheckoutApi
@@ -56,6 +58,14 @@ from .operator_actions import (
 from .orders import OrdersApi
 from .payments import PaymentsApi
 
+_FASTAPI_ADAPTER_EXPORTS = frozenset(
+    {
+        "FastApiAdapterUnavailable",
+        "build_fastapi_app",
+        "is_fastapi_available",
+    }
+)
+
 __all__ = [
     "AdminRoleOperatorActionPolicy",
     "AdminRoleOperatorPolicy",
@@ -70,6 +80,7 @@ __all__ = [
     "CHECKOUT_HTTP_ROUTES",
     "CheckoutApi",
     "CancelOrderCommandHandler",
+    "FastApiAdapterUnavailable",
     "HttpHandler",
     "HttpRequest",
     "HttpResponse",
@@ -107,9 +118,11 @@ __all__ = [
     "WsgiApplication",
     "WsgiStartResponse",
     "build_asgi_app",
+    "build_fastapi_app",
     "build_wsgi_app",
     "describe_http_routes",
     "http_route_manifest",
+    "is_fastapi_available",
     "json_response",
     "list_http_route_specs",
     "register_auth_routes",
@@ -119,3 +132,11 @@ __all__ = [
     "register_operator_routes",
     "register_payment_routes",
 ]
+
+
+def __getattr__(name: str):
+    if name in _FASTAPI_ADAPTER_EXPORTS:
+        value = getattr(_import_module("token_payments.api.fastapi"), name)
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
