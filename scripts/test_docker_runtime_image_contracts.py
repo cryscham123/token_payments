@@ -28,6 +28,15 @@ FORBIDDEN_DOCKERFILE_COPY_SOURCES = {
     "phases",
     "phases/",
 }
+REQUIRED_DOCKERFILE_COPY_SOURCES = {
+    "app/token_payments",
+    "Dockerfile",
+    ".dockerignore",
+    "docker-compose.yml",
+    ".env.example",
+    "app/postgres/init.d/001-token-payments-schema.sql",
+    "app/test_network/Dockerfile",
+}
 FORBIDDEN_DOCKERFILE_TERMS = {
     "claude",
     ".claude",
@@ -69,7 +78,7 @@ def test_dockerfile_sets_internal_app_pythonpath_and_bounded_health_command() ->
         assert term not in lowered
 
 
-def test_dockerfile_only_copies_runtime_package_without_local_artifacts() -> None:
+def test_dockerfile_copies_runtime_package_and_static_smoke_contracts_without_local_artifacts() -> None:
     dockerfile = _read_required(ROOT / "Dockerfile")
 
     assert _instruction_values(dockerfile, "ADD") == []
@@ -77,7 +86,7 @@ def test_dockerfile_only_copies_runtime_package_without_local_artifacts() -> Non
     copy_sources = _copy_sources(dockerfile)
     assert copy_sources
     assert set(copy_sources).isdisjoint(FORBIDDEN_DOCKERFILE_COPY_SOURCES)
-    assert all(source == "app/token_payments" for source in copy_sources)
+    assert REQUIRED_DOCKERFILE_COPY_SOURCES <= set(copy_sources)
     assert not any("data" in source.split("/") for source in copy_sources)
     assert not any("step" in source and "output" in source for source in copy_sources)
     assert not any("phase" in source and "output" in source for source in copy_sources)

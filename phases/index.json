@@ -64,6 +64,10 @@
       "dir": "12-operator-action-ui-wiring",
       "status": "completed",
       "completed_at": "2026-05-16T20:38:34+0900"
+    },
+    {
+      "dir": "13-fastapi-asgi-adapter",
+      "status": "pending"
     }
   ]
 }

@@ -13,7 +13,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "app"))
 
 
-RESERVED_SCENARIOS = ("happy-path-checkout", "compensation-checkout", "compose-readiness")
+RESERVED_SCENARIOS = (
+    "happy-path-checkout",
+    "compensation-checkout",
+    "compose-readiness",
+    "docker-runtime-readiness",
+)
 
 
 def test_smoke_public_contract_exports_serializable_result_types() -> None:
@@ -58,7 +63,7 @@ def test_smoke_public_contract_exports_serializable_result_types() -> None:
                 "name": "registry-loaded",
                 "status": "passed",
                 "summary": "reserved smoke scenarios are registered",
-                "details": {"scenarioCount": 3},
+                "details": {"scenarioCount": len(RESERVED_SCENARIOS)},
             }
         ],
         "details": {"availableScenarios": list(AVAILABLE_SMOKE_SCENARIOS)},

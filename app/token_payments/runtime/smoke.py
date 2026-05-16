@@ -81,17 +81,27 @@ DOCKER_RUNTIME_REQUIRED_DOCKERIGNORE_PATTERNS = (
     "__pycache__",
     ".pytest_cache",
 )
+DOCKER_RUNTIME_SUPPORT_COPY_SOURCES = (
+    "Dockerfile",
+    ".dockerignore",
+    "docker-compose.yml",
+    ".env.example",
+    "app/postgres/init.d/001-token-payments-schema.sql",
+    "app/test_network/Dockerfile",
+)
 DOCKER_RUNTIME_RUN_COMMANDS = (
     "docker compose --env-file .env --profile runtime run --rm token_payments_health",
     "docker compose --env-file .env --profile runtime run --rm token_payments_worker",
     "docker compose --env-file .env --profile smoke run --rm token_payments_smoke",
 )
+DOCKER_RUNTIME_BUILD_COMMAND = "docker compose --env-file .env --profile runtime build token_payments_health"
 DOCKER_RUNTIME_COMPOSE_CONFIG_VALIDATION_COMMAND = (
     "docker compose --env-file .env.example config --services"
 )
 DOCKER_RUNTIME_MANUAL_LIVE_COMMANDS = (
     "cp .env.example .env",
     "docker compose --env-file .env --profile runtime config --services",
+    DOCKER_RUNTIME_BUILD_COMMAND,
     "docker compose --env-file .env up -d postgres kafka kafka-ui pgweb test_network",
     *DOCKER_RUNTIME_RUN_COMMANDS,
     "docker compose --env-file .env down",
@@ -917,6 +927,7 @@ def _run_docker_runtime_readiness() -> SmokeScenarioResult:
         "compose": {
             "path": _relative_path(compose_path, root),
             "runtimeServices": runtime_services,
+            "buildCommand": DOCKER_RUNTIME_BUILD_COMMAND,
             "runCommands": list(DOCKER_RUNTIME_RUN_COMMANDS),
             "composeConfigValidationCommand": {
                 "command": DOCKER_RUNTIME_COMPOSE_CONFIG_VALIDATION_COMMAND,
@@ -946,6 +957,7 @@ def _run_docker_runtime_readiness() -> SmokeScenarioResult:
             "committed compose runtime services use bounded one-shot commands without starting Docker",
             {
                 "runtimeServices": runtime_services,
+                "buildCommand": DOCKER_RUNTIME_BUILD_COMMAND,
                 "runCommands": list(DOCKER_RUNTIME_RUN_COMMANDS),
                 "composeConfigValidationCommand": DOCKER_RUNTIME_COMPOSE_CONFIG_VALIDATION_COMMAND,
             },
@@ -1890,6 +1902,7 @@ def _docker_runtime_image_contract(path: Path, root: Path) -> tuple[dict[str, Js
         "pythonPath": None,
         "packageCopySource": None,
         "packageCopyDestination": None,
+        "supportCopySources": [],
         "cmd": [],
     }
     if not path.exists():
@@ -1917,6 +1930,11 @@ def _docker_runtime_image_contract(path: Path, root: Path) -> tuple[dict[str, Js
         "pythonPath": _dockerfile_env_value(dockerfile, "PYTHONPATH"),
         "packageCopySource": package_copy_source,
         "packageCopyDestination": package_copy_destination,
+        "supportCopySources": [
+            source
+            for source, _destination in copy_pairs
+            if source in DOCKER_RUNTIME_SUPPORT_COPY_SOURCES
+        ],
         "cmd": _dockerfile_json_instruction(dockerfile, "CMD"),
     }
     expected = {
@@ -1926,6 +1944,7 @@ def _docker_runtime_image_contract(path: Path, root: Path) -> tuple[dict[str, Js
         "pythonPath": "/workspace/app",
         "packageCopySource": "app/token_payments",
         "packageCopyDestination": "/workspace/app/token_payments",
+        "supportCopySources": list(DOCKER_RUNTIME_SUPPORT_COPY_SOURCES),
         "cmd": ["python", "-m", "token_payments", "health"],
     }
     errors = [
@@ -2072,9 +2091,15 @@ def _compose_list_for_key(block: tuple[str, ...], key: str) -> list[JsonValue]:
             if nested_indent <= indent:
                 break
             if nested_stripped.startswith("- "):
-                values.append(_unquote_yamlish_value(nested_stripped[2:].strip()))
+                values.append(_compose_list_item_value(nested_stripped[2:].strip()))
         return values
     return []
+
+
+def _compose_list_item_value(value: str) -> JsonValue:
+    if value.startswith("path:"):
+        return _unquote_yamlish_value(value[len("path:") :].strip())
+    return _unquote_yamlish_value(value)
 
 
 def _compose_nested_scalar(block: tuple[str, ...], parent_key: str, child_key: str) -> str | None:

@@ -16,6 +16,10 @@ EXPECTED_SEQUENCE = [
         ["docker", "compose", "--env-file", ".env", "--profile", "runtime", "config", "--services"],
     ),
     (
+        "build-runtime-image",
+        ["docker", "compose", "--env-file", ".env", "--profile", "runtime", "build", "token_payments_health"],
+    ),
+    (
         "start-infrastructure",
         ["docker", "compose", "--env-file", ".env", "up", "-d", "postgres", "kafka", "kafka-ui", "pgweb", "test_network"],
     ),

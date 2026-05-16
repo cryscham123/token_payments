@@ -57,6 +57,7 @@ DOCUMENTED_DOCKER_COMMANDS = (
     "docker compose --env-file .env.example --profile runtime config --services",
     "cp .env.example .env",
     "docker compose --env-file .env --profile runtime config --services",
+    "docker compose --env-file .env --profile runtime build token_payments_health",
     "docker compose --env-file .env up -d postgres kafka kafka-ui pgweb test_network",
     "docker compose --env-file .env --profile runtime run --rm token_payments_health",
     "docker compose --env-file .env --profile runtime run --rm token_payments_worker",
@@ -71,9 +72,9 @@ DOCUMENTED_DOCKER_PHRASES = (
     "daemon-less compose config validation",
     "static/config/smoke contract",
     "Docker daemon/socket",
-    "ASGI/FastAPI thin adapter",
-    "live Docker e2e with approved daemon",
-    "operator action UI wiring",
+    "Postman-ready API roadmap",
+    "live API runtime composition",
+    "Postman Docker API readiness",
 )
 
 

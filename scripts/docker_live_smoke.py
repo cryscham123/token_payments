@@ -30,6 +30,7 @@ REQUIRED_SERVICES = (
 )
 COMMAND_TIMEOUT_SECONDS = {
     "compose-config": 30,
+    "build-runtime-image": 240,
     "start-infrastructure": 180,
     "runtime-health": 120,
     "runtime-worker": 120,
@@ -43,6 +44,10 @@ def _build_command_sequence(env_file: str) -> tuple[tuple[str, tuple[str, ...]],
         (
             "compose-config",
             ("docker", "compose", "--env-file", env_file, "--profile", "runtime", "config", "--services"),
+        ),
+        (
+            "build-runtime-image",
+            ("docker", "compose", "--env-file", env_file, "--profile", "runtime", "build", "token_payments_health"),
         ),
         (
             "start-infrastructure",
@@ -195,11 +200,17 @@ def run_live_execution(env_file: str) -> tuple[int, dict[str, Any]]:
     command_results: list[dict[str, Any]] = []
     cleanup_result: dict[str, Any] | None = None
     cleanup_required = False
+    docker_started = False
+    network_calls = False
     failed_result: dict[str, Any] | None = None
 
     for name, argv in command_sequence:
+        if name == "build-runtime-image":
+            network_calls = True
         if name == "start-infrastructure":
             cleanup_required = True
+            docker_started = True
+            network_calls = True
         result = _run_docker_command(name, argv, root, redactions)
         command_results.append(result)
         if _command_failed(result):
@@ -215,8 +226,8 @@ def run_live_execution(env_file: str) -> tuple[int, dict[str, Any]]:
         payload = _execution_payload(
             env_file=env_file,
             status="error",
-            docker_started=cleanup_required,
-            network_calls=cleanup_required,
+            docker_started=docker_started,
+            network_calls=network_calls,
             command_results=command_results,
             cleanup_result=cleanup_result,
         )

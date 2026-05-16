@@ -74,9 +74,8 @@ OPERATOR_ACTION_UI_DOC_PHRASES = (
     "python3 -m pytest scripts/test_operator_action_ui_public_contracts.py scripts/test_operator_action_ui_controls.py scripts/test_operator_action_ui_intents.py scripts/test_operator_action_public_contracts.py scripts/test_browser_preview_public_contracts.py scripts/test_ui_public_contracts.py",
     "python3 scripts/validate_phases.py",
     "ASGI/FastAPI thin adapter",
-    "approved live Docker e2e",
-    "operator action execution audit persistence",
-    "advanced operator filters",
+    "live API runtime composition",
+    "Postman Docker API readiness",
 )
 
 

@@ -17,6 +17,7 @@ RUN_COMMANDS = [
     "docker compose --env-file .env --profile runtime run --rm token_payments_worker",
     "docker compose --env-file .env --profile smoke run --rm token_payments_smoke",
 ]
+BUILD_COMMAND = "docker compose --env-file .env --profile runtime build token_payments_health"
 COMPOSE_CONFIG_VALIDATION_COMMAND = "docker compose --env-file .env.example config --services"
 
 
@@ -60,6 +61,14 @@ def test_docker_runtime_readiness_smoke_validates_static_contracts_without_docke
         "pythonPath": "/workspace/app",
         "packageCopySource": "app/token_payments",
         "packageCopyDestination": "/workspace/app/token_payments",
+        "supportCopySources": [
+            "Dockerfile",
+            ".dockerignore",
+            "docker-compose.yml",
+            ".env.example",
+            "app/postgres/init.d/001-token-payments-schema.sql",
+            "app/test_network/Dockerfile",
+        ],
         "cmd": ["python", "-m", "token_payments", "health"],
     }
     assert details["image"]["dockerignore"] == {
@@ -118,6 +127,7 @@ def test_docker_runtime_readiness_smoke_validates_static_contracts_without_docke
             },
         },
     }
+    assert details["compose"]["buildCommand"] == BUILD_COMMAND
     assert details["compose"]["runCommands"] == RUN_COMMANDS
     assert details["compose"]["composeConfigValidationCommand"] == {
         "command": COMPOSE_CONFIG_VALIDATION_COMMAND,
