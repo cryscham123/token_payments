@@ -1,6 +1,6 @@
 # Domain Model
 
-원본 다이어그램은 `diagram/DDD.drawio`의 `Order Service Domain Logic` 페이지다. 이 문서는 phase step이 다이어그램을 직접 열지 않아도 aggregate, value object, event, port 경계를 판단할 수 있도록 정리한 기준이다.
+원본 다이어그램은 `diagram/DDD.drawio`의 `Order Service Domain Logic` 페이지다. 이 문서는 phase step이 다이어그램을 직접 열지 않아도 aggregate, value object, event, port 경계를 판단할 수 있도록 정리한 기준이다. When diagram/DDD.drawio conflicts with code package layout, code package layout wins.
 
 ## 공통 규칙
 
@@ -40,9 +40,10 @@
 
 ### Ports and Adapters
 
-- Input: `requestLoginChallenge`, `loginWithMetaMask`, `refreshSession`, `logout`, `getCurrentUser`
+- Input: `requestLoginChallenge`, `loginWithMetaMask`, `refreshSession`, `logout`, `getCurrentUser` (Adapter type: HTTP)
 - Output: `UserRepository`, `LoginChallengeRepository`, `AuthSessionRepository`, `OutboxMessageRepository`, `WalletSignatureVerifier`, `TokenIssuer`, `AuthEventPublisher`
-- Adapters: MetaMask wallet client, signature verifier, PostgreSQL/Redis storage
+- Adapters: MetaMask wallet client, signature verifier, PostgreSQL repositories, optional Redis cache-aside/TTL storage
+- Storage contract: PostgreSQL is the source of truth for auth users, login challenges, and sessions. Refresh reuse detection uses the PostgreSQL session repository hash/salt/rotation model. Redis is optional cache-aside/TTL optimization, not a live required dependency.
 
 ## 주문 생성 Context
 
@@ -75,13 +76,15 @@
 
 ### Ports and Adapters
 
-- Input: `createOrder`, `trackOrder`, payment/store/inventory response listeners
+- Input: `createOrder`, `trackOrder` (Adapter type: HTTP), payment/store/inventory response listeners (Adapter type: Kafka/message)
 - Output: `OrderRepository`, `CheckoutProcessRepository`, `ProcessedMessageRepository`, `OutboxMessageRepository`, `CustomerRepository`, `StoreRepository`, `InventoryCommandPublisher`, `PaymentRequestPublisher`, `StoreApprovalRequestMessagePublisher`, `OrderCanceledPaymentRequestMessagePublisher`
 - Adapters: Kafka + Outbox messaging, PostgreSQL repositories
 
+`order.Store` is the order/catalog projection for order creation and checkout tracking. `order.Store` and `store_approval.Store` are not the same aggregate and must not share persistence or DTOs by default.
+
 ## Checkout Process Manager
 
-`CheckoutProcessManager`는 주문 context의 application layer에 위치한 saga/process manager다.
+`CheckoutProcessManager`는 `app/token_payments/contexts/checkout/application/process_manager.py`에 위치한 별도 checkout saga/process manager다. Checkout Process is a separate saga/process context, not an order context submodule.
 
 ### 처리 이벤트
 
@@ -130,9 +133,11 @@
 
 ### Ports and Adapters
 
-- Input: `approveOrder`
+- Input: `approveOrder` / `request_store_approval` (Adapter type: Kafka/message)
 - Output: `OrderDetailRepository`, `StoreRepository`, `ProductRepository`, `OutboxMessageRepository`, `OrderApprovedMessagePublisher`, `OrderRejectedMessagePublisher`
 - Adapters: `StoreApprovalRequestListener`, Kafka + Outbox publishers, PostgreSQL repositories
+
+`store_approval.Store` is an approval verification projection. `order.Store` and `store_approval.Store` are not the same aggregate and must not share persistence or DTOs by default.
 
 ## 결제 Context
 
@@ -168,7 +173,7 @@
 
 ### Ports and Adapters
 
-- Input: `initiatePayment`, `getPaymentStatus`, `handleBlockchainCallback`, `verifyConnectedWallet`, `expireAwaitingSignaturePayments`
+- Input: `getPaymentStatus` (Adapter type: HTTP), `initiatePayment`, `handleBlockchainCallback`, `verifyConnectedWallet`, `expireAwaitingSignaturePayments` (Adapter type: internal application)
 - Output: `PaymentRepository`, `PaymentAuthorizationRepository`, `ProcessedCommandRepository`, `OutboxMessageRepository`, `PaymentTimeoutScheduler`, `BlockchainAdapter`, `PaymentEventPublisher`, `TransactionService`
 - Adapters: Blockchain RPC, MetaMask client, PostgreSQL repositories, scheduler, outbox relay
 
@@ -198,6 +203,6 @@
 
 ### Ports and Adapters
 
-- Input: `reserveInventory`, `confirmReservation`, `getInventoryStatus`, `updateStock`, `handleReservationTimeout`
+- Input: `reserveInventory`, `confirmReservation`, `releaseReservation`, `handleReservationTimeout` (Adapter type: internal application), `getInventoryStatus`, `updateStock` (future Adapter type: HTTP for store owner inventory API)
 - Output: `InventoryRepository`, `ProcessedCommandRepository`, `OutboxMessageRepository`, `InventoryEventPublisher`, `OrderEventListener`, `PaymentEventListener`, `StoreRepository`
 - Adapters: Kafka + Outbox messaging, PostgreSQL repositories

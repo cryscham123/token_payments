@@ -1,0 +1,40 @@
+{
+  "project": "Token Payments",
+  "phase": "16-architecture-contract-alignment",
+  "steps": [
+    {
+      "step": 0,
+      "name": "checkout-store-boundary-docs",
+      "status": "completed",
+      "started_at": "2026-05-18T00:25:36+0900",
+      "completed_at": "2026-05-18T00:41:04+0900",
+      "summary": "Added architecture contract tests and documented checkout as a separate saga context, store projection split, and code package layout precedence over diagrams."
+    },
+    {
+      "step": 1,
+      "name": "input-port-route-surface-contract",
+      "status": "completed",
+      "started_at": "2026-05-18T00:41:04+0900",
+      "completed_at": "2026-05-18T00:41:04+0900",
+      "summary": "Added route surface contract tests and documented public HTTP routes separately from Kafka/message inputs and internal checkout saga commands."
+    },
+    {
+      "step": 2,
+      "name": "auth-storage-env-contract",
+      "status": "completed",
+      "started_at": "2026-05-18T00:41:04+0900",
+      "completed_at": "2026-05-18T00:41:04+0900",
+      "summary": "Added auth storage/env contract tests and documented PostgreSQL auth source-of-truth, optional Redis cache policy, and local placeholder secret handling."
+    },
+    {
+      "step": 3,
+      "name": "architecture-contract-public-verification",
+      "status": "completed",
+      "started_at": "2026-05-18T00:41:04+0900",
+      "completed_at": "2026-05-18T00:41:04+0900",
+      "summary": "Added public architecture alignment verification covering docs, phase metadata, future phase order, and exclusion of manual approval and immediate ERC-20 roadmap scope."
+    }
+  ],
+  "created_at": "2026-05-18T00:25:36+0900",
+  "completed_at": "2026-05-18T00:41:04+0900"
+}

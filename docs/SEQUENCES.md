@@ -4,6 +4,8 @@
 
 ## Checkout Crypto Payment
 
+CheckoutProcessManager consumes checkout events from the checkout context adapter. The adapter is `app/token_payments/contexts/checkout/adapter/kafka.py`, and the process manager is `app/token_payments/contexts/checkout/application/process_manager.py`; this keeps saga orchestration outside the order context package.
+
 ### 참여자
 
 - Customer Browser + MetaMask

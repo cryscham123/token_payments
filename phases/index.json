@@ -77,6 +77,28 @@
     },
     {
       "dir": "15-postman-docker-api-readiness",
+      "status": "completed",
+      "completed_at": "2026-05-17T19:40:04+0900"
+    },
+    {
+      "dir": "16-architecture-contract-alignment",
+      "status": "completed",
+      "completed_at": "2026-05-18T00:41:04+0900"
+    },
+    {
+      "dir": "17-docker-compose-live-server",
+      "status": "pending"
+    },
+    {
+      "dir": "18-siwe-erc1271-auth",
+      "status": "pending"
+    },
+    {
+      "dir": "19-inventory-saga-finalization",
+      "status": "pending"
+    },
+    {
+      "dir": "20-store-owner-inventory-api",
       "status": "pending"
     }
   ]
