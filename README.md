@@ -75,6 +75,7 @@ Docker daemon/socket 권한이 없는 automated harness에서는 live container 
 ```bash
 docker compose --env-file .env.example config --services
 docker compose --env-file .env.example --profile runtime config --services
+docker compose --env-file .env.example --profile api config --services
 ```
 
 Docker runtime smoke는 live Docker/Kafka/PostgreSQL client를 열지 않고 committed 파일과 수동 실행 순서를 JSON contract로 검증한다.
@@ -107,8 +108,15 @@ docker compose --env-file .env up -d postgres kafka kafka-ui pgweb test_network
 docker compose --env-file .env --profile runtime run --rm token_payments_health
 docker compose --env-file .env --profile runtime run --rm token_payments_worker
 docker compose --env-file .env --profile smoke run --rm token_payments_smoke
+docker compose --env-file .env --profile api config --services
+docker compose --env-file .env --profile api build token_payments_api
+docker compose --env-file .env --profile api up -d token_payments_api
+curl --fail http://localhost:8000/healthz
+curl --fail http://localhost:8000/readyz
 docker compose --env-file .env down
 ```
+
+For Postman-local API checks, `token_payments_api` is available only through the explicit `api` profile and runs `python -m token_payments serve-api --live --confirm-live-api`. The committed `.env.example` session signing key is an intentional placeholder that live/prod startup rejects; copy it to `.env` and replace `SESSION_ACTIVE_KEY_ID`, `SESSION_SIGNING_KEYS`, and CSRF/session secret values with local-only secrets before starting the API service.
 
 Postman-ready API roadmap:
 

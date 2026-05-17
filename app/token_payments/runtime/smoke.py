@@ -98,12 +98,77 @@ DOCKER_RUNTIME_BUILD_COMMAND = "docker compose --env-file .env --profile runtime
 DOCKER_RUNTIME_COMPOSE_CONFIG_VALIDATION_COMMAND = (
     "docker compose --env-file .env.example config --services"
 )
+POSTMAN_API_SERVICE_NAME = "token_payments_api"
+POSTMAN_API_COMMAND = ("python", "-m", "token_payments", "serve-api", "--live", "--confirm-live-api")
+POSTMAN_API_REQUIRED_ENV_KEYS = (
+    "LOCAL_API_ORIGIN",
+    "API_PUBLIC_BASE_URL",
+    "RUNTIME_API_HOST",
+    "RUNTIME_API_PORT",
+    "RUNTIME_REQUEST_TIMEOUT_SECONDS",
+    "REQUEST_BODY_MAX_BYTES",
+    "CORS_ALLOWED_ORIGINS",
+    "CORS_ALLOW_CREDENTIALS",
+    "CORS_MAX_AGE_SECONDS",
+    "COOKIE_SECURE",
+    "COOKIE_SAMESITE",
+    "CSRF_ACTIVE_KEY_ID",
+    "CSRF_SIGNING_KEY",
+    "CSRF_MAX_AGE_SECONDS",
+    "CSRF_COOKIE_NAME",
+    "CSRF_HEADER_NAME",
+    "SESSION_ACTIVE_KEY_ID",
+    "SESSION_SIGNING_KEYS",
+    "SESSION_ACCESS_TTL_SECONDS",
+    "SESSION_REFRESH_TTL_SECONDS",
+    "ADAPTER_POSTGRES_DSN",
+    "ADAPTER_KAFKA_BOOTSTRAP_SERVERS",
+    "ADAPTER_BLOCKCHAIN_RPC_URL",
+)
+POSTMAN_API_SERVICE: Mapping[str, Mapping[str, Any] | Sequence[Any] | str] = MappingProxyType(
+    {
+        "image": "token_payments_runtime",
+        "buildContext": ".",
+        "dockerfile": "Dockerfile",
+        "envFile": [".env"],
+        "pythonPath": "/workspace/app",
+        "command": list(POSTMAN_API_COMMAND),
+        "restart": "unless-stopped",
+        "profiles": ["api"],
+        "ports": ["8000:8000"],
+        "environmentKeys": ["PYTHONPATH", *sorted(POSTMAN_API_REQUIRED_ENV_KEYS)],
+        "dependsOn": {
+            "postgres": "service_healthy",
+            "kafka": "service_started",
+            "test_network": "service_started",
+        },
+    }
+)
+POSTMAN_API_COMPOSE_CONFIG_VALIDATION_COMMAND = (
+    "docker compose --env-file .env.example --profile api config --services"
+)
+POSTMAN_API_BUILD_COMMAND = "docker compose --env-file .env --profile api build token_payments_api"
+POSTMAN_API_MANUAL_LIVE_COMMANDS = (
+    "cp .env.example .env",
+    "docker compose --env-file .env --profile api config --services",
+    POSTMAN_API_BUILD_COMMAND,
+    "docker compose --env-file .env up -d postgres kafka test_network",
+    "docker compose --env-file .env --profile api up -d token_payments_api",
+    "curl --fail http://localhost:8000/healthz",
+    "curl --fail http://localhost:8000/readyz",
+    "docker compose --env-file .env down",
+)
 DOCKER_RUNTIME_MANUAL_LIVE_COMMANDS = (
     "cp .env.example .env",
     "docker compose --env-file .env --profile runtime config --services",
     DOCKER_RUNTIME_BUILD_COMMAND,
     "docker compose --env-file .env up -d postgres kafka kafka-ui pgweb test_network",
     *DOCKER_RUNTIME_RUN_COMMANDS,
+    "docker compose --env-file .env --profile api config --services",
+    POSTMAN_API_BUILD_COMMAND,
+    "docker compose --env-file .env --profile api up -d token_payments_api",
+    "curl --fail http://localhost:8000/healthz",
+    "curl --fail http://localhost:8000/readyz",
     "docker compose --env-file .env down",
 )
 DOCKER_RUNTIME_SERVICES: Mapping[str, Mapping[str, Any]] = MappingProxyType(
@@ -915,6 +980,11 @@ def _run_docker_runtime_readiness() -> SmokeScenarioResult:
         for service_name in DOCKER_RUNTIME_SERVICES
     }
     compose_errors.extend(_validate_docker_runtime_services(service_blocks, runtime_services))
+    postman_api_service = _postman_api_service_contract(
+        service_blocks.get(POSTMAN_API_SERVICE_NAME, ())
+    )
+    postman_api_errors = _validate_postman_api_service(service_blocks, postman_api_service)
+    compose_errors.extend(postman_api_errors)
 
     details = {
         "dockerStarted": False,
@@ -935,6 +1005,17 @@ def _run_docker_runtime_readiness() -> SmokeScenarioResult:
                 "usesDockerSocket": False,
                 "forbiddenCommands": ["up", "run", "build"],
             },
+        },
+        "postmanApi": {
+            "service": postman_api_service,
+            "composeConfigValidationCommand": {
+                "command": POSTMAN_API_COMPOSE_CONFIG_VALIDATION_COMMAND,
+                "daemonless": True,
+                "usesDockerSocket": False,
+                "forbiddenCommands": ["up", "run", "build"],
+                "expectedServices": [POSTMAN_API_SERVICE_NAME],
+            },
+            "manualLiveCommands": list(POSTMAN_API_MANUAL_LIVE_COMMANDS),
         },
         "manualLiveCommands": list(DOCKER_RUNTIME_MANUAL_LIVE_COMMANDS),
     }
@@ -2008,6 +2089,33 @@ def _docker_runtime_service_contract(block: tuple[str, ...]) -> dict[str, JsonVa
     }
 
 
+def _postman_api_service_contract(block: tuple[str, ...]) -> dict[str, JsonValue]:
+    environment = [str(value) for value in _compose_list_for_key(block, "environment")]
+    python_path = next(
+        (value.split("=", 1)[1] for value in environment if value.startswith("PYTHONPATH=")),
+        None,
+    )
+    discovered_environment_keys = sorted(item.split("=", 1)[0] for item in environment if "=" in item)
+    environment_keys = (
+        ["PYTHONPATH", *(key for key in discovered_environment_keys if key != "PYTHONPATH")]
+        if "PYTHONPATH" in discovered_environment_keys
+        else discovered_environment_keys
+    )
+    return {
+        "image": _compose_scalar_for_key(block, "image"),
+        "buildContext": _compose_nested_scalar(block, "build", "context"),
+        "dockerfile": _compose_nested_scalar(block, "build", "dockerfile"),
+        "envFile": _compose_list_for_key(block, "env_file"),
+        "pythonPath": python_path,
+        "command": _compose_json_list_for_key(block, "command"),
+        "restart": _compose_scalar_for_key(block, "restart"),
+        "profiles": _compose_list_for_key(block, "profiles"),
+        "ports": _compose_list_for_key(block, "ports"),
+        "environmentKeys": environment_keys,
+        "dependsOn": _compose_depends_on_conditions(block),
+    }
+
+
 def _validate_docker_runtime_services(
     service_blocks: Mapping[str, tuple[str, ...]],
     runtime_services: Mapping[str, Mapping[str, Any]],
@@ -2025,6 +2133,31 @@ def _validate_docker_runtime_services(
                     f"docker-compose.yml service {service_name} field {field} "
                     f"must be {expected_value!r}, got {actual.get(field)!r}"
                 )
+    return errors
+
+
+def _validate_postman_api_service(
+    service_blocks: Mapping[str, tuple[str, ...]],
+    service_contract: Mapping[str, Any],
+) -> list[str]:
+    if POSTMAN_API_SERVICE_NAME not in service_blocks:
+        return [f"docker-compose.yml is missing required API service {POSTMAN_API_SERVICE_NAME}"]
+
+    errors = [
+        f"docker-compose.yml service {POSTMAN_API_SERVICE_NAME} field {field} "
+        f"must be {expected_value!r}, got {service_contract.get(field)!r}"
+        for field, expected_value in POSTMAN_API_SERVICE.items()
+        if service_contract.get(field) != expected_value
+    ]
+    block_text = "\n".join(service_blocks[POSTMAN_API_SERVICE_NAME])
+    for marker in (
+        "replace_with_local_dev_only_session_signing_key",
+        "replace_with_local_dev_only_csrf_signing_key",
+    ):
+        if marker in block_text:
+            errors.append(
+                f"docker-compose.yml service {POSTMAN_API_SERVICE_NAME} must not hard-code {marker}"
+            )
     return errors
 
 
