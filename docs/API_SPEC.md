@@ -143,7 +143,7 @@ Common status codes:
 
 ### `POST /auth/challenges`
 
-MetaMask 서명용 nonce challenge를 발급한다.
+SIWE v1 서명용 login challenge를 발급한다. Operation id는 기존 client 호환성을 위해 `requestLoginChallenge`를 유지하지만, `signingMessage`는 nonce-only custom message가 아니라 SIWE 필수 필드를 포함한다. `uri`가 없으면 server가 `https://{domain}`으로 기본값을 만든다.
 
 Request:
 
@@ -151,6 +151,7 @@ Request:
 {
   "walletAddress": "0x1111111111111111111111111111111111111111",
   "domain": "token-payments.local",
+  "uri": "https://token-payments.local",
   "chainId": 1337
 }
 ```
@@ -160,9 +161,16 @@ Response `201`:
 ```json
 {
   "walletAddress": "0x1111111111111111111111111111111111111111",
-  "nonce": "nonce-001",
+  "domain": "token-payments.local",
+  "address": "0x1111111111111111111111111111111111111111",
+  "uri": "https://token-payments.local",
+  "version": "1",
+  "chainId": 1337,
+  "nonce": "N0NCE001",
+  "issuedAt": "2026-05-17T10:00:00+09:00",
+  "expirationTime": "2026-05-17T10:30:00+09:00",
   "expiresAt": "2026-05-17T10:30:00+09:00",
-  "signingMessage": "Sign in to token-payments.local with nonce nonce-001",
+  "signingMessage": "token-payments.local wants you to sign in with your Ethereum account:\n0x1111111111111111111111111111111111111111\n\nURI: https://token-payments.local\nVersion: 1\nChain ID: 1337\nNonce: N0NCE001\nIssued At: 2026-05-17T10:00:00+09:00\nExpiration Time: 2026-05-17T10:30:00+09:00",
   "csrfToken": "csrf-token",
   "csrf": {
     "cookieName": "csrf_token",
@@ -177,14 +185,14 @@ Errors: `400 VALIDATION_ERROR`.
 
 ### `POST /auth/sessions`
 
-MetaMask `personal_sign` 결과로 session/token을 발급한다.
+MetaMask `personal_sign`으로 서명한 SIWE v1 message를 검증하고 session/token을 발급한다. Operation id는 기존 route compatibility를 위해 `loginWithMetaMask`를 유지한다. Server는 message의 `nonce`, `domain`, `address`, `chainId`, `issuedAt`, `expirationTime`, `uri`, `version`이 저장된 challenge와 일치하는지 확인한 뒤 EOA signature recovery를 수행한다.
 
 Request:
 
 ```json
 {
   "walletAddress": "0x1111111111111111111111111111111111111111",
-  "message": "Sign in to token-payments.local with nonce nonce-001",
+  "message": "token-payments.local wants you to sign in with your Ethereum account:\n0x1111111111111111111111111111111111111111\n\nURI: https://token-payments.local\nVersion: 1\nChain ID: 1337\nNonce: N0NCE001\nIssued At: 2026-05-17T10:00:00+09:00\nExpiration Time: 2026-05-17T10:30:00+09:00",
   "signature": "0xsignature",
   "deviceId": "browser-1"
 }
@@ -225,7 +233,7 @@ Response `200`:
 
 Browser HTTP response headers include `Set-Cookie` values for signed access/refresh session tokens and the `csrf_token` double-submit cookie. Cookie values are not shown in response examples.
 
-Errors: `400 VALIDATION_ERROR`, `401 INVALID_SIGNATURE`, `401 WALLET_MISMATCH`, `409 EXPIRED_CHALLENGE`, `409 REUSED_NONCE`.
+Errors: `400 VALIDATION_ERROR`, `401 INVALID_SIGNATURE`, `401 WALLET_MISMATCH`, `401 SIWE_MESSAGE_MISMATCH`, `409 EXPIRED_CHALLENGE`, `409 REUSED_NONCE`.
 
 ### `POST /auth/sessions/refresh`
 

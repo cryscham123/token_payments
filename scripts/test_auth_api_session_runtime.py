@@ -58,7 +58,7 @@ CHAIN_ID = 11155111
 
 
 def test_auth_use_case_issues_challenge_and_signing_message_shape() -> None:
-    service, repositories, _verifier, _tokens, _clock = _service(nonces=("nonce-123",))
+    service, repositories, _verifier, _tokens, _clock = _service(nonces=("nonce-1234",))
 
     result = service.requestLoginChallenge(
         RequestLoginChallengeCommand(
@@ -70,23 +70,27 @@ def test_auth_use_case_issues_challenge_and_signing_message_shape() -> None:
 
     assert result.challenge.status is ChallengeStatus.ISSUED
     assert result.challenge.wallet == WalletAddress(NORMALIZED_WALLET)
-    assert result.challenge.nonce.value == "nonce-123"
+    assert result.challenge.domain == DOMAIN
+    assert result.challenge.uri == f"https://{DOMAIN}"
+    assert result.challenge.chain_id == CHAIN_ID
+    assert result.challenge.nonce.value == "nonce1234"
     assert result.challenge.expires_at == NOW + timedelta(minutes=5)
     assert repositories.challenges.get_by_nonce(result.challenge.nonce) == result.challenge
     assert result.signing_message.splitlines() == [
-        "Token Payments wants you to sign in with your Ethereum account:",
+        f"{DOMAIN} wants you to sign in with your Ethereum account:",
         NORMALIZED_WALLET,
         "",
-        f"Domain: {DOMAIN}",
+        f"URI: https://{DOMAIN}",
+        "Version: 1",
         f"Chain ID: {CHAIN_ID}",
-        "Nonce: nonce-123",
+        "Nonce: nonce1234",
         f"Issued At: {NOW.isoformat()}",
         f"Expiration Time: {(NOW + timedelta(minutes=5)).isoformat()}",
     ]
 
 
 def test_auth_use_case_logs_in_with_metamask_signature_and_creates_session() -> None:
-    service, repositories, verifier, tokens, _clock = _service(nonces=("nonce-123",))
+    service, repositories, verifier, tokens, _clock = _service(nonces=("nonce-1234",))
     challenge = service.requestLoginChallenge(
         RequestLoginChallengeCommand(wallet_address=WALLET, domain=DOMAIN, chain_id=CHAIN_ID)
     )
@@ -122,7 +126,7 @@ def test_auth_use_case_logs_in_with_metamask_signature_and_creates_session() -> 
 
 
 def test_auth_use_case_rejects_reused_and_expired_challenges() -> None:
-    service, repositories, verifier, _tokens, clock = _service(nonces=("nonce-123", "nonce-456"))
+    service, repositories, verifier, _tokens, clock = _service(nonces=("nonce-1234", "nonce-4567"))
     issued = service.requestLoginChallenge(
         RequestLoginChallengeCommand(wallet_address=WALLET, domain=DOMAIN, chain_id=CHAIN_ID)
     )
@@ -169,7 +173,7 @@ def test_auth_use_case_rejects_reused_and_expired_challenges() -> None:
 
 
 def test_auth_use_case_refreshes_and_logs_out_sessions() -> None:
-    service, repositories, verifier, _tokens, clock = _service(nonces=("nonce-123",))
+    service, repositories, verifier, _tokens, clock = _service(nonces=("nonce-1234",))
     challenge = service.requestLoginChallenge(
         RequestLoginChallengeCommand(wallet_address=WALLET, domain=DOMAIN, chain_id=CHAIN_ID)
     )
@@ -212,7 +216,7 @@ def test_auth_use_case_refreshes_and_logs_out_sessions() -> None:
 
 
 def test_auth_api_success_responses_and_structured_error_mapping() -> None:
-    service, _repositories, verifier, _tokens, _clock = _service(nonces=("nonce-123",))
+    service, _repositories, verifier, _tokens, _clock = _service(nonces=("nonce-1234",))
     api = AuthApi(service)
 
     challenge_response = api.request_login_challenge(
@@ -227,7 +231,14 @@ def test_auth_api_success_responses_and_structured_error_mapping() -> None:
 
     assert challenge_response.status_code == 201
     assert challenge_response.body["walletAddress"] == NORMALIZED_WALLET
-    assert challenge_response.body["nonce"] == "nonce-123"
+    assert challenge_response.body["nonce"] == "nonce1234"
+    assert challenge_response.body["domain"] == DOMAIN
+    assert challenge_response.body["address"] == NORMALIZED_WALLET
+    assert challenge_response.body["uri"] == f"https://{DOMAIN}"
+    assert challenge_response.body["version"] == "1"
+    assert challenge_response.body["chainId"] == CHAIN_ID
+    assert challenge_response.body["issuedAt"] == NOW.isoformat()
+    assert challenge_response.body["expirationTime"] == (NOW + timedelta(minutes=5)).isoformat()
     assert "signingMessage" in challenge_response.body
 
     verifier.recovered_wallet = NORMALIZED_WALLET
@@ -295,6 +306,7 @@ def test_auth_api_success_responses_and_structured_error_mapping() -> None:
         (AuthErrorCode.EXPIRED_CHALLENGE, 409),
         (AuthErrorCode.REUSED_NONCE, 409),
         (AuthErrorCode.WALLET_MISMATCH, 401),
+        (AuthErrorCode.SIWE_MESSAGE_MISMATCH, 401),
         (AuthErrorCode.VALIDATION_ERROR, 400),
     ],
 )
@@ -331,6 +343,9 @@ def test_auth_postgres_repositories_round_trip_user_challenge_and_session() -> N
         wallet=WALLET,
         nonce=AuthNonce("nonce-123", NOW + timedelta(minutes=5)),
         issued_at=NOW,
+        domain=DOMAIN,
+        uri=f"https://{DOMAIN}",
+        chain_id=CHAIN_ID,
     ).verify_signature(NORMALIZED_WALLET, now=NOW + timedelta(seconds=30))
     session = AuthSession.create(
         session_id=SessionId(SESSION_ID),
