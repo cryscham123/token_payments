@@ -76,7 +76,7 @@ docker compose --env-file .env down
 Postman-ready API roadmap:
 
 - `13-fastapi-asgi-adapter`: add a thin ASGI/FastAPI app factory while preserving the current framework-neutral API route manifest.
-- `14-live-api-runtime-composition`: wire real Auth/Order/Checkout/Payment/Operator facades to PostgreSQL, Kafka, and test network adapters behind a long-running API entrypoint.
+- `14-live-api-runtime-composition`: first freeze the live config/dependency contract, then complete real facade wiring and the long-running API entrypoint in later steps.
 - `15-postman-docker-api-readiness`: add the compose API service, Postman-ready request examples, seed flow, and expected response contracts.
 
 ## Verification Commands
@@ -327,6 +327,12 @@ Next phase candidates:
 - live API runtime composition: wire the real facades to PostgreSQL, Kafka, and test network adapters behind a long-running API entrypoint.
 - Postman Docker API readiness: add the compose API service, request examples, seed flow, and expected responses for local Postman verification.
 - FastAPI optional dependency live smoke: verify the manually installed FastAPI/Uvicorn runtime in an explicit live environment outside the default harness path.
+
+## Live API Runtime Composition Contract
+
+Step 0 exposes `LiveRuntimeConfig`, `LiveRuntimeDependencies`, `LiveApiComposition`, and `describe_live_runtime_dependencies` as the live API composition surface. The contract parses API and adapter environment keys, describes externally injected PostgreSQL, Kafka, wallet signature, blockchain, clock, and ID dependencies, and redacts DSN passwords and token-address placeholders from JSON/debug metadata.
+
+This contract does not start a server, import live drivers, read local `.env`, or open sockets. Concrete facade wiring and the long-running API server entrypoint remain later phase 14 work before Postman/Docker readiness is added in phase 15.
 
 ## API / Worker Runtime Contracts
 
