@@ -32,7 +32,7 @@
         {
           "id": "requestLoginChallenge",
           "name": "1. Request login challenge",
-          "description": "Issues the MetaMask signing message and signed CSRF token. Postman stores the csrf_token Set-Cookie value in the cookie jar.",
+          "description": "Issues the SIWE v1 MetaMask signing message and signed CSRF token. Postman stores the csrf_token Set-Cookie value in the cookie jar. EOA and deployed ERC-1271 smart wallet signatures use the same SIWE message contract.",
           "request": {
             "method": "POST",
             "header": [
@@ -47,7 +47,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"walletAddress\": \"{{walletAddress}}\",\n  \"domain\": \"{{loginDomain}}\",\n  \"chainId\": {{chainId}}\n}"
+              "raw": "{\n  \"walletAddress\": \"{{walletAddress}}\",\n  \"domain\": \"{{loginDomain}}\",\n  \"uri\": \"{{loginUri}}\",\n  \"chainId\": {{chainId}}\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/auth/challenges",
@@ -69,7 +69,19 @@
                   "pm.test(\"challenge response exposes signing message and CSRF\", function () {",
                   "  const body = pm.response.json();",
                   "  pm.expect(pm.response.code).to.eql(201);",
+                  "  pm.expect(body.domain).to.eql(pm.environment.get(\"loginDomain\"));",
+                  "  pm.expect(body.address).to.eql(pm.environment.get(\"walletAddress\").toLowerCase());",
+                  "  pm.expect(body.uri).to.eql(pm.environment.get(\"loginUri\"));",
+                  "  pm.expect(body.version).to.eql(\"1\");",
+                  "  pm.expect(body.chainId).to.eql(Number(pm.environment.get(\"chainId\")));",
+                  "  pm.expect(body.issuedAt).to.be.a(\"string\").and.not.empty;",
+                  "  pm.expect(body.expirationTime).to.be.a(\"string\").and.not.empty;",
                   "  pm.expect(body.signingMessage).to.be.a(\"string\").and.not.empty;",
+                  "  pm.expect(body.signingMessage).to.include(\"wants you to sign in with your Ethereum account:\");",
+                  "  pm.expect(body.signatureVerification.signatureVerificationMethod).to.eql(\"SIWE_PERSONAL_SIGN_EOA_OR_ERC1271\");",
+                  "  pm.expect(body.signatureVerification.supportedWalletTypes).to.include(\"EOA\");",
+                  "  pm.expect(body.signatureVerification.supportedWalletTypes).to.include(\"DEPLOYED_SMART_WALLET\");",
+                  "  pm.expect(body.signatureVerification.erc6492).to.eql(\"future_scope\");",
                   "  pm.expect(body.csrfToken).to.be.a(\"string\").and.not.empty;",
                   "  pm.expect(body.csrf.headerName).to.eql(\"X-CSRF-Token\");",
                   "  pm.environment.set(\"signingMessage\", body.signingMessage);",
@@ -107,14 +119,14 @@
                   "value": "csrf_token=<redacted-signed-csrf-token>; Max-Age=3600; Expires=<bounded-http-date>; Path=/; Secure; SameSite=Lax"
                 }
               ],
-              "body": "{\n  \"walletAddress\": \"0x1111111111111111111111111111111111111111\",\n  \"nonce\": \"nonce-placeholder\",\n  \"expiresAt\": \"2026-05-17T10:30:00+09:00\",\n  \"signingMessage\": \"<metamask-personal-sign-message>\",\n  \"csrfToken\": \"<redacted-signed-csrf-token>\",\n  \"csrf\": {\n    \"cookieName\": \"csrf_token\",\n    \"headerName\": \"X-CSRF-Token\"\n  }\n}"
+              "body": "{\n  \"walletAddress\": \"0x1111111111111111111111111111111111111111\",\n  \"domain\": \"token-payments.local\",\n  \"address\": \"0x1111111111111111111111111111111111111111\",\n  \"uri\": \"https://token-payments.local\",\n  \"version\": \"1\",\n  \"chainId\": 1337,\n  \"nonce\": \"N0NCE001\",\n  \"issuedAt\": \"2026-05-17T10:00:00+09:00\",\n  \"expirationTime\": \"2026-05-17T10:30:00+09:00\",\n  \"expiresAt\": \"2026-05-17T10:30:00+09:00\",\n  \"signingMessage\": \"<redacted-siwe-personal-sign-message>\",\n  \"signatureVerification\": {\n    \"messageFormat\": \"SIWE_V1\",\n    \"signatureVerificationMethod\": \"SIWE_PERSONAL_SIGN_EOA_OR_ERC1271\",\n    \"supportedWalletTypes\": [\"EOA\", \"DEPLOYED_SMART_WALLET\"],\n    \"smartWalletStandard\": \"ERC-1271\",\n    \"erc1271MagicValue\": \"0x1626ba7e\",\n    \"requiresDeployedCode\": true,\n    \"erc6492\": \"future_scope\"\n  },\n  \"csrfToken\": \"<redacted-signed-csrf-token>\",\n  \"csrf\": {\n    \"cookieName\": \"csrf_token\",\n    \"headerName\": \"X-CSRF-Token\"\n  }\n}"
             }
           ]
         },
         {
           "id": "loginWithMetaMask",
           "name": "2. Login with MetaMask signature",
-          "description": "Paste a local MetaMask personal_sign result into the environment before running. The response stores access_token and refresh_token in the Postman cookie jar and returns only <set-cookie> markers in the body.",
+          "description": "Paste a local MetaMask personal_sign result into the environment before running. EOA accounts and deployed ERC-1271 smart wallets are supported; linked wallets and ERC-6492 are future scope. The response stores access_token and refresh_token in the Postman cookie jar and returns only <set-cookie> markers in the body.",
           "request": {
             "method": "POST",
             "header": [
@@ -187,6 +199,9 @@
                   "  pm.expect(body.token.transport).to.eql(\"cookie\");",
                   "  pm.expect(body.token.accessToken).to.eql(\"<set-cookie>\");",
                   "  pm.expect(body.token.refreshToken).to.eql(\"<set-cookie>\");",
+                  "  pm.expect(body.signatureVerification.signatureVerificationMethod).to.eql(\"SIWE_PERSONAL_SIGN_EOA_OR_ERC1271\");",
+                  "  pm.expect(body.signatureVerification.supportedWalletTypes).to.include(\"DEPLOYED_SMART_WALLET\");",
+                  "  pm.expect(body.signatureVerification.erc6492).to.eql(\"future_scope\");",
                   "  pm.environment.set(\"sessionId\", body.session.sessionId);",
                   "  pm.environment.set(\"csrfToken\", body.csrfToken);",
                   "  assertSignedSessionCookie(\"access_token\", \"access\");",
@@ -229,7 +244,7 @@
                   "value": "csrf_token=<redacted-signed-csrf-token>; Max-Age=3600; Expires=<bounded-http-date>; Path=/; Secure; SameSite=Lax"
                 }
               ],
-              "body": "{\n  \"token\": {\n    \"accessToken\": \"<set-cookie>\",\n    \"refreshToken\": \"<set-cookie>\",\n    \"transport\": \"cookie\"\n  },\n  \"csrfToken\": \"<redacted-signed-csrf-token>\"\n}"
+              "body": "{\n  \"token\": {\n    \"accessToken\": \"<set-cookie>\",\n    \"refreshToken\": \"<set-cookie>\",\n    \"transport\": \"cookie\"\n  },\n  \"signatureVerification\": {\n    \"messageFormat\": \"SIWE_V1\",\n    \"signatureVerificationMethod\": \"SIWE_PERSONAL_SIGN_EOA_OR_ERC1271\",\n    \"supportedWalletTypes\": [\"EOA\", \"DEPLOYED_SMART_WALLET\"],\n    \"smartWalletStandard\": \"ERC-1271\",\n    \"erc1271MagicValue\": \"0x1626ba7e\",\n    \"requiresDeployedCode\": true,\n    \"erc6492\": \"future_scope\"\n  },\n  \"csrfToken\": \"<redacted-signed-csrf-token>\"\n}"
             }
           ]
         },

@@ -77,8 +77,8 @@ CheckoutProcessManager consumes checkout events from the checkout context adapte
 6. Customer Browser가 MetaMask `personal_sign(SIWE signingMessage)`를 실행한다.
 7. Customer Browser가 `loginWithMetaMask(wallet, message, signature)`를 호출한다.
 8. 사용자 인증 Context가 SIWE message를 parse하고 message의 `nonce`, `domain`, `address`, `chainId`, `uri`, `issuedAt`, `expirationTime`이 저장된 challenge와 일치하는지 확인한다.
-9. Signature Verifier가 `recoverAddress(message, signature)`를 수행한다.
-10. 복구된 주소와 요청 wallet 주소를 정규화 후 비교한다.
+9. Signature Verifier가 wallet account type에 따라 EOA `recoverAddress(message, signature)` 또는 deployed ERC-1271 `isValidSignature(bytes32,bytes)` 검증을 수행한다.
+10. EOA는 복구된 주소와 요청 wallet 주소를 정규화 후 비교하고, deployed smart wallet은 success magic value `0x1626ba7e`만 성공으로 인정한다.
 11. 검증 성공 시 challenge를 `VERIFIED`로 표시하고, `User`를 생성/조회한 뒤 `AuthSession`을 만든다.
 12. Auth API가 `IssuedToken + current user`를 반환한다.
 
@@ -90,5 +90,7 @@ CheckoutProcessManager consumes checkout events from the checkout context adapte
 - nonce는 SIWE 규칙에 맞는 8자 이상 alphanumeric value여야 한다.
 - 서명 메시지는 SIWE v1 형식이며 domain, address, uri, version, chainId, issuedAt, expirationTime, nonce를 포함한다.
 - 로그인 검증은 nonce 추출만으로 끝내지 않고 저장된 challenge의 domain/address/chainId/uri/issuedAt/expirationTime과 message를 비교한다.
+- deployed ERC-1271 smart wallet login은 configured auth chain RPC의 deployed code가 있을 때만 지원한다.
+- linked wallets와 ERC-6492 counterfactual signature wrapping은 future scope다.
 - 토큰은 `UserId`와 `WalletAddress`를 claim으로 가진다.
 - 실패 사유는 `INVALID_SIGNATURE`, `EXPIRED_CHALLENGE`, `REUSED_NONCE`, `WALLET_MISMATCH`, `SIWE_MESSAGE_MISMATCH` 중 하나로 구조화한다.
