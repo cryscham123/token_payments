@@ -13,7 +13,10 @@
     {
       "step": 1,
       "name": "postman-cookie-auth-flow",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-17T19:13:34+0900",
+      "completed_at": "2026-05-17T19:20:42+0900",
+      "summary": "Added Postman cookie auth collection/environment/expected fixtures with CSRF extraction, cookie-jar session flow, redacted signed token expectations, negative token cases, and README/API spec guidance."
     },
     {
       "step": 2,

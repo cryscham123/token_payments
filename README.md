@@ -434,11 +434,16 @@ The live API adapter uses a framework-neutral request guard before facade dispat
 
 Credentialed CORS is allowlist-based through `CORS_ALLOWED_ORIGINS`, with `CORS_ALLOW_CREDENTIALS=true`; wildcard origins are not valid with credentials. Preflight requests are answered by the guard before route business logic. `REQUEST_BODY_MAX_BYTES` bounds request bodies and returns `413 REQUEST_BODY_TOO_LARGE` before JSON decoding, while malformed JSON remains `400 MALFORMED_JSON`.
 
+### Postman Cookie Auth Flow
+
+Phase 15 adds `postman/token-payments.local.postman_collection.json`, `postman/token-payments.local.postman_environment.json`, and `postman/token-payments.cookie-auth.expected.json` for local cookie auth verification. Run the auth requests in collection order: request a login challenge, sign the returned `signingMessage` in MetaMask, login with the signature, refresh the session, logout, then call `GET /auth/me`. Postman should rely on its cookie jar for `access_token`, `refresh_token`, and `csrf_token`; do not add manual `Cookie` headers to the happy path. Mutating cookie-auth requests send the latest `csrfToken` as `X-CSRF-Token`.
+
 `api` and `serve-api` return bounded JSON previews with `wsgiFactory`, `asgiFactory`, `fastapiFactory`, `fastapiAvailable`, `longRunning=false`, and `serverStarted=false`. The harness path does not start a server, does not bind a network port, and does not open DB, Kafka, Docker, Blockchain RPC, or local `.env`; this is the no-server-start boundary.
 
 Verification commands:
 
 ```bash
+python3 -m pytest scripts/test_postman_cookie_auth_flow.py scripts/test_cookie_session_transport.py scripts/test_csrf_cors_request_guard.py
 python3 -m pytest scripts/test_fastapi_asgi_public_contracts.py scripts/test_fastapi_thin_adapter.py scripts/test_asgi_adapter_contract_foundation.py scripts/test_wsgi_runtime_preview.py scripts/test_api_worker_runtime_public_contracts.py scripts/test_browser_preview_public_contracts.py
 PYTHONPATH=app python3 -m token_payments api
 PYTHONPATH=app python3 -m token_payments serve-api

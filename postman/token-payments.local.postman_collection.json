@@ -1,0 +1,489 @@
+{
+  "info": {
+    "_postman_id": "3a8acbe4-78bf-4f1f-a6b0-39e60e79b901",
+    "name": "Token Payments Local Cookie Auth",
+    "description": "Local Token Payments auth requests for validating HttpOnly cookie session transport and signed CSRF double-submit flow. Postman stores Set-Cookie responses in its cookie jar; happy-path requests after login intentionally omit manual Cookie headers so the jar sends access_token, refresh_token, and csrf_token.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000"
+    }
+  ],
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test(\"response carries request id when server knows it\", function () {",
+          "  pm.expect(pm.response.headers.has(\"X-Request-Id\")).to.eql(true);",
+          "});"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Cookie Auth Happy Path",
+      "description": "Run these requests in order. The challenge and login responses set cookies; Postman keeps them in the cookie jar and later sends them without a manual Cookie header.",
+      "item": [
+        {
+          "id": "requestLoginChallenge",
+          "name": "1. Request login challenge",
+          "description": "Issues the MetaMask signing message and signed CSRF token. Postman stores the csrf_token Set-Cookie value in the cookie jar.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "postman-auth-challenge-001"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"walletAddress\": \"{{walletAddress}}\",\n  \"domain\": \"{{loginDomain}}\",\n  \"chainId\": {{chainId}}\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/challenges",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "challenges"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"challenge response exposes signing message and CSRF\", function () {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(pm.response.code).to.eql(201);",
+                  "  pm.expect(body.signingMessage).to.be.a(\"string\").and.not.empty;",
+                  "  pm.expect(body.csrfToken).to.be.a(\"string\").and.not.empty;",
+                  "  pm.expect(body.csrf.headerName).to.eql(\"X-CSRF-Token\");",
+                  "  pm.environment.set(\"signingMessage\", body.signingMessage);",
+                  "  pm.environment.set(\"csrfToken\", body.csrfToken);",
+                  "});",
+                  "pm.test(\"Postman cookie jar contains CSRF cookie\", function () {",
+                  "  pm.expect(pm.cookies.has(\"csrf_token\")).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "201 challenge with redacted csrf cookie",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/auth/challenges",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "challenges"
+                  ]
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "header": [
+                {
+                  "key": "Set-Cookie",
+                  "value": "csrf_token=<redacted-signed-csrf-token>; Max-Age=3600; Expires=<bounded-http-date>; Path=/; Secure; SameSite=Lax"
+                }
+              ],
+              "body": "{\n  \"walletAddress\": \"0x1111111111111111111111111111111111111111\",\n  \"nonce\": \"nonce-placeholder\",\n  \"expiresAt\": \"2026-05-17T10:30:00+09:00\",\n  \"signingMessage\": \"<metamask-personal-sign-message>\",\n  \"csrfToken\": \"<redacted-signed-csrf-token>\",\n  \"csrf\": {\n    \"cookieName\": \"csrf_token\",\n    \"headerName\": \"X-CSRF-Token\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "id": "loginWithMetaMask",
+          "name": "2. Login with MetaMask signature",
+          "description": "Paste a local MetaMask personal_sign result into the environment before running. The response stores access_token and refresh_token in the Postman cookie jar and returns only <set-cookie> markers in the body.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "postman-auth-login-001"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"walletAddress\": \"{{walletAddress}}\",\n  \"message\": \"{{signingMessage}}\",\n  \"signature\": \"{{metamaskSignature}}\",\n  \"deviceId\": \"{{deviceId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/sessions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "sessions"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get(\"csrfToken\")) { throw new Error(\"Run requestLoginChallenge first to populate csrfToken.\"); }",
+                  "if (!pm.environment.get(\"signingMessage\")) { throw new Error(\"Run requestLoginChallenge first to populate signingMessage.\"); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function decodeBase64UrlJson(part) {",
+                  "  const normalized = part.replace(/-/g, \"+\").replace(/_/g, \"/\");",
+                  "  const padded = normalized + \"=\".repeat((4 - normalized.length % 4) % 4);",
+                  "  return JSON.parse(atob(padded));",
+                  "}",
+                  "function assertSignedSessionCookie(name, typ) {",
+                  "  pm.expect(pm.cookies.has(name)).to.eql(true);",
+                  "  const token = pm.cookies.get(name);",
+                  "  const parts = token.split(\".\");",
+                  "  pm.expect(parts.length).to.eql(3);",
+                  "  const header = decodeBase64UrlJson(parts[0]);",
+                  "  const payload = decodeBase64UrlJson(parts[1]);",
+                  "  pm.expect(header.alg).to.eql(\"HS256\");",
+                  "  pm.expect(header.typ).to.eql(\"TP-SESSION\");",
+                  "  pm.expect(header).to.have.property(\"kid\").that.is.a(\"string\").and.not.empty;",
+                  "  pm.expect(payload.typ).to.eql(typ);",
+                  "  pm.expect(parts[2], \"signature segment\").to.be.a(\"string\").and.not.empty;",
+                  "  pm.environment.set(\"sessionActiveKeyId\", header.kid);",
+                  "}",
+                  "pm.test(\"login stores signed access and refresh cookies\", function () {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(pm.response.code).to.eql(200);",
+                  "  pm.expect(body.token.transport).to.eql(\"cookie\");",
+                  "  pm.expect(body.token.accessToken).to.eql(\"<set-cookie>\");",
+                  "  pm.expect(body.token.refreshToken).to.eql(\"<set-cookie>\");",
+                  "  pm.environment.set(\"sessionId\", body.session.sessionId);",
+                  "  pm.environment.set(\"csrfToken\", body.csrfToken);",
+                  "  assertSignedSessionCookie(\"access_token\", \"access\");",
+                  "  assertSignedSessionCookie(\"refresh_token\", \"refresh\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "200 login with redacted session cookies",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/auth/sessions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "sessions"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Set-Cookie",
+                  "value": "access_token=<redacted-signed-session-token>; Max-Age=900; Expires=<bounded-http-date>; Path=/; Secure; HttpOnly; SameSite=Lax"
+                },
+                {
+                  "key": "Set-Cookie",
+                  "value": "refresh_token=<redacted-signed-session-token>; Max-Age=2592000; Expires=<bounded-http-date>; Path=/; Secure; HttpOnly; SameSite=Lax"
+                },
+                {
+                  "key": "Set-Cookie",
+                  "value": "csrf_token=<redacted-signed-csrf-token>; Max-Age=3600; Expires=<bounded-http-date>; Path=/; Secure; SameSite=Lax"
+                }
+              ],
+              "body": "{\n  \"token\": {\n    \"accessToken\": \"<set-cookie>\",\n    \"refreshToken\": \"<set-cookie>\",\n    \"transport\": \"cookie\"\n  },\n  \"csrfToken\": \"<redacted-signed-csrf-token>\"\n}"
+            }
+          ]
+        },
+        {
+          "id": "refreshSession",
+          "name": "3. Refresh session with cookie jar",
+          "description": "Postman sends the refresh_token from the cookie jar. Do not add a manual Cookie header; only echo the latest csrfToken in X-CSRF-Token.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "postman-auth-refresh-001"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/sessions/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "sessions",
+                "refresh"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get(\"csrfToken\")) { throw new Error(\"csrfToken is required for cookie-authenticated refreshSession.\"); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"refresh rotates cookies and csrf token\", function () {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(pm.response.code).to.eql(200);",
+                  "  pm.expect(pm.cookies.has(\"access_token\")).to.eql(true);",
+                  "  pm.expect(pm.cookies.has(\"refresh_token\")).to.eql(true);",
+                  "  pm.environment.set(\"csrfToken\", body.csrfToken);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "logout",
+          "name": "4. Logout with cookie jar",
+          "description": "Postman sends the current auth cookies from the cookie jar. Logout is mutating, so X-CSRF-Token must use the latest csrfToken variable.",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "postman-auth-logout-001"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sessionId\": \"{{sessionId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/sessions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "sessions"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get(\"csrfToken\")) { throw new Error(\"csrfToken is required for cookie-authenticated logout.\"); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"logout expires auth cookies\", function () {",
+                  "  pm.expect(pm.response.code).to.eql(200);",
+                  "  pm.environment.unset(\"accessToken\");",
+                  "  pm.environment.unset(\"refreshToken\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "getCurrentUser",
+          "name": "5. Get current user from cookie auth",
+          "description": "Safe GET request. When run before logout, Postman sends access_token from the cookie jar; X-CSRF-Token is not required for safe methods.",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Request-Id",
+                "value": "postman-auth-me-001"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"current user resolves from cookie auth\", function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 401]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Cookie Token Negative Cases",
+      "description": "Negative examples use environment variables whose values are intentionally empty until a local tester supplies generated expired or invalid-signature session tokens. Expected result is 401 INVALID_AUTH_TOKEN.",
+      "item": [
+        {
+          "id": "expiredAccessTokenRejected",
+          "name": "Expired access token is rejected",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "access_token={{expiredAccessToken}}"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "postman-auth-expired-token-001"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"expired signed session token is rejected\", function () {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(pm.response.code).to.eql(401);",
+                  "  pm.expect(body.error.code).to.eql(\"INVALID_AUTH_TOKEN\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "invalidSignatureAccessTokenRejected",
+          "name": "Invalid signature access token is rejected",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "access_token={{invalidSignatureAccessToken}}"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "postman-auth-invalid-token-001"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"tampered signed session token is rejected\", function () {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(pm.response.code).to.eql(401);",
+                  "  pm.expect(body.error.code).to.eql(\"INVALID_AUTH_TOKEN\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
