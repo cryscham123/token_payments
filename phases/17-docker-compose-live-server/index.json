@@ -1,0 +1,32 @@
+{
+  "project": "Token Payments",
+  "phase": "17-docker-compose-live-server",
+  "steps": [
+    {
+      "step": 0,
+      "name": "default-compose-api-entrypoint",
+      "status": "pending"
+    },
+    {
+      "step": 1,
+      "name": "live-runtime-driver-factory",
+      "status": "pending"
+    },
+    {
+      "step": 2,
+      "name": "local-env-seed-contract",
+      "status": "pending"
+    },
+    {
+      "step": 3,
+      "name": "health-readiness-live-probes",
+      "status": "pending"
+    },
+    {
+      "step": 4,
+      "name": "compose-live-public-verification",
+      "status": "pending"
+    }
+  ],
+  "created_at": "2026-05-18T00:25:36+0900"
+}

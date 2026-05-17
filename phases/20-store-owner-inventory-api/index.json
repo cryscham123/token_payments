@@ -1,0 +1,32 @@
+{
+  "project": "Token Payments",
+  "phase": "20-store-owner-inventory-api",
+  "steps": [
+    {
+      "step": 0,
+      "name": "store-owner-inventory-domain-commands",
+      "status": "pending"
+    },
+    {
+      "step": 1,
+      "name": "store-owner-inventory-query-api",
+      "status": "pending"
+    },
+    {
+      "step": 2,
+      "name": "store-owner-stock-mutation-api",
+      "status": "pending"
+    },
+    {
+      "step": 3,
+      "name": "inventory-authz-audit-idempotency",
+      "status": "pending"
+    },
+    {
+      "step": 4,
+      "name": "store-owner-inventory-public-verification",
+      "status": "pending"
+    }
+  ],
+  "created_at": "2026-05-18T00:25:36+0900"
+}
