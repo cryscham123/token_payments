@@ -484,6 +484,316 @@
           ]
         }
       ]
+    },
+    {
+      "name": "Checkout and Operator API",
+      "description": "Route-manifest coverage for local Postman verification after cookie auth. Requests rely on the Postman cookie jar and use X-CSRF-Token for mutating calls.",
+      "item": [
+        {
+          "id": "createOrder",
+          "name": "Create order",
+          "description": "Local Postman request skeleton for the API route manifest; authentication uses the Postman cookie jar.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "postman-create-order-001"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/orders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "orders"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"storeId\": \"{{storeId}}\",\n  \"deliveryAddress\": {\n    \"id\": \"postman-address-1\",\n    \"street\": \"7 Checkout Avenue\"\n  },\n  \"items\": [\n    {\n      \"productId\": \"{{productId}}\",\n      \"quantity\": 1\n    }\n  ],\n  \"trackingId\": \"{{trackingId}}\"\n}"
+            }
+          }
+        },
+        {
+          "id": "getCheckoutTrackingByTrackingId",
+          "name": "Get checkout tracking by trackingId",
+          "description": "Local Postman request skeleton for the API route manifest; authentication uses the Postman cookie jar.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/checkouts/tracking/{{trackingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "checkouts",
+                "tracking",
+                "{{trackingId}}"
+              ]
+            }
+          }
+        },
+        {
+          "id": "getCheckoutTrackingByOrderId",
+          "name": "Get checkout tracking by orderId",
+          "description": "Local Postman request skeleton for the API route manifest; authentication uses the Postman cookie jar.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/checkouts/orders/{{orderId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "checkouts",
+                "orders",
+                "{{orderId}}"
+              ]
+            }
+          }
+        },
+        {
+          "id": "submitTransactionHash",
+          "name": "Submit transaction hash",
+          "description": "Local Postman request skeleton for the API route manifest; authentication uses the Postman cookie jar.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "postman-submit-tx-001"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/payments/transaction-hashes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "payments",
+                "transaction-hashes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"paymentId\": \"{{paymentId}}\",\n  \"txHash\": \"{{txHash}}\"\n}"
+            }
+          }
+        },
+        {
+          "id": "getOperatorDashboard",
+          "name": "Get operator dashboard",
+          "description": "Local Postman request skeleton for the API route manifest; authentication uses the Postman cookie jar.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/operator/dashboard",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "operator",
+                "dashboard"
+              ]
+            }
+          }
+        },
+        {
+          "id": "getOperatorOrderDetail",
+          "name": "Get operator order detail",
+          "description": "Local Postman request skeleton for the API route manifest; authentication uses the Postman cookie jar.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/operator/orders/{{orderId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "operator",
+                "orders",
+                "{{orderId}}"
+              ]
+            }
+          }
+        },
+        {
+          "id": "getOperatorPaymentDetail",
+          "name": "Get operator payment detail",
+          "description": "Local Postman request skeleton for the API route manifest; authentication uses the Postman cookie jar.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/operator/payments/{{paymentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "operator",
+                "payments",
+                "{{paymentId}}"
+              ]
+            }
+          }
+        },
+        {
+          "id": "getOperatorOutboxDetail",
+          "name": "Get operator outbox detail",
+          "description": "Local Postman request skeleton for the API route manifest; authentication uses the Postman cookie jar.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/operator/outbox/{{messageId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "operator",
+                "outbox",
+                "{{messageId}}"
+              ]
+            }
+          }
+        },
+        {
+          "id": "cancelOperatorOrder",
+          "name": "Cancel operator order",
+          "description": "Local Postman request skeleton for the API route manifest; authentication uses the Postman cookie jar.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "postman-cancel-order-001"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/operator/orders/{{orderId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "operator",
+                "orders",
+                "{{orderId}}",
+                "cancel"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"manual Postman recovery smoke\"\n}"
+            }
+          }
+        },
+        {
+          "id": "retryOperatorOutboxMessage",
+          "name": "Retry operator outbox message",
+          "description": "Local Postman request skeleton for the API route manifest; authentication uses the Postman cookie jar.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "postman-retry-outbox-001"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/operator/outbox/{{messageId}}/retry",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "operator",
+                "outbox",
+                "{{messageId}}",
+                "retry"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"manual Postman recovery smoke\"\n}"
+            }
+          }
+        },
+        {
+          "id": "replayOperatorMessage",
+          "name": "Replay operator message",
+          "description": "Local Postman request skeleton for the API route manifest; authentication uses the Postman cookie jar.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "postman-replay-message-001"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/operator/messages/{{messageId}}/replay",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "operator",
+                "messages",
+                "{{messageId}}",
+                "replay"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"manual Postman recovery smoke\"\n}"
+            }
+          }
+        }
+      ]
     }
   ]
 }

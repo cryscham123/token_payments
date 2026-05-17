@@ -10,14 +10,21 @@ import shlex
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 CONTRACT = "token-payments.docker-live-smoke.plan.v1"
+API_READINESS_CONTRACT = "token-payments.postman-docker-api-readiness.plan.v1"
+API_READINESS_SCENARIO = "postman-docker-api-readiness"
 ENV_FILE = ".env"
 ENV_EXAMPLE_FILE = ".env.example"
 MAX_OUTPUT_CHARS = 1200
 SECRET_KEY_PATTERN = re.compile(r"(account|api[_-]?key|dsn|key|password|private|secret|seed|token)", re.IGNORECASE)
+SIGNED_TOKEN_PATTERN = re.compile(r"\b[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b")
+COOKIE_VALUE_PATTERN = re.compile(r"(?i)\b(access_token|refresh_token|csrf_token)=([^;\s]+)")
+CSRF_HEADER_PATTERN = re.compile(r"(?i)\b((?:x-csrf-token|csrf-token)\s*[:=]\s*)([^\r\n;]+)")
+COOKIE_HEADER_PATTERN = re.compile(r"(?im)^(cookie\s*:\s*)([^\r\n]+)")
+AUTHORIZATION_HEADER_PATTERN = re.compile(r"(?im)^(authorization\s*:\s*bearer\s+)([^\r\n]+)")
 REQUIRED_SERVICES = (
     "postgres",
     "kafka",
@@ -37,6 +44,37 @@ COMMAND_TIMEOUT_SECONDS = {
     "runtime-smoke": 120,
     "cleanup": 90,
 }
+API_REQUIRED_SERVICES = ("postgres", "kafka", "test_network", "token_payments_api")
+API_COMMAND_TIMEOUT_SECONDS = {
+    "api-compose-config": 30,
+    "build-api-service": 240,
+    "start-infrastructure": 180,
+    "start-api-service": 180,
+    "validate-session-signing-keys": 30,
+    "healthz": 30,
+    "readyz": 30,
+    "auth-cookie-flow": 60,
+    "expired-token-rejected": 30,
+    "invalid-signature-rejected": 30,
+    "csrf-failure": 30,
+    "csrf-success": 30,
+    "cors-preflight": 30,
+    "oversized-body": 30,
+    "malformed-json": 30,
+    "idempotency-duplicate": 60,
+    "checkout-happy-path": 90,
+    "operator-action-smoke": 60,
+    "cleanup": 90,
+}
+API_COMMAND_RUNNER_STEPS = {
+    "api-compose-config",
+    "build-api-service",
+    "start-infrastructure",
+    "start-api-service",
+    "validate-session-signing-keys",
+}
+RunnerResult = dict[str, Any] | subprocess.CompletedProcess[str]
+SmokeCommandRunner = Callable[[str, tuple[str, ...], Path, tuple[str, ...]], RunnerResult]
 
 
 def _build_command_sequence(env_file: str) -> tuple[tuple[str, tuple[str, ...]], ...]:
@@ -80,8 +118,207 @@ def _build_command_sequence(env_file: str) -> tuple[tuple[str, tuple[str, ...]],
     )
 
 
+def _build_api_readiness_command_sequence(env_file: str) -> tuple[tuple[str, tuple[str, ...], str], ...]:
+    base_url = "http://localhost:8000"
+    wallet_address = "0x1111111111111111111111111111111111111111"
+    return (
+        (
+            "api-compose-config",
+            ("docker", "compose", "--env-file", env_file, "--profile", "api", "config", "--services"),
+            "docker",
+        ),
+        (
+            "build-api-service",
+            ("docker", "compose", "--env-file", env_file, "--profile", "api", "build", "token_payments_api"),
+            "docker",
+        ),
+        (
+            "start-infrastructure",
+            ("docker", "compose", "--env-file", env_file, "up", "-d", "postgres", "kafka", "test_network"),
+            "docker",
+        ),
+        (
+            "start-api-service",
+            ("docker", "compose", "--env-file", env_file, "--profile", "api", "up", "-d", "token_payments_api"),
+            "docker",
+        ),
+        (
+            "validate-session-signing-keys",
+            ("python3", "-m", "token_payments", "serve-api", "--live", "--dry-run"),
+            "security",
+        ),
+        ("healthz", _curl("--request", "GET", f"{base_url}/healthz"), "http"),
+        ("readyz", _curl("--request", "GET", f"{base_url}/readyz"), "http"),
+        (
+            "auth-cookie-flow",
+            _curl(
+                "--cookie-jar",
+                "/tmp/token-payments-postman.cookies",
+                "--cookie",
+                "/tmp/token-payments-postman.cookies",
+                "--request",
+                "POST",
+                f"{base_url}/auth/challenges",
+                "--header",
+                "Content-Type: application/json",
+                "--data",
+                json.dumps({"walletAddress": wallet_address}, separators=(",", ":")),
+            ),
+            "postman",
+        ),
+        (
+            "expired-token-rejected",
+            _curl(
+                "--request",
+                "GET",
+                f"{base_url}/auth/me",
+                "--header",
+                "Cookie: access_token=<expired-signed-session-token>",
+            ),
+            "security",
+        ),
+        (
+            "invalid-signature-rejected",
+            _curl(
+                "--request",
+                "GET",
+                f"{base_url}/auth/me",
+                "--header",
+                "Cookie: access_token=<invalid-signature-session-token>",
+            ),
+            "security",
+        ),
+        (
+            "csrf-failure",
+            _curl(
+                "--request",
+                "POST",
+                f"{base_url}/auth/sessions/refresh",
+                "--header",
+                "Cookie: access_token=<valid-session-token>; refresh_token=<valid-refresh-token>",
+                "--header",
+                "Content-Type: application/json",
+                "--data",
+                "{}",
+            ),
+            "security",
+        ),
+        (
+            "csrf-success",
+            _curl(
+                "--request",
+                "POST",
+                f"{base_url}/auth/sessions/refresh",
+                "--header",
+                "Cookie: access_token=<valid-session-token>; refresh_token=<valid-refresh-token>; csrf_token=<csrf-token>",
+                "--header",
+                "X-CSRF-Token: <csrf-token>",
+                "--header",
+                "Content-Type: application/json",
+                "--data",
+                "{}",
+            ),
+            "security",
+        ),
+        (
+            "cors-preflight",
+            _curl(
+                "--request",
+                "OPTIONS",
+                f"{base_url}/orders",
+                "--header",
+                "Origin: http://localhost:3000",
+                "--header",
+                "Access-Control-Request-Method: POST",
+                "--header",
+                "Access-Control-Request-Headers: X-CSRF-Token, Content-Type, Idempotency-Key",
+            ),
+            "security",
+        ),
+        (
+            "oversized-body",
+            _curl(
+                "--request",
+                "POST",
+                f"{base_url}/orders",
+                "--header",
+                "Content-Type: application/json",
+                "--header",
+                "X-CSRF-Token: <csrf-token>",
+                "--data-binary",
+                "<oversized-body-generated-by-runner>",
+            ),
+            "security",
+        ),
+        (
+            "malformed-json",
+            _curl(
+                "--request",
+                "POST",
+                f"{base_url}/orders",
+                "--header",
+                "Content-Type: application/json",
+                "--header",
+                "X-CSRF-Token: <csrf-token>",
+                "--data",
+                '{"walletAddress":',
+            ),
+            "security",
+        ),
+        (
+            "idempotency-duplicate",
+            _curl(
+                "--request",
+                "POST",
+                f"{base_url}/orders",
+                "--header",
+                "Content-Type: application/json",
+                "--header",
+                "Idempotency-Key: postman-duplicate-checkout",
+                "--header",
+                "X-CSRF-Token: <csrf-token>",
+                "--data",
+                "<checkout-order-json>",
+            ),
+            "http",
+        ),
+        (
+            "checkout-happy-path",
+            _curl(
+                "--request",
+                "POST",
+                f"{base_url}/orders",
+                "--header",
+                "Content-Type: application/json",
+                "--header",
+                "Idempotency-Key: postman-happy-path-checkout",
+                "--header",
+                "X-CSRF-Token: <csrf-token>",
+                "--data",
+                "<checkout-order-json>",
+            ),
+            "postman",
+        ),
+        (
+            "operator-action-smoke",
+            _curl(
+                "--request",
+                "GET",
+                f"{base_url}/operator/dashboard",
+                "--header",
+                "Cookie: access_token=<operator-session-token>; csrf_token=<csrf-token>",
+            ),
+            "postman",
+        ),
+    )
+
+
 def _build_cleanup_command(env_file: str) -> tuple[str, ...]:
     return ("docker", "compose", "--env-file", env_file, "down")
+
+
+def _curl(*args: str) -> tuple[str, ...]:
+    return ("curl", "--fail-with-body", "--show-error", "--silent", "--max-time", "10", *args)
 
 
 COMMAND_SEQUENCE = _build_command_sequence(ENV_FILE)
@@ -106,6 +343,39 @@ def build_plan(env_file: str = ENV_FILE) -> dict[str, Any]:
         "requiredServices": list(REQUIRED_SERVICES),
         "commandSequence": [_command_payload(name, argv) for name, argv in command_sequence],
         "cleanupCommand": _command_payload("cleanup", cleanup_command),
+    }
+
+
+def build_api_readiness_plan(env_file: str = ENV_FILE) -> dict[str, Any]:
+    command_sequence = _build_api_readiness_command_sequence(env_file)
+    cleanup_command = _build_cleanup_command(env_file)
+    return {
+        "contract": API_READINESS_CONTRACT,
+        "scenario": API_READINESS_SCENARIO,
+        "mode": "plan",
+        "status": "planned",
+        "dockerStarted": False,
+        "networkCalls": False,
+        "envFile": env_file,
+        "requiredServices": list(API_REQUIRED_SERVICES),
+        "commandSequence": [_api_command_payload(name, argv, category) for name, argv, category in command_sequence],
+        "cleanupCommand": _api_command_payload("cleanup", cleanup_command, "docker"),
+        "redactionPolicy": {
+            "rawSecretValuesCommitted": False,
+            "redacts": [
+                "session signing key",
+                "signed session token",
+                "cookie header",
+                "CSRF token",
+                "Authorization bearer token",
+            ],
+        },
+        "fixtures": {
+            "collection": "postman/token-payments.local.postman_collection.json",
+            "environment": "postman/token-payments.local.postman_environment.json",
+            "seedPlan": "postman/fixtures/token-payments.local.seed-plan.json",
+            "expectedResponses": "postman/expected/token-payments.api.expected.json",
+        },
     }
 
 
@@ -136,10 +406,39 @@ def build_execute_error(
     }
 
 
+def build_api_execute_error(
+    code: str = "LIVE_API_SMOKE_CONFIRMATION_REQUIRED",
+    message: str = "Live API readiness/security smoke requires both --execute and --confirm-live-docker.",
+    env_file: str = ENV_FILE,
+    *,
+    docker_started: bool = False,
+    network_calls: bool = False,
+) -> dict[str, Any]:
+    payload = build_api_readiness_plan(env_file)
+    payload.update(
+        {
+            "mode": "execute",
+            "status": "error",
+            "dockerStarted": docker_started,
+            "networkCalls": network_calls,
+            "error": {
+                "code": code,
+                "message": message,
+            },
+        }
+    )
+    return payload
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Print or explicitly run the live Docker smoke sequence as bounded JSON.")
     parser.add_argument("--plan", action="store_true", help="Print the dry-run plan without starting Docker.")
     parser.add_argument("--execute", action="store_true", help="Run the live Docker smoke sequence only with explicit confirmation.")
+    parser.add_argument(
+        "--api-readiness",
+        action="store_true",
+        help="Use the Postman Docker API readiness/security smoke plan instead of the runtime container plan.",
+    )
     parser.add_argument(
         "--confirm-live-docker",
         action="store_true",
@@ -147,6 +446,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--env-file", default=ENV_FILE, help="Docker compose env file for plan or live execution.")
     args = parser.parse_args(argv)
+
+    if args.api_readiness:
+        if args.execute:
+            exit_code, payload = run_api_readiness_execution(args.env_file, confirmed=args.confirm_live_docker)
+            _print_json(payload)
+            return exit_code
+        _print_json(build_api_readiness_plan(args.env_file))
+        return 0
 
     if args.execute:
         if not args.confirm_live_docker:
@@ -158,6 +465,116 @@ def main(argv: list[str] | None = None) -> int:
 
     _print_json(build_plan(args.env_file))
     return 0
+
+
+def run_api_readiness_execution(
+    env_file: str,
+    *,
+    confirmed: bool = False,
+    command_runner: SmokeCommandRunner | None = None,
+    http_client: SmokeCommandRunner | None = None,
+) -> tuple[int, dict[str, Any]]:
+    if not confirmed:
+        return 2, build_api_execute_error(env_file=env_file)
+
+    root = repository_root()
+    env_path = _resolve_env_path(root, env_file)
+
+    if Path(env_file).name == ENV_EXAMPLE_FILE:
+        return (
+            2,
+            build_api_execute_error(
+                "LIVE_API_SMOKE_ENV_FILE_FORBIDDEN",
+                ".env.example is a template and must not be used for live API readiness/security smoke execution.",
+                env_file,
+            ),
+        )
+    if not env_path.is_file():
+        return (
+            2,
+            build_api_execute_error(
+                "LIVE_API_SMOKE_ENV_FILE_REQUIRED",
+                f"Live API readiness/security smoke requires an existing env file at {_display_path(root, env_path)}.",
+                env_file,
+            ),
+        )
+
+    try:
+        redactions = _load_sensitive_values(env_path)
+    except OSError as exc:
+        return (
+            2,
+            build_api_execute_error(
+                "LIVE_API_SMOKE_ENV_FILE_UNREADABLE",
+                f"Live API readiness/security smoke env file could not be read for output redaction: {exc}",
+                env_file,
+            ),
+        )
+
+    command_sequence = _build_api_readiness_command_sequence(env_file)
+    cleanup_command = _build_cleanup_command(env_file)
+    command_results: list[dict[str, Any]] = []
+    cleanup_result: dict[str, Any] | None = None
+    cleanup_required = False
+    docker_started = False
+    network_calls = False
+    failed_result: dict[str, Any] | None = None
+
+    for name, argv, category in command_sequence:
+        if name in {"build-api-service", "start-infrastructure", "start-api-service"}:
+            network_calls = True
+        if name in {"start-infrastructure", "start-api-service"}:
+            cleanup_required = True
+            docker_started = True
+        if category in {"http", "postman"} or (category == "security" and name not in API_COMMAND_RUNNER_STEPS):
+            network_calls = True
+        runner = command_runner if name in API_COMMAND_RUNNER_STEPS else http_client
+        result = _run_api_smoke_command(name, argv, category, root, redactions, runner)
+        command_results.append(result)
+        if _command_failed(result):
+            failed_result = result
+            break
+
+    if cleanup_required:
+        cleanup_result = _run_api_smoke_command(
+            "cleanup",
+            cleanup_command,
+            "docker",
+            root,
+            redactions,
+            command_runner,
+        )
+        if failed_result is None and _command_failed(cleanup_result):
+            failed_result = cleanup_result
+
+    if failed_result is not None:
+        payload = _api_execution_payload(
+            env_file=env_file,
+            status="error",
+            docker_started=docker_started,
+            network_calls=network_calls,
+            command_results=command_results,
+            cleanup_result=cleanup_result,
+        )
+        payload["failedStep"] = failed_result["name"]
+        payload["exitCode"] = failed_result["exitCode"]
+        payload["error"] = {
+            "code": "LIVE_API_SMOKE_STEP_FAILED",
+            "message": f"Live API readiness/security smoke failed at step {failed_result['name']}.",
+            "failedStep": failed_result["name"],
+            "exitCode": failed_result["exitCode"],
+        }
+        return 1, payload
+
+    payload = _api_execution_payload(
+        env_file=env_file,
+        status="success",
+        docker_started=docker_started,
+        network_calls=network_calls,
+        command_results=command_results,
+        cleanup_result=cleanup_result,
+    )
+    return 0, payload
 
 
 def run_live_execution(env_file: str) -> tuple[int, dict[str, Any]]:
@@ -252,6 +669,32 @@ def run_live_execution(env_file: str) -> tuple[int, dict[str, Any]]:
     return 0, payload
 
 
+def _api_execution_payload(
+    *,
+    env_file: str,
+    status: str,
+    docker_started: bool,
+    network_calls: bool,
+    command_results: list[dict[str, Any]],
+    cleanup_result: dict[str, Any] | None,
+) -> dict[str, Any]:
+    payload = build_api_readiness_plan(env_file)
+    payload.update(
+        {
+            "mode": "execute",
+            "status": status,
+            "dockerStarted": docker_started,
+            "networkCalls": network_calls,
+            "executedSteps": [result["name"] for result in command_results],
+            "commandCount": len(command_results) + (1 if cleanup_result is not None else 0),
+            "cleanupExecuted": cleanup_result is not None,
+            "commandResults": command_results,
+            "cleanupResult": cleanup_result,
+        }
+    )
+    return payload
+
+
 def _execution_payload(
     *,
     env_file: str,
@@ -278,6 +721,67 @@ def _execution_payload(
         "cleanupExecuted": cleanup_result is not None,
         "commandResults": command_results,
         "cleanupResult": cleanup_result,
+    }
+
+
+def _run_api_smoke_command(
+    name: str,
+    argv: tuple[str, ...],
+    category: str,
+    root: Path,
+    redactions: tuple[str, ...],
+    runner: SmokeCommandRunner | None,
+) -> dict[str, Any]:
+    timeout = API_COMMAND_TIMEOUT_SECONDS[name]
+    if runner is not None:
+        return _normalize_runner_result(name, argv, category, timeout, runner(name, argv, root, redactions), redactions)
+    try:
+        completed = subprocess.run(
+            list(argv),
+            cwd=root,
+            shell=False,
+            text=True,
+            capture_output=True,
+            timeout=timeout,
+            check=False,
+        )
+        return _normalize_runner_result(name, argv, category, timeout, completed, redactions)
+    except subprocess.TimeoutExpired as exc:
+        return {
+            **_api_command_payload(name, argv, category),
+            "timeoutSeconds": timeout,
+            "exitCode": None,
+            "stdout": _sanitize_output(_to_text(exc.stdout), redactions),
+            "stderr": _sanitize_output(_to_text(exc.stderr), redactions),
+            "timedOut": True,
+        }
+
+
+def _normalize_runner_result(
+    name: str,
+    argv: tuple[str, ...],
+    category: str,
+    timeout: int,
+    result: RunnerResult,
+    redactions: tuple[str, ...],
+) -> dict[str, Any]:
+    if isinstance(result, subprocess.CompletedProcess):
+        exit_code = result.returncode
+        stdout = result.stdout
+        stderr = result.stderr
+        timed_out = False
+    else:
+        exit_code = result.get("exitCode", result.get("returncode", 0))
+        stdout = result.get("stdout", "")
+        stderr = result.get("stderr", "")
+        timed_out = bool(result.get("timedOut", False))
+    return {
+        **_api_command_payload(name, argv, category),
+        "timeoutSeconds": timeout,
+        "exitCode": exit_code,
+        "stdout": _sanitize_output(_to_text(stdout), redactions),
+        "stderr": _sanitize_output(_to_text(stderr), redactions),
+        "timedOut": timed_out,
     }
 
 
@@ -325,6 +829,10 @@ def _command_payload(name: str, argv: tuple[str, ...]) -> dict[str, Any]:
     }
 
 
+def _api_command_payload(name: str, argv: tuple[str, ...], category: str) -> dict[str, Any]:
+    return _command_payload(name, argv) | {"category": category}
+
+
 def _resolve_env_path(root: Path, env_file: str) -> Path:
     path = Path(env_file)
     if path.is_absolute():
@@ -349,6 +857,11 @@ def _load_sensitive_values(env_path: Path) -> tuple[str, ...]:
         value = value.strip().strip("\"'")
         if len(value) >= 4 and SECRET_KEY_PATTERN.search(key):
             values.add(value)
+            if "SIGNING_KEYS" in key:
+                for segment in value.split(","):
+                    _, separator, secret = segment.partition(":")
+                    if separator and len(secret) >= 4:
+                        values.add(secret.strip())
     return tuple(sorted(values, key=len, reverse=True))
 
 
@@ -356,6 +869,11 @@ def _sanitize_output(value: str | None, redactions: tuple[str, ...]) -> str:
     text = value or ""
     for secret in redactions:
         text = text.replace(secret, "[REDACTED]")
+    text = SIGNED_TOKEN_PATTERN.sub("[REDACTED]", text)
+    text = COOKIE_VALUE_PATTERN.sub(lambda match: f"{match.group(1)}=[REDACTED]", text)
+    text = CSRF_HEADER_PATTERN.sub(lambda match: f"{match.group(1)}[REDACTED]", text)
+    text = COOKIE_HEADER_PATTERN.sub(lambda match: f"{match.group(1)}[REDACTED]", text)
+    text = AUTHORIZATION_HEADER_PATTERN.sub(lambda match: f"{match.group(1)}[REDACTED]", text)
     if len(text) > MAX_OUTPUT_CHARS:
         return f"{text[:MAX_OUTPUT_CHARS]}...[truncated {len(text) - MAX_OUTPUT_CHARS} chars]"
     return text

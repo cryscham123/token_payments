@@ -8,7 +8,7 @@
       "status": "completed",
       "started_at": "2026-05-17T19:05:43+0900",
       "completed_at": "2026-05-17T19:12:47+0900",
-      "summary": "Added the Postman API Docker Compose service contract, environment placeholders, daemonless compose config validation, runtime smoke metadata, and scripts/test_postman_docker_api_service.py coverage."
+      "summary": "Added the Postman compose API service contract, environment placeholders, daemonless compose config validation, runtime smoke metadata, and scripts/test_postman_docker_api_service.py coverage."
     },
     {
       "step": 1,
@@ -29,12 +29,18 @@
     {
       "step": 3,
       "name": "docker-api-readiness-security-smoke",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-17T19:25:56+0900",
+      "completed_at": "2026-05-17T19:35:25+0900",
+      "summary": "Added bounded Postman Docker API readiness/security smoke coverage with --api-readiness plan/refusal/live confirmation paths, injectable fake execution, redaction of session/token/cookie/CSRF values, runtime smoke registry metadata, and README/app README manual smoke guidance."
     },
     {
       "step": 4,
       "name": "postman-docker-api-public-verification",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-17T19:35:25+0900",
+      "completed_at": "2026-05-17T19:40:04+0900",
+      "summary": "Added final Postman Docker API public contract verification for docs, route-manifest collection coverage, expected response/security fixtures, smoke registry/plan contracts, and completed phase metadata/top-level status."
     }
   ],
   "created_at": "2026-05-17T09:10:29+0900"

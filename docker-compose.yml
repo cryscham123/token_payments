@@ -179,7 +179,7 @@ services:
       - ADAPTER_KAFKA_BOOTSTRAP_SERVERS=${ADAPTER_KAFKA_BOOTSTRAP_SERVERS}
       - ADAPTER_BLOCKCHAIN_RPC_URL=${ADAPTER_BLOCKCHAIN_RPC_URL}
     command: ["python", "-m", "token_payments", "serve-api", "--live", "--confirm-live-api"]
-    restart: unless-stopped
+    restart: always
     profiles:
       - api
     ports:
