@@ -11,7 +11,7 @@
 - Client는 `X-Request-Id`를 전달할 수 있다. 없으면 server가 결정적 request id를 생성한다.
 - 운영자 API는 server-side session claim의 `ADMIN` role이 필요하다.
 - 브라우저 client의 기본 auth transport는 `HttpOnly; Secure; SameSite=Lax` cookie다.
-- 상태 변경 요청은 cookie auth와 함께 CSRF token을 전달해야 한다.
+- 상태 변경 요청은 cookie auth와 함께 `X-CSRF-Token` double-submit token을 전달해야 한다.
 - `Authorization: Bearer <accessToken>`은 non-browser client 또는 explicit integration fallback으로만 사용한다.
 - `X-User-Id`, `X-User-Role`, `X-User-Scopes` header는 local/dev fallback 전용이며 production/live path에서는 신뢰하지 않는다.
 
@@ -54,12 +54,16 @@ Session cookie values are signed tokens. The live runtime loads signing keys fro
 
 Session signing keys, signed token values, refresh token hashes/salts, and CSRF secrets must never be logged, committed in fixtures, or exposed in runtime previews.
 
-Cookie-authenticated mutating requests must include `X-CSRF-Token`. Missing or invalid CSRF token returns `403` with one of:
+CSRF token 발급 surface는 route manifest를 늘리지 않고 `POST /auth/challenges`, `POST /auth/sessions`, `POST /auth/sessions/refresh` 성공 응답에 포함된다. Server also sets a non-HttpOnly `csrf_token` cookie for double-submit validation. Browser clients send the response `csrfToken` value back in `X-CSRF-Token` for cookie-authenticated mutating requests.
+
+Cookie-authenticated mutating requests (`POST`, `PUT`, `PATCH`, `DELETE`) must include `X-CSRF-Token`. Safe methods (`GET`, `HEAD`, `OPTIONS`) do not require CSRF. Missing or invalid CSRF token returns `403` with one of:
 
 - `CSRF_TOKEN_MISSING`
 - `CSRF_TOKEN_INVALID`
 
-Credentialed CORS must use an origin allowlist. `Access-Control-Allow-Origin: *` must not be used with credentials.
+Credentialed CORS must use an origin allowlist from `CORS_ALLOWED_ORIGINS`. `Access-Control-Allow-Origin: *` must not be used with credentials. Preflight `OPTIONS` is handled at the adapter guard before facade/application service dispatch and returns bounded CORS headers. Disallowed origins return `403 CORS_ORIGIN_FORBIDDEN`.
+
+Request body size is bounded by `REQUEST_BODY_MAX_BYTES`. Exceeding it returns `413 REQUEST_BODY_TOO_LARGE`; malformed JSON remains `400 MALFORMED_JSON`.
 
 ## Common Error Shape
 
@@ -128,9 +132,16 @@ Response `201`:
   "walletAddress": "0x1111111111111111111111111111111111111111",
   "nonce": "nonce-001",
   "expiresAt": "2026-05-17T10:30:00+09:00",
-  "signingMessage": "Sign in to token-payments.local with nonce nonce-001"
+  "signingMessage": "Sign in to token-payments.local with nonce nonce-001",
+  "csrfToken": "csrf-token",
+  "csrf": {
+    "cookieName": "csrf_token",
+    "headerName": "X-CSRF-Token"
+  }
 }
 ```
+
+Response headers include `Set-Cookie: csrf_token=...; Secure; SameSite=Lax; Path=/`.
 
 Errors: `400 VALIDATION_ERROR`.
 
@@ -173,11 +184,16 @@ Response `200`:
     "refreshToken": "<set-cookie>",
     "expiresAt": "2026-05-17T11:00:00+09:00",
     "transport": "cookie"
+  },
+  "csrfToken": "csrf-token",
+  "csrf": {
+    "cookieName": "csrf_token",
+    "headerName": "X-CSRF-Token"
   }
 }
 ```
 
-Browser HTTP response headers include two `Set-Cookie` values for signed access/refresh session tokens. Cookie values are not shown in response examples.
+Browser HTTP response headers include `Set-Cookie` values for signed access/refresh session tokens and the `csrf_token` double-submit cookie. Cookie values are not shown in response examples.
 
 Errors: `400 VALIDATION_ERROR`, `401 INVALID_SIGNATURE`, `401 WALLET_MISMATCH`, `409 EXPIRED_CHALLENGE`, `409 REUSED_NONCE`.
 

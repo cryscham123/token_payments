@@ -147,11 +147,13 @@ class HttpRouter:
         request_id_factory: Callable[[HttpRequest], str] | None = None,
         auth_context_factory: AuthContextFactory | None = None,
         allow_dev_auth_headers: bool = True,
+        request_guard: Any | None = None,
     ) -> None:
         self._routes: list[HttpRoute] = list(routes)
         self._request_id_factory = request_id_factory or _default_request_id
         self._auth_context_factory = auth_context_factory
         self._allow_dev_auth_headers = _require_bool(allow_dev_auth_headers, "HttpRouter.allow_dev_auth_headers")
+        self._request_guard = request_guard
 
     @property
     def routes(self) -> tuple[HttpRoute, ...]:
@@ -205,6 +207,9 @@ class HttpRouter:
             )
         )
         request_id = _request_id(request, self._request_id_factory)
+        guard_response = self._guard_response(request, request_id)
+        if guard_response is not None:
+            return self._with_guard_headers(request, guard_response)
 
         path_matches: list[tuple[HttpRoute, dict[str, str]]] = []
         for route in self._routes:
@@ -212,23 +217,72 @@ class HttpRouter:
             if params is not None:
                 path_matches.append((route, params))
                 if route.method == request.method:
-                    return self._handle_route(route, params, request, request_id)
+                    return self._with_guard_headers(request, self._handle_route(route, params, request, request_id))
 
         if path_matches:
             allowed = ", ".join(sorted({route.method for route, _params in path_matches}))
-            return _error_response(
-                status_code=405,
-                code="METHOD_NOT_ALLOWED",
-                message=f"Method {request.method} is not allowed for {request.path}.",
-                request_id=request_id,
-                headers={"Allow": allowed},
+            return self._with_guard_headers(
+                request,
+                _error_response(
+                    status_code=405,
+                    code="METHOD_NOT_ALLOWED",
+                    message=f"Method {request.method} is not allowed for {request.path}.",
+                    request_id=request_id,
+                    headers={"Allow": allowed},
+                ),
             )
 
-        return _error_response(
-            status_code=404,
-            code="ROUTE_NOT_FOUND",
-            message=f"No route matches {request.path}.",
-            request_id=request_id,
+        return self._with_guard_headers(
+            request,
+            _error_response(
+                status_code=404,
+                code="ROUTE_NOT_FOUND",
+                message=f"No route matches {request.path}.",
+                request_id=request_id,
+            ),
+        )
+
+    def _guard_response(self, request: HttpRequest, request_id: str) -> HttpResponse | None:
+        if self._request_guard is None:
+            return None
+        guard = getattr(self._request_guard, "guard", None)
+        if not callable(guard):
+            raise ValueError("HttpRouter.request_guard must expose guard(request, request_id=...)")
+        response = guard(request, request_id=request_id)
+        if response is None:
+            return None
+        if isinstance(response, HttpResponse):
+            return response
+        if isinstance(response, ApiResponse):
+            return HttpResponse.from_api_response(response)
+        if all(hasattr(response, attr) for attr in ("status_code", "body", "headers", "request_id")):
+            return HttpResponse.from_api_response(
+                ApiResponse(
+                    status_code=response.status_code,
+                    body=response.body,
+                    headers=response.headers,
+                    multi_headers=getattr(response, "multi_headers", ()),
+                    request_id=response.request_id,
+                )
+            )
+        raise ValueError("request guard must return ApiResponse, HttpResponse, or None")
+
+    def _with_guard_headers(self, request: HttpRequest, response: HttpResponse) -> HttpResponse:
+        if self._request_guard is None:
+            return response
+        response_headers = getattr(self._request_guard, "response_headers", None)
+        if not callable(response_headers):
+            return response
+        extra = _string_mapping(response_headers(request), "request guard response headers")
+        if not extra:
+            return response
+        headers = dict(response.headers)
+        headers.update(extra)
+        return HttpResponse(
+            status_code=response.status_code,
+            headers=headers,
+            body=response.body,
+            multi_headers=response.multi_headers,
         )
 
     def _handle_route(
@@ -347,20 +401,31 @@ def register_auth_routes(
     auth_api: Any,
     *,
     session_transport: Any | None = None,
+    csrf_token_service: Any | None = None,
 ) -> tuple[HttpRoute, ...]:
     """Register AuthApi facade routes on an existing router."""
 
     return (
-        _add_manifest_route(router, AUTH_HTTP_ROUTES["request_login_challenge"], auth_api.request_login_challenge),
+        _add_manifest_route(
+            router,
+            AUTH_HTTP_ROUTES["request_login_challenge"],
+            _csrf_issue_handler(auth_api.request_login_challenge, csrf_token_service),
+        ),
         _add_manifest_route(
             router,
             AUTH_HTTP_ROUTES["login_with_metamask"],
-            _cookie_login_handler(auth_api.login_with_metamask, session_transport),
+            _csrf_issue_handler(
+                _cookie_login_handler(auth_api.login_with_metamask, session_transport),
+                csrf_token_service,
+            ),
         ),
         _add_manifest_route(
             router,
             AUTH_HTTP_ROUTES["refresh_session"],
-            _cookie_login_handler(auth_api.refresh_session, session_transport),
+            _csrf_issue_handler(
+                _cookie_login_handler(auth_api.refresh_session, session_transport),
+                csrf_token_service,
+            ),
         ),
         _add_manifest_route(
             router,
@@ -459,6 +524,40 @@ def register_operator_action_routes(router: HttpRouter, operator_action_api: Any
 
 def _add_manifest_route(router: HttpRouter, spec: HttpRouteSpec, handler: HttpHandler) -> HttpRoute:
     return router.add_route(spec.method, spec.path, handler, operation_id=spec.operation_id)
+
+
+def _csrf_issue_handler(handler: HttpHandler, csrf_token_service: Any | None) -> HttpHandler:
+    if csrf_token_service is None:
+        return handler
+
+    def wrapped(request: ApiRequest) -> ApiResponse:
+        response = handler(request)
+        if response.status_code < 200 or response.status_code >= 300:
+            return response
+        issue_token = getattr(csrf_token_service, "issue_token", None)
+        if not callable(issue_token):
+            raise ValueError("csrf token service must expose issue_token(now=...)")
+        issued = issue_token(now=request.received_at)
+        body = dict(response.body) if isinstance(response.body, Mapping) else response.body
+        body_fields = getattr(issued, "body_fields", None)
+        if isinstance(body, dict) and callable(body_fields):
+            body.update(body_fields())
+        set_cookie_header_pair = getattr(issued, "set_cookie_header_pair", None)
+        if (
+            not isinstance(set_cookie_header_pair, tuple)
+            or len(set_cookie_header_pair) != 2
+            or set_cookie_header_pair[0] != "Set-Cookie"
+        ):
+            raise ValueError("csrf token issue must expose a Set-Cookie header pair")
+        return json_response(
+            body,
+            status_code=response.status_code,
+            request_id=response.request_id,
+            headers=_extra_headers(response.headers),
+            multi_headers=(*response.multi_headers, set_cookie_header_pair),
+        )
+
+    return wrapped
 
 
 @dataclass(frozen=True)
