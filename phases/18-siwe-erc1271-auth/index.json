@@ -21,7 +21,10 @@
     {
       "step": 2,
       "name": "erc1271-smart-wallet-verification",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-18T06:54:14+0900",
+      "summary": "Auth signature verification now supports deployed ERC-1271 smart wallets via get_code + isValidSignature(bytes32,bytes), with auth RPC chain/timeout runtime config and regression coverage.",
+      "completed_at": "2026-05-18T07:03:20+0900"
     },
     {
       "step": 3,
