@@ -21,7 +21,10 @@
     {
       "step": 2,
       "name": "fastapi-runtime-public-contracts",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-17T08:59:54+0900",
+      "completed_at": "2026-05-17T09:06:53+0900",
+      "summary": "Added ASGI/FastAPI runtime preview public contract coverage in scripts/test_fastapi_asgi_public_contracts.py, no-server-start adapter metadata, and README scope/verification docs."
     }
   ],
   "created_at": "2026-05-16T20:43:18+0900"
