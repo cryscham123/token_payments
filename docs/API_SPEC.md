@@ -732,4 +732,4 @@ Final local verification should run in this order:
 9. Use operator dashboard/detail endpoints for observability.
 10. Use operator action endpoints only for explicit manual recovery.
 
-Phase 15 should add committed Postman collection/examples, seed data, and expected response fixtures for this flow.
+For cookie auth setup, import `postman/token-payments.local.postman_collection.json` and `postman/token-payments.local.postman_environment.json`. The auth folder runs `POST /auth/challenges`, MetaMask signing, `POST /auth/sessions`, `POST /auth/sessions/refresh`, `DELETE /auth/sessions`, and `GET /auth/me` in order. Postman stores `Set-Cookie` responses in its cookie jar; happy-path requests do not use manual `Cookie`, Bearer, localStorage, or sessionStorage auth. `postman/token-payments.cookie-auth.expected.json` records redacted signed token shape, active key id metadata, CSRF header/cookie names, cookie attributes, and expired/invalid-signature negative cases.

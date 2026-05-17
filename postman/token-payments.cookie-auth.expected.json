@@ -1,0 +1,372 @@
+{
+  "name": "Token Payments cookie auth expected response contract",
+  "postmanCookieJar": {
+    "storesSetCookieAutomatically": true,
+    "manualCookieHeaderForHappyPath": false,
+    "notes": [
+      "Run requestLoginChallenge first so Postman stores csrf_token.",
+      "Run loginWithMetaMask next so Postman stores access_token and refresh_token.",
+      "refreshSession, logout, and getCurrentUser rely on the Postman cookie jar instead of a hand-authored Cookie header."
+    ]
+  },
+  "csrf": {
+    "cookieName": "csrf_token",
+    "headerName": "X-CSRF-Token",
+    "sourceResponses": [
+      "requestLoginChallenge",
+      "loginWithMetaMask",
+      "refreshSession"
+    ],
+    "requestHeaderInjection": [
+      "loginWithMetaMask",
+      "refreshSession",
+      "logout"
+    ]
+  },
+  "expectedResponses": [
+    {
+      "operationId": "requestLoginChallenge",
+      "status": 201,
+      "setCookie": [
+        {
+          "name": "csrf_token",
+          "value": "<redacted-signed-csrf-token>",
+          "rawValueCommitted": false,
+          "signedTokenShape": {
+            "segments": 3,
+            "keyId": "present",
+            "nonce": "present",
+            "signature": "present"
+          },
+          "attributes": {
+            "HttpOnly": false,
+            "Secure": true,
+            "SameSite": "Lax",
+            "Path": "/",
+            "Max-Age": {
+              "boundedSeconds": 3600
+            },
+            "Expires": "bounded"
+          }
+        }
+      ],
+      "body": {
+        "csrfToken": "<redacted-signed-csrf-token>",
+        "csrf": {
+          "cookieName": "csrf_token",
+          "headerName": "X-CSRF-Token"
+        }
+      }
+    },
+    {
+      "operationId": "loginWithMetaMask",
+      "status": 200,
+      "setCookie": [
+        {
+          "name": "access_token",
+          "value": "<redacted-signed-session-token>",
+          "rawValueCommitted": false,
+          "signedTokenShape": {
+            "segments": 3,
+            "header": {
+              "alg": "HS256",
+              "typ": "TP-SESSION",
+              "kid": "present",
+              "activeKeyIdSource": "SESSION_ACTIVE_KEY_ID"
+            },
+            "payloadClaims": [
+              "sub",
+              "sessionId",
+              "walletAddress",
+              "role",
+              "iat",
+              "exp",
+              "typ",
+              "jti",
+              "rot",
+              "scopes"
+            ],
+            "payloadType": "access",
+            "signature": "present"
+          },
+          "attributes": {
+            "HttpOnly": true,
+            "Secure": true,
+            "SameSite": "Lax",
+            "Path": "/",
+            "Max-Age": {
+              "boundedSeconds": 900
+            },
+            "Expires": "bounded"
+          }
+        },
+        {
+          "name": "refresh_token",
+          "value": "<redacted-signed-session-token>",
+          "rawValueCommitted": false,
+          "signedTokenShape": {
+            "segments": 3,
+            "header": {
+              "alg": "HS256",
+              "typ": "TP-SESSION",
+              "kid": "present",
+              "activeKeyIdSource": "SESSION_ACTIVE_KEY_ID"
+            },
+            "payloadClaims": [
+              "sub",
+              "sessionId",
+              "walletAddress",
+              "role",
+              "iat",
+              "exp",
+              "typ",
+              "jti",
+              "rot",
+              "scopes"
+            ],
+            "payloadType": "refresh",
+            "signature": "present"
+          },
+          "attributes": {
+            "HttpOnly": true,
+            "Secure": true,
+            "SameSite": "Lax",
+            "Path": "/",
+            "Max-Age": {
+              "boundedSeconds": 2592000
+            },
+            "Expires": "bounded"
+          }
+        },
+        {
+          "name": "csrf_token",
+          "value": "<redacted-signed-csrf-token>",
+          "rawValueCommitted": false,
+          "signedTokenShape": {
+            "segments": 3,
+            "keyId": "present",
+            "nonce": "present",
+            "signature": "present"
+          },
+          "attributes": {
+            "HttpOnly": false,
+            "Secure": true,
+            "SameSite": "Lax",
+            "Path": "/",
+            "Max-Age": {
+              "boundedSeconds": 3600
+            },
+            "Expires": "bounded"
+          }
+        }
+      ],
+      "body": {
+        "token": {
+          "accessToken": "<set-cookie>",
+          "refreshToken": "<set-cookie>",
+          "transport": "cookie"
+        },
+        "csrfToken": "<redacted-signed-csrf-token>"
+      }
+    },
+    {
+      "operationId": "refreshSession",
+      "status": 200,
+      "setCookie": [
+        {
+          "name": "access_token",
+          "value": "<redacted-signed-session-token>",
+          "rawValueCommitted": false,
+          "signedTokenShape": {
+            "segments": 3,
+            "header": {
+              "alg": "HS256",
+              "typ": "TP-SESSION",
+              "kid": "present",
+              "activeKeyIdSource": "SESSION_ACTIVE_KEY_ID"
+            },
+            "payloadClaims": [
+              "sub",
+              "sessionId",
+              "walletAddress",
+              "role",
+              "iat",
+              "exp",
+              "typ",
+              "jti",
+              "rot",
+              "scopes"
+            ],
+            "payloadType": "access",
+            "signature": "present"
+          },
+          "attributes": {
+            "HttpOnly": true,
+            "Secure": true,
+            "SameSite": "Lax",
+            "Path": "/",
+            "Max-Age": {
+              "boundedSeconds": 900
+            },
+            "Expires": "bounded"
+          }
+        },
+        {
+          "name": "refresh_token",
+          "value": "<redacted-signed-session-token>",
+          "rawValueCommitted": false,
+          "signedTokenShape": {
+            "segments": 3,
+            "header": {
+              "alg": "HS256",
+              "typ": "TP-SESSION",
+              "kid": "present",
+              "activeKeyIdSource": "SESSION_ACTIVE_KEY_ID"
+            },
+            "payloadClaims": [
+              "sub",
+              "sessionId",
+              "walletAddress",
+              "role",
+              "iat",
+              "exp",
+              "typ",
+              "jti",
+              "rot",
+              "scopes"
+            ],
+            "payloadType": "refresh",
+            "signature": "present"
+          },
+          "attributes": {
+            "HttpOnly": true,
+            "Secure": true,
+            "SameSite": "Lax",
+            "Path": "/",
+            "Max-Age": {
+              "boundedSeconds": 2592000
+            },
+            "Expires": "bounded"
+          }
+        },
+        {
+          "name": "csrf_token",
+          "value": "<redacted-signed-csrf-token>",
+          "rawValueCommitted": false,
+          "signedTokenShape": {
+            "segments": 3,
+            "keyId": "present",
+            "nonce": "present",
+            "signature": "present"
+          },
+          "attributes": {
+            "HttpOnly": false,
+            "Secure": true,
+            "SameSite": "Lax",
+            "Path": "/",
+            "Max-Age": {
+              "boundedSeconds": 3600
+            },
+            "Expires": "bounded"
+          }
+        }
+      ],
+      "body": {
+        "token": {
+          "accessToken": "<set-cookie>",
+          "refreshToken": "<set-cookie>",
+          "transport": "cookie"
+        },
+        "csrfToken": "<redacted-signed-csrf-token>"
+      }
+    },
+    {
+      "operationId": "logout",
+      "status": 200,
+      "setCookie": [
+        {
+          "name": "access_token",
+          "value": "<expired-empty-cookie>",
+          "rawValueCommitted": false,
+          "attributes": {
+            "HttpOnly": true,
+            "Secure": true,
+            "SameSite": "Lax",
+            "Path": "/",
+            "Max-Age": {
+              "boundedSeconds": 0
+            },
+            "Expires": "Thu, 01 Jan 1970 00:00:00 GMT"
+          }
+        },
+        {
+          "name": "refresh_token",
+          "value": "<expired-empty-cookie>",
+          "rawValueCommitted": false,
+          "attributes": {
+            "HttpOnly": true,
+            "Secure": true,
+            "SameSite": "Lax",
+            "Path": "/",
+            "Max-Age": {
+              "boundedSeconds": 0
+            },
+            "Expires": "Thu, 01 Jan 1970 00:00:00 GMT"
+          }
+        }
+      ]
+    }
+  ],
+  "negativeCases": [
+    {
+      "name": "expired access token rejected",
+      "operationId": "expiredAccessTokenRejected",
+      "request": {
+        "method": "GET",
+        "path": "/auth/me",
+        "cookie": "access_token=<redacted-expired-signed-session-token>"
+      },
+      "tokenExpectation": {
+        "segments": 3,
+        "kid": "present",
+        "signature": "present",
+        "expired": true,
+        "signatureValid": true,
+        "rawValueCommitted": false
+      },
+      "expectedResponse": {
+        "status": 401,
+        "body": {
+          "error": {
+            "code": "INVALID_AUTH_TOKEN"
+          }
+        }
+      }
+    },
+    {
+      "name": "invalid signature access token rejected",
+      "operationId": "invalidSignatureAccessTokenRejected",
+      "request": {
+        "method": "GET",
+        "path": "/auth/me",
+        "cookie": "access_token=<redacted-invalid-signature-session-token>"
+      },
+      "tokenExpectation": {
+        "segments": 3,
+        "kid": "present",
+        "signature": "present",
+        "expired": false,
+        "signatureValid": false,
+        "rawValueCommitted": false
+      },
+      "expectedResponse": {
+        "status": 401,
+        "body": {
+          "error": {
+            "code": "INVALID_AUTH_TOKEN"
+          }
+        }
+      }
+    }
+  ]
+}
