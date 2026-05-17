@@ -134,6 +134,14 @@ def _sort_from_request(request: ApiRequest) -> tuple[str, OperatorSortDirection]
 
 
 def _claims_from_request(request: ApiRequest) -> OperatorClaims:
+    if request.auth_context is not None:
+        return OperatorClaims(
+            user_id=request.auth_context.user_id,
+            role=_optional_role(request.auth_context.role),
+            scopes=request.auth_context.scopes,
+        )
+    if not request.local_auth_fallback_enabled:
+        return OperatorClaims()
     headers = _lower_headers(request.headers)
     return OperatorClaims(
         user_id=_optional_text(headers.get("x-user-id")),

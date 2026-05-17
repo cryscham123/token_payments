@@ -31,7 +31,7 @@
 
 ## Cookie And CSRF Policy
 
-Login/refresh 성공 시 server는 access/refresh cookie를 `Set-Cookie`로 내려준다.
+Login/refresh 성공 시 server는 access/refresh cookie를 `Set-Cookie`로 내려준다. Browser checkout에서 이 cookie가 session source of truth이며, response body의 `token` object는 legacy facade 호환 metadata일 수 있다.
 
 Required cookie attributes:
 
@@ -50,9 +50,9 @@ Session cookie values are signed tokens. The live runtime loads signing keys fro
 - `SESSION_ACCESS_TTL_SECONDS`
 - `SESSION_REFRESH_TTL_SECONDS`
 
-New tokens are signed with the active key. Verification accepts the active key and configured previous keys until token expiry. Tokens must carry a `kid` or equivalent key id. Missing signing keys or committed placeholder keys must make live server startup fail with a bounded configuration error.
+`SESSION_SIGNING_KEYS`는 `kid=secret,kid2=previous_secret` 또는 동등한 object 형태로 active key와 previous key를 함께 표현한다. New tokens are signed with the active key. Verification accepts the active key and configured previous keys until token expiry. Tokens must carry a `kid` or equivalent key id. Payload claims include at least `sub`, `sessionId`, `walletAddress`, `role`, `iat`, `exp`, `typ`, and `jti`. Missing signing keys or committed placeholder keys must make live/prod server startup fail with a bounded configuration error.
 
-Session signing keys, signed token values, refresh token hashes, and CSRF secrets must never be logged or committed in fixtures.
+Session signing keys, signed token values, refresh token hashes/salts, and CSRF secrets must never be logged, committed in fixtures, or exposed in runtime previews.
 
 Cookie-authenticated mutating requests must include `X-CSRF-Token`. Missing or invalid CSRF token returns `403` with one of:
 
@@ -169,29 +169,29 @@ Response `200`:
     "revokedAt": null
   },
   "token": {
-    "accessToken": "access-token",
-    "refreshToken": "refresh-token",
-    "expiresAt": "2026-05-17T11:00:00+09:00"
+    "accessToken": "<set-cookie>",
+    "refreshToken": "<set-cookie>",
+    "expiresAt": "2026-05-17T11:00:00+09:00",
+    "transport": "cookie"
   }
 }
 ```
+
+Browser HTTP response headers include two `Set-Cookie` values for signed access/refresh session tokens. Cookie values are not shown in response examples.
 
 Errors: `400 VALIDATION_ERROR`, `401 INVALID_SIGNATURE`, `401 WALLET_MISMATCH`, `409 EXPIRED_CHALLENGE`, `409 REUSED_NONCE`.
 
 ### `POST /auth/sessions/refresh`
 
-Refresh token으로 session token을 회전한다.
+Refresh cookie로 session token을 회전한다.
 
-Final public request:
+Final browser request uses the `refresh_token` HttpOnly cookie. Body can be empty, or include `sessionId` when a non-browser client cannot rely on cookie claim extraction:
 
 ```json
-{
-  "sessionId": "session-001",
-  "refreshToken": "refresh-token"
-}
+{}
 ```
 
-Current harness facade may still model refresh token hash internally:
+Non-browser/private harness facade may still model refresh token hash internally. This internal hash/salt model is not a public browser response field:
 
 ```json
 {
@@ -205,6 +205,8 @@ Current harness facade may still model refresh token hash internally:
 ```
 
 Response `200`: same shape as `POST /auth/sessions`.
+
+Response headers rotate the refresh cookie and reissue the access cookie. Reuse detection is backed by the server-side session repository hash/salt/rotation model.
 
 Errors: `400 VALIDATION_ERROR`, `401 INVALID_SIGNATURE`, `409 EXPIRED_CHALLENGE`.
 
