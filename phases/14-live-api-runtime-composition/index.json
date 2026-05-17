@@ -29,7 +29,10 @@
     {
       "step": 3,
       "name": "csrf-cors-request-guard",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-17T14:22:31+0900",
+      "completed_at": "2026-05-17T14:38:31+0900",
+      "summary": "Added framework-neutral CSRF double-submit issuance/validation, credentialed CORS allowlist preflight handling, request body limits, live config wiring, and docs/env coverage."
     },
     {
       "step": 4,
