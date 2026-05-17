@@ -5,7 +5,7 @@ from importlib import import_module as _import_module
 from .auth import AuthApi
 from .asgi import AsgiApplication, AsgiReceive, AsgiScope, AsgiSend, build_asgi_app
 from .checkout import CheckoutApi
-from .contracts import ApiRequest, ApiResponse, JsonValue, json_response
+from .contracts import ApiAuthContext, ApiRequest, ApiResponse, JsonValue, json_response
 from .http import (
     AUTH_HTTP_ROUTES,
     CHECKOUT_HTTP_ROUTES,
@@ -73,6 +73,7 @@ __all__ = [
     "AuthApi",
     "ApiRequest",
     "ApiResponse",
+    "ApiAuthContext",
     "AsgiApplication",
     "AsgiReceive",
     "AsgiScope",

@@ -17,6 +17,48 @@ JsonValue = None | bool | int | float | str | list["JsonValue"] | dict[str, "Jso
 
 
 @dataclass(frozen=True)
+class ApiAuthContext:
+    """Framework-neutral authenticated session claims supplied by the HTTP boundary."""
+
+    user_id: str | None = None
+    session_id: str | None = None
+    wallet_address: str | None = None
+    role: str | None = None
+    scopes: tuple[str, ...] = ()
+    token_type: str | None = None
+    refresh_token_hash: Mapping[str, JsonValue] | None = None
+
+    def __post_init__(self) -> None:
+        if self.user_id is not None:
+            object.__setattr__(self, "user_id", _require_text(self.user_id, "ApiAuthContext.user_id"))
+        if self.session_id is not None:
+            object.__setattr__(self, "session_id", _require_text(self.session_id, "ApiAuthContext.session_id"))
+        if self.wallet_address is not None:
+            object.__setattr__(
+                self,
+                "wallet_address",
+                _require_text(self.wallet_address, "ApiAuthContext.wallet_address"),
+            )
+        if self.role is not None:
+            object.__setattr__(self, "role", _require_text(self.role, "ApiAuthContext.role"))
+        if not isinstance(self.scopes, tuple):
+            raise ValueError("ApiAuthContext.scopes must be a tuple")
+        object.__setattr__(
+            self,
+            "scopes",
+            tuple(_require_text(scope, "ApiAuthContext.scopes") for scope in self.scopes),
+        )
+        if self.token_type is not None:
+            object.__setattr__(self, "token_type", _require_text(self.token_type, "ApiAuthContext.token_type"))
+        if self.refresh_token_hash is not None:
+            object.__setattr__(
+                self,
+                "refresh_token_hash",
+                MappingProxyType(_to_json_safe_mapping(self.refresh_token_hash, "ApiAuthContext.refresh_token_hash")),
+            )
+
+
+@dataclass(frozen=True)
 class ApiRequest:
     """Pure request DTO independent of an HTTP framework."""
 
@@ -26,6 +68,8 @@ class ApiRequest:
     headers: Mapping[str, str] = field(default_factory=dict)
     query: Mapping[str, Any] = field(default_factory=dict)
     body: Any = None
+    auth_context: ApiAuthContext | None = None
+    local_auth_fallback_enabled: bool = True
     received_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def __post_init__(self) -> None:
@@ -38,6 +82,10 @@ class ApiRequest:
         object.__setattr__(self, "headers", MappingProxyType(_string_mapping(self.headers, "ApiRequest.headers")))
         object.__setattr__(self, "query", MappingProxyType(_to_json_safe_mapping(self.query, "ApiRequest.query")))
         object.__setattr__(self, "body", _to_json_safe(self.body))
+        if self.auth_context is not None and not isinstance(self.auth_context, ApiAuthContext):
+            raise ValueError("ApiRequest.auth_context must be an ApiAuthContext")
+        if not isinstance(self.local_auth_fallback_enabled, bool):
+            raise ValueError("ApiRequest.local_auth_fallback_enabled must be a bool")
         object.__setattr__(self, "received_at", _require_aware_datetime(self.received_at, "ApiRequest.received_at"))
 
 
@@ -48,6 +96,7 @@ class ApiResponse:
     status_code: int
     body: JsonValue
     headers: Mapping[str, str] = field(default_factory=dict)
+    multi_headers: tuple[tuple[str, str], ...] = ()
     request_id: str | None = None
 
     def __post_init__(self) -> None:
@@ -57,8 +106,16 @@ class ApiResponse:
             raise ValueError("ApiResponse.status_code must be between 100 and 599")
         object.__setattr__(self, "body", _to_json_safe(self.body))
         object.__setattr__(self, "headers", MappingProxyType(_string_mapping(self.headers, "ApiResponse.headers")))
+        object.__setattr__(
+            self,
+            "multi_headers",
+            _header_pairs(self.multi_headers, "ApiResponse.multi_headers"),
+        )
         if self.request_id is not None:
             object.__setattr__(self, "request_id", _require_text(self.request_id, "ApiResponse.request_id"))
+
+    def header_items(self) -> tuple[tuple[str, str], ...]:
+        return (*self.headers.items(), *self.multi_headers)
 
     def to_json(self) -> str:
         return json.dumps(
@@ -80,6 +137,7 @@ def json_response(
     status_code: int = 200,
     request_id: str | None = None,
     headers: Mapping[str, str] | None = None,
+    multi_headers: tuple[tuple[str, str], ...] = (),
 ) -> ApiResponse:
     response_headers = {"Content-Type": "application/json"}
     if headers:
@@ -88,8 +146,23 @@ def json_response(
         status_code=status_code,
         body=_to_json_safe(body),
         headers=response_headers,
+        multi_headers=multi_headers,
         request_id=request_id,
     )
+
+
+def _header_pairs(value: tuple[tuple[str, str], ...], field_name: str) -> tuple[tuple[str, str], ...]:
+    if not isinstance(value, tuple):
+        raise ValueError(f"{field_name} must be a tuple")
+    output: list[tuple[str, str]] = []
+    for item in value:
+        if not isinstance(item, tuple) or len(item) != 2:
+            raise ValueError(f"{field_name} items must be header name/value tuples")
+        key, header_value = item
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError(f"{field_name} keys must be non-empty strings")
+        output.append((key.strip(), str(header_value)))
+    return tuple(output)
 
 
 def _require_text(value: str, field_name: str) -> str:

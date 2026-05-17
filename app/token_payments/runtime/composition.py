@@ -6,6 +6,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
+import inspect
 import os
 from typing import Any, Mapping, Protocol, Self
 from urllib.parse import SplitResult, urlsplit, urlunsplit
@@ -69,6 +70,16 @@ from token_payments.shared.adapter.postgres import (
 
 from .contracts import Clock, IdGenerator, JsonValue
 from .observability import PostgresOperatorObservabilityQuery
+from .session_transport import (
+    DEFAULT_SESSION_ACCESS_TTL_SECONDS,
+    DEFAULT_SESSION_REFRESH_TTL_SECONDS,
+    CookieSessionTransport,
+    SessionClaims,
+    SessionKeyConfig,
+    SessionKeyRing,
+    SessionTokenSigner,
+    is_live_environment,
+)
 
 
 DEFAULT_POSTGRES_DSN = "postgresql://token_payments:<redacted>@postgres:5432/token_payments"
@@ -118,6 +129,7 @@ class LiveRuntimeConfig:
 
     api_host: str = "0.0.0.0"
     api_port: int = 8000
+    runtime_environment: str = "local"
     request_timeout_seconds: float = 30.0
     postgres_dsn: str = field(default=DEFAULT_POSTGRES_DSN, repr=False)
     kafka_bootstrap_servers: tuple[str, ...] | str = DEFAULT_KAFKA_BOOTSTRAP_SERVERS
@@ -129,10 +141,18 @@ class LiveRuntimeConfig:
     blockchain_native_decimals: int = DEFAULT_BLOCKCHAIN_NATIVE_DECIMALS
     blockchain_token_address: str | None = field(default=DEFAULT_BLOCKCHAIN_TOKEN_ADDRESS, repr=False)
     blockchain_gas_buffer_rate: Decimal | str | int | float = DEFAULT_BLOCKCHAIN_GAS_BUFFER_RATE
+    session_key_ring: SessionKeyRing | None = field(default=None, repr=False)
+    session_access_ttl_seconds: int = DEFAULT_SESSION_ACCESS_TTL_SECONDS
+    session_refresh_ttl_seconds: int = DEFAULT_SESSION_REFRESH_TTL_SECONDS
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "api_host", _require_text(self.api_host, "RUNTIME_API_HOST"))
         object.__setattr__(self, "api_port", _require_port(self.api_port, "RUNTIME_API_PORT"))
+        object.__setattr__(
+            self,
+            "runtime_environment",
+            _require_text(self.runtime_environment, "RUNTIME_ENVIRONMENT").lower(),
+        )
         object.__setattr__(
             self,
             "request_timeout_seconds",
@@ -187,13 +207,36 @@ class LiveRuntimeConfig:
                 "ADAPTER_BLOCKCHAIN_GAS_BUFFER_RATE",
             ),
         )
+        if self.session_key_ring is None:
+            object.__setattr__(
+                self,
+                "session_key_ring",
+                SessionKeyRing.from_env({}, runtime_environment=self.runtime_environment),
+            )
+        elif not isinstance(self.session_key_ring, SessionKeyRing):
+            raise ValueError("LiveRuntimeConfig.session_key_ring must be a SessionKeyRing")
+        else:
+            self.session_key_ring.validate_for_environment(self.runtime_environment)
+        object.__setattr__(
+            self,
+            "session_access_ttl_seconds",
+            _require_positive_int(self.session_access_ttl_seconds, "SESSION_ACCESS_TTL_SECONDS"),
+        )
+        object.__setattr__(
+            self,
+            "session_refresh_ttl_seconds",
+            _require_positive_int(self.session_refresh_ttl_seconds, "SESSION_REFRESH_TTL_SECONDS"),
+        )
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Self:
         source = os.environ if env is None else env
+        runtime_environment = source.get("RUNTIME_ENVIRONMENT", "local")
+        session_key_config = SessionKeyConfig.from_env(source, runtime_environment=runtime_environment)
         return cls(
             api_host=source.get("RUNTIME_API_HOST", "0.0.0.0"),
             api_port=_parse_int(source, "RUNTIME_API_PORT", 8000),
+            runtime_environment=runtime_environment,
             request_timeout_seconds=_parse_float(source, "RUNTIME_REQUEST_TIMEOUT_SECONDS", 30.0),
             postgres_dsn=source.get("ADAPTER_POSTGRES_DSN", DEFAULT_POSTGRES_DSN),
             kafka_bootstrap_servers=_parse_csv(
@@ -229,6 +272,9 @@ class LiveRuntimeConfig:
                 "ADAPTER_BLOCKCHAIN_GAS_BUFFER_RATE",
                 DEFAULT_BLOCKCHAIN_GAS_BUFFER_RATE,
             ),
+            session_key_ring=session_key_config.key_ring,
+            session_access_ttl_seconds=session_key_config.access_ttl_seconds,
+            session_refresh_ttl_seconds=session_key_config.refresh_ttl_seconds,
         )
 
     def to_redacted_dict(self) -> dict[str, JsonValue]:
@@ -238,7 +284,19 @@ class LiveRuntimeConfig:
             "api": {
                 "host": self.api_host,
                 "port": self.api_port,
+                "environment": self.runtime_environment,
                 "requestTimeoutSeconds": self.request_timeout_seconds,
+            },
+            "session": {
+                "transport": "HttpOnlyCookie",
+                "accessCookieName": "access_token",
+                "refreshCookieName": "refresh_token",
+                "activeKeyId": self.session_key_ring.active_key_id,
+                "signingKeyIds": list(self.session_key_ring.keys),
+                "signingKeysConfigured": bool(self.session_key_ring.keys),
+                "accessTtlSeconds": self.session_access_ttl_seconds,
+                "refreshTtlSeconds": self.session_refresh_ttl_seconds,
+                "cookieSecretsRedacted": True,
             },
             "adapters": {
                 "postgres": {
@@ -359,10 +417,10 @@ class LiveApiFacades:
     operator_action: Any
 
 
-def register_auth_routes(router: Any, auth_api: Any) -> Any:
+def register_auth_routes(router: Any, auth_api: Any, *, session_transport: Any | None = None) -> Any:
     from token_payments.api import register_auth_routes as _register_auth_routes
 
-    return _register_auth_routes(router, auth_api)
+    return _register_auth_routes(router, auth_api, session_transport=session_transport)
 
 
 def register_order_routes(router: Any, orders_api: Any) -> Any:
@@ -446,9 +504,15 @@ def build_live_api_router(
 
     from token_payments.api import HttpRouter
 
-    facades = build_live_api_facades(config=config, dependencies=dependencies)
-    router = HttpRouter()
-    register_auth_routes(router, facades.auth)
+    live_config = config or LiveRuntimeConfig.from_env()
+    live_dependencies = dependencies or LiveRuntimeDependencies()
+    session_transport = _session_transport(live_config, live_dependencies.clock)
+    facades = build_live_api_facades(config=live_config, dependencies=live_dependencies)
+    router = HttpRouter(
+        auth_context_factory=session_transport.auth_context_from_http_request,
+        allow_dev_auth_headers=not is_live_environment(live_config.runtime_environment),
+    )
+    _register_auth_routes_with_session_transport(router, facades.auth, session_transport)
     register_order_routes(router, facades.orders)
     register_checkout_routes(router, facades.checkout)
     register_payment_routes(router, facades.payments)
@@ -521,7 +585,12 @@ class _TransactionalAuthUseCase:
             login_challenges=PostgresLoginChallengeRepository(connection),
             sessions=PostgresAuthSessionRepository(connection),
             signature_verifier=ClientWalletSignatureVerifier(self._dependencies.wallet_signature_client),
-            token_issuer=_RuntimeTokenIssuer(self._dependencies.clock),
+            token_issuer=_RuntimeTokenIssuer(
+                self._dependencies.clock,
+                signer=SessionTokenSigner(self._config.session_key_ring),
+                access_ttl=timedelta(seconds=self._config.session_access_ttl_seconds),
+                refresh_ttl=timedelta(seconds=self._config.session_refresh_ttl_seconds),
+            ),
             event_publisher=_NoopAuthEventPublisher(),
             challenge_ttl=timedelta(minutes=5),
         )
@@ -779,9 +848,40 @@ class _TransactionalOperatorOutboxActionPort:
         )
 
 
+def _session_transport(config: LiveRuntimeConfig, clock: Clock | Any | None = None) -> CookieSessionTransport:
+    return CookieSessionTransport.from_key_config(
+        SessionKeyConfig(
+            key_ring=config.session_key_ring,
+            access_ttl_seconds=config.session_access_ttl_seconds,
+            refresh_ttl_seconds=config.session_refresh_ttl_seconds,
+        ),
+        clock=clock,
+    )
+
+
+def _register_auth_routes_with_session_transport(
+    router: Any,
+    auth_api: Any,
+    session_transport: CookieSessionTransport,
+) -> Any:
+    if "session_transport" in inspect.signature(register_auth_routes).parameters:
+        return register_auth_routes(router, auth_api, session_transport=session_transport)
+    return register_auth_routes(router, auth_api)
+
+
 class _RuntimeTokenIssuer:
-    def __init__(self, clock: Clock | Any) -> None:
+    def __init__(
+        self,
+        clock: Clock | Any,
+        *,
+        signer: SessionTokenSigner,
+        access_ttl: timedelta,
+        refresh_ttl: timedelta,
+    ) -> None:
         self._clock = clock
+        self._signer = signer
+        self._access_ttl = _require_positive_timedelta(access_ttl, "SESSION_ACCESS_TTL_SECONDS")
+        self._refresh_ttl = _require_positive_timedelta(refresh_ttl, "SESSION_REFRESH_TTL_SECONDS")
 
     def issue_tokens(self, user: User, session: AuthSession) -> IssuedToken:
         return self._token(user=user, session=session, rotation_version=0)
@@ -789,13 +889,40 @@ class _RuntimeTokenIssuer:
     def refresh_tokens(self, session: AuthSession) -> IssuedToken:
         return self._token(user=None, session=session, rotation_version=session.refresh_token_hash.rotation_version + 1)
 
+    def refresh_tokens_for_user(self, user: User, session: AuthSession) -> IssuedToken:
+        return self._token(user=user, session=session, rotation_version=session.refresh_token_hash.rotation_version + 1)
+
     def _token(self, *, user: User | None, session: AuthSession, rotation_version: int) -> IssuedToken:
         now = self._clock.now()
         user_id = user.user_id if user is not None else session.user_id
+        role = user.role.value if user is not None else "CUSTOMER"
+        access_expires_at = now + self._access_ttl
+        refresh_expires_at = now + self._refresh_ttl
+        base_claims = {
+            "user_id": str(user_id),
+            "session_id": str(session.session_id),
+            "wallet_address": str(session.wallet),
+            "role": role,
+            "issued_at": now,
+            "jti": "pending",
+            "rotation_version": rotation_version,
+        }
         return IssuedToken(
-            access_token=f"access:{user_id}:{session.session_id}:{rotation_version}",
-            refresh_token=f"refresh:{session.session_id}:{rotation_version}",
-            expires_at=now + timedelta(hours=1),
+            access_token=self._signer.sign(
+                SessionClaims(
+                    **base_claims,
+                    expires_at=access_expires_at,
+                    token_type="access",
+                )
+            ),
+            refresh_token=self._signer.sign(
+                SessionClaims(
+                    **base_claims,
+                    expires_at=refresh_expires_at,
+                    token_type="refresh",
+                )
+            ),
+            expires_at=access_expires_at,
         )
 
 
@@ -921,6 +1048,12 @@ def _require_positive_number(value: float | int, field_name: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (float, int)) or float(value) <= 0:
         raise ValueError(f"{field_name} must be a positive number")
     return float(value)
+
+
+def _require_positive_timedelta(value: timedelta, field_name: str) -> timedelta:
+    if not isinstance(value, timedelta) or value.total_seconds() <= 0:
+        raise ValueError(f"{field_name} must be a positive timedelta")
+    return value
 
 
 def _require_non_negative_decimal(value: Decimal | str | int | float, field_name: str) -> Decimal:

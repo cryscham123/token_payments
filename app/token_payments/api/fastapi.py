@@ -102,11 +102,15 @@ def _make_endpoint(router: HttpRouter, Request: Any, Response: Any) -> Any:
 
 
 def _fastapi_response(response: HttpResponse, Response: Any) -> Any:
-    return Response(
+    output = Response(
         content=response.body,
         status_code=response.status_code,
         headers=dict(response.headers),
     )
+    raw_headers = getattr(output, "raw_headers", None)
+    if isinstance(raw_headers, list):
+        raw_headers.extend((name.encode("latin-1"), value.encode("latin-1")) for name, value in response.multi_headers)
+    return output
 
 
 def _request_path(request: Any) -> str:

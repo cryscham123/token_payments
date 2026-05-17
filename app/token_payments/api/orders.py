@@ -90,9 +90,12 @@ def _request_body(request: ApiRequest) -> Mapping[str, Any]:
 
 
 def _authenticated_user_id(request: ApiRequest) -> str:
-    for key, value in request.headers.items():
-        if key.lower() == "x-user-id" and value.strip():
-            return value.strip()
+    if request.auth_context is not None and request.auth_context.user_id is not None:
+        return request.auth_context.user_id
+    if request.local_auth_fallback_enabled:
+        for key, value in request.headers.items():
+            if key.lower() == "x-user-id" and value.strip():
+                return value.strip()
     raise OrderApplicationError(OrderErrorCode.VALIDATION_ERROR, "X-User-Id header is required")
 
 

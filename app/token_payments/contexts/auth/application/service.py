@@ -184,7 +184,11 @@ class AuthApplicationService:
         if user is None or not user.active:
             raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, "session user is missing or inactive")
 
-        issued_token = self._token_issuer.refresh_tokens(session)
+        refresh_for_user = getattr(self._token_issuer, "refresh_tokens_for_user", None)
+        if callable(refresh_for_user):
+            issued_token = refresh_for_user(user, session)
+        else:
+            issued_token = self._token_issuer.refresh_tokens(session)
         rotated_hash = _refresh_token_hash(
             issued_token.refresh_token,
             salt=session.refresh_token_hash.salt,

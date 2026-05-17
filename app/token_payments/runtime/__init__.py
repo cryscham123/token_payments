@@ -44,6 +44,15 @@ from .observability import (
     OperatorWorkerSnapshot,
     PostgresOperatorObservabilityQuery,
 )
+from .session_transport import (
+    AuthCookiePair,
+    CookieSessionTransport,
+    CookieSettings,
+    SessionClaims,
+    SessionKeyConfig,
+    SessionKeyRing,
+    SessionTokenSigner,
+)
 from .smoke import (
     AVAILABLE_SMOKE_SCENARIOS,
     SMOKE_CONTRACT,
@@ -69,6 +78,7 @@ from .workers import (
 
 __all__ = [
     "AVAILABLE_SMOKE_SCENARIOS",
+    "AuthCookiePair",
     "BrowserPreviewHttpServer",
     "BrowserPreviewRequestHandler",
     "BlockchainClient",
@@ -76,6 +86,8 @@ __all__ = [
     "CommandDispatchResult",
     "CommandDispatchStatus",
     "ContractRuntimeContainer",
+    "CookieSessionTransport",
+    "CookieSettings",
     "DEFAULT_BROWSER_PREVIEW_HOST",
     "DEFAULT_BROWSER_PREVIEW_PORT",
     "HealthState",
@@ -109,6 +121,10 @@ __all__ = [
     "RuntimeContainer",
     "REQUIRED_LIVE_DEPENDENCIES",
     "SMOKE_CONTRACT",
+    "SessionClaims",
+    "SessionKeyConfig",
+    "SessionKeyRing",
+    "SessionTokenSigner",
     "SmokeResult",
     "SmokeScenarioResult",
     "SmokeStatus",

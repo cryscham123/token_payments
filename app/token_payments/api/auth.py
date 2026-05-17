@@ -60,11 +60,11 @@ class AuthApi:
 
     def refresh_session(self, request: ApiRequest) -> ApiResponse:
         try:
-            body = _request_body(request)
+            body = _optional_request_body(request)
             result = self._use_case.refreshSession(
                 RefreshSessionCommand(
-                    session_id=SessionId(_required_text(body, "sessionId")),
-                    refresh_token_hash=_refresh_token_hash_from_body(_required_mapping(body, "refreshTokenHash")),
+                    session_id=SessionId(_session_id_from_request(request, body)),
+                    refresh_token_hash=_refresh_token_hash_from_body(_refresh_hash_mapping_from_request(request, body)),
                 )
             )
             return json_response(_login_payload(result), status_code=200, request_id=request.request_id)
@@ -73,8 +73,8 @@ class AuthApi:
 
     def logout(self, request: ApiRequest) -> ApiResponse:
         try:
-            body = _request_body(request)
-            session = self._use_case.logout(LogoutCommand(session_id=SessionId(_required_text(body, "sessionId"))))
+            body = _optional_request_body(request)
+            session = self._use_case.logout(LogoutCommand(session_id=SessionId(_session_id_from_request(request, body))))
             return json_response({"session": _session_payload(session)}, status_code=200, request_id=request.request_id)
         except (AuthApplicationError, ValueError) as exc:
             return _error_response(_coerce_auth_error(exc), request.request_id)
@@ -84,6 +84,8 @@ class AuthApi:
             user_id = request.query.get("userId")
             if user_id is None and isinstance(request.body, Mapping):
                 user_id = request.body.get("userId")
+            if user_id is None and request.auth_context is not None:
+                user_id = request.auth_context.user_id
             if not isinstance(user_id, str) or not user_id.strip():
                 raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, "userId is required")
             user = self._use_case.getCurrentUser(CurrentUserQuery(user_id=UserId(user_id)))
@@ -160,11 +162,35 @@ def _request_body(request: ApiRequest) -> Mapping[str, Any]:
     return request.body
 
 
+def _optional_request_body(request: ApiRequest) -> Mapping[str, Any]:
+    if request.body is None:
+        return {}
+    return _request_body(request)
+
+
 def _required_mapping(body: Mapping[str, Any], key: str) -> Mapping[str, Any]:
     value = body.get(key)
     if not isinstance(value, Mapping):
         raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, f"{key} must be an object")
     return value
+
+
+def _session_id_from_request(request: ApiRequest, body: Mapping[str, Any]) -> str:
+    value = body.get("sessionId")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    if request.auth_context is not None and request.auth_context.session_id is not None:
+        return request.auth_context.session_id
+    raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, "sessionId is required")
+
+
+def _refresh_hash_mapping_from_request(request: ApiRequest, body: Mapping[str, Any]) -> Mapping[str, Any]:
+    value = body.get("refreshTokenHash")
+    if isinstance(value, Mapping):
+        return value
+    if request.auth_context is not None and request.auth_context.refresh_token_hash is not None:
+        return request.auth_context.refresh_token_hash
+    raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, "refreshTokenHash is required")
 
 
 def _required_text(body: Mapping[str, Any], key: str) -> str:

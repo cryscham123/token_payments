@@ -12,7 +12,7 @@ from types import MappingProxyType
 from typing import Any, Mapping
 from urllib.parse import parse_qs, unquote
 
-from .contracts import ApiRequest, ApiResponse, json_response
+from .contracts import ApiAuthContext, ApiRequest, ApiResponse, json_response
 
 
 HttpHandler = Callable[[ApiRequest], ApiResponse]
@@ -46,6 +46,9 @@ class HttpRequest:
             raise ValueError("HttpRequest.body must be bytes")
 
 
+AuthContextFactory = Callable[[HttpRequest], ApiAuthContext | None]
+
+
 @dataclass(frozen=True)
 class HttpResponse:
     """Serialized HTTP response that can be returned by any framework adapter."""
@@ -53,6 +56,7 @@ class HttpResponse:
     status_code: int
     headers: Mapping[str, str]
     body: bytes
+    multi_headers: tuple[tuple[str, str], ...] = ()
 
     def __post_init__(self) -> None:
         if isinstance(self.status_code, bool) or not isinstance(self.status_code, int):
@@ -60,6 +64,7 @@ class HttpResponse:
         if self.status_code < 100 or self.status_code > 599:
             raise ValueError("HttpResponse.status_code must be between 100 and 599")
         object.__setattr__(self, "headers", MappingProxyType(_string_mapping(self.headers, "HttpResponse.headers")))
+        object.__setattr__(self, "multi_headers", _header_pairs(self.multi_headers, "HttpResponse.multi_headers"))
         if isinstance(self.body, bytearray):
             object.__setattr__(self, "body", bytes(self.body))
         elif not isinstance(self.body, bytes):
@@ -69,7 +74,10 @@ class HttpResponse:
     def from_api_response(cls, response: ApiResponse) -> "HttpResponse":
         body = json.dumps(response.body, ensure_ascii=True, separators=(",", ":"), sort_keys=True).encode("utf-8")
         headers = _response_headers(response.headers, request_id=response.request_id, content_length=len(body))
-        return cls(status_code=response.status_code, headers=headers, body=body)
+        return cls(status_code=response.status_code, headers=headers, body=body, multi_headers=response.multi_headers)
+
+    def header_items(self) -> tuple[tuple[str, str], ...]:
+        return (*self.headers.items(), *self.multi_headers)
 
 
 @dataclass(frozen=True)
@@ -137,9 +145,13 @@ class HttpRouter:
         routes: Iterable[HttpRoute] = (),
         *,
         request_id_factory: Callable[[HttpRequest], str] | None = None,
+        auth_context_factory: AuthContextFactory | None = None,
+        allow_dev_auth_headers: bool = True,
     ) -> None:
         self._routes: list[HttpRoute] = list(routes)
         self._request_id_factory = request_id_factory or _default_request_id
+        self._auth_context_factory = auth_context_factory
+        self._allow_dev_auth_headers = _require_bool(allow_dev_auth_headers, "HttpRouter.allow_dev_auth_headers")
 
     @property
     def routes(self) -> tuple[HttpRoute, ...]:
@@ -237,6 +249,16 @@ class HttpRouter:
 
         query = dict(path_params)
         query.update(_query_mapping(request.query))
+        try:
+            auth_context = self._auth_context(request, request_id)
+        except _AuthenticationRejected as exc:
+            return _error_response(
+                status_code=401,
+                code="INVALID_AUTH_TOKEN",
+                message=str(exc),
+                request_id=exc.request_id,
+            )
+
         api_kwargs: dict[str, Any] = {
             "request_id": request_id,
             "method": request.method,
@@ -244,11 +266,27 @@ class HttpRouter:
             "headers": request.headers,
             "query": query,
             "body": decoded_body,
+            "auth_context": auth_context,
+            "local_auth_fallback_enabled": self._allow_dev_auth_headers,
         }
         if request.received_at is not None:
             api_kwargs["received_at"] = request.received_at
 
         return HttpResponse.from_api_response(route.handler(ApiRequest(**api_kwargs)))
+
+    def _auth_context(self, request: HttpRequest, request_id: str) -> ApiAuthContext | None:
+        if self._auth_context_factory is None:
+            return None
+        try:
+            context = self._auth_context_factory(request)
+        except ValueError as exc:
+            raise _AuthenticationRejected(request_id=request_id, message=str(exc)) from exc
+        if context is not None and not isinstance(context, ApiAuthContext):
+            raise _AuthenticationRejected(
+                request_id=request_id,
+                message="auth context factory must return ApiAuthContext or None",
+            )
+        return context
 
 
 def build_wsgi_app(router: HttpRouter) -> WsgiApplication:
@@ -266,7 +304,7 @@ def build_wsgi_app(router: HttpRouter) -> WsgiApplication:
             body=_body_from_wsgi_environ(environ),
         )
         response = router.handle(request)
-        start_response(_status_line(response.status_code), list(response.headers.items()), None)
+        start_response(_status_line(response.status_code), list(response.header_items()), None)
         return [response.body]
 
     return app
@@ -304,14 +342,31 @@ def describe_http_routes() -> tuple[dict[str, str], ...]:
     return http_route_manifest()
 
 
-def register_auth_routes(router: HttpRouter, auth_api: Any) -> tuple[HttpRoute, ...]:
+def register_auth_routes(
+    router: HttpRouter,
+    auth_api: Any,
+    *,
+    session_transport: Any | None = None,
+) -> tuple[HttpRoute, ...]:
     """Register AuthApi facade routes on an existing router."""
 
     return (
         _add_manifest_route(router, AUTH_HTTP_ROUTES["request_login_challenge"], auth_api.request_login_challenge),
-        _add_manifest_route(router, AUTH_HTTP_ROUTES["login_with_metamask"], auth_api.login_with_metamask),
-        _add_manifest_route(router, AUTH_HTTP_ROUTES["refresh_session"], auth_api.refresh_session),
-        _add_manifest_route(router, AUTH_HTTP_ROUTES["logout"], auth_api.logout),
+        _add_manifest_route(
+            router,
+            AUTH_HTTP_ROUTES["login_with_metamask"],
+            _cookie_login_handler(auth_api.login_with_metamask, session_transport),
+        ),
+        _add_manifest_route(
+            router,
+            AUTH_HTTP_ROUTES["refresh_session"],
+            _cookie_login_handler(auth_api.refresh_session, session_transport),
+        ),
+        _add_manifest_route(
+            router,
+            AUTH_HTTP_ROUTES["logout"],
+            _cookie_logout_handler(auth_api.logout, session_transport),
+        ),
         _add_manifest_route(router, AUTH_HTTP_ROUTES["current_user"], auth_api.current_user),
     )
 
@@ -411,6 +466,12 @@ class _MalformedJson:
     reason: str
 
 
+class _AuthenticationRejected(ValueError):
+    def __init__(self, *, request_id: str, message: str) -> None:
+        self.request_id = request_id
+        super().__init__(message)
+
+
 def _error_response(
     *,
     status_code: int,
@@ -427,6 +488,85 @@ def _error_response(
             headers=headers,
         )
     )
+
+
+def _cookie_login_handler(handler: HttpHandler, session_transport: Any | None) -> HttpHandler:
+    if session_transport is None:
+        return handler
+
+    def wrapped(request: ApiRequest) -> ApiResponse:
+        response = handler(request)
+        if response.status_code < 200 or response.status_code >= 300:
+            return response
+        token_payload = response.body.get("token") if isinstance(response.body, Mapping) else None
+        if not isinstance(token_payload, Mapping):
+            return response
+        access_token = token_payload.get("accessToken")
+        refresh_token = token_payload.get("refreshToken")
+        if not isinstance(access_token, str) or not isinstance(refresh_token, str):
+            return response
+        cookie_pair = session_transport.issue_cookies(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            now=request.received_at,
+        )
+        return json_response(
+            _sanitize_auth_payload(response.body),
+            status_code=response.status_code,
+            request_id=response.request_id,
+            headers=_extra_headers(response.headers),
+            multi_headers=(*response.multi_headers, *cookie_pair.set_cookie_header_pairs),
+        )
+
+    return wrapped
+
+
+def _cookie_logout_handler(handler: HttpHandler, session_transport: Any | None) -> HttpHandler:
+    if session_transport is None:
+        return handler
+
+    def wrapped(request: ApiRequest) -> ApiResponse:
+        response = handler(request)
+        if response.status_code < 200 or response.status_code >= 300:
+            return response
+        return json_response(
+            _sanitize_auth_payload(response.body),
+            status_code=response.status_code,
+            request_id=response.request_id,
+            headers=_extra_headers(response.headers),
+            multi_headers=(*response.multi_headers, *session_transport.expire_cookie_header_pairs(now=request.received_at)),
+        )
+
+    return wrapped
+
+
+def _sanitize_auth_payload(body: Any) -> Any:
+    if not isinstance(body, Mapping):
+        return body
+    payload = dict(body)
+    session = payload.get("session")
+    if isinstance(session, Mapping):
+        safe_session = dict(session)
+        safe_session.pop("refreshTokenHash", None)
+        payload["session"] = safe_session
+    token = payload.get("token")
+    if isinstance(token, Mapping):
+        safe_token = dict(token)
+        if "accessToken" in safe_token:
+            safe_token["accessToken"] = "<set-cookie>"
+        if "refreshToken" in safe_token:
+            safe_token["refreshToken"] = "<set-cookie>"
+        safe_token["transport"] = "cookie"
+        payload["token"] = safe_token
+    return payload
+
+
+def _extra_headers(headers: Mapping[str, str]) -> dict[str, str]:
+    return {
+        key: value
+        for key, value in headers.items()
+        if _canonical_header_name(key) not in {"Content-Type", "Content-Length", "X-Request-Id"}
+    }
 
 
 def _decode_body(request: HttpRequest) -> Any:
@@ -620,6 +760,26 @@ def _string_mapping(value: Mapping[str, Any], field_name: str) -> dict[str, str]
             raise ValueError(f"{field_name} keys must be non-empty strings")
         output[key.strip()] = str(item)
     return output
+
+
+def _header_pairs(value: tuple[tuple[str, str], ...], field_name: str) -> tuple[tuple[str, str], ...]:
+    if not isinstance(value, tuple):
+        raise ValueError(f"{field_name} must be a tuple")
+    output: list[tuple[str, str]] = []
+    for item in value:
+        if not isinstance(item, tuple) or len(item) != 2:
+            raise ValueError(f"{field_name} items must be header name/value tuples")
+        key, item_value = item
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError(f"{field_name} keys must be non-empty strings")
+        output.append((key.strip(), str(item_value)))
+    return tuple(output)
+
+
+def _require_bool(value: bool, field_name: str) -> bool:
+    if not isinstance(value, bool):
+        raise ValueError(f"{field_name} must be a bool")
+    return value
 
 
 def _require_text(value: str | None, field_name: str) -> str:

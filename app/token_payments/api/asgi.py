@@ -106,7 +106,7 @@ async def _send_http_response(send: AsgiSend, response: HttpResponse) -> None:
         {
             "type": "http.response.start",
             "status": response.status_code,
-            "headers": _headers_to_asgi(response.headers),
+            "headers": _headers_to_asgi(response.header_items()),
         }
     )
     await send({"type": "http.response.body", "body": response.body, "more_body": False})
@@ -146,8 +146,9 @@ def _headers_from_asgi_scope(scope: AsgiScope) -> dict[str, str]:
     return headers
 
 
-def _headers_to_asgi(headers: Mapping[str, str]) -> list[tuple[bytes, bytes]]:
-    return [(_header_bytes(name), _header_bytes(value)) for name, value in headers.items()]
+def _headers_to_asgi(headers: Mapping[str, str] | tuple[tuple[str, str], ...]) -> list[tuple[bytes, bytes]]:
+    items = headers.items() if isinstance(headers, Mapping) else headers
+    return [(_header_bytes(name), _header_bytes(value)) for name, value in items]
 
 
 def _message_body(value: Any) -> bytes:
