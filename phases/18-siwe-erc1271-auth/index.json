@@ -5,7 +5,10 @@
     {
       "step": 0,
       "name": "siwe-message-contract",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-18T06:35:18+0900",
+      "summary": "Auth challenge/login now uses a SIWE v1 message contract with alphanumeric nonce normalization, persisted domain/uri/chainId challenge binding, full SIWE context mismatch rejection, API/sequence docs updates, and regression coverage in scripts/test_siwe_message_contract.py.",
+      "completed_at": "2026-05-18T06:46:57+0900"
     },
     {
       "step": 1,
