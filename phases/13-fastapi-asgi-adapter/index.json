@@ -27,5 +27,6 @@
       "summary": "Added ASGI/FastAPI runtime preview public contract coverage in scripts/test_fastapi_asgi_public_contracts.py, no-server-start adapter metadata, and README scope/verification docs."
     }
   ],
-  "created_at": "2026-05-16T20:43:18+0900"
+  "created_at": "2026-05-16T20:43:18+0900",
+  "completed_at": "2026-05-17T09:06:53+0900"
 }
