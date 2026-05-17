@@ -13,7 +13,10 @@
     {
       "step": 1,
       "name": "live-api-facade-wiring",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-17T13:53:21+0900",
+      "completed_at": "2026-05-17T14:06:23+0900",
+      "summary": "Added live API facade/router wiring with injected PostgreSQL transaction-scoped repositories, application services, operator actions, and no-server-start contract tests."
     },
     {
       "step": 2,
