@@ -17,6 +17,7 @@ from .ports import (
     WalletSignatureVerifier,
 )
 from .service import AuthApplicationError, AuthApplicationService, AuthErrorCode
+from .siwe import SIWE_VERSION, SiweMessage, build_siwe_message, parse_siwe_message
 
 __all__ = [
     "AuthApplicationError",
@@ -33,7 +34,11 @@ __all__ = [
     "LogoutCommand",
     "RefreshSessionCommand",
     "RequestLoginChallengeCommand",
+    "SIWE_VERSION",
+    "SiweMessage",
     "TokenIssuer",
     "UserRepository",
     "WalletSignatureVerifier",
+    "build_siwe_message",
+    "parse_siwe_message",
 ]

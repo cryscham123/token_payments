@@ -67,6 +67,9 @@ SELECT_CHALLENGE_BY_NONCE_SQL = """
 SELECT
     wallet_address,
     nonce_value,
+    domain,
+    uri,
+    chain_id,
     expires_at,
     status,
     issued_at,
@@ -80,6 +83,9 @@ SELECT_ISSUED_CHALLENGE_BY_WALLET_SQL = """
 SELECT
     wallet_address,
     nonce_value,
+    domain,
+    uri,
+    chain_id,
     expires_at,
     status,
     issued_at,
@@ -96,6 +102,9 @@ UPSERT_CHALLENGE_SQL = """
 INSERT INTO auth_login_challenges (
     wallet_address,
     nonce_value,
+    domain,
+    uri,
+    chain_id,
     expires_at,
     status,
     issued_at,
@@ -104,6 +113,9 @@ INSERT INTO auth_login_challenges (
 ) VALUES (
     %(wallet_address)s,
     %(nonce_value)s,
+    %(domain)s,
+    %(uri)s,
+    %(chain_id)s,
     %(expires_at)s,
     %(status)s,
     %(issued_at)s,
@@ -112,6 +124,9 @@ INSERT INTO auth_login_challenges (
 )
 ON CONFLICT (nonce_value) DO UPDATE SET
     wallet_address = EXCLUDED.wallet_address,
+    domain = EXCLUDED.domain,
+    uri = EXCLUDED.uri,
+    chain_id = EXCLUDED.chain_id,
     expires_at = EXCLUDED.expires_at,
     status = EXCLUDED.status,
     issued_at = EXCLUDED.issued_at,
@@ -239,6 +254,9 @@ class PostgresLoginChallengeRepository:
             {
                 "wallet_address": str(challenge.wallet),
                 "nonce_value": challenge.nonce.value,
+                "domain": challenge.domain,
+                "uri": challenge.uri,
+                "chain_id": challenge.chain_id,
                 "expires_at": challenge.nonce.expires_at,
                 "status": challenge.status.value,
                 "issued_at": challenge.issued_at,
@@ -338,6 +356,9 @@ def _row_to_challenge(row: Mapping[str, Any] | object) -> LoginChallenge:
         ),
         status=ChallengeStatus(_row_value(row, "status")),
         issued_at=_row_value(row, "issued_at"),
+        domain=_optional_row_value(row, "domain"),
+        uri=_optional_row_value(row, "uri"),
+        chain_id=_optional_int_row_value(row, "chain_id"),
         verified_at=_row_value(row, "verified_at"),
         rejected_reason=LoginFailureReason(rejected_reason) if rejected_reason is not None else None,
     )
@@ -373,3 +394,13 @@ def _row_value(row: Mapping[str, Any] | object, key: str) -> Any:
     if isinstance(row, Mapping):
         return row[key]
     return getattr(row, key)
+
+
+def _optional_row_value(row: Mapping[str, Any] | object, key: str) -> str | None:
+    value = row.get(key) if isinstance(row, Mapping) else getattr(row, key, None)
+    return str(value) if value is not None else None
+
+
+def _optional_int_row_value(row: Mapping[str, Any] | object, key: str) -> int | None:
+    value = row.get(key) if isinstance(row, Mapping) else getattr(row, key, None)
+    return int(value) if value is not None else None

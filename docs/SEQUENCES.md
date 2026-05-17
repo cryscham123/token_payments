@@ -57,7 +57,7 @@ CheckoutProcessManager consumes checkout events from the checkout context adapte
 
 보상 커맨드는 결정적 `commandId = OrderId + action`을 사용한다. 재시도 시에도 같은 command id가 사용되어 환불, 재고 해제, 주문 취소가 중복 실행되지 않아야 한다.
 
-## MetaMask Login
+## SIWE MetaMask Login
 
 ### 참여자
 
@@ -70,13 +70,13 @@ CheckoutProcessManager consumes checkout events from the checkout context adapte
 ### 성공 흐름
 
 1. Customer Browser가 `connectWallet()`을 실행하고 계정을 선택한다.
-2. Customer Browser가 `requestLoginChallenge(walletAddress)`를 Auth API에 호출한다.
-3. 사용자 인증 Context가 `LoginChallenge(nonce, expiresAt)`를 발급한다.
-4. 인증 저장소가 nonce를 `ISSUED` 상태로 저장한다.
-5. Auth API가 서명할 login message를 Customer Browser에 반환한다.
-6. Customer Browser가 MetaMask `personal_sign(login message)`를 실행한다.
+2. Customer Browser가 `requestLoginChallenge(walletAddress, domain, chainId, uri?)`를 Auth API에 호출한다.
+3. 사용자 인증 Context가 SIWE v1 `LoginChallenge(nonce, domain, uri, chainId, expiresAt)`를 발급한다.
+4. 인증 저장소가 nonce와 SIWE challenge context를 `ISSUED` 상태로 저장한다.
+5. Auth API가 `domain`, `address`, `uri`, `version`, `chainId`, `nonce`, `issuedAt`, `expirationTime`을 포함한 SIWE `signingMessage`를 Customer Browser에 반환한다.
+6. Customer Browser가 MetaMask `personal_sign(SIWE signingMessage)`를 실행한다.
 7. Customer Browser가 `loginWithMetaMask(wallet, message, signature)`를 호출한다.
-8. 사용자 인증 Context가 `verifyLoginSignature(wallet, message, signature)`를 수행한다.
+8. 사용자 인증 Context가 SIWE message를 parse하고 message의 `nonce`, `domain`, `address`, `chainId`, `uri`, `issuedAt`, `expirationTime`이 저장된 challenge와 일치하는지 확인한다.
 9. Signature Verifier가 `recoverAddress(message, signature)`를 수행한다.
 10. 복구된 주소와 요청 wallet 주소를 정규화 후 비교한다.
 11. 검증 성공 시 challenge를 `VERIFIED`로 표시하고, `User`를 생성/조회한 뒤 `AuthSession`을 만든다.
@@ -87,6 +87,8 @@ CheckoutProcessManager consumes checkout events from the checkout context adapte
 - wallet address는 저장/비교 전 정규화한다.
 - nonce는 1회만 사용할 수 있다.
 - challenge 만료를 반드시 확인한다.
-- 서명 메시지에는 domain, chainId, issuedAt, nonce, wallet address를 포함한다.
+- nonce는 SIWE 규칙에 맞는 8자 이상 alphanumeric value여야 한다.
+- 서명 메시지는 SIWE v1 형식이며 domain, address, uri, version, chainId, issuedAt, expirationTime, nonce를 포함한다.
+- 로그인 검증은 nonce 추출만으로 끝내지 않고 저장된 challenge의 domain/address/chainId/uri/issuedAt/expirationTime과 message를 비교한다.
 - 토큰은 `UserId`와 `WalletAddress`를 claim으로 가진다.
-- 실패 사유는 `INVALID_SIGNATURE`, `EXPIRED_CHALLENGE`, `REUSED_NONCE`, `WALLET_MISMATCH` 중 하나로 구조화한다.
+- 실패 사유는 `INVALID_SIGNATURE`, `EXPIRED_CHALLENGE`, `REUSED_NONCE`, `WALLET_MISMATCH`, `SIWE_MESSAGE_MISMATCH` 중 하나로 구조화한다.

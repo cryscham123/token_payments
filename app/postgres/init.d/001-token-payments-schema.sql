@@ -62,6 +62,9 @@ CREATE INDEX IF NOT EXISTS idx_auth_users_wallet_address
 CREATE TABLE IF NOT EXISTS auth_login_challenges (
     nonce_value TEXT PRIMARY KEY,
     wallet_address TEXT NOT NULL,
+    domain TEXT,
+    uri TEXT,
+    chain_id INTEGER CHECK (chain_id IS NULL OR chain_id > 0),
     expires_at TIMESTAMPTZ NOT NULL,
     status TEXT NOT NULL CHECK (status IN ('ISSUED', 'VERIFIED', 'EXPIRED', 'REJECTED')),
     issued_at TIMESTAMPTZ NOT NULL,
@@ -71,7 +74,8 @@ CREATE TABLE IF NOT EXISTS auth_login_challenges (
             'INVALID_SIGNATURE',
             'EXPIRED_CHALLENGE',
             'REUSED_NONCE',
-            'WALLET_MISMATCH'
+            'WALLET_MISMATCH',
+            'SIWE_MESSAGE_MISMATCH'
         )
     ),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 import hashlib
@@ -40,6 +39,14 @@ from .ports import (
     UserRepository,
     WalletSignatureVerifier,
 )
+from .siwe import (
+    SIWE_VERSION,
+    SiweMessage,
+    build_siwe_message,
+    default_siwe_uri,
+    normalize_siwe_nonce,
+    parse_siwe_message,
+)
 
 
 class AuthErrorCode(StrEnum):
@@ -47,6 +54,7 @@ class AuthErrorCode(StrEnum):
     EXPIRED_CHALLENGE = "EXPIRED_CHALLENGE"
     REUSED_NONCE = "REUSED_NONCE"
     WALLET_MISMATCH = "WALLET_MISMATCH"
+    SIWE_MESSAGE_MISMATCH = "SIWE_MESSAGE_MISMATCH"
     VALIDATION_ERROR = "VALIDATION_ERROR"
 
 
@@ -56,18 +64,8 @@ class AuthApplicationError(Exception):
         super().__init__(message)
 
 
-@dataclass(frozen=True)
-class _SigningMessageParts:
-    wallet: WalletAddress
-    domain: str
-    chain_id: int
-    nonce: str
-    issued_at: datetime
-    expires_at: datetime
-
-
 class AuthApplicationService:
-    """Application service for MetaMask nonce login and session lifecycle."""
+    """Application service for SIWE login and session lifecycle."""
 
     def __init__(
         self,
@@ -102,20 +100,31 @@ class AuthApplicationService:
         wallet = _coerce_wallet(command.wallet_address)
         domain = _require_text(command.domain, "domain")
         chain_id = _require_positive_int(command.chain_id, "chain_id")
+        uri = _optional_text(command.uri, "uri") or _default_siwe_uri(domain)
         issued_at = _coerce_datetime(command.issued_at or self._now(), "issued_at")
+        nonce_value = _new_siwe_nonce(self._nonce_generator)
         nonce = AuthNonce(
-            value=_new_text_id(self._nonce_generator, "nonce_generator"),
+            value=nonce_value,
             expires_at=issued_at + self._challenge_ttl,
         )
-        challenge = LoginChallenge.issue(wallet=wallet, nonce=nonce, issued_at=issued_at)
-        signing_message = _build_signing_message(
-            _SigningMessageParts(
-                wallet=wallet,
+        challenge = LoginChallenge.issue(
+            wallet=wallet,
+            nonce=nonce,
+            issued_at=issued_at,
+            domain=domain,
+            uri=uri,
+            chain_id=chain_id,
+        )
+        signing_message = _build_siwe_message(
+            SiweMessage(
                 domain=domain,
+                address=wallet,
+                uri=uri,
+                version=SIWE_VERSION,
                 chain_id=chain_id,
                 nonce=nonce.value,
                 issued_at=issued_at,
-                expires_at=nonce.expires_at,
+                expiration_time=nonce.expires_at,
             )
         )
 
@@ -128,8 +137,8 @@ class AuthApplicationService:
         message = _require_text(command.message, "message")
         signature = _require_text(command.signature, "signature")
         device_id = _require_text(command.device_id, "device_id")
-        nonce_value = _extract_message_value(message, "Nonce")
-        lookup_nonce = AuthNonce(nonce_value, now + self._challenge_ttl)
+        siwe_message = _parse_siwe_message(message)
+        lookup_nonce = AuthNonce(siwe_message.nonce, now + self._challenge_ttl)
         challenge = self._login_challenges.get_by_nonce(lookup_nonce)
         if challenge is None:
             raise AuthApplicationError(AuthErrorCode.INVALID_SIGNATURE, _message_for_code(AuthErrorCode.INVALID_SIGNATURE))
@@ -137,6 +146,16 @@ class AuthApplicationService:
         if challenge.wallet != wallet:
             self._reject_challenge(challenge, LoginFailureReason.WALLET_MISMATCH, now)
             raise AuthApplicationError(AuthErrorCode.WALLET_MISMATCH, _message_for_code(AuthErrorCode.WALLET_MISMATCH))
+        try:
+            _ensure_siwe_matches_challenge(siwe_message, challenge, wallet)
+        except AuthApplicationError as exc:
+            reason = (
+                LoginFailureReason.WALLET_MISMATCH
+                if exc.code is AuthErrorCode.WALLET_MISMATCH
+                else LoginFailureReason.SIWE_MESSAGE_MISMATCH
+            )
+            self._reject_challenge(challenge, reason, now)
+            raise
 
         try:
             recovered_wallet = self._signature_verifier.recover_address(message, signature)
@@ -277,27 +296,57 @@ class AuthApplicationService:
         return _coerce_datetime(now, "clock.now()")
 
 
-def _build_signing_message(parts: _SigningMessageParts) -> str:
-    return "\n".join(
-        (
-            "Token Payments wants you to sign in with your Ethereum account:",
-            str(parts.wallet),
-            "",
-            f"Domain: {parts.domain}",
-            f"Chain ID: {parts.chain_id}",
-            f"Nonce: {parts.nonce}",
-            f"Issued At: {parts.issued_at.isoformat()}",
-            f"Expiration Time: {parts.expires_at.isoformat()}",
+def _build_siwe_message(message: SiweMessage) -> str:
+    try:
+        return build_siwe_message(message)
+    except ValueError as exc:
+        raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, str(exc)) from exc
+
+
+def _parse_siwe_message(message: str) -> SiweMessage:
+    try:
+        return parse_siwe_message(message)
+    except ValueError as exc:
+        raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, str(exc)) from exc
+
+
+def _default_siwe_uri(domain: str) -> str:
+    try:
+        return default_siwe_uri(domain)
+    except ValueError as exc:
+        raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, str(exc)) from exc
+
+
+def _new_siwe_nonce(generator: Any) -> str:
+    raw_value = _new_text_id(generator, "nonce_generator")
+    try:
+        return normalize_siwe_nonce(raw_value)
+    except ValueError as exc:
+        raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, str(exc)) from exc
+
+
+def _ensure_siwe_matches_challenge(
+    message: SiweMessage,
+    challenge: LoginChallenge,
+    requested_wallet: WalletAddress,
+) -> None:
+    if message.address != requested_wallet or message.address != challenge.wallet:
+        raise AuthApplicationError(AuthErrorCode.WALLET_MISMATCH, _message_for_code(AuthErrorCode.WALLET_MISMATCH))
+    if (
+        challenge.domain is None
+        or challenge.uri is None
+        or challenge.chain_id is None
+        or message.domain != challenge.domain
+        or message.uri != challenge.uri
+        or message.chain_id != challenge.chain_id
+        or message.nonce != challenge.nonce.value
+        or message.issued_at != challenge.issued_at
+        or message.expiration_time != challenge.expires_at
+    ):
+        raise AuthApplicationError(
+            AuthErrorCode.SIWE_MESSAGE_MISMATCH,
+            _message_for_code(AuthErrorCode.SIWE_MESSAGE_MISMATCH),
         )
-    )
-
-
-def _extract_message_value(message: str, label: str) -> str:
-    prefix = f"{label}:"
-    for line in message.splitlines():
-        if line.startswith(prefix):
-            return _require_text(line[len(prefix) :], label)
-    raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, f"signing message is missing {label}")
 
 
 def _code_for_reason(reason: LoginFailureReason) -> AuthErrorCode:
@@ -310,6 +359,7 @@ def _message_for_code(code: AuthErrorCode) -> str:
         AuthErrorCode.EXPIRED_CHALLENGE: "login challenge has expired",
         AuthErrorCode.REUSED_NONCE: "login challenge nonce has already been used",
         AuthErrorCode.WALLET_MISMATCH: "wallet address does not match the login challenge",
+        AuthErrorCode.SIWE_MESSAGE_MISMATCH: "SIWE login message does not match the issued challenge",
         AuthErrorCode.VALIDATION_ERROR: "invalid auth request",
     }[code]
 
@@ -330,6 +380,12 @@ def _new_text_id(generator: Any, field_name: str) -> str:
     else:
         raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, f"{field_name} must generate ids")
     return _require_text(str(value), field_name)
+
+
+def _optional_text(value: str | None, field_name: str) -> str | None:
+    if value is None:
+        return None
+    return _require_text(value, field_name)
 
 
 def _coerce_wallet(value: WalletAddress | str) -> WalletAddress:

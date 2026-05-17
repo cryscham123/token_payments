@@ -16,6 +16,7 @@ from token_payments.contexts.auth.application import (
     RefreshSessionCommand,
     RequestLoginChallengeCommand,
 )
+from token_payments.contexts.auth.application.siwe import SIWE_VERSION
 from token_payments.contexts.auth.domain import AuthSession, RefreshTokenHash, SessionId, User
 from token_payments.shared.domain import UserId
 
@@ -36,6 +37,7 @@ class AuthApi:
                     wallet_address=_required_text(body, "walletAddress"),
                     domain=_required_text(body, "domain"),
                     chain_id=_required_int(body, "chainId"),
+                    uri=_optional_text(body, "uri"),
                     issued_at=None,
                 )
             )
@@ -102,12 +104,25 @@ class AuthApi:
 
 def _challenge_payload(result: LoginChallengeResult) -> dict[str, Any]:
     challenge = result.challenge
-    return {
+    payload = {
         "walletAddress": str(challenge.wallet),
         "nonce": challenge.nonce.value,
         "expiresAt": challenge.expires_at.isoformat(),
         "signingMessage": result.signing_message,
     }
+    if challenge.domain is not None and challenge.uri is not None and challenge.chain_id is not None:
+        payload.update(
+            {
+                "domain": challenge.domain,
+                "address": str(challenge.wallet),
+                "uri": challenge.uri,
+                "version": SIWE_VERSION,
+                "chainId": challenge.chain_id,
+                "issuedAt": challenge.issued_at.isoformat(),
+                "expirationTime": challenge.expires_at.isoformat(),
+            }
+        )
+    return payload
 
 
 def _login_payload(result: LoginResult) -> dict[str, Any]:
@@ -200,6 +215,15 @@ def _required_text(body: Mapping[str, Any], key: str) -> str:
     return value.strip()
 
 
+def _optional_text(body: Mapping[str, Any], key: str) -> str | None:
+    value = body.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, f"{key} must be a non-empty string")
+    return value.strip()
+
+
 def _required_int(body: Mapping[str, Any], key: str) -> int:
     value = body.get(key)
     if isinstance(value, bool) or not isinstance(value, int):
@@ -229,6 +253,7 @@ def _status_for_error(code: AuthErrorCode) -> int:
     return {
         AuthErrorCode.INVALID_SIGNATURE: 401,
         AuthErrorCode.WALLET_MISMATCH: 401,
+        AuthErrorCode.SIWE_MESSAGE_MISMATCH: 401,
         AuthErrorCode.EXPIRED_CHALLENGE: 409,
         AuthErrorCode.REUSED_NONCE: 409,
         AuthErrorCode.VALIDATION_ERROR: 400,

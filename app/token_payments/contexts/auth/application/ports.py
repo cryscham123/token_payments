@@ -24,6 +24,7 @@ class RequestLoginChallengeCommand:
     wallet_address: WalletAddress | str
     domain: str
     chain_id: int
+    uri: str | None = None
     issued_at: datetime | None = None
 
 

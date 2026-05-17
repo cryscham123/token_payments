@@ -1,4 +1,4 @@
-"""Domain model for MetaMask nonce authentication."""
+"""Domain model for SIWE-backed MetaMask authentication."""
 
 from __future__ import annotations
 
@@ -29,6 +29,7 @@ class LoginFailureReason(StrEnum):
     EXPIRED_CHALLENGE = "EXPIRED_CHALLENGE"
     REUSED_NONCE = "REUSED_NONCE"
     WALLET_MISMATCH = "WALLET_MISMATCH"
+    SIWE_MESSAGE_MISMATCH = "SIWE_MESSAGE_MISMATCH"
 
 
 class LoginChallengeRejected(ValueError):
@@ -162,6 +163,9 @@ class LoginChallenge:
     nonce: AuthNonce
     status: ChallengeStatus
     issued_at: datetime
+    domain: str | None = None
+    uri: str | None = None
+    chain_id: int | None = None
     verified_at: datetime | None = None
     rejected_reason: LoginFailureReason | None = None
 
@@ -175,6 +179,13 @@ class LoginChallenge:
             "issued_at",
             _require_aware_datetime(self.issued_at, "LoginChallenge.issued_at"),
         )
+        if any(value is not None for value in (self.domain, self.uri, self.chain_id)):
+            if self.domain is None or self.uri is None or self.chain_id is None:
+                raise ValueError("LoginChallenge SIWE context requires domain, uri, and chain_id")
+            object.__setattr__(self, "domain", _require_text(self.domain, "LoginChallenge.domain"))
+            object.__setattr__(self, "uri", _require_text(self.uri, "LoginChallenge.uri"))
+            if isinstance(self.chain_id, bool) or not isinstance(self.chain_id, int) or self.chain_id <= 0:
+                raise ValueError("LoginChallenge.chain_id must be a positive integer")
         if self.verified_at is not None:
             object.__setattr__(
                 self,
@@ -194,6 +205,10 @@ class LoginChallenge:
         wallet: WalletAddress | str,
         nonce: AuthNonce,
         issued_at: datetime | None = None,
+        *,
+        domain: str | None = None,
+        uri: str | None = None,
+        chain_id: int | None = None,
     ) -> Self:
         issued_at = issued_at or datetime.now(UTC)
         issued_at = _require_aware_datetime(issued_at, "issued_at")
@@ -204,6 +219,9 @@ class LoginChallenge:
             nonce=nonce,
             status=ChallengeStatus.ISSUED,
             issued_at=issued_at,
+            domain=domain,
+            uri=uri,
+            chain_id=chain_id,
         )
 
     @property
