@@ -92,7 +92,8 @@
     },
     {
       "dir": "18-siwe-erc1271-auth",
-      "status": "pending"
+      "status": "completed",
+      "completed_at": "2026-05-18T07:14:37+0900"
     },
     {
       "dir": "19-inventory-saga-finalization",
