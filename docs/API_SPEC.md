@@ -81,6 +81,7 @@ Auth wallet verification for deployed smart contract wallets uses environment-ba
 - `ADAPTER_AUTH_WALLET_SIGNATURE_TIMEOUT_SECONDS`
 
 If `ADAPTER_AUTH_WALLET_SIGNATURE_RPC_URL` is empty in local development, runtime composition reuses the configured blockchain RPC URL. Access logs must not include raw SIWE messages, signatures, RPC response bodies, or contract call data.
+`ADAPTER_AUTH_WALLET_SIGNATURE_TIMEOUT_SECONDS` bounds ERC-1271 RPC calls and maps timeout to bounded auth failure. `ADAPTER_AUTH_WALLET_SIGNATURE_CHAIN_ID` mismatch rejects before signature recovery or contract lookup. `walletSignature.rpcUrl is redacted in runtime/debug output`; signed messages, signatures, call data, and RPC response bodies stay out of logs and fixtures.
 
 PostgreSQL is the source of truth for auth users, login challenges, and sessions. refresh reuse detection uses the PostgreSQL session repository hash/salt/rotation model. Redis is optional cache-aside/TTL optimization, not a live required dependency. The committed `.env.example` values are local dev values; live/prod startup rejects committed local dev signing values, so local live runs must copy `.env.example` to `.env` and replace session and CSRF signing material for non-local environments.
 
@@ -204,7 +205,7 @@ Errors: `400 VALIDATION_ERROR`.
 
 MetaMask `personal_sign`으로 서명한 SIWE v1 message를 검증하고 session/token을 발급한다. Operation id는 기존 route compatibility를 위해 `loginWithMetaMask`를 유지한다. Server는 message의 `nonce`, `domain`, `address`, `chainId`, `issuedAt`, `expirationTime`, `uri`, `version`이 저장된 challenge와 일치하는지 확인한 뒤 wallet account type에 따라 EOA signature recovery 또는 deployed ERC-1271 smart contract wallet verification을 수행한다. Session response의 `signatureVerification`은 어떤 account type으로 성공했는지에 대한 audit event가 아니라 지원 범위를 설명하는 redacted runtime contract metadata다.
 
-ERC-1271 verification은 configured auth chain RPC에서 signer wallet의 `eth_getCode` 결과가 deployed contract일 때만 적용된다. Contract wallet은 SIWE `personal_sign` digest와 signature를 `isValidSignature(bytes32,bytes)`로 검증하며, success magic value `0x1626ba7e`만 유효하다. Revert, wrong magic value, timeout, unsupported chain, undeployed/counterfactual account verification failure는 `401 INVALID_SIGNATURE` 또는 chain mismatch에 대한 bounded auth failure로 매핑된다. Linked wallets API와 ERC-6492 counterfactual account deployment/signature wrapping은 future scope이며 현재 route surface에 추가하지 않는다.
+ERC-1271 verification은 configured auth chain RPC에서 signer wallet의 `eth_getCode` 결과가 deployed contract일 때만 적용된다. Contract wallet은 SIWE `personal_sign` digest와 signature를 `isValidSignature(bytes32,bytes)`로 검증하며, success magic value `0x1626ba7e`만 유효하다. Revert, wrong magic value, timeout, unsupported chain, undeployed/counterfactual account verification failure는 `401 INVALID_SIGNATURE` 또는 chain mismatch에 대한 bounded auth failure로 매핑된다. Linked wallets API와 ERC-6492 counterfactual account deployment/signature wrapping은 future scope이며 현재 route surface에 추가하지 않는다. Unsupported ERC-6492/counterfactual accounts are future scope; linked wallets are not implemented.
 
 Request:
 
