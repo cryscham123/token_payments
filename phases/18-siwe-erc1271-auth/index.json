@@ -29,7 +29,10 @@
     {
       "step": 3,
       "name": "auth-api-runtime-docs",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-18T07:03:20+0900",
+      "summary": "Auth API/runtime docs and Postman fixtures now expose SIWE v1 fields, EOA/deployed ERC-1271 verification metadata, and preserve cookie-first CSRF/CORS/refresh rotation contracts.",
+      "completed_at": "2026-05-18T07:11:47+0900"
     },
     {
       "step": 4,
