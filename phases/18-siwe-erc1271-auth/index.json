@@ -1,0 +1,32 @@
+{
+  "project": "Token Payments",
+  "phase": "18-siwe-erc1271-auth",
+  "steps": [
+    {
+      "step": 0,
+      "name": "siwe-message-contract",
+      "status": "pending"
+    },
+    {
+      "step": 1,
+      "name": "wallet-signature-verifier-port",
+      "status": "pending"
+    },
+    {
+      "step": 2,
+      "name": "erc1271-smart-wallet-verification",
+      "status": "pending"
+    },
+    {
+      "step": 3,
+      "name": "auth-api-runtime-docs",
+      "status": "pending"
+    },
+    {
+      "step": 4,
+      "name": "siwe-erc1271-public-verification",
+      "status": "pending"
+    }
+  ],
+  "created_at": "2026-05-18T00:25:36+0900"
+}
