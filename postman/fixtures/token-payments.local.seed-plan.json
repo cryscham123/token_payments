@@ -1,0 +1,184 @@
+{
+  "contract": "token-payments.postman.seed-plan.v1",
+  "description": "Manual local seed plan for Postman and Docker API readiness. This file is inert fixture metadata; it does not run from default PostgreSQL initialization.",
+  "defaultInitMutation": false,
+  "manualOnly": true,
+  "execution": {
+    "startsDocker": false,
+    "opensDatabase": false,
+    "requiresRunningServices": [
+      "postgres"
+    ],
+    "command": {
+      "display": "docker compose --env-file .env exec -T postgres psql -U token_payments -d token_payments -v ON_ERROR_STOP=1 -f /workspace/postman/fixtures/token-payments.local.seed-plan.json",
+      "argv": [
+        "docker",
+        "compose",
+        "--env-file",
+        ".env",
+        "exec",
+        "-T",
+        "postgres",
+        "psql",
+        "-U",
+        "token_payments",
+        "-d",
+        "token_payments",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-f",
+        "/workspace/postman/fixtures/token-payments.local.seed-plan.json"
+      ],
+      "shell": false
+    }
+  },
+  "ids": {
+    "demoCustomerUserId": "11111111-1111-4111-8111-111111111111",
+    "demoCustomerWallet": "0x1111111111111111111111111111111111111111",
+    "demoCustomerId": "22222222-2222-4222-8222-222222222222",
+    "demoStoreOwnerUserId": "33333333-3333-4333-8333-333333333333",
+    "demoStoreOwnerWallet": "0x2222222222222222222222222222222222222222",
+    "demoStoreId": "44444444-4444-4444-8444-444444444444",
+    "demoProductId": "55555555-5555-4555-8555-555555555555",
+    "demoInventoryAvailableStock": 25,
+    "paymentDestinationWallet": "0x2222222222222222222222222222222222222222",
+    "paymentTokenAddress": "0x3333333333333333333333333333333333333333",
+    "testNetworkChainId": 31337,
+    "testNetworkNetworkId": "31337",
+    "testNetworkAccountPlaceholder": "${TEST_NETWORK_ACCOUNT}",
+    "testNetworkRpcUrlPlaceholder": "${ADAPTER_BLOCKCHAIN_RPC_URL}"
+  },
+  "records": [
+    {
+      "table": "auth_users",
+      "columns": [
+        "user_id",
+        "wallet_address",
+        "role",
+        "active"
+      ],
+      "values": {
+        "user_id": "11111111-1111-4111-8111-111111111111",
+        "wallet_address": "0x1111111111111111111111111111111111111111",
+        "role": "CUSTOMER",
+        "active": true
+      }
+    },
+    {
+      "table": "order_customers",
+      "columns": [
+        "customer_id",
+        "user_id",
+        "wallet_address"
+      ],
+      "values": {
+        "customer_id": "22222222-2222-4222-8222-222222222222",
+        "user_id": "11111111-1111-4111-8111-111111111111",
+        "wallet_address": "0x1111111111111111111111111111111111111111"
+      }
+    },
+    {
+      "table": "order_stores",
+      "columns": [
+        "store_id",
+        "owner_user_id",
+        "active",
+        "store_address_id",
+        "store_address_street",
+        "store_wallet_address",
+        "supported_chain_ids"
+      ],
+      "values": {
+        "store_id": "44444444-4444-4444-8444-444444444444",
+        "owner_user_id": "33333333-3333-4333-8333-333333333333",
+        "active": true,
+        "store_address_id": "store-address-001",
+        "store_address_street": "1 Local Demo Way",
+        "store_wallet_address": "0x2222222222222222222222222222222222222222",
+        "supported_chain_ids": [
+          31337
+        ]
+      }
+    },
+    {
+      "table": "order_store_products",
+      "columns": [
+        "store_id",
+        "product_id",
+        "name",
+        "price_numeric",
+        "price_symbol",
+        "price_chain_id",
+        "price_token_address",
+        "price_decimals"
+      ],
+      "values": {
+        "store_id": "44444444-4444-4444-8444-444444444444",
+        "product_id": "55555555-5555-4555-8555-555555555555",
+        "name": "Local Hoodie",
+        "price_numeric": "10.000000000000000000",
+        "price_symbol": "TPAY",
+        "price_chain_id": 31337,
+        "price_token_address": "0x3333333333333333333333333333333333333333",
+        "price_decimals": 18
+      }
+    },
+    {
+      "table": "product_inventory",
+      "columns": [
+        "product_id",
+        "store_id",
+        "available_stock",
+        "reserved_stock",
+        "total_stock",
+        "version"
+      ],
+      "values": {
+        "product_id": "55555555-5555-4555-8555-555555555555",
+        "store_id": "44444444-4444-4444-8444-444444444444",
+        "available_stock": 25,
+        "reserved_stock": 0,
+        "total_stock": 25,
+        "version": 0
+      }
+    },
+    {
+      "table": "store_approval_stores",
+      "columns": [
+        "store_id",
+        "owner_user_id",
+        "active"
+      ],
+      "values": {
+        "store_id": "44444444-4444-4444-8444-444444444444",
+        "owner_user_id": "33333333-3333-4333-8333-333333333333",
+        "active": true
+      }
+    },
+    {
+      "table": "store_approval_products",
+      "columns": [
+        "store_id",
+        "product_id",
+        "name",
+        "price_numeric",
+        "price_symbol",
+        "price_chain_id",
+        "price_token_address",
+        "price_decimals",
+        "available"
+      ],
+      "values": {
+        "store_id": "44444444-4444-4444-8444-444444444444",
+        "product_id": "55555555-5555-4555-8555-555555555555",
+        "name": "Local Hoodie",
+        "price_numeric": "10.000000000000000000",
+        "price_symbol": "TPAY",
+        "price_chain_id": 31337,
+        "price_token_address": "0x3333333333333333333333333333333333333333",
+        "price_decimals": 18,
+        "available": true
+      }
+    }
+  ]
+}

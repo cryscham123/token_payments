@@ -313,11 +313,14 @@ Credentialed CORS uses `CORS_ALLOWED_ORIGINS` and `CORS_ALLOW_CREDENTIALS=true`;
 
 Phase 15 commits `postman/token-payments.local.postman_collection.json`, `postman/token-payments.local.postman_environment.json`, and `postman/token-payments.cookie-auth.expected.json`. The auth collection order is: `POST /auth/challenges`, sign `signingMessage` in MetaMask, `POST /auth/sessions`, `POST /auth/sessions/refresh`, `DELETE /auth/sessions`, then `GET /auth/me`. Postman must use its cookie jar for `access_token`, `refresh_token`, and `csrf_token`; the happy-path requests intentionally omit manual `Cookie` and Bearer headers. Mutating cookie-auth calls echo the latest `csrfToken` in `X-CSRF-Token`.
 
+The manual seed plan is `postman/fixtures/token-payments.local.seed-plan.json`; it is explicit local fixture metadata and is not loaded by default database initialization. `postman/expected/token-payments.api.expected.json` is the expected response contract for route status, request id, idempotency, CSRF, cookie, checkout, compensation, and operator action examples with signed token values redacted.
+
 `api` and `serve-api` return bounded JSON previews with `wsgiFactory`, `asgiFactory`, `fastapiFactory`, `fastapiAvailable`, `longRunning=false`, and `serverStarted=false`. The harness default path does not start a server, does not bind a network port, and does not access DB, Kafka, Docker, Blockchain RPC, or local `.env`; this is the no-server-start boundary.
 
 Verification commands:
 
 ```bash
+python3 -m pytest scripts/test_api_seed_expected_responses.py scripts/test_postman_cookie_auth_flow.py scripts/test_happy_path_checkout_e2e.py scripts/test_compensation_checkout_e2e.py
 python3 -m pytest scripts/test_postman_cookie_auth_flow.py scripts/test_cookie_session_transport.py scripts/test_csrf_cors_request_guard.py
 python3 -m pytest scripts/test_fastapi_asgi_public_contracts.py scripts/test_fastapi_thin_adapter.py scripts/test_asgi_adapter_contract_foundation.py scripts/test_wsgi_runtime_preview.py scripts/test_api_worker_runtime_public_contracts.py scripts/test_browser_preview_public_contracts.py
 PYTHONPATH=app python3 -m token_payments api

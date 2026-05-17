@@ -438,11 +438,14 @@ Credentialed CORS is allowlist-based through `CORS_ALLOWED_ORIGINS`, with `CORS_
 
 Phase 15 adds `postman/token-payments.local.postman_collection.json`, `postman/token-payments.local.postman_environment.json`, and `postman/token-payments.cookie-auth.expected.json` for local cookie auth verification. Run the auth requests in collection order: request a login challenge, sign the returned `signingMessage` in MetaMask, login with the signature, refresh the session, logout, then call `GET /auth/me`. Postman should rely on its cookie jar for `access_token`, `refresh_token`, and `csrf_token`; do not add manual `Cookie` headers to the happy path. Mutating cookie-auth requests send the latest `csrfToken` as `X-CSRF-Token`.
 
+The manual seed and expected response contracts live in `postman/fixtures/token-payments.local.seed-plan.json` and `postman/expected/token-payments.api.expected.json`. The seed plan is explicit fixture metadata for local Postman runs, uses committed schema table/column names, and is not part of default PostgreSQL initialization. The expected response fixture records route-level status/body/header examples for auth, checkout, payment, compensation, and operator recovery while redacting signed tokens and cookie values.
+
 `api` and `serve-api` return bounded JSON previews with `wsgiFactory`, `asgiFactory`, `fastapiFactory`, `fastapiAvailable`, `longRunning=false`, and `serverStarted=false`. The harness path does not start a server, does not bind a network port, and does not open DB, Kafka, Docker, Blockchain RPC, or local `.env`; this is the no-server-start boundary.
 
 Verification commands:
 
 ```bash
+python3 -m pytest scripts/test_api_seed_expected_responses.py scripts/test_postman_cookie_auth_flow.py scripts/test_happy_path_checkout_e2e.py scripts/test_compensation_checkout_e2e.py
 python3 -m pytest scripts/test_postman_cookie_auth_flow.py scripts/test_cookie_session_transport.py scripts/test_csrf_cors_request_guard.py
 python3 -m pytest scripts/test_fastapi_asgi_public_contracts.py scripts/test_fastapi_thin_adapter.py scripts/test_asgi_adapter_contract_foundation.py scripts/test_wsgi_runtime_preview.py scripts/test_api_worker_runtime_public_contracts.py scripts/test_browser_preview_public_contracts.py
 PYTHONPATH=app python3 -m token_payments api
