@@ -16,6 +16,7 @@ from token_payments.contexts.order.domain import Address, OrderItem
 from token_payments.shared.domain import Crypto
 
 from .contracts import ApiRequest, ApiResponse, json_response
+from .idempotency import IdempotencyKeyConflict, idempotency_conflict_response, idempotency_key_from_request
 
 
 class OrdersApi:
@@ -34,10 +35,12 @@ class OrdersApi:
                     delivery_address=_address_from_body(_required_mapping(body, "deliveryAddress")),
                     items=_items_from_body(body),
                     requested_at=request.received_at,
-                    causation_id=request.request_id,
+                    causation_id=idempotency_key_from_request(request, body, fallback=request.request_id),
                 )
             )
             return json_response(_order_creation_payload(result), status_code=201, request_id=request.request_id)
+        except IdempotencyKeyConflict as exc:
+            return idempotency_conflict_response(exc, request.request_id)
         except (OrderApplicationError, ValueError) as exc:
             return _error_response(_coerce_order_error(exc), request.request_id)
 

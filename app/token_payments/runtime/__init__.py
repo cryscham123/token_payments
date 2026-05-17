@@ -30,8 +30,20 @@ from .contracts import (
     RuntimeContainer,
     WorkerLoopOptions,
 )
+from .api_server import (
+    LIVE_API_CONFIRMATION_REQUIRED,
+    LIVE_API_SERVER_PLAN_CONTRACT,
+    LiveApiServerPlan,
+    LiveApiServerResult,
+    build_live_asgi_application,
+    build_live_http_router,
+    build_live_system_router,
+    describe_live_api_server_plan,
+    run_live_api_server,
+)
 from .entrypoint import ContractRuntimeContainer, dispatch_runtime_command
 from .observability import (
+    AccessLogEvent,
     OperatorDashboardQuery,
     OperatorErrorSnapshot,
     OperatorObservabilityQueryPort,
@@ -43,6 +55,11 @@ from .observability import (
     OperatorSortDirection,
     OperatorWorkerSnapshot,
     PostgresOperatorObservabilityQuery,
+    ReadinessProbe,
+    ReadinessProbeResult,
+    RuntimeReadinessStatus,
+    actor_summary,
+    evaluate_readiness,
 )
 from .session_transport import (
     AuthCookiePair,
@@ -52,6 +69,11 @@ from .session_transport import (
     SessionKeyConfig,
     SessionKeyRing,
     SessionTokenSigner,
+)
+from .security import (
+    CorsPolicy,
+    CsrfTokenService,
+    RequestGuard,
 )
 from .smoke import (
     AVAILABLE_SMOKE_SCENARIOS,
@@ -78,6 +100,7 @@ from .workers import (
 
 __all__ = [
     "AVAILABLE_SMOKE_SCENARIOS",
+    "AccessLogEvent",
     "AuthCookiePair",
     "BrowserPreviewHttpServer",
     "BrowserPreviewRequestHandler",
@@ -88,6 +111,8 @@ __all__ = [
     "ContractRuntimeContainer",
     "CookieSessionTransport",
     "CookieSettings",
+    "CorsPolicy",
+    "CsrfTokenService",
     "DEFAULT_BROWSER_PREVIEW_HOST",
     "DEFAULT_BROWSER_PREVIEW_PORT",
     "HealthState",
@@ -96,9 +121,13 @@ __all__ = [
     "JsonValue",
     "KafkaConsumerWorker",
     "KafkaProducerClient",
+    "LIVE_API_CONFIRMATION_REQUIRED",
+    "LIVE_API_SERVER_PLAN_CONTRACT",
     "LIVE_RUNTIME_DEPENDENCY_MISSING",
     "LiveApiComposition",
     "LiveApiFacades",
+    "LiveApiServerPlan",
+    "LiveApiServerResult",
     "LiveRuntimeConfig",
     "LiveRuntimeDependencies",
     "LiveRuntimeDependencyError",
@@ -117,8 +146,12 @@ __all__ = [
     "PaymentTimeoutCandidate",
     "PaymentTimeoutWorker",
     "PostgresSessionFactory",
+    "ReadinessProbe",
+    "ReadinessProbeResult",
+    "RequestGuard",
     "RuntimeConfig",
     "RuntimeContainer",
+    "RuntimeReadinessStatus",
     "REQUIRED_LIVE_DEPENDENCIES",
     "SMOKE_CONTRACT",
     "SessionClaims",
@@ -137,14 +170,21 @@ __all__ = [
     "WorkerLoopOptions",
     "WorkerRunSummary",
     "WorkerRuntime",
+    "build_live_asgi_application",
     "build_browser_preview_server",
+    "build_live_http_router",
     "build_live_api_facades",
     "build_live_api_router",
+    "build_live_system_router",
+    "actor_summary",
+    "describe_live_api_server_plan",
     "describe_live_runtime_dependencies",
     "describe_smoke_registry",
     "dispatch_runtime_command",
+    "evaluate_readiness",
     "render_browser_preview_document",
     "run_smoke_scenario",
+    "run_live_api_server",
     "serve_browser_preview",
 ]
 

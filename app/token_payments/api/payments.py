@@ -16,6 +16,7 @@ from token_payments.contexts.payment.application import (
 from token_payments.shared.domain import CommandId, OrderId, PaymentId
 
 from .contracts import ApiRequest, ApiResponse, json_response
+from .idempotency import IdempotencyKeyConflict, idempotency_conflict_response, idempotency_key_from_request
 
 
 class PaymentsApi:
@@ -29,7 +30,7 @@ class PaymentsApi:
             body = _request_body(request)
             order_id = OrderId(_required_text(body, "orderId"))
             command = SubmitTransactionHashCommand(
-                command_id=_command_id(body, order_id),
+                command_id=_command_id(request, body, order_id),
                 payment_id=PaymentId(_required_text(body, "paymentId")),
                 order_id=order_id,
                 tx_hash=_required_text(body, "txHash"),
@@ -38,6 +39,8 @@ class PaymentsApi:
             )
             result = self._handler.submit_transaction_hash(command)
             return json_response(_submit_payload(result, request.received_at), status_code=202, request_id=request.request_id)
+        except IdempotencyKeyConflict as exc:
+            return idempotency_conflict_response(exc, request.request_id)
         except PaymentCommandRejected as exc:
             return _payment_error_response(exc, request.request_id)
         except ValueError as exc:
@@ -57,11 +60,14 @@ def _required_text(body: Mapping[str, Any], key: str) -> str:
     return value.strip()
 
 
-def _command_id(body: Mapping[str, Any], order_id: OrderId) -> CommandId:
-    command_id = body.get("commandId")
-    if command_id is not None:
-        return CommandId(_required_text(body, "commandId"))
-    return CommandId(f"{order_id}:SubmitTransactionHashCommand")
+def _command_id(request: ApiRequest, body: Mapping[str, Any], order_id: OrderId) -> CommandId:
+    return CommandId(
+        idempotency_key_from_request(
+            request,
+            body,
+            fallback=f"{order_id}:SubmitTransactionHashCommand",
+        )
+    )
 
 
 def _submit_payload(result: PaymentCommandResult, updated_at: datetime) -> dict[str, Any]:

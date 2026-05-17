@@ -21,6 +21,7 @@ from token_payments.contexts.order.application import (
 from token_payments.shared.domain import CheckoutCommandName, CommandId, MessageId, OrderId, OutboxMessageKind
 
 from .contracts import ApiRequest, ApiResponse, JsonValue, json_response
+from .idempotency import IdempotencyKeyConflict, idempotency_conflict_response, idempotency_key_from_request
 from .operator import OperatorClaims
 
 
@@ -401,10 +402,12 @@ class OperatorActionApi:
                 reason=_required_body_text(body, "reason"),
                 request_id=request.request_id,
                 requested_at=request.received_at,
-                idempotency_key=_optional_body_text(body, "idempotencyKey"),
+                idempotency_key=idempotency_key_from_request(request, body),
                 parameters=_optional_body_mapping(body, "parameters"),
             )
             return _action_result_response(result, request.request_id)
+        except IdempotencyKeyConflict as exc:
+            return idempotency_conflict_response(exc, request.request_id)
         except ValueError as exc:
             return _validation_error_response(str(exc), request.request_id)
 
@@ -418,10 +421,12 @@ class OperatorActionApi:
                 reason=_required_body_text(body, "reason"),
                 request_id=request.request_id,
                 requested_at=request.received_at,
-                idempotency_key=_optional_body_text(body, "idempotencyKey"),
+                idempotency_key=idempotency_key_from_request(request, body),
                 parameters=_optional_body_mapping(body, "parameters"),
             )
             return _action_result_response(result, request.request_id)
+        except IdempotencyKeyConflict as exc:
+            return idempotency_conflict_response(exc, request.request_id)
         except ValueError as exc:
             return _validation_error_response(str(exc), request.request_id)
 
@@ -435,10 +440,12 @@ class OperatorActionApi:
                 reason=_required_body_text(body, "reason"),
                 request_id=request.request_id,
                 requested_at=request.received_at,
-                idempotency_key=_optional_body_text(body, "idempotencyKey"),
+                idempotency_key=idempotency_key_from_request(request, body),
                 parameters=_optional_body_mapping(body, "parameters"),
             )
             return _action_result_response(result, request.request_id)
+        except IdempotencyKeyConflict as exc:
+            return idempotency_conflict_response(exc, request.request_id)
         except ValueError as exc:
             return _validation_error_response(str(exc), request.request_id)
 

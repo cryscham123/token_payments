@@ -37,20 +37,26 @@
     {
       "step": 4,
       "name": "explicit-live-api-server-entrypoint",
-      "status": "error",
+      "status": "completed",
       "started_at": "2026-05-17T14:38:31+0900",
-      "error_message": "[3회 시도 후 실패] Step did not update status",
-      "failed_at": "2026-05-17T14:38:46+0900"
+      "completed_at": "2026-05-17T18:50:18+0900",
+      "summary": "Added explicit live API server dry-run/refusal/confirmed runner contracts, lazy optional Uvicorn isolation, CLI --live parsing, no-server-start docs, and public verification in scripts/test_live_api_server_entrypoint.py."
     },
     {
       "step": 5,
       "name": "readiness-observability-idempotency",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-17T18:50:18+0900",
+      "completed_at": "2026-05-17T18:58:55+0900",
+      "summary": "Added live-only health/readiness routes, injected readiness probe DTOs, redacted access log event contracts, Idempotency-Key header normalization/conflict handling, docs, and scripts/test_readiness_observability_idempotency.py coverage."
     },
     {
       "step": 6,
       "name": "live-api-runtime-public-verification",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-17T18:58:55+0900",
+      "completed_at": "2026-05-17T19:00:23+0900",
+      "summary": "Locked the live API runtime public contract with runtime exports for server/readiness/security surfaces, bounded CLI verification, README/API spec coverage, source import boundaries, and scripts/test_live_api_runtime_public_contracts.py."
     }
   ],
   "created_at": "2026-05-17T09:10:29+0900"
