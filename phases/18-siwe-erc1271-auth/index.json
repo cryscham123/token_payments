@@ -13,7 +13,10 @@
     {
       "step": 1,
       "name": "wallet-signature-verifier-port",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-18T06:46:58+0900",
+      "summary": "Wallet signature verification now uses an account-type neutral verify_signature(wallet, message, signature, chain_id) result port, with EOA recover-address compatibility inside the adapter and live chain-id wiring for future ERC-1271 support.",
+      "completed_at": "2026-05-18T06:54:14+0900"
     },
     {
       "step": 2,
