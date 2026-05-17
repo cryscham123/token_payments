@@ -7,9 +7,11 @@
 - 업무 흐름 상세: `docs/SEQUENCES.md`
 - Harness 실행 규칙: `docs/HARNESS.md`
 
+When diagram/DDD.drawio conflicts with code package layout, code package layout wins. The checked-in package layout is the executable architecture contract for phase execution, and the diagram is interpreted as supporting context rather than an override.
+
 ## 전체 구조
 
-Token Payments는 주문, 재고, 결제, 가게 승인, 사용자 인증을 bounded context로 분리한 이벤트 기반 DDD 시스템이다. 각 context는 hexagonal architecture를 따른다.
+Token Payments는 주문, checkout process, 재고, 결제, 가게 승인, 사용자 인증을 bounded context로 분리한 이벤트 기반 DDD 시스템이다. 각 context는 hexagonal architecture를 따른다.
 
 ```text
 Client / MetaMask
@@ -28,11 +30,19 @@ DB 상태 변경과 `OutboxMessage` 저장은 같은 트랜잭션으로 커밋�
 | Context | 책임 | 핵심 Aggregate |
 | --- | --- | --- |
 | 사용자 인증 | MetaMask nonce 로그인, 세션/토큰 발급, 서명 검증 | `User`, `LoginChallenge`, `AuthSession` |
-| 주문 생성 | 주문 생성, 주문 추적, 결제/승인/취소 상태 반영 | `Order`, `Store`, `Customer` |
-| Checkout Process | 주문 checkout saga 오케스트레이션, 보상 커맨드 발행 | `CheckoutProcessManager` |
+| 주문 생성 | 주문 생성, 상태 projection, checkout tracking, 결제/승인/취소 상태 반영 | `Order`, `Store`, `Customer` |
+| Checkout Process | checkout saga orchestration, compensation command decision, idempotent saga decision | `CheckoutProcessManager` |
 | 재고관리 | 상품 재고 예약, 확정, 해제, 수량 변경 | `ProductInventory` |
 | 결제 | 결제 요청, txHash 제출, receipt 확인, 만료/환불 | `Payment`, `PaymentAuthorization` |
 | 주문 승인 | 가게 소유자/상품/주문 상세 검증, 승인/반려 | `Store` |
+
+## Architecture Boundary Contract
+
+Checkout Process is a separate saga/process context, not an order context submodule. The executable code path is `app/token_payments/contexts/checkout/application/process_manager.py`, and its responsibility is limited to orchestration, compensation command decision, and idempotent saga decision. Order context owns order creation, status projection, and checkout tracking.
+
+`order.Store` and `store_approval.Store` are not the same aggregate. `order.Store` is the order/catalog projection used to validate product, chain, wallet, and checkout data at order creation time. `store_approval.Store` is the approval verification projection used when a checkout saga asks the store approval context to validate an order detail. They must not share persistence or DTOs by default; any future mapping must be explicit adapter translation.
+
+PostgreSQL is the source of truth for auth users, login challenges, and sessions. Refresh reuse detection uses the PostgreSQL session repository hash/salt/rotation model. Redis is optional cache-aside/TTL optimization, not a live required dependency, and must not replace PostgreSQL as the auth source of truth.
 
 ## Context 내부 레이어
 
@@ -90,7 +100,7 @@ context/
 | --- | --- |
 | PostgreSQL | aggregate, outbox, processed message/command, transaction record |
 | Kafka | context 간 이벤트/커맨드 전달 |
-| Redis | login challenge/session 캐시 후보. PostgreSQL 대체 가능 |
+| Redis | optional cache-aside/TTL 후보. PostgreSQL auth/session source of truth를 대체하지 않음 |
 | Blockchain RPC / Web3j | tx receipt 조회, gas estimate, wallet balance 확인 |
 | MetaMask Client | 지갑 연결, `personal_sign`, 결제 트랜잭션 전송 |
 

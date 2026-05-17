@@ -6,6 +6,22 @@ Default `api`/`serve-api` commands keep the no-server-start preview boundary. Us
 
 이 문서는 `14-live-api-runtime-composition`과 `15-postman-docker-api-readiness`가 끝난 뒤의 로컬 backend API를 기준으로 한 최종 명세 초안이다. Route surface는 현재 `app/token_payments/api/http.py`의 route manifest 16개를 기준으로 고정한다.
 
+## Route Surface Contract
+
+### Public HTTP route surface
+
+Public HTTP route surface is exactly the current 16-route manifest from `app/token_payments/api/http.py`. This manifest contains auth session routes, order creation, checkout tracking, payment txHash submission, operator dashboard/detail reads, and cancel/retry/replay operator actions. It does not include store owner manual approval routes or checkout saga command endpoints.
+
+### Message listener input surface
+
+`approveOrder`/`request_store_approval` are Kafka/message listener inputs. Store approval runs after payment confirmation when the checkout saga emits `RequestStoreApprovalCommand`; store owner manual order approval HTTP API is not in current scope. The current product flow keeps post-payment automatic approval/rejection validation and does not expose a manual approve/reject route.
+
+### Internal application port surface
+
+`reserveInventory`, `releaseInventory`, and future `confirmInventory` are checkout saga internal commands. They are emitted by `CheckoutProcessManager` and handled by application/message adapters, not exposed as public customer HTTP APIs. store owner inventory API is reserved for phase 20 and remains unimplemented in the phase 16 contract.
+
+Operator action APIs are admin-only recovery endpoints. Store owner inventory API is a separate future surface with store-owner authorization and must not be confused with admin operator recovery endpoints.
+
 ## Runtime Assumptions
 
 - Local base URL: `http://localhost:8000`
@@ -57,6 +73,8 @@ Session cookie values are signed tokens. The live runtime loads signing keys fro
 `SESSION_SIGNING_KEYS`는 `kid=secret,kid2=previous_secret` 또는 동등한 object 형태로 active key와 previous key를 함께 표현한다. New tokens are signed with the active key. Verification accepts the active key and configured previous keys until token expiry. Tokens must carry a `kid` or equivalent key id. Payload claims include at least `sub`, `sessionId`, `walletAddress`, `role`, `iat`, `exp`, `typ`, and `jti`. Missing signing keys or committed placeholder keys must make live/prod server startup fail with a bounded configuration error.
 
 Session signing keys, signed token values, refresh token hashes/salts, and CSRF secrets must never be logged, committed in fixtures, or exposed in runtime previews.
+
+PostgreSQL is the source of truth for auth users, login challenges, and sessions. refresh reuse detection uses the PostgreSQL session repository hash/salt/rotation model. Redis is optional cache-aside/TTL optimization, not a live required dependency. The committed `.env.example` values are local placeholders; live/prod startup rejects committed placeholder signing values, so local live runs must copy `.env.example` to `.env` and replace session and CSRF signing placeholders with local-only secret material.
 
 CSRF token 발급 surface는 route manifest를 늘리지 않고 `POST /auth/challenges`, `POST /auth/sessions`, `POST /auth/sessions/refresh` 성공 응답에 포함된다. Server also sets a non-HttpOnly `csrf_token` cookie for double-submit validation. Browser clients send the response `csrfToken` value back in `X-CSRF-Token` for cookie-authenticated mutating requests.
 
@@ -735,3 +753,22 @@ Final local verification should run in this order:
 For cookie auth setup, import `postman/token-payments.local.postman_collection.json` and `postman/token-payments.local.postman_environment.json`. The auth folder runs `POST /auth/challenges`, MetaMask signing, `POST /auth/sessions`, `POST /auth/sessions/refresh`, `DELETE /auth/sessions`, and `GET /auth/me` in order. Postman stores `Set-Cookie` responses in its cookie jar; happy-path requests do not use manual `Cookie`, Bearer, localStorage, or sessionStorage auth. `postman/token-payments.cookie-auth.expected.json` records redacted signed token shape, active key id metadata, CSRF header/cookie names, cookie attributes, and expired/invalid-signature negative cases.
 
 Manual seed data for local Postman runs is described by `postman/fixtures/token-payments.local.seed-plan.json`. It references demo customer/store/product/inventory/payment destination/test network ids using committed PostgreSQL schema table and column names, but it is not part of default init and does not run in automated verification. Route-level expected response examples live in `postman/expected/token-payments.api.expected.json`; the fixture covers auth, cookie/CSRF headers, `Idempotency-Key`, `X-Request-Id`, happy-path checkout, compensation cancellation, and operator action recovery while keeping signed token and cookie values redacted.
+
+The Docker Compose API service is `token_payments_api` under the explicit `api` profile. It runs `python -m token_payments serve-api --live --confirm-live-api` and must use env-backed session signing material: `SESSION_ACTIVE_KEY_ID` selects the active key, and `SESSION_SIGNING_KEYS` may retain a previous key only for bounded key rotation verification. Browser auth is cookie-first through HttpOnly access/refresh cookies plus `X-CSRF-Token`; `Authorization: Bearer <accessToken>` is only a non-browser fallback. Credentialed CORS requires `CORS_ALLOW_CREDENTIALS=true` with an allowlisted origin, never wildcard credentials.
+
+Postman Docker API readiness/security smoke is documented as a bounded local live plan. Automated verification runs only the dry-run/refusal path and does not start Docker or the API server. The plan covers API service start, session signing key validation, health/readiness, cookie auth, invalid/expired signature rejection, CSRF failure/success, credentialed CORS preflight, oversized body, malformed JSON, idempotency duplicate, checkout happy path, and operator action smoke.
+
+Final local backend order for Postman Docker API readiness:
+
+```bash
+cp .env.example .env
+docker compose --env-file .env --profile api config --services
+docker compose --env-file .env --profile api build token_payments_api
+docker compose --env-file .env up -d postgres kafka test_network
+docker compose --env-file .env --profile api up -d token_payments_api
+# Apply/review the manual seed plan in postman/fixtures/token-payments.local.seed-plan.json
+# Import postman/token-payments.local.postman_collection.json and postman/token-payments.local.postman_environment.json
+python3 scripts/docker_live_smoke.py --api-readiness --plan
+python3 scripts/docker_live_smoke.py --api-readiness --execute --confirm-live-docker
+docker compose --env-file .env down
+```

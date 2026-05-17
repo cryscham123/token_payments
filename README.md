@@ -116,7 +116,7 @@ curl --fail http://localhost:8000/readyz
 docker compose --env-file .env down
 ```
 
-For Postman-local API checks, `token_payments_api` is available only through the explicit `api` profile and runs `python -m token_payments serve-api --live --confirm-live-api`. The committed `.env.example` session signing key is an intentional placeholder that live/prod startup rejects; copy it to `.env` and replace `SESSION_ACTIVE_KEY_ID`, `SESSION_SIGNING_KEYS`, and CSRF/session secret values with local-only secrets before starting the API service.
+For Postman-local API checks, `token_payments_api` is available only through the explicit `api` profile and runs `python -m token_payments serve-api --live --confirm-live-api`. The committed `.env.example` session signing key is an intentional placeholder that live/prod startup rejects; copy it to `.env` and replace `SESSION_ACTIVE_KEY_ID`, `SESSION_SIGNING_KEYS`, and CSRF/session secret values with local-only secrets before starting the API service. `SESSION_SIGNING_KEYS` supports active/previous key rotation: keep `SESSION_ACTIVE_KEY_ID` on the current active key and retain a previous key only for bounded local rotation verification.
 
 Postman-ready API roadmap:
 
@@ -440,6 +440,35 @@ Phase 15 adds `postman/token-payments.local.postman_collection.json`, `postman/t
 
 The manual seed and expected response contracts live in `postman/fixtures/token-payments.local.seed-plan.json` and `postman/expected/token-payments.api.expected.json`. The seed plan is explicit fixture metadata for local Postman runs, uses committed schema table/column names, and is not part of default PostgreSQL initialization. The expected response fixture records route-level status/body/header examples for auth, checkout, payment, compensation, and operator recovery while redacting signed tokens and cookie values.
 
+Postman Docker API readiness/security smoke is a bounded dry-run contract for the live API service. The default automated path prints the plan and verifies the refusal boundary only; it does not start Docker, bind the API server, or open network clients.
+
+```bash
+python3 scripts/docker_live_smoke.py --api-readiness --plan
+python3 scripts/docker_live_smoke.py --api-readiness --execute
+```
+
+`--execute` without `--confirm-live-docker` returns bounded refusal JSON. A confirmed manual run is local-only and should follow the documented service setup with replaced `.env` secrets. The plan order covers API service start, session signing key validation, `/healthz`, `/readyz`, cookie auth, invalid/expired signature rejection, CSRF failure/success, credentialed CORS preflight, oversized body, malformed JSON, idempotency duplicate, checkout happy path, and operator action smoke. Smoke output redacts session signing keys, signed tokens, cookie headers, and CSRF values.
+
+```bash
+cp .env.example .env
+python3 scripts/docker_live_smoke.py --api-readiness --execute --confirm-live-docker
+```
+
+Final local backend order for Postman Docker API readiness:
+
+```bash
+cp .env.example .env
+docker compose --env-file .env --profile api config --services
+docker compose --env-file .env --profile api build token_payments_api
+docker compose --env-file .env up -d postgres kafka test_network
+docker compose --env-file .env --profile api up -d token_payments_api
+# Apply/review the manual seed plan in postman/fixtures/token-payments.local.seed-plan.json
+# Import postman/token-payments.local.postman_collection.json and postman/token-payments.local.postman_environment.json
+python3 scripts/docker_live_smoke.py --api-readiness --plan
+python3 scripts/docker_live_smoke.py --api-readiness --execute --confirm-live-docker
+docker compose --env-file .env down
+```
+
 `api` and `serve-api` return bounded JSON previews with `wsgiFactory`, `asgiFactory`, `fastapiFactory`, `fastapiAvailable`, `longRunning=false`, and `serverStarted=false`. The harness path does not start a server, does not bind a network port, and does not open DB, Kafka, Docker, Blockchain RPC, or local `.env`; this is the no-server-start boundary.
 
 Verification commands:
@@ -469,11 +498,12 @@ python3 -m pip install fastapi uvicorn
 PYTHONPATH=app uvicorn production_api:app --host 0.0.0.0 --port 8000
 ```
 
-Next phase candidates:
+Next phase order:
 
-- live API runtime composition: wire the real facades to PostgreSQL, Kafka, and test network adapters behind a long-running API entrypoint.
-- Postman Docker API readiness: add the compose API service, request examples, seed flow, and expected responses for local Postman verification.
-- FastAPI optional dependency live smoke: verify the manually installed FastAPI/Uvicorn runtime in an explicit live environment outside the default harness path.
+- Docker compose live server
+- SIWE/ERC-1271 auth
+- inventory saga finalization
+- store owner inventory API
 
 ## Live API Runtime Composition Contract
 
@@ -482,3 +512,20 @@ Step 0 of live API runtime composition fixes the public contract for `LiveRuntim
 The explicit live server entrypoint is `PYTHONPATH=app python3 -m token_payments serve-api --live --dry-run` for the bounded plan and `PYTHONPATH=app python3 -m token_payments serve-api --live --confirm-live-api` for an approved live start. `api` and `serve-api` without `--live` still return the no-server-start preview. `--live` without `--confirm-live-api` returns bounded refusal JSON, and dry-run/refusal paths do not bind a port, read local `.env`, or require FastAPI/Uvicorn.
 
 The live server adds system-only `/healthz` and `/readyz` routes outside the public route manifest. `/healthz` is process-only, `/readyz` uses injected readiness probes, structured access log events are redacted, and mutating commands accept the standard `Idempotency-Key` header while preserving existing body-based command ids.
+
+## Architecture Contract Alignment
+
+Checkout Process is a separate saga/process context, not an order context submodule. `CheckoutProcessManager` lives under `contexts/checkout` and is limited to orchestration, compensation command decision, and idempotent saga decision; order context owns order creation, status projection, and checkout tracking.
+
+`order.Store` and `store_approval.Store` are not the same aggregate. The order model is a catalog/order projection, while the store approval model is an approval verification projection and must not share persistence or DTOs by default.
+
+PostgreSQL is the source of truth for auth users, login challenges, and sessions. Refresh reuse detection uses the PostgreSQL session repository hash/salt/rotation model. Redis is optional cache-aside/TTL optimization, not a live required dependency. Local runs must copy `.env.example` to `.env` and replace session and CSRF signing placeholders; live/prod startup rejects committed placeholder signing values.
+
+Public HTTP route surface stays bound to the current 16-route manifest. `approveOrder`/`request_store_approval` are Kafka/message listener inputs, and store owner manual order approval HTTP API is not in current scope. manual order approval HTTP API is not an active roadmap item. ERC-20/USDC/USDT payment support is not an immediate roadmap phase.
+
+Next phase order:
+
+- Docker compose live server
+- SIWE/ERC-1271 auth
+- inventory saga finalization
+- store owner inventory API
