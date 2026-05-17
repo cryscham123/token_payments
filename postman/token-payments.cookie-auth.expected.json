@@ -51,6 +51,27 @@
         }
       ],
       "body": {
+        "domain": "token-payments.local",
+        "address": "0x1111111111111111111111111111111111111111",
+        "uri": "https://token-payments.local",
+        "version": "1",
+        "chainId": 1337,
+        "nonce": "N0NCE001",
+        "issuedAt": "2026-05-17T10:00:00+09:00",
+        "expirationTime": "2026-05-17T10:30:00+09:00",
+        "signingMessage": "<redacted-siwe-personal-sign-message>",
+        "signatureVerification": {
+          "messageFormat": "SIWE_V1",
+          "signatureVerificationMethod": "SIWE_PERSONAL_SIGN_EOA_OR_ERC1271",
+          "supportedWalletTypes": [
+            "EOA",
+            "DEPLOYED_SMART_WALLET"
+          ],
+          "smartWalletStandard": "ERC-1271",
+          "erc1271MagicValue": "0x1626ba7e",
+          "requiresDeployedCode": true,
+          "erc6492": "future_scope"
+        },
         "csrfToken": "<redacted-signed-csrf-token>",
         "csrf": {
           "cookieName": "csrf_token",
@@ -166,6 +187,18 @@
           "refreshToken": "<set-cookie>",
           "transport": "cookie"
         },
+        "signatureVerification": {
+          "messageFormat": "SIWE_V1",
+          "signatureVerificationMethod": "SIWE_PERSONAL_SIGN_EOA_OR_ERC1271",
+          "supportedWalletTypes": [
+            "EOA",
+            "DEPLOYED_SMART_WALLET"
+          ],
+          "smartWalletStandard": "ERC-1271",
+          "erc1271MagicValue": "0x1626ba7e",
+          "requiresDeployedCode": true,
+          "erc6492": "future_scope"
+        },
         "csrfToken": "<redacted-signed-csrf-token>"
       }
     },
@@ -276,6 +309,18 @@
           "accessToken": "<set-cookie>",
           "refreshToken": "<set-cookie>",
           "transport": "cookie"
+        },
+        "signatureVerification": {
+          "messageFormat": "SIWE_V1",
+          "signatureVerificationMethod": "SIWE_PERSONAL_SIGN_EOA_OR_ERC1271",
+          "supportedWalletTypes": [
+            "EOA",
+            "DEPLOYED_SMART_WALLET"
+          ],
+          "smartWalletStandard": "ERC-1271",
+          "erc1271MagicValue": "0x1626ba7e",
+          "requiresDeployedCode": true,
+          "erc6492": "future_scope"
         },
         "csrfToken": "<redacted-signed-csrf-token>"
       }

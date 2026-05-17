@@ -151,7 +151,7 @@ Common status codes:
 
 ### `POST /auth/challenges`
 
-SIWE v1 서명용 login challenge를 발급한다. Operation id는 기존 client 호환성을 위해 `requestLoginChallenge`를 유지하지만, `signingMessage`는 nonce-only custom message가 아니라 SIWE 필수 필드를 포함한다. `uri`가 없으면 server가 `https://{domain}`으로 기본값을 만든다.
+SIWE v1 서명용 login challenge를 발급한다. Operation id는 기존 client 호환성을 위해 `requestLoginChallenge`를 유지하지만, `signingMessage`는 nonce-only custom message가 아니라 SIWE 필수 필드를 포함한다. `uri`가 없으면 server가 `https://{domain}`으로 기본값을 만든다. `signatureVerification`은 서명 원문이나 결과가 아니라 이 API surface가 지원하는 non-sensitive 검증 계약 metadata다.
 
 Request:
 
@@ -179,6 +179,15 @@ Response `201`:
   "expirationTime": "2026-05-17T10:30:00+09:00",
   "expiresAt": "2026-05-17T10:30:00+09:00",
   "signingMessage": "token-payments.local wants you to sign in with your Ethereum account:\n0x1111111111111111111111111111111111111111\n\nURI: https://token-payments.local\nVersion: 1\nChain ID: 1337\nNonce: N0NCE001\nIssued At: 2026-05-17T10:00:00+09:00\nExpiration Time: 2026-05-17T10:30:00+09:00",
+  "signatureVerification": {
+    "messageFormat": "SIWE_V1",
+    "signatureVerificationMethod": "SIWE_PERSONAL_SIGN_EOA_OR_ERC1271",
+    "supportedWalletTypes": ["EOA", "DEPLOYED_SMART_WALLET"],
+    "smartWalletStandard": "ERC-1271",
+    "erc1271MagicValue": "0x1626ba7e",
+    "requiresDeployedCode": true,
+    "erc6492": "future_scope"
+  },
   "csrfToken": "csrf-token",
   "csrf": {
     "cookieName": "csrf_token",
@@ -193,9 +202,9 @@ Errors: `400 VALIDATION_ERROR`.
 
 ### `POST /auth/sessions`
 
-MetaMask `personal_sign`으로 서명한 SIWE v1 message를 검증하고 session/token을 발급한다. Operation id는 기존 route compatibility를 위해 `loginWithMetaMask`를 유지한다. Server는 message의 `nonce`, `domain`, `address`, `chainId`, `issuedAt`, `expirationTime`, `uri`, `version`이 저장된 challenge와 일치하는지 확인한 뒤 wallet account type에 따라 EOA signature recovery 또는 deployed ERC-1271 smart contract wallet verification을 수행한다.
+MetaMask `personal_sign`으로 서명한 SIWE v1 message를 검증하고 session/token을 발급한다. Operation id는 기존 route compatibility를 위해 `loginWithMetaMask`를 유지한다. Server는 message의 `nonce`, `domain`, `address`, `chainId`, `issuedAt`, `expirationTime`, `uri`, `version`이 저장된 challenge와 일치하는지 확인한 뒤 wallet account type에 따라 EOA signature recovery 또는 deployed ERC-1271 smart contract wallet verification을 수행한다. Session response의 `signatureVerification`은 어떤 account type으로 성공했는지에 대한 audit event가 아니라 지원 범위를 설명하는 redacted runtime contract metadata다.
 
-ERC-1271 verification은 configured auth chain RPC에서 signer wallet의 `eth_getCode` 결과가 deployed contract일 때만 적용된다. Contract wallet은 SIWE `personal_sign` digest와 signature를 `isValidSignature(bytes32,bytes)`로 검증하며, success magic value `0x1626ba7e`만 유효하다. Revert, wrong magic value, timeout, unsupported chain, undeployed/counterfactual account verification failure는 `401 INVALID_SIGNATURE` 또는 chain mismatch에 대한 bounded auth failure로 매핑된다. ERC-6492 counterfactual account deployment/signature wrapping은 현재 범위가 아니다.
+ERC-1271 verification은 configured auth chain RPC에서 signer wallet의 `eth_getCode` 결과가 deployed contract일 때만 적용된다. Contract wallet은 SIWE `personal_sign` digest와 signature를 `isValidSignature(bytes32,bytes)`로 검증하며, success magic value `0x1626ba7e`만 유효하다. Revert, wrong magic value, timeout, unsupported chain, undeployed/counterfactual account verification failure는 `401 INVALID_SIGNATURE` 또는 chain mismatch에 대한 bounded auth failure로 매핑된다. Linked wallets API와 ERC-6492 counterfactual account deployment/signature wrapping은 future scope이며 현재 route surface에 추가하지 않는다.
 
 Request:
 
@@ -232,6 +241,15 @@ Response `200`:
     "refreshToken": "<set-cookie>",
     "expiresAt": "2026-05-17T11:00:00+09:00",
     "transport": "cookie"
+  },
+  "signatureVerification": {
+    "messageFormat": "SIWE_V1",
+    "signatureVerificationMethod": "SIWE_PERSONAL_SIGN_EOA_OR_ERC1271",
+    "supportedWalletTypes": ["EOA", "DEPLOYED_SMART_WALLET"],
+    "smartWalletStandard": "ERC-1271",
+    "erc1271MagicValue": "0x1626ba7e",
+    "requiresDeployedCode": true,
+    "erc6492": "future_scope"
   },
   "csrfToken": "csrf-token",
   "csrf": {

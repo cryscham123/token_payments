@@ -23,6 +23,17 @@ from token_payments.shared.domain import UserId
 from .contracts import ApiRequest, ApiResponse, json_response
 
 
+SIGNATURE_VERIFICATION_METADATA: dict[str, Any] = {
+    "messageFormat": "SIWE_V1",
+    "signatureVerificationMethod": "SIWE_PERSONAL_SIGN_EOA_OR_ERC1271",
+    "supportedWalletTypes": ["EOA", "DEPLOYED_SMART_WALLET"],
+    "smartWalletStandard": "ERC-1271",
+    "erc1271MagicValue": "0x1626ba7e",
+    "requiresDeployedCode": True,
+    "erc6492": "future_scope",
+}
+
+
 class AuthApi:
     """Auth API facade that can be adapted by any HTTP framework."""
 
@@ -109,6 +120,7 @@ def _challenge_payload(result: LoginChallengeResult) -> dict[str, Any]:
         "nonce": challenge.nonce.value,
         "expiresAt": challenge.expires_at.isoformat(),
         "signingMessage": result.signing_message,
+        "signatureVerification": dict(SIGNATURE_VERIFICATION_METADATA),
     }
     if challenge.domain is not None and challenge.uri is not None and challenge.chain_id is not None:
         payload.update(
@@ -134,6 +146,7 @@ def _login_payload(result: LoginResult) -> dict[str, Any]:
             "refreshToken": result.issued_token.refresh_token,
             "expiresAt": result.issued_token.expires_at.isoformat(),
         },
+        "signatureVerification": dict(SIGNATURE_VERIFICATION_METADATA),
     }
 
 
