@@ -22,6 +22,7 @@ AVAILABLE_SMOKE_SCENARIOS = (
     "compensation-checkout",
     "compose-readiness",
     "docker-runtime-readiness",
+    "postman-docker-api-readiness",
 )
 COMPOSE_READINESS_REQUIRED_ENV_KEYS = (
     "COMPOSE_PROFILES",
@@ -158,17 +159,44 @@ POSTMAN_API_MANUAL_LIVE_COMMANDS = (
     "curl --fail http://localhost:8000/readyz",
     "docker compose --env-file .env down",
 )
+POSTMAN_DOCKER_API_READINESS_CONTRACT = "token-payments.postman-docker-api-readiness.plan.v1"
+POSTMAN_DOCKER_API_READINESS_PLAN_COMMAND = "python3 scripts/docker_live_smoke.py --api-readiness --plan"
+POSTMAN_DOCKER_API_READINESS_REFUSAL_COMMAND = "python3 scripts/docker_live_smoke.py --api-readiness --execute"
+POSTMAN_DOCKER_API_READINESS_CONFIRMED_COMMAND = (
+    "python3 scripts/docker_live_smoke.py --api-readiness --execute --confirm-live-docker"
+)
+POSTMAN_DOCKER_API_READINESS_COMMAND_SEQUENCE = (
+    "api-compose-config",
+    "build-api-service",
+    "start-infrastructure",
+    "start-api-service",
+    "validate-session-signing-keys",
+    "healthz",
+    "readyz",
+    "auth-cookie-flow",
+    "expired-token-rejected",
+    "invalid-signature-rejected",
+    "csrf-failure",
+    "csrf-success",
+    "cors-preflight",
+    "oversized-body",
+    "malformed-json",
+    "idempotency-duplicate",
+    "checkout-happy-path",
+    "operator-action-smoke",
+)
+POSTMAN_DOCKER_API_READINESS_MANUAL_COMMANDS = (
+    "cp .env.example .env",
+    POSTMAN_DOCKER_API_READINESS_PLAN_COMMAND,
+    POSTMAN_DOCKER_API_READINESS_REFUSAL_COMMAND,
+    POSTMAN_DOCKER_API_READINESS_CONFIRMED_COMMAND,
+)
 DOCKER_RUNTIME_MANUAL_LIVE_COMMANDS = (
     "cp .env.example .env",
     "docker compose --env-file .env --profile runtime config --services",
     DOCKER_RUNTIME_BUILD_COMMAND,
     "docker compose --env-file .env up -d postgres kafka kafka-ui pgweb test_network",
     *DOCKER_RUNTIME_RUN_COMMANDS,
-    "docker compose --env-file .env --profile api config --services",
-    POSTMAN_API_BUILD_COMMAND,
-    "docker compose --env-file .env --profile api up -d token_payments_api",
-    "curl --fail http://localhost:8000/healthz",
-    "curl --fail http://localhost:8000/readyz",
     "docker compose --env-file .env down",
 )
 DOCKER_RUNTIME_SERVICES: Mapping[str, Mapping[str, Any]] = MappingProxyType(
@@ -1070,6 +1098,109 @@ def _run_docker_runtime_readiness() -> SmokeScenarioResult:
             summary=(
                 "docker runtime readiness validated image, dockerignore, env path, compose config command, "
                 "and compose one-shot commands without starting Docker"
+            ),
+        ),
+        steps=steps,
+        details=details,
+    )
+
+
+def _run_postman_docker_api_readiness() -> SmokeScenarioResult:
+    root = _repository_root()
+    required_paths = (
+        "scripts/docker_live_smoke.py",
+        "postman/token-payments.local.postman_collection.json",
+        "postman/token-payments.local.postman_environment.json",
+        "postman/token-payments.cookie-auth.expected.json",
+        "postman/fixtures/token-payments.local.seed-plan.json",
+        "postman/expected/token-payments.api.expected.json",
+    )
+    path_details = {
+        path: {
+            "path": path,
+            "exists": (root / path).exists(),
+        }
+        for path in required_paths
+    }
+    path_errors = [f"{path} is missing" for path, detail in path_details.items() if not detail["exists"]]
+    details = {
+        "dockerStarted": False,
+        "networkCalls": False,
+        "contract": POSTMAN_DOCKER_API_READINESS_CONTRACT,
+        "planCommand": POSTMAN_DOCKER_API_READINESS_PLAN_COMMAND,
+        "refusalCommand": POSTMAN_DOCKER_API_READINESS_REFUSAL_COMMAND,
+        "confirmedLiveCommand": POSTMAN_DOCKER_API_READINESS_CONFIRMED_COMMAND,
+        "commandSequence": list(POSTMAN_DOCKER_API_READINESS_COMMAND_SEQUENCE),
+        "manualLiveCommands": list(POSTMAN_DOCKER_API_READINESS_MANUAL_COMMANDS),
+        "service": dict(POSTMAN_API_SERVICE),
+        "requiredServices": ["postgres", "kafka", "test_network", POSTMAN_API_SERVICE_NAME],
+        "fixtures": path_details,
+        "redactionPolicy": {
+            "rawSecretValuesCommitted": False,
+            "redacts": [
+                "session signing key",
+                "signed session token",
+                "cookie header",
+                "CSRF token",
+                "Authorization bearer token",
+            ],
+        },
+        "automationBoundary": {
+            "defaultPath": "dry-run/static contract",
+            "requiresLiveConfirmation": True,
+            "startsDockerByDefault": False,
+            "opensNetworkByDefault": False,
+        },
+    }
+    steps = (
+        _compose_readiness_step(
+            "API readiness plan command",
+            "Postman Docker API readiness smoke exposes a dry-run plan command without starting Docker",
+            {
+                "planCommand": POSTMAN_DOCKER_API_READINESS_PLAN_COMMAND,
+                "refusalCommand": POSTMAN_DOCKER_API_READINESS_REFUSAL_COMMAND,
+                "confirmedLiveCommand": POSTMAN_DOCKER_API_READINESS_CONFIRMED_COMMAND,
+            },
+            (),
+        ),
+        _compose_readiness_step(
+            "API readiness security order",
+            "plan covers API start, session key validation, cookie auth, CSRF, CORS, body, JSON, idempotency, checkout, and operator smoke checks",
+            {"commandSequence": list(POSTMAN_DOCKER_API_READINESS_COMMAND_SEQUENCE)},
+            (),
+        ),
+        _compose_readiness_step(
+            "API readiness fixtures",
+            "Postman collection, environment, seed, expected response, and runner files exist for manual live verification",
+            path_details,
+            path_errors,
+        ),
+        _compose_readiness_step(
+            "API readiness redaction boundary",
+            "smoke output redacts session signing keys, signed tokens, cookie headers, and CSRF values",
+            details["redactionPolicy"],
+            (),
+        ),
+    )
+
+    if path_errors:
+        return SmokeScenarioResult(
+            scenario="postman-docker-api-readiness",
+            result=SmokeResult(
+                status=SmokeStatus.FAILED,
+                summary="postman Docker API readiness found missing runner or Postman fixture contracts",
+            ),
+            steps=steps,
+            details=details | {"errors": path_errors},
+        )
+
+    return SmokeScenarioResult(
+        scenario="postman-docker-api-readiness",
+        result=SmokeResult(
+            status=SmokeStatus.PASSED,
+            summary=(
+                "postman Docker API readiness exposes a bounded readiness/security smoke plan "
+                "without starting Docker or the API server"
             ),
         ),
         steps=steps,
@@ -2652,6 +2783,7 @@ _SMOKE_RUNNERS: Mapping[str, SmokeRunner] = MappingProxyType(
         "compensation-checkout": _run_compensation_checkout,
         "compose-readiness": _run_compose_readiness,
         "docker-runtime-readiness": _run_docker_runtime_readiness,
+        "postman-docker-api-readiness": _run_postman_docker_api_readiness,
     }
 )
 
