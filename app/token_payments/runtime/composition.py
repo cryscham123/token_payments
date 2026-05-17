@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
+import importlib
 import inspect
+import json
 import os
 from typing import Any, Mapping, Protocol, Self
 from urllib.parse import SplitResult, urlsplit, urlunsplit
+from uuid import uuid4
 
 from token_payments.contexts.auth.adapter import ClientWalletSignatureVerifier
 from token_payments.contexts.auth.adapter import (
@@ -68,11 +71,13 @@ from token_payments.shared.adapter.postgres import (
     PostgresProcessedCommandRepository,
 )
 
-from .contracts import Clock, IdGenerator, JsonValue
-from .observability import PostgresOperatorObservabilityQuery
+from .contracts import Clock, HealthState, IdGenerator, JsonValue
+from .observability import PostgresOperatorObservabilityQuery, ReadinessProbe, ReadinessProbeResult
 from .security import (
     DEFAULT_CORS_ALLOWED_ORIGINS,
     DEFAULT_CSRF_ACTIVE_KEY_ID,
+    DEFAULT_CSRF_COOKIE_NAME,
+    DEFAULT_CSRF_HEADER_NAME,
     DEFAULT_CSRF_MAX_AGE_SECONDS,
     DEFAULT_CSRF_SIGNING_KEY,
     DEFAULT_REQUEST_BODY_MAX_BYTES,
@@ -87,6 +92,7 @@ from .security import (
 from .session_transport import (
     DEFAULT_SESSION_ACCESS_TTL_SECONDS,
     DEFAULT_SESSION_REFRESH_TTL_SECONDS,
+    CookieSettings,
     CookieSessionTransport,
     SessionClaims,
     SessionKeyConfig,
@@ -100,6 +106,10 @@ DEFAULT_POSTGRES_DSN = "postgresql://token_payments:<redacted>@postgres:5432/tok
 DEFAULT_KAFKA_BOOTSTRAP_SERVERS = ("kafka:9092",)
 DEFAULT_KAFKA_CLIENT_ID = "token-payments-local"
 DEFAULT_WALLET_SIGNATURE_DOMAIN = "token-payments.local"
+DEFAULT_BLOCKCHAIN_RPC_SCHEME = "http"
+DEFAULT_BLOCKCHAIN_RPC_HOST = "localhost"
+DEFAULT_BLOCKCHAIN_RPC_PORT = 8545
+DEFAULT_BLOCKCHAIN_RPC_PATH = ""
 DEFAULT_BLOCKCHAIN_RPC_URL = "http://localhost:8545"
 DEFAULT_BLOCKCHAIN_CHAIN_ID = 1337
 DEFAULT_BLOCKCHAIN_NATIVE_SYMBOL = "ETH"
@@ -116,6 +126,7 @@ REQUIRED_LIVE_DEPENDENCIES = (
     "id_generator",
 )
 LIVE_RUNTIME_DEPENDENCY_MISSING = "LIVE_RUNTIME_DEPENDENCY_MISSING"
+LIVE_RUNTIME_DRIVER_CONFIGURATION_INVALID = "LIVE_RUNTIME_DRIVER_CONFIGURATION_INVALID"
 
 
 class PostgresSessionFactory(Protocol):
@@ -135,6 +146,21 @@ class WalletSignatureClient(Protocol):
 
 class BlockchainClient(Protocol):
     """Marker protocol for an injected blockchain RPC client."""
+
+
+class LiveRuntimeDriverConfigurationError(ValueError):
+    """Bounded validation error for env-backed live runtime driver construction."""
+
+    def __init__(self, field: str, message: str) -> None:
+        self.field = _require_text(field, "LiveRuntimeDriverConfigurationError.field")
+        super().__init__(_require_text(message, "LiveRuntimeDriverConfigurationError.message"))
+
+    def to_error(self) -> dict[str, JsonValue]:
+        return {
+            "code": LIVE_RUNTIME_DRIVER_CONFIGURATION_INVALID,
+            "field": self.field,
+            "message": str(self),
+        }
 
 
 @dataclass(frozen=True)
@@ -163,6 +189,10 @@ class LiveRuntimeConfig:
     csrf_key_id: str = DEFAULT_CSRF_ACTIVE_KEY_ID
     csrf_signing_key: str = field(default=DEFAULT_CSRF_SIGNING_KEY, repr=False)
     csrf_max_age_seconds: int = DEFAULT_CSRF_MAX_AGE_SECONDS
+    csrf_cookie_name: str = DEFAULT_CSRF_COOKIE_NAME
+    csrf_header_name: str = DEFAULT_CSRF_HEADER_NAME
+    cookie_secure: bool = True
+    cookie_samesite: str = "Lax"
     request_body_max_bytes: int = DEFAULT_REQUEST_BODY_MAX_BYTES
 
     def __post_init__(self) -> None:
@@ -264,6 +294,24 @@ class LiveRuntimeConfig:
             "csrf_max_age_seconds",
             _require_positive_int(self.csrf_max_age_seconds, "CSRF_MAX_AGE_SECONDS"),
         )
+        csrf_cookie_settings = CsrfCookieSettings(
+            cookie_name=self.csrf_cookie_name,
+            same_site=self.cookie_samesite,
+            secure=self.cookie_secure,
+            max_age_seconds=self.csrf_max_age_seconds,
+        )
+        session_cookie_settings = CookieSettings(
+            same_site=self.cookie_samesite,
+            secure=self.cookie_secure,
+            access_max_age_seconds=self.session_access_ttl_seconds,
+            refresh_max_age_seconds=self.session_refresh_ttl_seconds,
+        )
+        object.__setattr__(self, "csrf_cookie_name", csrf_cookie_settings.cookie_name)
+        object.__setattr__(self, "csrf_header_name", _require_text(self.csrf_header_name, "CSRF_HEADER_NAME"))
+        object.__setattr__(self, "cookie_secure", session_cookie_settings.secure)
+        object.__setattr__(self, "cookie_samesite", session_cookie_settings.same_site)
+        if is_live_environment(self.runtime_environment) and not self.cookie_secure:
+            raise ValueError("COOKIE_SECURE must be true in live/prod mode")
         object.__setattr__(
             self,
             "request_body_max_bytes",
@@ -292,7 +340,7 @@ class LiveRuntimeConfig:
                 "ADAPTER_WALLET_SIGNATURE_DOMAIN",
                 DEFAULT_WALLET_SIGNATURE_DOMAIN,
             ),
-            blockchain_rpc_url=source.get("ADAPTER_BLOCKCHAIN_RPC_URL", DEFAULT_BLOCKCHAIN_RPC_URL),
+            blockchain_rpc_url=_blockchain_rpc_url_from_env(source),
             blockchain_chain_id=_parse_int(
                 source,
                 "ADAPTER_BLOCKCHAIN_CHAIN_ID",
@@ -327,6 +375,10 @@ class LiveRuntimeConfig:
             csrf_key_id=csrf_config.active_key_id,
             csrf_signing_key=csrf_config.signing_key,
             csrf_max_age_seconds=csrf_config.max_age_seconds,
+            csrf_cookie_name=source.get("CSRF_COOKIE_NAME", DEFAULT_CSRF_COOKIE_NAME),
+            csrf_header_name=source.get("CSRF_HEADER_NAME", DEFAULT_CSRF_HEADER_NAME),
+            cookie_secure=_parse_bool(source, "COOKIE_SECURE", True),
+            cookie_samesite=source.get("COOKIE_SAMESITE", "Lax"),
             request_body_max_bytes=_parse_int(
                 source,
                 "REQUEST_BODY_MAX_BYTES",
@@ -353,16 +405,20 @@ class LiveRuntimeConfig:
                 "signingKeysConfigured": bool(self.session_key_ring.keys),
                 "accessTtlSeconds": self.session_access_ttl_seconds,
                 "refreshTtlSeconds": self.session_refresh_ttl_seconds,
+                "cookieSecure": self.cookie_secure,
+                "cookieSameSite": self.cookie_samesite,
                 "cookieSecretsRedacted": True,
             },
             "security": {
                 "csrf": {
-                    "cookieName": "csrf_token",
-                    "headerName": "X-CSRF-Token",
+                    "cookieName": self.csrf_cookie_name,
+                    "headerName": self.csrf_header_name,
                     "activeKeyId": self.csrf_key_id,
                     "signingKeyConfigured": bool(self.csrf_signing_key),
                     "secretRedacted": True,
                     "maxAgeSeconds": self.csrf_max_age_seconds,
+                    "cookieSecure": self.cookie_secure,
+                    "cookieSameSite": self.cookie_samesite,
                 },
                 "cors": {
                     "allowedOrigins": list(self.cors_allowed_origins),
@@ -458,6 +514,378 @@ class LiveRuntimeDependencies:
             "missing": list(missing),
             "valid": not missing,
         }
+
+
+@dataclass(frozen=True)
+class SystemClock:
+    """Runtime clock backed by the system UTC clock."""
+
+    def now(self) -> datetime:
+        return datetime.now(UTC)
+
+
+@dataclass(frozen=True)
+class UuidIdGenerator:
+    """Runtime ID generator backed by UUID4 strings."""
+
+    def new_id(self) -> str:
+        return str(uuid4())
+
+
+@dataclass(frozen=True)
+class PsycopgPostgresSessionFactory:
+    """Lazy psycopg session factory.
+
+    Importing this module and constructing the factory do not open a socket.
+    The connection is created only when the application handles a request or a
+    readiness probe invokes the factory.
+    """
+
+    dsn: str
+    connect_timeout_seconds: float = 3.0
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "dsn", _require_text(self.dsn, "ADAPTER_POSTGRES_DSN"))
+        object.__setattr__(
+            self,
+            "connect_timeout_seconds",
+            _require_positive_number(self.connect_timeout_seconds, "ADAPTER_POSTGRES_CONNECT_TIMEOUT_SECONDS"),
+        )
+
+    def __call__(self) -> Any:
+        psycopg = importlib.import_module("psycopg")
+        return psycopg.connect(self.dsn, connect_timeout=int(self.connect_timeout_seconds))
+
+
+@dataclass
+class LazyKafkaProducerClient:
+    """Lazy kafka-python producer wrapper."""
+
+    bootstrap_servers: tuple[str, ...]
+    client_id: str
+    request_timeout_ms: int = 3_000
+    _producer: Any | None = field(default=None, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        self.bootstrap_servers = _normalize_text_tuple(self.bootstrap_servers, "ADAPTER_KAFKA_BOOTSTRAP_SERVERS")
+        self.client_id = _require_text(self.client_id, "ADAPTER_KAFKA_CLIENT_ID")
+        self.request_timeout_ms = _require_positive_int(self.request_timeout_ms, "ADAPTER_KAFKA_REQUEST_TIMEOUT_MS")
+
+    def send(self, *args: Any, **kwargs: Any) -> Any:
+        return self._client().send(*args, **kwargs)
+
+    def produce(self, *args: Any, **kwargs: Any) -> Any:
+        producer = self._client()
+        produce = getattr(producer, "produce", None)
+        if not callable(produce):
+            return producer.send(*args, **kwargs)
+        return produce(*args, **kwargs)
+
+    def flush(self, *args: Any, **kwargs: Any) -> Any:
+        flush = getattr(self._client(), "flush", None)
+        if callable(flush):
+            return flush(*args, **kwargs)
+        return None
+
+    def bootstrap_connected(self) -> bool:
+        producer = self._client()
+        connected = getattr(producer, "bootstrap_connected", None)
+        if callable(connected):
+            return bool(connected())
+        partitions = getattr(producer, "partitions_for", None)
+        if callable(partitions):
+            return partitions("__consumer_offsets") is not None
+        return True
+
+    def _client(self) -> Any:
+        if self._producer is None:
+            kafka = importlib.import_module("kafka")
+            self._producer = kafka.KafkaProducer(
+                bootstrap_servers=list(self.bootstrap_servers),
+                client_id=self.client_id,
+                request_timeout_ms=self.request_timeout_ms,
+                value_serializer=None,
+                key_serializer=None,
+            )
+        return self._producer
+
+
+@dataclass(frozen=True)
+class EthAccountWalletSignatureClient:
+    """Lazy eth-account wallet signature recovery client."""
+
+    domain: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "domain", _require_text(self.domain, "ADAPTER_WALLET_SIGNATURE_DOMAIN"))
+
+    def recover_address(self, message: str, signature: str) -> str:
+        account_module = importlib.import_module("eth_account")
+        messages_module = importlib.import_module("eth_account.messages")
+        encoded = messages_module.encode_defunct(text=_require_text(message, "message"))
+        return account_module.Account.recover_message(encoded, signature=_require_text(signature, "signature"))
+
+
+@dataclass(frozen=True)
+class JsonRpcBlockchainClient:
+    """Small JSON-RPC client for local Ethereum-compatible test networks."""
+
+    rpc_url: str
+    chain_id: int
+    native_symbol: str
+    native_decimals: int
+    timeout_seconds: float = 3.0
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "rpc_url", _require_text(self.rpc_url, "ADAPTER_BLOCKCHAIN_RPC_URL"))
+        object.__setattr__(self, "chain_id", _require_positive_int(self.chain_id, "ADAPTER_BLOCKCHAIN_CHAIN_ID"))
+        object.__setattr__(
+            self,
+            "native_symbol",
+            _require_text(self.native_symbol, "ADAPTER_BLOCKCHAIN_NATIVE_SYMBOL"),
+        )
+        object.__setattr__(
+            self,
+            "native_decimals",
+            _require_positive_int(self.native_decimals, "ADAPTER_BLOCKCHAIN_NATIVE_DECIMALS"),
+        )
+        object.__setattr__(
+            self,
+            "timeout_seconds",
+            _require_positive_number(self.timeout_seconds, "ADAPTER_BLOCKCHAIN_TIMEOUT_SECONDS"),
+        )
+
+    def get_chain_id(self) -> int:
+        value = self._rpc("eth_chainId", ())
+        return int(str(value), 16) if isinstance(value, str) and value.startswith("0x") else int(value)
+
+    def estimate_gas(self, request: Mapping[str, object] | None = None, **kwargs: object) -> dict[str, object]:
+        payload = dict(request or kwargs)
+        wallet_from = str(payload.get("wallet_from") or payload.get("walletFrom") or "")
+        wallet_to = str(payload.get("wallet_to") or payload.get("walletTo") or "")
+        rpc_payload = {key: value for key, value in {"from": wallet_from, "to": wallet_to, "value": "0x0"}.items() if value}
+        raw_gas = self._rpc("eth_estimateGas", (rpc_payload,))
+        gas_limit = int(str(raw_gas), 16) if isinstance(raw_gas, str) and raw_gas.startswith("0x") else int(raw_gas)
+        return {
+            "estimated_fee": {
+                "amount": "0",
+                "symbol": self.native_symbol,
+                "chain_id": self.chain_id,
+                "token_address": None,
+                "decimals": self.native_decimals,
+            },
+            "gas_limit": gas_limit,
+            "buffer_rate": "0",
+        }
+
+    def get_transaction_receipt(self, request: Mapping[str, object] | None = None, **kwargs: object) -> dict[str, object] | None:
+        payload = dict(request or kwargs)
+        tx_hash = str(payload.get("tx_hash") or payload.get("txHash") or "")
+        result = self._rpc("eth_getTransactionReceipt", (tx_hash,))
+        if result is None:
+            return None
+        if not isinstance(result, Mapping):
+            raise ValueError("eth_getTransactionReceipt result must be an object or null")
+        block_number = result.get("blockNumber", 0)
+        gas_used = result.get("gasUsed", 0)
+        return {
+            "hash": str(result.get("transactionHash") or tx_hash),
+            "block_number": int(str(block_number), 16) if isinstance(block_number, str) else int(block_number),
+            "gas_used": int(str(gas_used), 16) if isinstance(gas_used, str) else int(gas_used),
+        }
+
+    def create_signature_request(self, request: Mapping[str, object] | None = None, **kwargs: object) -> dict[str, object]:
+        payload = dict(request or kwargs)
+        return {
+            "request_id": str(payload.get("payment_id") or payload.get("paymentId")),
+            "amount": payload.get("amount"),
+            "to": str(payload.get("wallet_to") or payload.get("walletTo")),
+            "expires_at": str(payload.get("expires_at") or payload.get("expiresAt")),
+        }
+
+    def refund_payment(self, request: Mapping[str, object] | None = None, **kwargs: object) -> dict[str, object]:
+        payload = dict(request or kwargs)
+        tx_hash = str(payload.get("tx_hash") or payload.get("txHash") or "")
+        if not tx_hash:
+            raise ValueError("refund_payment requires a tx_hash")
+        return {"hash": tx_hash, "block_number": 0, "gas_used": 0}
+
+    def _rpc(self, method: str, params: Sequence[object]) -> Any:
+        urllib_request = importlib.import_module("urllib.request")
+        payload = json.dumps(
+            {"jsonrpc": "2.0", "id": 1, "method": method, "params": list(params)},
+            ensure_ascii=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        request = urllib_request.Request(
+            self.rpc_url,
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib_request.urlopen(request, timeout=self.timeout_seconds) as response:
+            decoded = json.loads(response.read().decode("utf-8"))
+        if not isinstance(decoded, Mapping):
+            raise ValueError("JSON-RPC response must be an object")
+        if "error" in decoded:
+            raise ValueError(f"JSON-RPC {method} failed: {decoded['error']}")
+        return decoded.get("result")
+
+
+@dataclass(frozen=True)
+class PostgresReadinessProbe:
+    component: str
+    session_factory: Callable[[], Any]
+    timeout_seconds: float = 3.0
+
+    def check(self) -> ReadinessProbeResult:
+        session: Any | None = None
+        try:
+            session = self.session_factory()
+            execute = getattr(session, "execute", None)
+            if not callable(execute):
+                raise TypeError("postgres session must expose execute()")
+            execute("SELECT 1")
+            return ReadinessProbeResult(
+                component=self.component,
+                state=HealthState.OK,
+                details={"query": "SELECT 1", "timeoutSeconds": self.timeout_seconds},
+            )
+        except Exception as exc:
+            return ReadinessProbeResult(
+                component=self.component,
+                state=HealthState.UNAVAILABLE,
+                details={"timeoutSeconds": self.timeout_seconds},
+                error_code="POSTGRES_UNAVAILABLE",
+                message=f"{type(exc).__name__}: {exc}",
+            )
+        finally:
+            close = getattr(session, "close", None)
+            if callable(close):
+                close()
+
+
+@dataclass(frozen=True)
+class KafkaReadinessProbe:
+    component: str
+    producer: Any
+    timeout_seconds: float = 3.0
+
+    def check(self) -> ReadinessProbeResult:
+        try:
+            connected = _kafka_connected(self.producer)
+            if not connected:
+                raise RuntimeError("Kafka bootstrap connection is unavailable")
+            return ReadinessProbeResult(
+                component=self.component,
+                state=HealthState.OK,
+                details={"bootstrapConnected": True, "timeoutSeconds": self.timeout_seconds},
+            )
+        except Exception as exc:
+            return ReadinessProbeResult(
+                component=self.component,
+                state=HealthState.UNAVAILABLE,
+                details={"timeoutSeconds": self.timeout_seconds},
+                error_code="KAFKA_UNAVAILABLE",
+                message=f"{type(exc).__name__}: {exc}",
+            )
+
+
+@dataclass(frozen=True)
+class BlockchainReadinessProbe:
+    component: str
+    client: Any
+    expected_chain_id: int
+    timeout_seconds: float = 3.0
+
+    def check(self) -> ReadinessProbeResult:
+        try:
+            actual_chain_id = _blockchain_chain_id(self.client)
+            if actual_chain_id != self.expected_chain_id:
+                return ReadinessProbeResult(
+                    component=self.component,
+                    state=HealthState.UNAVAILABLE,
+                    details={
+                        "expectedChainId": self.expected_chain_id,
+                        "actualChainId": actual_chain_id,
+                        "timeoutSeconds": self.timeout_seconds,
+                    },
+                    error_code="BLOCKCHAIN_CHAIN_ID_MISMATCH",
+                    message="Blockchain RPC returned an unexpected chain id.",
+                )
+            return ReadinessProbeResult(
+                component=self.component,
+                state=HealthState.OK,
+                details={"chainId": actual_chain_id, "timeoutSeconds": self.timeout_seconds},
+            )
+        except Exception as exc:
+            return ReadinessProbeResult(
+                component=self.component,
+                state=HealthState.UNAVAILABLE,
+                details={"expectedChainId": self.expected_chain_id, "timeoutSeconds": self.timeout_seconds},
+                error_code="BLOCKCHAIN_UNAVAILABLE",
+                message=f"{type(exc).__name__}: {exc}",
+            )
+
+
+def build_live_runtime_dependencies_from_env(
+    env: Mapping[str, str] | None = None,
+    *,
+    config: LiveRuntimeConfig | None = None,
+) -> LiveRuntimeDependencies:
+    """Build lazy live runtime driver wrappers from env without opening network connections."""
+
+    source = os.environ if env is None else env
+    try:
+        live_config = config or LiveRuntimeConfig.from_env(source)
+    except ValueError as exc:
+        raise LiveRuntimeDriverConfigurationError(_field_from_error(str(exc)), str(exc)) from exc
+
+    try:
+        return LiveRuntimeDependencies(
+            postgres_session_factory=PsycopgPostgresSessionFactory(live_config.postgres_dsn),
+            kafka_producer=LazyKafkaProducerClient(
+                bootstrap_servers=live_config.kafka_bootstrap_servers,
+                client_id=live_config.kafka_client_id,
+            ),
+            wallet_signature_client=EthAccountWalletSignatureClient(live_config.wallet_signature_domain),
+            blockchain_client=JsonRpcBlockchainClient(
+                rpc_url=live_config.blockchain_rpc_url,
+                chain_id=live_config.blockchain_chain_id,
+                native_symbol=live_config.blockchain_native_symbol,
+                native_decimals=live_config.blockchain_native_decimals,
+            ),
+            clock=SystemClock(),
+            id_generator=UuidIdGenerator(),
+        )
+    except ValueError as exc:
+        raise LiveRuntimeDriverConfigurationError(_field_from_error(str(exc)), str(exc)) from exc
+
+
+def build_live_readiness_probes(
+    *,
+    config: LiveRuntimeConfig,
+    dependencies: LiveRuntimeDependencies,
+) -> tuple[ReadinessProbe, ...]:
+    dependencies.validate()
+    return (
+        PostgresReadinessProbe(
+            component="postgres",
+            session_factory=dependencies.postgres_session_factory,
+            timeout_seconds=config.request_timeout_seconds,
+        ),
+        KafkaReadinessProbe(
+            component="kafka",
+            producer=dependencies.kafka_producer,
+            timeout_seconds=config.request_timeout_seconds,
+        ),
+        BlockchainReadinessProbe(
+            component="blockchain",
+            client=dependencies.blockchain_client,
+            expected_chain_id=config.blockchain_chain_id,
+            timeout_seconds=config.request_timeout_seconds,
+        ),
+    )
 
 
 @dataclass(frozen=True)
@@ -930,6 +1358,12 @@ def _session_transport(config: LiveRuntimeConfig, clock: Clock | Any | None = No
             access_ttl_seconds=config.session_access_ttl_seconds,
             refresh_ttl_seconds=config.session_refresh_ttl_seconds,
         ),
+        settings=CookieSettings(
+            same_site=config.cookie_samesite,
+            secure=config.cookie_secure,
+            access_max_age_seconds=config.session_access_ttl_seconds,
+            refresh_max_age_seconds=config.session_refresh_ttl_seconds,
+        ),
         clock=clock,
     )
 
@@ -940,7 +1374,13 @@ def _csrf_token_service(config: LiveRuntimeConfig, clock: Clock | Any | None = N
             key_id=config.csrf_key_id,
             secret_provider=lambda: config.csrf_signing_key,
         ),
-        cookie_settings=CsrfCookieSettings(max_age_seconds=config.csrf_max_age_seconds),
+        cookie_settings=CsrfCookieSettings(
+            cookie_name=config.csrf_cookie_name,
+            same_site=config.cookie_samesite,
+            secure=config.cookie_secure,
+            max_age_seconds=config.csrf_max_age_seconds,
+        ),
+        header_name=config.csrf_header_name,
         clock=clock,
     )
 
@@ -1112,6 +1552,26 @@ def _parse_decimal(env: Mapping[str, str], key: str, default: Decimal) -> Decima
         raise ValueError(f"{key} must be a decimal number") from exc
 
 
+def _blockchain_rpc_url_from_env(env: Mapping[str, str]) -> str:
+    override = env.get("ADAPTER_BLOCKCHAIN_RPC_URL")
+    if override is not None and override.strip():
+        return override.strip()
+
+    scheme = _require_text(
+        env.get("ADAPTER_BLOCKCHAIN_RPC_SCHEME", DEFAULT_BLOCKCHAIN_RPC_SCHEME),
+        "ADAPTER_BLOCKCHAIN_RPC_SCHEME",
+    )
+    host = _require_text(
+        env.get("ADAPTER_BLOCKCHAIN_RPC_HOST", DEFAULT_BLOCKCHAIN_RPC_HOST),
+        "ADAPTER_BLOCKCHAIN_RPC_HOST",
+    )
+    port = _parse_int(env, "ADAPTER_BLOCKCHAIN_RPC_PORT", DEFAULT_BLOCKCHAIN_RPC_PORT)
+    path = (env.get("ADAPTER_BLOCKCHAIN_RPC_PATH", DEFAULT_BLOCKCHAIN_RPC_PATH) or "").strip()
+    if path and not path.startswith("/"):
+        path = f"/{path}"
+    return f"{scheme}://{host}:{port}{path}"
+
+
 def _csrf_env_with_session_fallback(env: Mapping[str, str], session_key_config: SessionKeyConfig) -> Mapping[str, str]:
     if env.get("CSRF_SIGNING_KEY"):
         return env
@@ -1234,23 +1694,66 @@ def _looks_sensitive(value: str) -> bool:
     return any(marker in lower for marker in ("password", "private", "secret", "token", "seed"))
 
 
+def _kafka_connected(producer: Any) -> bool:
+    check_readiness = getattr(producer, "check_readiness", None)
+    if callable(check_readiness):
+        return bool(check_readiness())
+    bootstrap_connected = getattr(producer, "bootstrap_connected", None)
+    if callable(bootstrap_connected):
+        return bool(bootstrap_connected())
+    partitions_for = getattr(producer, "partitions_for", None)
+    if callable(partitions_for):
+        return partitions_for("__consumer_offsets") is not None
+    raise TypeError("kafka producer must expose bootstrap_connected(), check_readiness(), or partitions_for()")
+
+
+def _blockchain_chain_id(client: Any) -> int:
+    for method_name in ("get_chain_id", "chain_id", "eth_chain_id"):
+        method = getattr(client, method_name, None)
+        if callable(method):
+            value = method()
+            return int(str(value), 16) if isinstance(value, str) and value.startswith("0x") else int(value)
+    raise TypeError("blockchain client must expose get_chain_id(), chain_id(), or eth_chain_id()")
+
+
+def _field_from_error(message: str) -> str:
+    normalized = _require_text(message, "error message")
+    first = normalized.split(maxsplit=1)[0].rstrip(":")
+    if first.isupper() and "_" in first:
+        return first
+    return "runtime"
+
+
 def _type_name(value: Any) -> str:
     return type(value).__name__
 
 
 __all__ = [
     "BlockchainClient",
+    "BlockchainReadinessProbe",
+    "EthAccountWalletSignatureClient",
     "KafkaProducerClient",
+    "KafkaReadinessProbe",
     "LIVE_RUNTIME_DEPENDENCY_MISSING",
+    "LIVE_RUNTIME_DRIVER_CONFIGURATION_INVALID",
+    "JsonRpcBlockchainClient",
+    "LazyKafkaProducerClient",
     "LiveApiComposition",
     "LiveApiFacades",
     "LiveRuntimeConfig",
     "LiveRuntimeDependencies",
+    "LiveRuntimeDriverConfigurationError",
     "LiveRuntimeDependencyError",
+    "PostgresReadinessProbe",
     "PostgresSessionFactory",
+    "PsycopgPostgresSessionFactory",
     "REQUIRED_LIVE_DEPENDENCIES",
+    "SystemClock",
+    "UuidIdGenerator",
     "WalletSignatureClient",
     "build_live_api_facades",
     "build_live_api_router",
+    "build_live_readiness_probes",
+    "build_live_runtime_dependencies_from_env",
     "describe_live_runtime_dependencies",
 ]

@@ -19,7 +19,9 @@ from token_payments.api import HttpRequest, HttpResponse, HttpRoute, HttpRouter,
 from .composition import (
     LiveRuntimeConfig,
     LiveRuntimeDependencies,
+    build_live_readiness_probes,
     build_live_api_router,
+    build_live_runtime_dependencies_from_env,
 )
 from .contracts import JsonValue
 from .observability import AccessLogEvent, ReadinessProbe, evaluate_readiness
@@ -158,13 +160,20 @@ def build_live_http_router(
     *,
     config: LiveRuntimeConfig | None = None,
     dependencies: LiveRuntimeDependencies | None = None,
-    readiness_probes: Sequence[ReadinessProbe] = (),
+    readiness_probes: Sequence[ReadinessProbe] | None = None,
     access_log_sink: Callable[[Mapping[str, JsonValue]], Any] | None = None,
 ) -> HttpRouter:
     """Build public live API routes plus live-only health/readiness routes."""
 
-    router = build_live_api_router(config=config, dependencies=dependencies)
-    _register_live_system_routes(router, readiness_probes=readiness_probes)
+    live_config = config or LiveRuntimeConfig.from_env(_live_env(os.environ))
+    live_dependencies = dependencies or build_live_runtime_dependencies_from_env(config=live_config)
+    live_readiness_probes = (
+        tuple(readiness_probes)
+        if readiness_probes is not None
+        else build_live_readiness_probes(config=live_config, dependencies=live_dependencies)
+    )
+    router = build_live_api_router(config=live_config, dependencies=live_dependencies)
+    _register_live_system_routes(router, readiness_probes=live_readiness_probes)
     if access_log_sink is None:
         return router
     return _ObservedHttpRouter(router, access_log_sink=access_log_sink)
@@ -174,13 +183,13 @@ def build_live_asgi_application(
     *,
     config: LiveRuntimeConfig | None = None,
     dependencies: LiveRuntimeDependencies | None = None,
-    readiness_probes: Sequence[ReadinessProbe] = (),
+    readiness_probes: Sequence[ReadinessProbe] | None = None,
     access_log_sink: Callable[[Mapping[str, JsonValue]], Any] | None = None,
 ) -> Any:
     """Build the live ASGI application from the framework-neutral live router."""
 
     live_config = config or LiveRuntimeConfig.from_env(_live_env(os.environ))
-    live_dependencies = dependencies or LiveRuntimeDependencies()
+    live_dependencies = dependencies or build_live_runtime_dependencies_from_env(config=live_config)
     router = build_live_http_router(
         config=live_config,
         dependencies=live_dependencies,
@@ -217,7 +226,7 @@ def run_live_api_server(
 
     try:
         live_config = config or LiveRuntimeConfig.from_env(_live_env(os.environ))
-        live_dependencies = dependencies or LiveRuntimeDependencies()
+        live_dependencies = dependencies or build_live_runtime_dependencies_from_env(config=live_config)
         app = build_live_asgi_application(config=live_config, dependencies=live_dependencies)
         runner_result = _runner_result(
             (runner or _run_with_uvicorn)(app, host=live_config.api_host, port=live_config.api_port)
@@ -518,7 +527,7 @@ def _optional_dependency_metadata() -> dict[str, JsonValue]:
 
 def _live_env(env: Mapping[str, str]) -> dict[str, str]:
     output = dict(env)
-    output["RUNTIME_ENVIRONMENT"] = "live"
+    output.setdefault("RUNTIME_ENVIRONMENT", "local")
     return output
 
 

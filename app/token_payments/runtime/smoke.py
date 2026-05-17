@@ -49,6 +49,10 @@ COMPOSE_READINESS_REQUIRED_ENV_KEYS = (
     "ADAPTER_OUTBOX_RETRY_INITIAL_DELAY_SECONDS",
     "ADAPTER_OUTBOX_RETRY_MAX_DELAY_SECONDS",
     "ADAPTER_WALLET_SIGNATURE_DOMAIN",
+    "ADAPTER_BLOCKCHAIN_RPC_SCHEME",
+    "ADAPTER_BLOCKCHAIN_RPC_HOST",
+    "ADAPTER_BLOCKCHAIN_RPC_PORT",
+    "ADAPTER_BLOCKCHAIN_RPC_PATH",
     "ADAPTER_BLOCKCHAIN_RPC_URL",
     "ADAPTER_BLOCKCHAIN_CHAIN_ID",
     "ADAPTER_BLOCKCHAIN_NATIVE_SYMBOL",
@@ -87,6 +91,7 @@ DOCKER_RUNTIME_SUPPORT_COPY_SOURCES = (
     ".dockerignore",
     "docker-compose.yml",
     ".env.example",
+    "requirements-runtime.txt",
     "app/postgres/init.d/001-token-payments-schema.sql",
     "app/test_network/Dockerfile",
 )
@@ -124,6 +129,10 @@ POSTMAN_API_REQUIRED_ENV_KEYS = (
     "SESSION_REFRESH_TTL_SECONDS",
     "ADAPTER_POSTGRES_DSN",
     "ADAPTER_KAFKA_BOOTSTRAP_SERVERS",
+    "ADAPTER_BLOCKCHAIN_RPC_SCHEME",
+    "ADAPTER_BLOCKCHAIN_RPC_HOST",
+    "ADAPTER_BLOCKCHAIN_RPC_PORT",
+    "ADAPTER_BLOCKCHAIN_RPC_PATH",
     "ADAPTER_BLOCKCHAIN_RPC_URL",
 )
 POSTMAN_API_SERVICE: Mapping[str, Mapping[str, Any] | Sequence[Any] | str] = MappingProxyType(
@@ -145,19 +154,16 @@ POSTMAN_API_SERVICE: Mapping[str, Mapping[str, Any] | Sequence[Any] | str] = Map
         },
     }
 )
-POSTMAN_API_COMPOSE_CONFIG_VALIDATION_COMMAND = (
-    "docker compose --env-file .env.example --profile api config --services"
-)
-POSTMAN_API_BUILD_COMMAND = "docker compose --env-file .env --profile api build token_payments_api"
+POSTMAN_API_COMPOSE_CONFIG_VALIDATION_COMMAND = "docker compose --env-file .env.example config --services"
+POSTMAN_API_BUILD_COMMAND = "docker compose --env-file .env build token_payments_api"
 POSTMAN_API_MANUAL_LIVE_COMMANDS = (
     "cp .env.example .env",
-    "docker compose --env-file .env --profile api config --services",
+    "docker compose --env-file .env config --services",
     POSTMAN_API_BUILD_COMMAND,
-    "docker compose --env-file .env up -d postgres kafka test_network",
-    "docker compose --env-file .env --profile api up -d token_payments_api",
+    "docker compose up -d",
     "curl --fail http://localhost:8000/healthz",
     "curl --fail http://localhost:8000/readyz",
-    "docker compose --env-file .env down",
+    "docker compose down",
 )
 POSTMAN_DOCKER_API_READINESS_CONTRACT = "token-payments.postman-docker-api-readiness.plan.v1"
 POSTMAN_DOCKER_API_READINESS_PLAN_COMMAND = "python3 scripts/docker_live_smoke.py --api-readiness --plan"

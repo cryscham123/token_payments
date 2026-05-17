@@ -18,6 +18,7 @@ RESERVED_SCENARIOS = (
     "compensation-checkout",
     "compose-readiness",
     "docker-runtime-readiness",
+    "postman-docker-api-readiness",
 )
 
 

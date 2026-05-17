@@ -21,7 +21,16 @@ DEFAULT_CSRF_SIGNING_KEY = "replace_with_local_dev_only_csrf_signing_key"
 DEFAULT_CSRF_MAX_AGE_SECONDS = 3_600
 DEFAULT_CORS_ALLOWED_ORIGINS = ("http://localhost:5173", "http://127.0.0.1:8765")
 DEFAULT_REQUEST_BODY_MAX_BYTES = 1024 * 1024
-SECURITY_PLACEHOLDER_MARKERS = ("placeholder", "replace_with", "changeme", "example")
+SECURITY_PLACEHOLDER_MARKERS = (
+    "placeholder",
+    "replace_with",
+    "changeme",
+    "example",
+    "local_dev_only",
+    "local-dev",
+    "dev_only",
+    "do_not_use",
+)
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 DEFAULT_CORS_METHODS = ("DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT")
 DEFAULT_CORS_HEADERS = (
@@ -144,7 +153,7 @@ class CsrfTokenConfig:
         if not _is_live_environment(runtime_environment):
             return
         if _looks_placeholder(self.active_key_id) or _looks_placeholder(self.signing_key):
-            raise ValueError("CSRF_SIGNING_KEY must not use placeholder values in live/prod mode")
+            raise ValueError("CSRF_SIGNING_KEY must not use placeholder or local dev values in live/prod mode")
         if len(self.signing_key.encode("utf-8")) < 32:
             raise ValueError("CSRF_SIGNING_KEY must be at least 32 bytes in live/prod mode")
 

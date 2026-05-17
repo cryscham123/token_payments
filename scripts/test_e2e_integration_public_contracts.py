@@ -28,7 +28,13 @@ SMOKE_EXPORTS = {
     "describe_smoke_registry",
     "run_smoke_scenario",
 }
-SCENARIOS = ("happy-path-checkout", "compensation-checkout", "compose-readiness", "docker-runtime-readiness")
+SCENARIOS = (
+    "happy-path-checkout",
+    "compensation-checkout",
+    "compose-readiness",
+    "docker-runtime-readiness",
+    "postman-docker-api-readiness",
+)
 EXTERNAL_CLIENT_IMPORT_ROOTS = {
     "aiohttp",
     "confluent_kafka",

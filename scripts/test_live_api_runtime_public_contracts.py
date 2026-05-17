@@ -83,7 +83,7 @@ def test_runtime_commands_keep_bounded_json_no_server_contracts() -> None:
     assert dry_run["details"]["liveApiServer"]["readiness"]["readinessRoute"] == "/readyz"
     assert dry_run["details"]["liveApiServer"]["readiness"]["idempotencyHeader"] == "Idempotency-Key"
     assert dry_run["details"]["liveApiServer"]["session"]["activeKeyId"] == "<redacted>"
-    assert dry_run["details"]["liveApiServer"]["session"]["envBackedValidationStatus"] == "invalid"
+    assert dry_run["details"]["liveApiServer"]["session"]["envBackedValidationStatus"] == "valid"
     assert dry_run["details"]["liveApiServer"]["requiresConfirmation"] is True
     assert dry_run["details"]["liveApiServer"]["serverStarted"] is False
     assert dry_run["details"]["liveApiServer"]["redaction"] == {

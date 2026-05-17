@@ -40,7 +40,7 @@
           },
           "attributes": {
             "HttpOnly": false,
-            "Secure": true,
+            "Secure": false,
             "SameSite": "Lax",
             "Path": "/",
             "Max-Age": {
@@ -91,7 +91,7 @@
           },
           "attributes": {
             "HttpOnly": true,
-            "Secure": true,
+            "Secure": false,
             "SameSite": "Lax",
             "Path": "/",
             "Max-Age": {
@@ -129,7 +129,7 @@
           },
           "attributes": {
             "HttpOnly": true,
-            "Secure": true,
+            "Secure": false,
             "SameSite": "Lax",
             "Path": "/",
             "Max-Age": {
@@ -150,7 +150,7 @@
           },
           "attributes": {
             "HttpOnly": false,
-            "Secure": true,
+            "Secure": false,
             "SameSite": "Lax",
             "Path": "/",
             "Max-Age": {
@@ -202,7 +202,7 @@
           },
           "attributes": {
             "HttpOnly": true,
-            "Secure": true,
+            "Secure": false,
             "SameSite": "Lax",
             "Path": "/",
             "Max-Age": {
@@ -240,7 +240,7 @@
           },
           "attributes": {
             "HttpOnly": true,
-            "Secure": true,
+            "Secure": false,
             "SameSite": "Lax",
             "Path": "/",
             "Max-Age": {
@@ -261,7 +261,7 @@
           },
           "attributes": {
             "HttpOnly": false,
-            "Secure": true,
+            "Secure": false,
             "SameSite": "Lax",
             "Path": "/",
             "Max-Age": {
@@ -290,7 +290,7 @@
           "rawValueCommitted": false,
           "attributes": {
             "HttpOnly": true,
-            "Secure": true,
+            "Secure": false,
             "SameSite": "Lax",
             "Path": "/",
             "Max-Age": {
@@ -305,7 +305,7 @@
           "rawValueCommitted": false,
           "attributes": {
             "HttpOnly": true,
-            "Secure": true,
+            "Secure": false,
             "SameSite": "Lax",
             "Path": "/",
             "Max-Age": {

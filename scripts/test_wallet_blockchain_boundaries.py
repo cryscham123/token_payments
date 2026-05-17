@@ -153,7 +153,10 @@ def test_wallet_blockchain_env_uses_placeholders_without_private_key_config() ->
     env_example = (ROOT / ".env.example").read_text(encoding="utf-8")
 
     assert "ADAPTER_WALLET_SIGNATURE_DOMAIN=token-payments.local" in env_example
-    assert "ADAPTER_BLOCKCHAIN_RPC_URL=http://localhost:8545" in env_example
+    assert "ADAPTER_BLOCKCHAIN_RPC_SCHEME=http" in env_example
+    assert "ADAPTER_BLOCKCHAIN_RPC_HOST=test_network" in env_example
+    assert "ADAPTER_BLOCKCHAIN_RPC_PORT=8545" in env_example
+    assert "ADAPTER_BLOCKCHAIN_RPC_URL=" in env_example
     assert "ADAPTER_BLOCKCHAIN_TOKEN_ADDRESS=0xreplace_with_local_dev_only_token_address" in env_example
     assert "ADAPTER_BLOCKCHAIN_PRIVATE_KEY" not in env_example
     assert "ADAPTER_BLOCKCHAIN_SEED_PHRASE" not in env_example

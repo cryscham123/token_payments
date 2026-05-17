@@ -74,7 +74,7 @@ Session cookie values are signed tokens. The live runtime loads signing keys fro
 
 Session signing keys, signed token values, refresh token hashes/salts, and CSRF secrets must never be logged, committed in fixtures, or exposed in runtime previews.
 
-PostgreSQL is the source of truth for auth users, login challenges, and sessions. refresh reuse detection uses the PostgreSQL session repository hash/salt/rotation model. Redis is optional cache-aside/TTL optimization, not a live required dependency. The committed `.env.example` values are local placeholders; live/prod startup rejects committed placeholder signing values, so local live runs must copy `.env.example` to `.env` and replace session and CSRF signing placeholders with local-only secret material.
+PostgreSQL is the source of truth for auth users, login challenges, and sessions. refresh reuse detection uses the PostgreSQL session repository hash/salt/rotation model. Redis is optional cache-aside/TTL optimization, not a live required dependency. The committed `.env.example` values are local dev values; live/prod startup rejects committed local dev signing values, so local live runs must copy `.env.example` to `.env` and replace session and CSRF signing material for non-local environments.
 
 CSRF token 발급 surface는 route manifest를 늘리지 않고 `POST /auth/challenges`, `POST /auth/sessions`, `POST /auth/sessions/refresh` 성공 응답에 포함된다. Server also sets a non-HttpOnly `csrf_token` cookie for double-submit validation. Browser clients send the response `csrfToken` value back in `X-CSRF-Token` for cookie-authenticated mutating requests.
 
@@ -754,7 +754,13 @@ For cookie auth setup, import `postman/token-payments.local.postman_collection.j
 
 Manual seed data for local Postman runs is described by `postman/fixtures/token-payments.local.seed-plan.json`. It references demo customer/store/product/inventory/payment destination/test network ids using committed PostgreSQL schema table and column names, but it is not part of default init and does not run in automated verification. Route-level expected response examples live in `postman/expected/token-payments.api.expected.json`; the fixture covers auth, cookie/CSRF headers, `Idempotency-Key`, `X-Request-Id`, happy-path checkout, compensation cancellation, and operator action recovery while keeping signed token and cookie values redacted.
 
-The Docker Compose API service is `token_payments_api` under the explicit `api` profile. It runs `python -m token_payments serve-api --live --confirm-live-api` and must use env-backed session signing material: `SESSION_ACTIVE_KEY_ID` selects the active key, and `SESSION_SIGNING_KEYS` may retain a previous key only for bounded key rotation verification. Browser auth is cookie-first through HttpOnly access/refresh cookies plus `X-CSRF-Token`; `Authorization: Bearer <accessToken>` is only a non-browser fallback. Credentialed CORS requires `CORS_ALLOW_CREDENTIALS=true` with an allowlisted origin, never wildcard credentials.
+The Docker Compose API service is `token_payments_api`. After `cp .env.example .env`, `COMPOSE_PROFILES=runtime,smoke,api` makes it part of plain `docker compose up`; automated checks use daemon-less compose config and smoke plans and do not start Docker. Daemon-less compose config validation does not start Docker:
+
+```bash
+docker compose --env-file .env.example config --services
+```
+
+It runs `python -m token_payments serve-api --live --confirm-live-api` and must use env-backed session signing material: `SESSION_ACTIVE_KEY_ID` selects the active key, and `SESSION_SIGNING_KEYS` may retain a previous key only for bounded key rotation verification. The committed local dev signing values are valid only for `RUNTIME_ENVIRONMENT=local`; live/prod startup rejects committed local dev signing values. Browser auth is cookie-first through HttpOnly access/refresh cookies plus `X-CSRF-Token`; `Authorization: Bearer <accessToken>` is only a non-browser fallback. Credentialed CORS requires `CORS_ALLOW_CREDENTIALS=true` with an allowlisted origin, never wildcard credentials.
 
 Postman Docker API readiness/security smoke is documented as a bounded local live plan. Automated verification runs only the dry-run/refusal path and does not start Docker or the API server. The plan covers API service start, session signing key validation, health/readiness, cookie auth, invalid/expired signature rejection, CSRF failure/success, credentialed CORS preflight, oversized body, malformed JSON, idempotency duplicate, checkout happy path, and operator action smoke.
 
@@ -762,13 +768,14 @@ Final local backend order for Postman Docker API readiness:
 
 ```bash
 cp .env.example .env
-docker compose --env-file .env --profile api config --services
-docker compose --env-file .env --profile api build token_payments_api
-docker compose --env-file .env up -d postgres kafka test_network
-docker compose --env-file .env --profile api up -d token_payments_api
+docker compose --env-file .env config --services
+docker compose --env-file .env build token_payments_api
+docker compose up -d
+curl --fail http://localhost:8000/healthz
+curl --fail http://localhost:8000/readyz
 # Apply/review the manual seed plan in postman/fixtures/token-payments.local.seed-plan.json
 # Import postman/token-payments.local.postman_collection.json and postman/token-payments.local.postman_environment.json
 python3 scripts/docker_live_smoke.py --api-readiness --plan
 python3 scripts/docker_live_smoke.py --api-readiness --execute --confirm-live-docker
-docker compose --env-file .env down
+docker compose down
 ```

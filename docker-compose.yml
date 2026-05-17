@@ -177,13 +177,23 @@ services:
       - SESSION_REFRESH_TTL_SECONDS=${SESSION_REFRESH_TTL_SECONDS}
       - ADAPTER_POSTGRES_DSN=${ADAPTER_POSTGRES_DSN}
       - ADAPTER_KAFKA_BOOTSTRAP_SERVERS=${ADAPTER_KAFKA_BOOTSTRAP_SERVERS}
-      - ADAPTER_BLOCKCHAIN_RPC_URL=${ADAPTER_BLOCKCHAIN_RPC_URL}
+      - ADAPTER_BLOCKCHAIN_RPC_SCHEME=${ADAPTER_BLOCKCHAIN_RPC_SCHEME}
+      - ADAPTER_BLOCKCHAIN_RPC_HOST=${ADAPTER_BLOCKCHAIN_RPC_HOST}
+      - ADAPTER_BLOCKCHAIN_RPC_PORT=${ADAPTER_BLOCKCHAIN_RPC_PORT}
+      - ADAPTER_BLOCKCHAIN_RPC_PATH=${ADAPTER_BLOCKCHAIN_RPC_PATH:-}
+      - ADAPTER_BLOCKCHAIN_RPC_URL=${ADAPTER_BLOCKCHAIN_RPC_URL:-}
     command: ["python", "-m", "token_payments", "serve-api", "--live", "--confirm-live-api"]
-    restart: always
+    restart: unless-stopped
     profiles:
       - api
     ports:
       - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2).read()"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
     depends_on:
       postgres:
         condition: service_healthy

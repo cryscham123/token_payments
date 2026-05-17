@@ -43,10 +43,10 @@
     "demoInventoryAvailableStock": 25,
     "paymentDestinationWallet": "0x2222222222222222222222222222222222222222",
     "paymentTokenAddress": "0x3333333333333333333333333333333333333333",
-    "testNetworkChainId": 31337,
-    "testNetworkNetworkId": "31337",
+    "testNetworkChainId": 1337,
+    "testNetworkNetworkId": "1337",
     "testNetworkAccountPlaceholder": "${TEST_NETWORK_ACCOUNT}",
-    "testNetworkRpcUrlPlaceholder": "${ADAPTER_BLOCKCHAIN_RPC_URL}"
+    "testNetworkRpcUrlPlaceholder": "${ADAPTER_BLOCKCHAIN_RPC_SCHEME}://${ADAPTER_BLOCKCHAIN_RPC_HOST}:${ADAPTER_BLOCKCHAIN_RPC_PORT}"
   },
   "records": [
     {
@@ -96,7 +96,7 @@
         "store_address_street": "1 Local Demo Way",
         "store_wallet_address": "0x2222222222222222222222222222222222222222",
         "supported_chain_ids": [
-          31337
+          1337
         ]
       }
     },
@@ -118,7 +118,7 @@
         "name": "Local Hoodie",
         "price_numeric": "10.000000000000000000",
         "price_symbol": "TPAY",
-        "price_chain_id": 31337,
+        "price_chain_id": 1337,
         "price_token_address": "0x3333333333333333333333333333333333333333",
         "price_decimals": 18
       }
@@ -174,7 +174,7 @@
         "name": "Local Hoodie",
         "price_numeric": "10.000000000000000000",
         "price_symbol": "TPAY",
-        "price_chain_id": 31337,
+        "price_chain_id": 1337,
         "price_token_address": "0x3333333333333333333333333333333333333333",
         "price_decimals": 18,
         "available": true

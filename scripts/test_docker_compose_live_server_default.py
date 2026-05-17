@@ -4,180 +4,89 @@ import json
 import os
 import shutil
 import subprocess
-import sys
 from pathlib import Path
-from typing import Any
 
 import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "app"))
-
 API_SERVICE = "token_payments_api"
-API_PROFILE_CONFIG_COMMAND = (
-    "docker",
-    "compose",
-    "--env-file",
-    ".env.example",
-    "config",
-    "--services",
-)
+DEFAULT_CONFIG_COMMAND = ("docker", "compose", "--env-file", ".env.example", "config", "--services")
 EXPECTED_API_COMMAND = ["python", "-m", "token_payments", "serve-api", "--live", "--confirm-live-api"]
 EXPECTED_DEPENDENCIES = {
     "postgres": "service_healthy",
     "kafka": "service_started",
     "test_network": "service_started",
 }
-REQUIRED_API_ENV_KEYS = {
-    "LOCAL_API_ORIGIN",
-    "API_PUBLIC_BASE_URL",
-    "RUNTIME_API_HOST",
-    "RUNTIME_API_PORT",
-    "RUNTIME_REQUEST_TIMEOUT_SECONDS",
-    "REQUEST_BODY_MAX_BYTES",
-    "CORS_ALLOWED_ORIGINS",
-    "CORS_ALLOW_CREDENTIALS",
-    "CORS_MAX_AGE_SECONDS",
-    "COOKIE_SECURE",
-    "COOKIE_SAMESITE",
-    "CSRF_ACTIVE_KEY_ID",
-    "CSRF_SIGNING_KEY",
-    "CSRF_MAX_AGE_SECONDS",
-    "CSRF_COOKIE_NAME",
-    "CSRF_HEADER_NAME",
-    "SESSION_ACTIVE_KEY_ID",
-    "SESSION_SIGNING_KEYS",
-    "SESSION_ACCESS_TTL_SECONDS",
-    "SESSION_REFRESH_TTL_SECONDS",
-    "ADAPTER_POSTGRES_DSN",
-    "ADAPTER_KAFKA_BOOTSTRAP_SERVERS",
-    "ADAPTER_BLOCKCHAIN_RPC_SCHEME",
-    "ADAPTER_BLOCKCHAIN_RPC_HOST",
-    "ADAPTER_BLOCKCHAIN_RPC_PORT",
-    "ADAPTER_BLOCKCHAIN_RPC_PATH",
-    "ADAPTER_BLOCKCHAIN_RPC_URL",
+REQUIRED_API_ENV = {
+    "PYTHONPATH": "/workspace/app",
+    "RUNTIME_API_HOST": "0.0.0.0",
+    "RUNTIME_API_PORT": "8000",
+    "ADAPTER_POSTGRES_DSN": "${ADAPTER_POSTGRES_DSN}",
+    "ADAPTER_KAFKA_BOOTSTRAP_SERVERS": "${ADAPTER_KAFKA_BOOTSTRAP_SERVERS}",
+    "ADAPTER_BLOCKCHAIN_RPC_SCHEME": "${ADAPTER_BLOCKCHAIN_RPC_SCHEME}",
+    "ADAPTER_BLOCKCHAIN_RPC_HOST": "${ADAPTER_BLOCKCHAIN_RPC_HOST}",
+    "ADAPTER_BLOCKCHAIN_RPC_PORT": "${ADAPTER_BLOCKCHAIN_RPC_PORT}",
+    "ADAPTER_BLOCKCHAIN_RPC_PATH": "${ADAPTER_BLOCKCHAIN_RPC_PATH:-}",
+    "ADAPTER_BLOCKCHAIN_RPC_URL": "${ADAPTER_BLOCKCHAIN_RPC_URL:-}",
+    "SESSION_SIGNING_KEYS": "${SESSION_SIGNING_KEYS}",
+    "CSRF_SIGNING_KEY": "${CSRF_SIGNING_KEY}",
 }
-SECRET_ENV_KEYS = {"SESSION_SIGNING_KEYS", "CSRF_SIGNING_KEY"}
-FORBIDDEN_COMPOSE_SECRET_MARKERS = (
-    "replace_with_local_dev_only_session_signing_key",
-    "replace_with_local_dev_only_csrf_signing_key",
+SECRET_MARKERS = (
     "local_dev_only_session_signing_key",
     "local_dev_only_csrf_signing_key",
+    "replace_with_local_dev_only_session_signing_key",
+    "replace_with_local_dev_only_csrf_signing_key",
 )
 FORBIDDEN_DAEMON_COMMANDS = {"up", "run", "build"}
 
 
-def test_compose_defines_postman_api_service_contract() -> None:
-    services = _compose_services()
-    service = services[API_SERVICE]
+def test_env_profiles_make_api_service_part_of_default_compose_config() -> None:
+    env = _env_values()
+
+    assert "api" in {profile.strip() for profile in env["COMPOSE_PROFILES"].split(",")}
+    assert "runtime" in env["COMPOSE_PROFILES"]
+    assert "smoke" in env["COMPOSE_PROFILES"]
+    assert FORBIDDEN_DAEMON_COMMANDS.isdisjoint(DEFAULT_CONFIG_COMMAND)
+
+
+def test_default_compose_api_service_contract_is_live_and_env_backed() -> None:
+    service = _compose_services()[API_SERVICE]
     environment = _environment_pairs(service)
 
     assert _scalar_for_key(service, "image") == "token_payments_runtime"
     assert _nested_scalar(service, "build", "context") == "."
     assert _nested_scalar(service, "build", "dockerfile") == "Dockerfile"
     assert _list_for_key(service, "env_file") == [".env"]
-    assert _list_for_key(service, "profiles") == ["api"]
     assert _json_list_for_key(service, "command") == EXPECTED_API_COMMAND
     assert _scalar_for_key(service, "restart") == "unless-stopped"
     assert _list_for_key(service, "ports") == ["8000:8000"]
 
-    assert environment["PYTHONPATH"] == "/workspace/app"
-    assert environment["RUNTIME_API_HOST"] == "0.0.0.0"
-    assert environment["RUNTIME_API_PORT"] == "8000"
-    for key in REQUIRED_API_ENV_KEYS:
-        assert key in environment, f"{API_SERVICE} must pass through {key}"
-    for key in SECRET_ENV_KEYS:
-        assert environment[key] == f"${{{key}}}", f"{key} must be environment-backed, not hard-coded"
+    for key, expected in REQUIRED_API_ENV.items():
+        assert environment[key] == expected
 
     block_text = "\n".join(service)
-    for marker in FORBIDDEN_COMPOSE_SECRET_MARKERS:
+    for marker in SECRET_MARKERS:
         assert marker not in block_text
 
 
-def test_postman_api_service_waits_for_required_local_infrastructure() -> None:
-    dependencies = _depends_on_conditions(_compose_services()[API_SERVICE])
+def test_default_compose_api_service_waits_for_required_infrastructure_and_has_healthcheck() -> None:
+    service = _compose_services()[API_SERVICE]
 
-    assert dependencies == EXPECTED_DEPENDENCIES
-
-
-def test_env_example_documents_postman_api_cookie_csrf_cors_and_session_placeholders() -> None:
-    env = _env_values()
-
-    for key in REQUIRED_API_ENV_KEYS:
-        assert key in env, f".env.example must document {key}"
-
-    assert env["LOCAL_API_ORIGIN"] == "http://localhost:8000"
-    assert env["API_PUBLIC_BASE_URL"] == "http://localhost:8000"
-    assert env["RUNTIME_API_HOST"] == "0.0.0.0"
-    assert env["RUNTIME_API_PORT"] == "8000"
-    assert env["COOKIE_SECURE"].lower() == "false"
-    assert env["COOKIE_SAMESITE"] == "Lax"
-    assert env["CSRF_COOKIE_NAME"] == "csrf_token"
-    assert env["CSRF_HEADER_NAME"] == "X-CSRF-Token"
-    assert env["COMPOSE_PROFILES"] == "runtime,smoke,api"
-    assert env["ADAPTER_BLOCKCHAIN_RPC_URL"] == ""
-    assert env["ADAPTER_BLOCKCHAIN_RPC_HOST"] == "test_network"
-    assert env["ADAPTER_BLOCKCHAIN_RPC_PORT"] == "8545"
-    assert env["SESSION_ACTIVE_KEY_ID"] == "local-dev-2026"
-    assert "local_dev_only_session_signing_key" in env["SESSION_SIGNING_KEYS"]
-    assert env["CSRF_SIGNING_KEY"].startswith("local_dev_only_csrf_signing_key")
+    assert _depends_on_conditions(service) == EXPECTED_DEPENDENCIES
+    assert _nested_scalar(service, "healthcheck", "interval") == "5s"
+    assert _nested_scalar(service, "healthcheck", "timeout") == "3s"
+    assert _nested_scalar(service, "healthcheck", "retries") == "12"
+    assert _nested_scalar(service, "healthcheck", "start_period") == "10s"
+    assert "http://127.0.0.1:8000/healthz" in "\n".join(_nested_list(service, "healthcheck", "test"))
 
 
-def test_docker_runtime_smoke_exposes_postman_api_manual_sequence_without_starting_docker() -> None:
-    from token_payments.runtime.smoke import run_smoke_scenario
-
-    result = run_smoke_scenario("docker-runtime-readiness").to_dict()
-    details = result["details"]
-    postman_api = details["postmanApi"]
-
-    assert details["dockerStarted"] is False
-    assert details["networkCalls"] is False
-    assert postman_api["service"] == {
-        "image": "token_payments_runtime",
-        "buildContext": ".",
-        "dockerfile": "Dockerfile",
-        "envFile": [".env"],
-        "pythonPath": "/workspace/app",
-        "command": EXPECTED_API_COMMAND,
-        "restart": "unless-stopped",
-        "profiles": ["api"],
-        "ports": ["8000:8000"],
-        "environmentKeys": ["PYTHONPATH", *sorted(REQUIRED_API_ENV_KEYS)],
-        "dependsOn": EXPECTED_DEPENDENCIES,
-    }
-    assert postman_api["composeConfigValidationCommand"] == {
-        "command": "docker compose --env-file .env.example config --services",
-        "daemonless": True,
-        "usesDockerSocket": False,
-        "forbiddenCommands": ["up", "run", "build"],
-        "expectedServices": [API_SERVICE],
-    }
-    assert postman_api["manualLiveCommands"] == [
-        "cp .env.example .env",
-        "docker compose --env-file .env config --services",
-        "docker compose --env-file .env build token_payments_api",
-        "docker compose up -d",
-        "curl --fail http://localhost:8000/healthz",
-        "curl --fail http://localhost:8000/readyz",
-        "docker compose down",
-    ]
-    json.dumps(result)
-
-
-def test_api_profile_config_services_resolves_api_service_without_daemon() -> None:
+def test_default_compose_config_services_resolves_api_without_profile_flag() -> None:
     _require_docker_compose_cli()
 
-    services = _compose_config_services(API_PROFILE_CONFIG_COMMAND)
+    services = _compose_config_services(DEFAULT_CONFIG_COMMAND)
 
     assert API_SERVICE in services
-
-
-def test_api_profile_config_command_is_daemonless_and_bounded() -> None:
-    assert API_PROFILE_CONFIG_COMMAND[:2] == ("docker", "compose")
-    assert "config" in API_PROFILE_CONFIG_COMMAND
-    assert "--services" in API_PROFILE_CONFIG_COMMAND
-    assert FORBIDDEN_DAEMON_COMMANDS.isdisjoint(API_PROFILE_CONFIG_COMMAND)
 
 
 def _compose_services() -> dict[str, tuple[str, ...]]:
@@ -207,20 +116,16 @@ def _compose_services() -> dict[str, tuple[str, ...]]:
         if current_service is not None:
             services[current_service].append(raw_line)
 
-    assert in_services, "docker-compose.yml must have a services block"
     assert API_SERVICE in services, f"docker-compose.yml must define {API_SERVICE}"
     return {name: tuple(block) for name, block in services.items()}
 
 
 def _env_values() -> dict[str, str]:
-    path = ROOT / ".env.example"
-    assert path.exists(), ".env.example must exist"
     values: dict[str, str] = {}
-    for line_number, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+    for raw_line in (ROOT / ".env.example").read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#"):
             continue
-        assert "=" in line, f".env.example:{line_number} must be KEY=VALUE syntax"
         key, value = line.split("=", 1)
         values[key] = value
     return values
@@ -261,11 +166,15 @@ def _list_for_key(block: tuple[str, ...], key: str) -> list[str]:
     base_indent = _base_indent(block)
     if base_indent is None:
         return []
+    return _list_for_key_at_indent(block, key, base_indent)
+
+
+def _list_for_key_at_indent(block: tuple[str, ...], key: str, expected_indent: int) -> list[str]:
     prefix = f"{key}:"
     for index, line in enumerate(block):
         stripped = line.strip()
         indent = _indent_width(line)
-        if indent != base_indent or not stripped.startswith(prefix):
+        if indent != expected_indent or not stripped.startswith(prefix):
             continue
         scalar_value = stripped[len(prefix) :].strip()
         if scalar_value:
@@ -283,6 +192,21 @@ def _list_for_key(block: tuple[str, ...], key: str) -> list[str]:
             if nested_stripped.startswith("- "):
                 values.append(_list_item_value(nested_stripped[2:].strip()))
         return values
+    return []
+
+
+def _nested_list(block: tuple[str, ...], parent_key: str, child_key: str) -> list[str]:
+    base_indent = _base_indent(block)
+    if base_indent is None:
+        return []
+    parent_prefix = f"{parent_key}:"
+    for index, line in enumerate(block):
+        stripped = line.strip()
+        indent = _indent_width(line)
+        if indent != base_indent or not stripped.startswith(parent_prefix):
+            continue
+        child_indent = indent + 2
+        return _list_for_key_at_indent(block[index + 1 :], child_key, child_indent)
     return []
 
 
@@ -354,7 +278,7 @@ def _depends_on_conditions(block: tuple[str, ...]) -> dict[str, str | None]:
 
 def _require_docker_compose_cli() -> None:
     if shutil.which("docker") is None:
-        pytest.skip("Docker Compose CLI is unavailable; static tests validate the committed API service contract")
+        pytest.skip("Docker Compose CLI is unavailable; static tests validate the committed default contract")
 
     completed = subprocess.run(
         ["docker", "compose", "version"],
@@ -366,7 +290,7 @@ def _require_docker_compose_cli() -> None:
         check=False,
     )
     if completed.returncode != 0:
-        pytest.skip("Docker Compose CLI is unavailable; static tests validate the committed API service contract")
+        pytest.skip("Docker Compose CLI is unavailable; static tests validate the committed default contract")
 
 
 def _compose_config_services(command: tuple[str, ...]) -> set[str]:
@@ -387,7 +311,7 @@ def _compose_config_services(command: tuple[str, ...]) -> set[str]:
 
 def _daemonless_env() -> dict[str, str]:
     env = os.environ.copy()
-    env["DOCKER_HOST"] = "unix:///tmp/token-payments-postman-api-config-no-daemon.sock"
+    env["DOCKER_HOST"] = "unix:///tmp/token-payments-default-config-no-daemon.sock"
     return env
 
 

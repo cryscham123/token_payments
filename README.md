@@ -68,14 +68,13 @@ http://127.0.0.1:8765/operator
 
 ## Docker Runtime Verification
 
-Docker runtime image 계약은 루트 `Dockerfile`이 Python 3.12 기반으로 `app/token_payments`를 `/workspace/app/token_payments`에 복사하고, live smoke가 컨테이너 안에서도 같은 static contract를 검증할 수 있도록 `Dockerfile`, `.dockerignore`, `docker-compose.yml`, `.env.example`, DB init script, test network Dockerfile을 함께 복사한다. 기본 command는 `PYTHONPATH=/workspace/app`에서 bounded `health` command를 실행한다. `docker-compose.yml`은 같은 image를 쓰는 compose one-shot services `token_payments_health`, `token_payments_worker`, `token_payments_smoke`를 제공한다.
+Docker runtime image 계약은 루트 `Dockerfile`이 Python 3.12 기반으로 `app/token_payments`를 `/workspace/app/token_payments`에 복사하고, live smoke가 컨테이너 안에서도 같은 static contract를 검증할 수 있도록 `Dockerfile`, `.dockerignore`, `docker-compose.yml`, `.env.example`, `requirements-runtime.txt`, DB init script, test network Dockerfile을 함께 복사한다. 기본 command는 `PYTHONPATH=/workspace/app`에서 bounded `health` command를 실행한다. `docker-compose.yml`은 같은 image를 쓰는 compose one-shot services `token_payments_health`, `token_payments_worker`, `token_payments_smoke`와 local live API service `token_payments_api`를 제공한다.
 
 Docker daemon/socket 권한이 없는 automated harness에서는 live container 실행이 아니라 static/config/smoke contract를 검증한다. Docker daemon 없이 compose 파일 해석만 확인하려면 committed `.env.example`으로 daemon-less compose config validation을 실행한다.
 
 ```bash
 docker compose --env-file .env.example config --services
 docker compose --env-file .env.example --profile runtime config --services
-docker compose --env-file .env.example --profile api config --services
 ```
 
 Docker runtime smoke는 live Docker/Kafka/PostgreSQL client를 열지 않고 committed 파일과 수동 실행 순서를 JSON contract로 검증한다.
@@ -108,15 +107,15 @@ docker compose --env-file .env up -d postgres kafka kafka-ui pgweb test_network
 docker compose --env-file .env --profile runtime run --rm token_payments_health
 docker compose --env-file .env --profile runtime run --rm token_payments_worker
 docker compose --env-file .env --profile smoke run --rm token_payments_smoke
-docker compose --env-file .env --profile api config --services
-docker compose --env-file .env --profile api build token_payments_api
-docker compose --env-file .env --profile api up -d token_payments_api
+docker compose --env-file .env config --services
+docker compose --env-file .env build token_payments_api
+docker compose up -d
 curl --fail http://localhost:8000/healthz
 curl --fail http://localhost:8000/readyz
-docker compose --env-file .env down
+docker compose down
 ```
 
-For Postman-local API checks, `token_payments_api` is available only through the explicit `api` profile and runs `python -m token_payments serve-api --live --confirm-live-api`. The committed `.env.example` session signing key is an intentional placeholder that live/prod startup rejects; copy it to `.env` and replace `SESSION_ACTIVE_KEY_ID`, `SESSION_SIGNING_KEYS`, and CSRF/session secret values with local-only secrets before starting the API service. `SESSION_SIGNING_KEYS` supports active/previous key rotation: keep `SESSION_ACTIVE_KEY_ID` on the current active key and retain a previous key only for bounded local rotation verification.
+For Postman-local API checks, copy `.env.example` to `.env`; its `COMPOSE_PROFILES=runtime,smoke,api` makes `token_payments_api` part of plain `docker compose up`. The service runs `python -m token_payments serve-api --live --confirm-live-api`. The committed `.env.example` session and CSRF signing values are local dev only; live/prod startup rejects committed local dev signing values, so replace `SESSION_ACTIVE_KEY_ID`, `SESSION_SIGNING_KEYS`, and CSRF/session secret values for any non-local environment. `SESSION_SIGNING_KEYS` supports active/previous key rotation: keep `SESSION_ACTIVE_KEY_ID` on the current active key and retain a previous key only for bounded local rotation verification.
 
 Postman-ready API roadmap:
 
@@ -426,7 +425,7 @@ Next phase candidates:
 
 ## ASGI/FastAPI Thin Adapter
 
-The ASGI/FastAPI Thin Adapter keeps the existing route manifest and facade contract as the source of truth. `build_asgi_app` adapts the framework-neutral `HttpRouter` with only the standard library, while `build_fastapi_app` is optional FastAPI dependency production wiring. Importing `token_payments.api` and running the preview commands does not require FastAPI; the FastAPI app is built only when an explicit runtime has installed `fastapi` and calls the factory.
+The ASGI/FastAPI Thin Adapter keeps the existing route manifest and facade contract as the source of truth. `build_asgi_app` adapts the framework-neutral `HttpRouter` with only the standard library, while `build_fastapi_app` is optional FastAPI dependency production wiring. Importing `token_payments.api` and running the preview commands does not require FastAPI; the FastAPI app is built only when an explicit runtime has installed `fastapi` and calls the factory. The live API runtime composition remains the next layer that supplies real PostgreSQL, Kafka, and test network drivers. FastAPI optional dependency live smoke stays manual and outside the default no-server-start boundary.
 
 ### Live API Request Guard
 
@@ -447,7 +446,7 @@ python3 scripts/docker_live_smoke.py --api-readiness --plan
 python3 scripts/docker_live_smoke.py --api-readiness --execute
 ```
 
-`--execute` without `--confirm-live-docker` returns bounded refusal JSON. A confirmed manual run is local-only and should follow the documented service setup with replaced `.env` secrets. The plan order covers API service start, session signing key validation, `/healthz`, `/readyz`, cookie auth, invalid/expired signature rejection, CSRF failure/success, credentialed CORS preflight, oversized body, malformed JSON, idempotency duplicate, checkout happy path, and operator action smoke. Smoke output redacts session signing keys, signed tokens, cookie headers, and CSRF values.
+`--execute` without `--confirm-live-docker` returns bounded refusal JSON. A confirmed manual run is local-only and should follow the documented service setup with a copied `.env`; local dev signing values are accepted only for `RUNTIME_ENVIRONMENT=local`. The plan order covers API service start, session signing key validation, `/healthz`, `/readyz`, cookie auth, invalid/expired signature rejection, CSRF failure/success, credentialed CORS preflight, oversized body, malformed JSON, idempotency duplicate, checkout happy path, and operator action smoke. Smoke output redacts session signing keys, signed tokens, cookie headers, and CSRF values.
 
 ```bash
 cp .env.example .env
@@ -458,15 +457,14 @@ Final local backend order for Postman Docker API readiness:
 
 ```bash
 cp .env.example .env
-docker compose --env-file .env --profile api config --services
-docker compose --env-file .env --profile api build token_payments_api
-docker compose --env-file .env up -d postgres kafka test_network
-docker compose --env-file .env --profile api up -d token_payments_api
+docker compose --env-file .env config --services
+docker compose --env-file .env build token_payments_api
+docker compose up -d
 # Apply/review the manual seed plan in postman/fixtures/token-payments.local.seed-plan.json
 # Import postman/token-payments.local.postman_collection.json and postman/token-payments.local.postman_environment.json
 python3 scripts/docker_live_smoke.py --api-readiness --plan
 python3 scripts/docker_live_smoke.py --api-readiness --execute --confirm-live-docker
-docker compose --env-file .env down
+docker compose down
 ```
 
 `api` and `serve-api` return bounded JSON previews with `wsgiFactory`, `asgiFactory`, `fastapiFactory`, `fastapiAvailable`, `longRunning=false`, and `serverStarted=false`. The harness path does not start a server, does not bind a network port, and does not open DB, Kafka, Docker, Blockchain RPC, or local `.env`; this is the no-server-start boundary.
@@ -519,7 +517,7 @@ Checkout Process is a separate saga/process context, not an order context submod
 
 `order.Store` and `store_approval.Store` are not the same aggregate. The order model is a catalog/order projection, while the store approval model is an approval verification projection and must not share persistence or DTOs by default.
 
-PostgreSQL is the source of truth for auth users, login challenges, and sessions. Refresh reuse detection uses the PostgreSQL session repository hash/salt/rotation model. Redis is optional cache-aside/TTL optimization, not a live required dependency. Local runs must copy `.env.example` to `.env` and replace session and CSRF signing placeholders; live/prod startup rejects committed placeholder signing values.
+PostgreSQL is the source of truth for auth users, login challenges, and sessions. Refresh reuse detection uses the PostgreSQL session repository hash/salt/rotation model. Redis is optional cache-aside/TTL optimization, not a live required dependency. Local runs must copy `.env.example` to `.env`; live/prod startup rejects committed local dev signing values, so replace session and CSRF signing material for non-local environments.
 
 Public HTTP route surface stays bound to the current 16-route manifest. `approveOrder`/`request_store_approval` are Kafka/message listener inputs, and store owner manual order approval HTTP API is not in current scope. manual order approval HTTP API is not an active roadmap item. ERC-20/USDC/USDT payment support is not an immediate roadmap phase.
 

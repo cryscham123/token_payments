@@ -42,10 +42,7 @@ def build_asgi_app(router: HttpRouter, *, request_body_limit: Any | None = None)
             )
             return
         if scope_type == "lifespan":
-            message = await receive()
-            event_type = str(message.get("type") or "lifespan.startup")
-            failed_type = "lifespan.shutdown.failed" if event_type == "lifespan.shutdown" else "lifespan.startup.failed"
-            await send({"type": failed_type, "message": "Unsupported ASGI scope type: lifespan"})
+            await _handle_lifespan_scope(receive, send)
             return
         raise ValueError(f"Unsupported ASGI scope type: {scope_type or '<missing>'}")
 
@@ -71,6 +68,30 @@ async def _handle_http_scope(
         body=body_result,
     )
     return router.handle(request)
+
+
+async def _handle_lifespan_scope(receive: AsgiReceive, send: AsgiSend) -> None:
+    while True:
+        message = await receive()
+        message_type = str(message.get("type") or "")
+        if message_type == "lifespan.startup":
+            await send({"type": "lifespan.startup.complete"})
+            continue
+        if message_type == "lifespan.shutdown":
+            await send({"type": "lifespan.shutdown.complete"})
+            return
+        failed_type = (
+            "lifespan.shutdown.failed"
+            if message_type.startswith("lifespan.shutdown")
+            else "lifespan.startup.failed"
+        )
+        await send(
+            {
+                "type": failed_type,
+                "message": f"Unsupported ASGI lifespan message type: {message_type or '<missing>'}.",
+            }
+        )
+        return
 
 
 async def _body_from_asgi_receive(receive: AsgiReceive, *, max_body_bytes: int) -> bytes | HttpResponse:

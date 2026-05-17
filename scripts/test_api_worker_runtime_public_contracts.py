@@ -156,7 +156,9 @@ def test_env_compose_schema_and_runtime_config_are_consistent_for_local_runtime(
     assert env_values["RUNTIME_WORKER_BATCH_SIZE"] == env_values["ADAPTER_OUTBOX_BATCH_SIZE"] == "100"
     assert env_values["RUNTIME_WORKER_POLL_INTERVAL_SECONDS"] == env_values["ADAPTER_OUTBOX_POLL_INTERVAL_SECONDS"] == "1"
     assert env_values["TEST_NETWORK_NETWORK_ID"] == env_values["ADAPTER_BLOCKCHAIN_CHAIN_ID"] == "1337"
-    assert env_values["ADAPTER_BLOCKCHAIN_RPC_URL"] == "http://localhost:8545"
+    assert env_values["ADAPTER_BLOCKCHAIN_RPC_URL"] == ""
+    assert env_values["ADAPTER_BLOCKCHAIN_RPC_HOST"] == "test_network"
+    assert env_values["ADAPTER_BLOCKCHAIN_RPC_PORT"] == "8545"
 
     for service_name in ("postgres", "kafka", "kafka-ui", "pgweb", "test_network"):
         assert f"{service_name}:" in compose

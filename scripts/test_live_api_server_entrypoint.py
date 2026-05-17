@@ -55,7 +55,7 @@ def test_live_dry_run_returns_server_plan_without_binding_network_port() -> None
     assert plan["requiresConfirmation"] is True
     assert plan["serverStarted"] is False
     assert plan["longRunning"] is True
-    assert plan["session"]["envBackedValidationStatus"] == "invalid"
+    assert plan["session"]["envBackedValidationStatus"] == "valid"
     assert plan["session"]["activeKeyId"] == "<redacted>"
     assert plan["guards"] == {
         "cookieSession": True,
