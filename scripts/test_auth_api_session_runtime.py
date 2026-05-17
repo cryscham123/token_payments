@@ -29,6 +29,8 @@ from token_payments.contexts.auth.application import (  # noqa: E402
     LogoutCommand,
     RefreshSessionCommand,
     RequestLoginChallengeCommand,
+    WalletSignatureVerificationFailure,
+    WalletSignatureVerificationResult,
 )
 from token_payments.contexts.auth.domain import (  # noqa: E402
     AuthNonce,
@@ -473,10 +475,22 @@ class FakeWalletSignatureVerifier:
     def __init__(self) -> None:
         self.recovered_wallet: str | None = None
 
-    def recover_address(self, message: str, signature: str) -> WalletAddress:
+    def verify_signature(
+        self,
+        wallet: WalletAddress,
+        message: str,
+        signature: str,
+        chain_id: int,
+    ) -> WalletSignatureVerificationResult:
         if signature != "signature-valid" or self.recovered_wallet is None:
-            raise ValueError("invalid signature")
-        return WalletAddress(self.recovered_wallet)
+            return WalletSignatureVerificationResult.failed(
+                WalletSignatureVerificationFailure.INVALID_SIGNATURE
+            )
+        if WalletAddress(self.recovered_wallet) != wallet:
+            return WalletSignatureVerificationResult.failed(
+                WalletSignatureVerificationFailure.WALLET_MISMATCH
+            )
+        return WalletSignatureVerificationResult.verified()
 
 
 class DeterministicTokenIssuer:

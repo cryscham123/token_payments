@@ -37,6 +37,8 @@ from .ports import (
     RequestLoginChallengeCommand,
     TokenIssuer,
     UserRepository,
+    WalletSignatureVerificationFailure,
+    WalletSignatureVerificationResult,
     WalletSignatureVerifier,
 )
 from .siwe import (
@@ -157,17 +159,19 @@ class AuthApplicationService:
             self._reject_challenge(challenge, reason, now)
             raise
 
-        try:
-            recovered_wallet = self._signature_verifier.recover_address(message, signature)
-        except Exception as exc:
-            self._reject_challenge(challenge, LoginFailureReason.INVALID_SIGNATURE, now)
-            raise AuthApplicationError(
-                AuthErrorCode.INVALID_SIGNATURE,
-                _message_for_code(AuthErrorCode.INVALID_SIGNATURE),
-            ) from exc
+        verification_result = self._verify_wallet_signature(
+            wallet=wallet,
+            message=message,
+            signature=signature,
+            chain_id=siwe_message.chain_id,
+        )
+        if not verification_result.verified:
+            reason, code = _failure_to_login_rejection(verification_result.failure)
+            self._reject_challenge(challenge, reason, now)
+            raise AuthApplicationError(code, _message_for_code(code))
 
         try:
-            verified = challenge.verify_signature(recovered_wallet, now=now)
+            verified = challenge.confirm_signature_verified(now=now)
         except LoginChallengeRejected as exc:
             self._handle_challenge_rejection(challenge, exc.reason, now)
             raise AuthApplicationError(_code_for_reason(exc.reason), _message_for_code(_code_for_reason(exc.reason))) from exc
@@ -295,6 +299,25 @@ class AuthApplicationService:
         now = self._clock.now()
         return _coerce_datetime(now, "clock.now()")
 
+    def _verify_wallet_signature(
+        self,
+        *,
+        wallet: WalletAddress,
+        message: str,
+        signature: str,
+        chain_id: int,
+    ) -> WalletSignatureVerificationResult:
+        try:
+            result = self._signature_verifier.verify_signature(
+                wallet=wallet,
+                message=message,
+                signature=signature,
+                chain_id=chain_id,
+            )
+        except Exception:
+            return WalletSignatureVerificationResult.failed(WalletSignatureVerificationFailure.INVALID_SIGNATURE)
+        return _coerce_wallet_signature_verification_result(result)
+
 
 def _build_siwe_message(message: SiweMessage) -> str:
     try:
@@ -353,6 +376,14 @@ def _code_for_reason(reason: LoginFailureReason) -> AuthErrorCode:
     return AuthErrorCode(reason.value)
 
 
+def _failure_to_login_rejection(
+    failure: WalletSignatureVerificationFailure | None,
+) -> tuple[LoginFailureReason, AuthErrorCode]:
+    if failure is WalletSignatureVerificationFailure.WALLET_MISMATCH:
+        return LoginFailureReason.WALLET_MISMATCH, AuthErrorCode.WALLET_MISMATCH
+    return LoginFailureReason.INVALID_SIGNATURE, AuthErrorCode.INVALID_SIGNATURE
+
+
 def _message_for_code(code: AuthErrorCode) -> str:
     return {
         AuthErrorCode.INVALID_SIGNATURE: "login signature could not be verified",
@@ -393,6 +424,16 @@ def _coerce_wallet(value: WalletAddress | str) -> WalletAddress:
         return value if isinstance(value, WalletAddress) else WalletAddress(value)
     except ValueError as exc:
         raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, str(exc)) from exc
+
+
+def _coerce_wallet_signature_verification_result(value: object) -> WalletSignatureVerificationResult:
+    if isinstance(value, WalletSignatureVerificationResult):
+        return value
+    if isinstance(value, bool):
+        if value:
+            return WalletSignatureVerificationResult.verified()
+        return WalletSignatureVerificationResult.failed(WalletSignatureVerificationFailure.INVALID_SIGNATURE)
+    return WalletSignatureVerificationResult.failed(WalletSignatureVerificationFailure.INVALID_SIGNATURE)
 
 
 def _require_text(value: str, field_name: str) -> str:

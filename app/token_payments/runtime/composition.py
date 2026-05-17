@@ -440,6 +440,7 @@ class LiveRuntimeConfig:
                 },
                 "walletSignature": {
                     "domain": self.wallet_signature_domain,
+                    "supportedChainIds": [self.blockchain_chain_id],
                     "clientInjectedExternally": True,
                 },
                 "blockchain": {
@@ -1087,7 +1088,10 @@ class _TransactionalAuthUseCase:
             users=PostgresUserRepository(connection),
             login_challenges=PostgresLoginChallengeRepository(connection),
             sessions=PostgresAuthSessionRepository(connection),
-            signature_verifier=ClientWalletSignatureVerifier(self._dependencies.wallet_signature_client),
+            signature_verifier=ClientWalletSignatureVerifier(
+                self._dependencies.wallet_signature_client,
+                supported_chain_ids=(self._config.blockchain_chain_id,),
+            ),
             token_issuer=_RuntimeTokenIssuer(
                 self._dependencies.clock,
                 signer=SessionTokenSigner(self._config.session_key_ring),

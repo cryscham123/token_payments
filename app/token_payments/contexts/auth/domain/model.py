@@ -235,6 +235,11 @@ class LoginChallenge:
             raise LoginChallengeRejected(LoginFailureReason.WALLET_MISMATCH)
         return replace(self, status=ChallengeStatus.VERIFIED, verified_at=now)
 
+    def confirm_signature_verified(self, now: datetime | None = None) -> Self:
+        now = now or datetime.now(UTC)
+        self._ensure_issued_for_attempt(now)
+        return replace(self, status=ChallengeStatus.VERIFIED, verified_at=now)
+
     def reject(self, reason: LoginFailureReason, now: datetime | None = None) -> Self:
         now = now or datetime.now(UTC)
         self._ensure_issued_for_attempt(now)

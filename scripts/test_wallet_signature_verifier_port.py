@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import re
 import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import get_type_hints
 
 import pytest
 
@@ -13,8 +12,9 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "app"))
 
-from token_payments.api import ApiRequest  # noqa: E402
-from token_payments.api.auth import AuthApi  # noqa: E402
+from token_payments.contexts.auth.adapter.wallet_signature import (  # noqa: E402
+    ClientWalletSignatureVerifier,
+)
 from token_payments.contexts.auth.application import (  # noqa: E402
     AuthApplicationError,
     AuthApplicationService,
@@ -23,6 +23,7 @@ from token_payments.contexts.auth.application import (  # noqa: E402
     RequestLoginChallengeCommand,
     WalletSignatureVerificationFailure,
     WalletSignatureVerificationResult,
+    WalletSignatureVerifier,
 )
 from token_payments.contexts.auth.domain import (  # noqa: E402
     AuthNonce,
@@ -37,99 +38,134 @@ from token_payments.contexts.auth.domain import (  # noqa: E402
 from token_payments.shared.domain import UserId, WalletAddress  # noqa: E402
 
 
-NOW = datetime(2026, 5, 18, 0, 0, tzinfo=UTC)
-WALLET = "0xABCDabcdABCDabcdABCDabcdABCDabcdABCDabcd"
-NORMALIZED_WALLET = "0xabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd"
-OTHER_WALLET = "0x9999999999999999999999999999999999999999"
+NOW = datetime(2026, 5, 18, 2, 0, tzinfo=UTC)
+WALLET = WalletAddress("0x1111111111111111111111111111111111111111")
+OTHER_WALLET = WalletAddress("0x2222222222222222222222222222222222222222")
 DOMAIN = "token-payments.local"
 CHAIN_ID = 1337
 USER_ID = "018f33aa-9e6d-73d8-9dc3-47d6cdcc6c21"
 SESSION_ID = "018f33aa-9e6d-73d8-9dc3-47d6cdcc6c22"
-SIWE_URI = f"https://{DOMAIN}"
 
 
-def test_challenge_response_contains_siwe_required_fields_and_message() -> None:
-    service, _repositories, _verifier = _service(nonces=("nonce-001",))
-    api = AuthApi(service)
+def test_application_wallet_signature_port_is_account_type_neutral() -> None:
+    hints = get_type_hints(WalletSignatureVerifier.verify_signature)
 
-    response = api.request_login_challenge(
-        ApiRequest(
-            request_id="req-siwe-challenge",
-            method="POST",
-            path="/auth/challenges",
-            body={"walletAddress": WALLET, "domain": DOMAIN, "chainId": CHAIN_ID},
-            received_at=NOW,
-        )
+    assert hasattr(WalletSignatureVerifier, "verify_signature")
+    assert not hasattr(WalletSignatureVerifier, "recover_address")
+    assert hints["wallet"] is WalletAddress
+    assert hints["message"] is str
+    assert hints["signature"] is str
+    assert hints["chain_id"] is int
+    assert hints["return"] is WalletSignatureVerificationResult
+
+
+def test_eoa_verifier_compares_recovered_wallet_to_requested_wallet() -> None:
+    client = RecoveringWalletClient(recovered_wallet="0x" + str(WALLET)[2:].upper())
+    verifier = ClientWalletSignatureVerifier(client, supported_chain_ids=(CHAIN_ID,))
+
+    result = verifier.verify_signature(
+        wallet=WALLET,
+        message="Sign in to Token Payments",
+        signature="0xsignature",
+        chain_id=CHAIN_ID,
     )
 
-    assert response.status_code == 201
-    body = response.body
-    assert body["walletAddress"] == NORMALIZED_WALLET
-    assert body["domain"] == DOMAIN
-    assert body["address"] == NORMALIZED_WALLET
-    assert body["uri"] == SIWE_URI
-    assert body["version"] == "1"
-    assert body["chainId"] == CHAIN_ID
-    assert re.fullmatch(r"[A-Za-z0-9]{8,}", body["nonce"])
-    assert body["issuedAt"] == NOW.isoformat()
-    assert body["expirationTime"] == (NOW + timedelta(minutes=5)).isoformat()
-    assert body["expiresAt"] == body["expirationTime"]
-    assert body["signingMessage"].splitlines() == [
-        f"{DOMAIN} wants you to sign in with your Ethereum account:",
-        NORMALIZED_WALLET,
-        "",
-        f"URI: {SIWE_URI}",
-        "Version: 1",
-        f"Chain ID: {CHAIN_ID}",
-        f"Nonce: {body['nonce']}",
-        f"Issued At: {NOW.isoformat()}",
-        f"Expiration Time: {(NOW + timedelta(minutes=5)).isoformat()}",
-    ]
+    assert result == WalletSignatureVerificationResult.verified()
+    assert client.calls == [("Sign in to Token Payments", "0xsignature")]
 
 
-@pytest.mark.parametrize(
-    ("mutate_message", "expected_code"),
-    [
-        (
-            lambda message: message.replace(
-                f"{DOMAIN} wants you to sign in with your Ethereum account:",
-                "evil.example wants you to sign in with your Ethereum account:",
-            ),
-            AuthErrorCode.SIWE_MESSAGE_MISMATCH,
-        ),
-        (
-            lambda message: message.replace(f"Chain ID: {CHAIN_ID}", "Chain ID: 1"),
-            AuthErrorCode.SIWE_MESSAGE_MISMATCH,
-        ),
-        (
-            lambda message: message.replace(NORMALIZED_WALLET, OTHER_WALLET),
-            AuthErrorCode.WALLET_MISMATCH,
-        ),
-        (
-            lambda message: message.replace(
-                f"Expiration Time: {(NOW + timedelta(minutes=5)).isoformat()}",
-                f"Expiration Time: {(NOW + timedelta(minutes=10)).isoformat()}",
-            ),
-            AuthErrorCode.SIWE_MESSAGE_MISMATCH,
-        ),
-    ],
-)
-def test_login_rejects_siwe_message_context_mismatch(
-    mutate_message: Any,
-    expected_code: AuthErrorCode,
-) -> None:
-    service, repositories, verifier = _service(nonces=("nonce-001",))
+def test_eoa_verifier_maps_invalid_signature_to_bounded_failure() -> None:
+    verifier = ClientWalletSignatureVerifier(RaisingWalletClient(), supported_chain_ids=(CHAIN_ID,))
+
+    result = verifier.verify_signature(
+        wallet=WALLET,
+        message="Sign in to Token Payments",
+        signature="0xbad",
+        chain_id=CHAIN_ID,
+    )
+
+    assert result == WalletSignatureVerificationResult.failed(
+        WalletSignatureVerificationFailure.INVALID_SIGNATURE
+    )
+
+
+def test_eoa_verifier_maps_recovered_wallet_mismatch_to_bounded_failure() -> None:
+    verifier = ClientWalletSignatureVerifier(RecoveringWalletClient(str(OTHER_WALLET)), supported_chain_ids=(CHAIN_ID,))
+
+    result = verifier.verify_signature(
+        wallet=WALLET,
+        message="Sign in to Token Payments",
+        signature="0xsignature",
+        chain_id=CHAIN_ID,
+    )
+
+    assert result == WalletSignatureVerificationResult.failed(
+        WalletSignatureVerificationFailure.WALLET_MISMATCH
+    )
+
+
+def test_eoa_verifier_maps_unsupported_chain_without_recovering_signature() -> None:
+    client = RecoveringWalletClient(str(WALLET))
+    verifier = ClientWalletSignatureVerifier(client, supported_chain_ids=(1,))
+
+    result = verifier.verify_signature(
+        wallet=WALLET,
+        message="Sign in to Token Payments",
+        signature="0xsignature",
+        chain_id=CHAIN_ID,
+    )
+
+    assert result == WalletSignatureVerificationResult.failed(
+        WalletSignatureVerificationFailure.UNSUPPORTED_CHAIN
+    )
+    assert client.calls == []
+
+
+def test_auth_service_uses_verifier_result_instead_of_recovered_address() -> None:
+    service, repositories, verifier = _service(VerificationOnlyVerifier(WalletSignatureVerificationResult.verified()))
     challenge = service.requestLoginChallenge(
         RequestLoginChallengeCommand(wallet_address=WALLET, domain=DOMAIN, chain_id=CHAIN_ID)
     )
-    verifier.recovered_wallet = NORMALIZED_WALLET
+
+    result = service.loginWithMetaMask(
+        LoginWithMetaMaskCommand(
+            wallet_address=WALLET,
+            message=challenge.signing_message,
+            signature="signature-valid",
+            device_id="browser-1",
+        )
+    )
+
+    assert result.user.primary_wallet == WALLET
+    assert repositories.challenges.get_by_nonce(challenge.challenge.nonce).status is ChallengeStatus.VERIFIED
+    assert verifier.calls == [(WALLET, challenge.signing_message, "signature-valid", CHAIN_ID)]
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected_code"),
+    [
+        (WalletSignatureVerificationFailure.INVALID_SIGNATURE, AuthErrorCode.INVALID_SIGNATURE),
+        (WalletSignatureVerificationFailure.WALLET_MISMATCH, AuthErrorCode.WALLET_MISMATCH),
+        (WalletSignatureVerificationFailure.UNSUPPORTED_CHAIN, AuthErrorCode.INVALID_SIGNATURE),
+    ],
+)
+def test_auth_service_maps_verifier_failures_to_auth_errors(
+    failure: WalletSignatureVerificationFailure,
+    expected_code: AuthErrorCode,
+) -> None:
+    service, repositories, _verifier = _service(
+        VerificationOnlyVerifier(WalletSignatureVerificationResult.failed(failure))
+    )
+    challenge = service.requestLoginChallenge(
+        RequestLoginChallengeCommand(wallet_address=WALLET, domain=DOMAIN, chain_id=CHAIN_ID)
+    )
 
     with pytest.raises(AuthApplicationError) as exc:
         service.loginWithMetaMask(
             LoginWithMetaMaskCommand(
                 wallet_address=WALLET,
-                message=mutate_message(challenge.signing_message),
-                signature="signature-valid",
+                message=challenge.signing_message,
+                signature="signature-invalid",
                 device_id="browser-1",
             )
         )
@@ -148,9 +184,8 @@ class FakeRepositories:
 
 
 def _service(
-    *,
-    nonces: tuple[str, ...],
-) -> tuple[AuthApplicationService, FakeRepositories, "FakeWalletSignatureVerifier"]:
+    verifier: "VerificationOnlyVerifier",
+) -> tuple[AuthApplicationService, FakeRepositories, "VerificationOnlyVerifier"]:
     repositories = FakeRepositories(
         users=FakeUserRepository(),
         challenges=FakeLoginChallengeRepository(),
@@ -158,10 +193,9 @@ def _service(
         events=FakeAuthEventPublisher(),
     )
     clock = FakeClock(NOW)
-    verifier = FakeWalletSignatureVerifier()
     service = AuthApplicationService(
         clock=clock,
-        nonce_generator=SequenceGenerator(nonces),
+        nonce_generator=SequenceGenerator(("nonce-001",)),
         user_id_generator=SequenceGenerator((USER_ID,)),
         session_id_generator=SequenceGenerator((SESSION_ID,)),
         users=repositories.users,
@@ -172,6 +206,37 @@ def _service(
         event_publisher=repositories.events,
     )
     return service, repositories, verifier
+
+
+class VerificationOnlyVerifier:
+    def __init__(self, result: WalletSignatureVerificationResult) -> None:
+        self.result = result
+        self.calls: list[tuple[WalletAddress, str, str, int]] = []
+
+    def verify_signature(
+        self,
+        wallet: WalletAddress,
+        message: str,
+        signature: str,
+        chain_id: int,
+    ) -> WalletSignatureVerificationResult:
+        self.calls.append((wallet, message, signature, chain_id))
+        return self.result
+
+
+class RecoveringWalletClient:
+    def __init__(self, recovered_wallet: str) -> None:
+        self.recovered_wallet = recovered_wallet
+        self.calls: list[tuple[str, str]] = []
+
+    def recover_address(self, message: str, signature: str) -> str:
+        self.calls.append((message, signature))
+        return self.recovered_wallet
+
+
+class RaisingWalletClient:
+    def recover_address(self, message: str, signature: str) -> str:
+        raise ValueError("bad signature")
 
 
 class FakeClock:
@@ -190,28 +255,6 @@ class SequenceGenerator:
         if not self._values:
             raise AssertionError("generator exhausted")
         return self._values.pop(0)
-
-
-class FakeWalletSignatureVerifier:
-    def __init__(self) -> None:
-        self.recovered_wallet: str | None = None
-
-    def verify_signature(
-        self,
-        wallet: WalletAddress,
-        message: str,
-        signature: str,
-        chain_id: int,
-    ) -> WalletSignatureVerificationResult:
-        if signature != "signature-valid" or self.recovered_wallet is None:
-            return WalletSignatureVerificationResult.failed(
-                WalletSignatureVerificationFailure.INVALID_SIGNATURE
-            )
-        if WalletAddress(self.recovered_wallet) != wallet:
-            return WalletSignatureVerificationResult.failed(
-                WalletSignatureVerificationFailure.WALLET_MISMATCH
-            )
-        return WalletSignatureVerificationResult.verified()
 
 
 class DeterministicTokenIssuer:
