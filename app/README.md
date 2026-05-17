@@ -43,6 +43,7 @@ Automated harness verification does not require Docker daemon/socket access. It 
 ```bash
 docker compose --env-file .env.example config --services
 docker compose --env-file .env.example --profile runtime config --services
+docker compose --env-file .env.example --profile api config --services
 PYTHONPATH=app python3 -m token_payments smoke docker-runtime-readiness
 ```
 
@@ -70,8 +71,15 @@ docker compose --env-file .env up -d postgres kafka kafka-ui pgweb test_network
 docker compose --env-file .env --profile runtime run --rm token_payments_health
 docker compose --env-file .env --profile runtime run --rm token_payments_worker
 docker compose --env-file .env --profile smoke run --rm token_payments_smoke
+docker compose --env-file .env --profile api config --services
+docker compose --env-file .env --profile api build token_payments_api
+docker compose --env-file .env --profile api up -d token_payments_api
+curl --fail http://localhost:8000/healthz
+curl --fail http://localhost:8000/readyz
 docker compose --env-file .env down
 ```
+
+The Postman-local API service is `token_payments_api` under the explicit `api` profile. It uses the root runtime image and the confirmed live command `python -m token_payments serve-api --live --confirm-live-api`. The committed `.env.example` session signing key is deliberately invalid for live/prod startup; copy it to `.env` and replace the session and CSRF signing values with local-only secrets before starting this service.
 
 Postman-ready API roadmap:
 
