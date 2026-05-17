@@ -19,16 +19,17 @@ _MAX_BODY_BYTES = 1024 * 1024
 _MAX_BODY_EVENTS = 128
 
 
-def build_asgi_app(router: HttpRouter) -> AsgiApplication:
+def build_asgi_app(router: HttpRouter, *, request_body_limit: Any | None = None) -> AsgiApplication:
     """Return a bounded ASGI callable backed by a framework-neutral router."""
 
     if not isinstance(router, HttpRouter):
         raise ValueError("build_asgi_app.router must be an HttpRouter")
+    max_body_bytes = _max_body_bytes(request_body_limit)
 
     async def app(scope: AsgiScope, receive: AsgiReceive, send: AsgiSend) -> None:
         scope_type = str(scope.get("type") or "")
         if scope_type == "http":
-            response = await _handle_http_scope(router, scope, receive)
+            response = await _handle_http_scope(router, scope, receive, max_body_bytes=max_body_bytes)
             await _send_http_response(send, response)
             return
         if scope_type == "websocket":
@@ -51,8 +52,14 @@ def build_asgi_app(router: HttpRouter) -> AsgiApplication:
     return app
 
 
-async def _handle_http_scope(router: HttpRouter, scope: AsgiScope, receive: AsgiReceive) -> HttpResponse:
-    body_result = await _body_from_asgi_receive(receive)
+async def _handle_http_scope(
+    router: HttpRouter,
+    scope: AsgiScope,
+    receive: AsgiReceive,
+    *,
+    max_body_bytes: int,
+) -> HttpResponse:
+    body_result = await _body_from_asgi_receive(receive, max_body_bytes=max_body_bytes)
     if isinstance(body_result, HttpResponse):
         return body_result
 
@@ -66,7 +73,7 @@ async def _handle_http_scope(router: HttpRouter, scope: AsgiScope, receive: Asgi
     return router.handle(request)
 
 
-async def _body_from_asgi_receive(receive: AsgiReceive) -> bytes | HttpResponse:
+async def _body_from_asgi_receive(receive: AsgiReceive, *, max_body_bytes: int) -> bytes | HttpResponse:
     chunks: list[bytes] = []
     total_size = 0
 
@@ -84,11 +91,11 @@ async def _body_from_asgi_receive(receive: AsgiReceive) -> bytes | HttpResponse:
 
         body = _message_body(message.get("body", b""))
         total_size += len(body)
-        if total_size > _MAX_BODY_BYTES:
+        if total_size > max_body_bytes:
             return _error_response(
                 status_code=413,
                 code="REQUEST_BODY_TOO_LARGE",
-                message=f"Request body exceeds {_MAX_BODY_BYTES} bytes.",
+                message=f"Request body exceeds {max_body_bytes} bytes.",
             )
         chunks.append(body)
         if not bool(message.get("more_body", False)):
@@ -173,6 +180,15 @@ def _header_text(value: Any) -> str:
 
 def _header_bytes(value: str) -> bytes:
     return str(value).encode("latin-1")
+
+
+def _max_body_bytes(request_body_limit: Any | None) -> int:
+    if request_body_limit is None:
+        return _MAX_BODY_BYTES
+    value = getattr(request_body_limit, "max_bytes", None)
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ValueError("build_asgi_app.request_body_limit.max_bytes must be a positive integer")
+    return value
 
 
 __all__ = [

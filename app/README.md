@@ -295,6 +295,12 @@ Next phase candidates:
 
 The ASGI/FastAPI Thin Adapter keeps the existing route manifest and facade contract as the stable API boundary. `build_asgi_app` adapts the framework-neutral `HttpRouter` without new runtime packages, and `build_fastapi_app` is optional FastAPI dependency production wiring. Importing `token_payments.api` and running preview commands does not require FastAPI; an explicit production runtime installs `fastapi` and calls the factory when it is ready to serve.
 
+### Live API Request Guard
+
+The live API adapter runs a framework-neutral request guard before facade dispatch. `POST /auth/challenges`, `POST /auth/sessions`, and `POST /auth/sessions/refresh` issue a signed `csrfToken` response field plus a `csrf_token` cookie. Browser clients using HttpOnly auth cookies must send the same value in `X-CSRF-Token` on mutating requests; safe methods and CORS preflight do not require CSRF.
+
+Credentialed CORS uses `CORS_ALLOWED_ORIGINS` and `CORS_ALLOW_CREDENTIALS=true`; wildcard origin with credentials is rejected. Preflight `OPTIONS` returns bounded CORS headers before business handlers run. `REQUEST_BODY_MAX_BYTES` rejects oversized bodies with `413 REQUEST_BODY_TOO_LARGE`, and malformed JSON remains `400 MALFORMED_JSON`.
+
 `api` and `serve-api` return bounded JSON previews with `wsgiFactory`, `asgiFactory`, `fastapiFactory`, `fastapiAvailable`, `longRunning=false`, and `serverStarted=false`. The harness default path does not start a server, does not bind a network port, and does not access DB, Kafka, Docker, Blockchain RPC, or local `.env`; this is the no-server-start boundary.
 
 Verification commands:

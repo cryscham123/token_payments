@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
-from email.utils import format_datetime
 import base64
 import hashlib
 import hmac
@@ -25,6 +24,8 @@ DEFAULT_SESSION_SIGNING_KEY = "replace_with_local_dev_only_session_signing_key"
 DEFAULT_SESSION_ACCESS_TTL_SECONDS = 900
 DEFAULT_SESSION_REFRESH_TTL_SECONDS = 2_592_000
 SESSION_KEY_PLACEHOLDER_MARKERS = ("placeholder", "replace_with", "changeme", "example")
+_WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+_MONTHS = ("", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
 
 @dataclass(frozen=True)
@@ -467,7 +468,7 @@ def _serialize_cookie(
     parts = [
         f"{name}={value}",
         f"Max-Age={max_age_seconds}",
-        f"Expires={format_datetime(expires.astimezone(UTC), usegmt=True)}",
+        f"Expires={_format_http_datetime(expires)}",
         f"Path={settings.path}",
     ]
     if settings.secure:
@@ -476,6 +477,14 @@ def _serialize_cookie(
         parts.append("HttpOnly")
     parts.append(f"SameSite={settings.same_site}")
     return "; ".join(parts)
+
+
+def _format_http_datetime(value: datetime) -> str:
+    dt = _require_aware_datetime(value, "cookie expires").astimezone(UTC)
+    return (
+        f"{_WEEKDAYS[dt.weekday()]}, {dt.day:02d} {_MONTHS[dt.month]} "
+        f"{dt.year:04d} {dt.hour:02d}:{dt.minute:02d}:{dt.second:02d} GMT"
+    )
 
 
 def _serialize_expired_cookie(name: str, *, settings: CookieSettings, now: datetime) -> str:

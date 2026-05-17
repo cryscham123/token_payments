@@ -70,6 +70,20 @@ from token_payments.shared.adapter.postgres import (
 
 from .contracts import Clock, IdGenerator, JsonValue
 from .observability import PostgresOperatorObservabilityQuery
+from .security import (
+    DEFAULT_CORS_ALLOWED_ORIGINS,
+    DEFAULT_CSRF_ACTIVE_KEY_ID,
+    DEFAULT_CSRF_MAX_AGE_SECONDS,
+    DEFAULT_CSRF_SIGNING_KEY,
+    DEFAULT_REQUEST_BODY_MAX_BYTES,
+    CorsPolicy,
+    CsrfCookieSettings,
+    CsrfTokenConfig,
+    CsrfTokenService,
+    HmacCsrfTokenSigner,
+    RequestBodyLimit,
+    RequestGuard,
+)
 from .session_transport import (
     DEFAULT_SESSION_ACCESS_TTL_SECONDS,
     DEFAULT_SESSION_REFRESH_TTL_SECONDS,
@@ -144,6 +158,12 @@ class LiveRuntimeConfig:
     session_key_ring: SessionKeyRing | None = field(default=None, repr=False)
     session_access_ttl_seconds: int = DEFAULT_SESSION_ACCESS_TTL_SECONDS
     session_refresh_ttl_seconds: int = DEFAULT_SESSION_REFRESH_TTL_SECONDS
+    cors_allowed_origins: tuple[str, ...] | str = DEFAULT_CORS_ALLOWED_ORIGINS
+    cors_allow_credentials: bool = True
+    csrf_key_id: str = DEFAULT_CSRF_ACTIVE_KEY_ID
+    csrf_signing_key: str = field(default=DEFAULT_CSRF_SIGNING_KEY, repr=False)
+    csrf_max_age_seconds: int = DEFAULT_CSRF_MAX_AGE_SECONDS
+    request_body_max_bytes: int = DEFAULT_REQUEST_BODY_MAX_BYTES
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "api_host", _require_text(self.api_host, "RUNTIME_API_HOST"))
@@ -227,12 +247,36 @@ class LiveRuntimeConfig:
             "session_refresh_ttl_seconds",
             _require_positive_int(self.session_refresh_ttl_seconds, "SESSION_REFRESH_TTL_SECONDS"),
         )
+        cors_allowed_origins = _normalize_text_tuple(self.cors_allowed_origins, "CORS_ALLOWED_ORIGINS")
+        object.__setattr__(self, "cors_allowed_origins", cors_allowed_origins)
+        if not isinstance(self.cors_allow_credentials, bool):
+            raise ValueError("CORS_ALLOW_CREDENTIALS must be a bool")
+        CorsPolicy(allowed_origins=cors_allowed_origins, allow_credentials=self.cors_allow_credentials)
+        CsrfTokenConfig(
+            active_key_id=self.csrf_key_id,
+            signing_key=self.csrf_signing_key,
+            max_age_seconds=self.csrf_max_age_seconds,
+        ).validate_for_environment(self.runtime_environment)
+        object.__setattr__(self, "csrf_key_id", _require_text(self.csrf_key_id, "CSRF_ACTIVE_KEY_ID"))
+        object.__setattr__(self, "csrf_signing_key", _require_text(self.csrf_signing_key, "CSRF_SIGNING_KEY"))
+        object.__setattr__(
+            self,
+            "csrf_max_age_seconds",
+            _require_positive_int(self.csrf_max_age_seconds, "CSRF_MAX_AGE_SECONDS"),
+        )
+        object.__setattr__(
+            self,
+            "request_body_max_bytes",
+            _require_positive_int(self.request_body_max_bytes, "REQUEST_BODY_MAX_BYTES"),
+        )
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Self:
         source = os.environ if env is None else env
         runtime_environment = source.get("RUNTIME_ENVIRONMENT", "local")
         session_key_config = SessionKeyConfig.from_env(source, runtime_environment=runtime_environment)
+        csrf_env = _csrf_env_with_session_fallback(source, session_key_config)
+        csrf_config = CsrfTokenConfig.from_env(csrf_env, runtime_environment=runtime_environment)
         return cls(
             api_host=source.get("RUNTIME_API_HOST", "0.0.0.0"),
             api_port=_parse_int(source, "RUNTIME_API_PORT", 8000),
@@ -275,6 +319,19 @@ class LiveRuntimeConfig:
             session_key_ring=session_key_config.key_ring,
             session_access_ttl_seconds=session_key_config.access_ttl_seconds,
             session_refresh_ttl_seconds=session_key_config.refresh_ttl_seconds,
+            cors_allowed_origins=_parse_csv(
+                source.get("CORS_ALLOWED_ORIGINS"),
+                DEFAULT_CORS_ALLOWED_ORIGINS,
+            ),
+            cors_allow_credentials=_parse_bool(source, "CORS_ALLOW_CREDENTIALS", True),
+            csrf_key_id=csrf_config.active_key_id,
+            csrf_signing_key=csrf_config.signing_key,
+            csrf_max_age_seconds=csrf_config.max_age_seconds,
+            request_body_max_bytes=_parse_int(
+                source,
+                "REQUEST_BODY_MAX_BYTES",
+                DEFAULT_REQUEST_BODY_MAX_BYTES,
+            ),
         )
 
     def to_redacted_dict(self) -> dict[str, JsonValue]:
@@ -297,6 +354,22 @@ class LiveRuntimeConfig:
                 "accessTtlSeconds": self.session_access_ttl_seconds,
                 "refreshTtlSeconds": self.session_refresh_ttl_seconds,
                 "cookieSecretsRedacted": True,
+            },
+            "security": {
+                "csrf": {
+                    "cookieName": "csrf_token",
+                    "headerName": "X-CSRF-Token",
+                    "activeKeyId": self.csrf_key_id,
+                    "signingKeyConfigured": bool(self.csrf_signing_key),
+                    "secretRedacted": True,
+                    "maxAgeSeconds": self.csrf_max_age_seconds,
+                },
+                "cors": {
+                    "allowedOrigins": list(self.cors_allowed_origins),
+                    "allowCredentials": self.cors_allow_credentials,
+                    "wildcardWithCredentials": False,
+                },
+                "requestBodyMaxBytes": self.request_body_max_bytes,
             },
             "adapters": {
                 "postgres": {
@@ -507,12 +580,14 @@ def build_live_api_router(
     live_config = config or LiveRuntimeConfig.from_env()
     live_dependencies = dependencies or LiveRuntimeDependencies()
     session_transport = _session_transport(live_config, live_dependencies.clock)
+    csrf_token_service = _csrf_token_service(live_config, live_dependencies.clock)
     facades = build_live_api_facades(config=live_config, dependencies=live_dependencies)
     router = HttpRouter(
         auth_context_factory=session_transport.auth_context_from_http_request,
         allow_dev_auth_headers=not is_live_environment(live_config.runtime_environment),
+        request_guard=_request_guard(live_config, csrf_token_service, session_transport),
     )
-    _register_auth_routes_with_session_transport(router, facades.auth, session_transport)
+    _register_auth_routes_with_session_transport(router, facades.auth, session_transport, csrf_token_service)
     register_order_routes(router, facades.orders)
     register_checkout_routes(router, facades.checkout)
     register_payment_routes(router, facades.payments)
@@ -859,13 +934,50 @@ def _session_transport(config: LiveRuntimeConfig, clock: Clock | Any | None = No
     )
 
 
+def _csrf_token_service(config: LiveRuntimeConfig, clock: Clock | Any | None = None) -> CsrfTokenService:
+    return CsrfTokenService(
+        signer=HmacCsrfTokenSigner(
+            key_id=config.csrf_key_id,
+            secret_provider=lambda: config.csrf_signing_key,
+        ),
+        cookie_settings=CsrfCookieSettings(max_age_seconds=config.csrf_max_age_seconds),
+        clock=clock,
+    )
+
+
+def _request_guard(
+    config: LiveRuntimeConfig,
+    csrf_token_service: CsrfTokenService,
+    session_transport: CookieSessionTransport,
+) -> RequestGuard:
+    return RequestGuard(
+        csrf_token_service=csrf_token_service,
+        cors_policy=CorsPolicy(
+            allowed_origins=config.cors_allowed_origins,
+            allow_credentials=config.cors_allow_credentials,
+        ),
+        body_limit=RequestBodyLimit(max_bytes=config.request_body_max_bytes),
+        auth_cookie_names=(
+            session_transport.settings.access_cookie_name,
+            session_transport.settings.refresh_cookie_name,
+        ),
+    )
+
+
 def _register_auth_routes_with_session_transport(
     router: Any,
     auth_api: Any,
     session_transport: CookieSessionTransport,
+    csrf_token_service: CsrfTokenService | None = None,
 ) -> Any:
-    if "session_transport" in inspect.signature(register_auth_routes).parameters:
-        return register_auth_routes(router, auth_api, session_transport=session_transport)
+    signature = inspect.signature(register_auth_routes)
+    kwargs: dict[str, Any] = {}
+    if "session_transport" in signature.parameters:
+        kwargs["session_transport"] = session_transport
+    if "csrf_token_service" in signature.parameters:
+        kwargs["csrf_token_service"] = csrf_token_service
+    if kwargs:
+        return register_auth_routes(router, auth_api, **kwargs)
     return register_auth_routes(router, auth_api)
 
 
@@ -1000,10 +1112,32 @@ def _parse_decimal(env: Mapping[str, str], key: str, default: Decimal) -> Decima
         raise ValueError(f"{key} must be a decimal number") from exc
 
 
+def _csrf_env_with_session_fallback(env: Mapping[str, str], session_key_config: SessionKeyConfig) -> Mapping[str, str]:
+    if env.get("CSRF_SIGNING_KEY"):
+        return env
+    output = dict(env)
+    active_key_id = session_key_config.key_ring.active_key_id
+    output.setdefault("CSRF_ACTIVE_KEY_ID", active_key_id)
+    output["CSRF_SIGNING_KEY"] = session_key_config.key_ring.secret_for(active_key_id)
+    return output
+
+
 def _parse_csv(raw: str | None, default: tuple[str, ...]) -> tuple[str, ...]:
     if raw is None:
         return default
     return tuple(part.strip() for part in raw.split(",") if part.strip())
+
+
+def _parse_bool(env: Mapping[str, str], key: str, default: bool) -> bool:
+    raw = env.get(key)
+    if raw is None:
+        return default
+    normalized = raw.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"{key} must be a boolean")
 
 
 def _normalize_text_tuple(value: tuple[str, ...] | str, field_name: str) -> tuple[str, ...]:
