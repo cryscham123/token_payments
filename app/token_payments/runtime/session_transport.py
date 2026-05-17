@@ -23,7 +23,16 @@ DEFAULT_SESSION_ACTIVE_KEY_ID = "local-dev-placeholder"
 DEFAULT_SESSION_SIGNING_KEY = "replace_with_local_dev_only_session_signing_key"
 DEFAULT_SESSION_ACCESS_TTL_SECONDS = 900
 DEFAULT_SESSION_REFRESH_TTL_SECONDS = 2_592_000
-SESSION_KEY_PLACEHOLDER_MARKERS = ("placeholder", "replace_with", "changeme", "example")
+SESSION_KEY_PLACEHOLDER_MARKERS = (
+    "placeholder",
+    "replace_with",
+    "changeme",
+    "example",
+    "local_dev_only",
+    "local-dev",
+    "dev_only",
+    "do_not_use",
+)
 _WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 _MONTHS = ("", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
@@ -138,7 +147,7 @@ class SessionKeyRing:
             return
         for kid, secret in self.keys.items():
             if _looks_placeholder(kid) or _looks_placeholder(secret):
-                raise ValueError("SESSION_SIGNING_KEYS must not use placeholder values in live/prod mode")
+                raise ValueError("SESSION_SIGNING_KEYS must not use placeholder or local dev values in live/prod mode")
             if len(secret.encode("utf-8")) < 32:
                 raise ValueError("SESSION_SIGNING_KEYS values must be at least 32 bytes in live/prod mode")
 
@@ -313,15 +322,24 @@ class CookieSessionTransport:
             raise ValueError("CookieSessionTransport.settings must be CookieSettings")
 
     @classmethod
-    def from_key_config(cls, key_config: SessionKeyConfig, *, clock: Any | None = None) -> Self:
+    def from_key_config(
+        cls,
+        key_config: SessionKeyConfig,
+        *,
+        settings: CookieSettings | None = None,
+        clock: Any | None = None,
+    ) -> Self:
         if not isinstance(key_config, SessionKeyConfig):
             raise ValueError("CookieSessionTransport.from_key_config requires SessionKeyConfig")
+        cookie_settings = settings or CookieSettings(
+            access_max_age_seconds=key_config.access_ttl_seconds,
+            refresh_max_age_seconds=key_config.refresh_ttl_seconds,
+        )
+        if not isinstance(cookie_settings, CookieSettings):
+            raise ValueError("CookieSessionTransport.from_key_config settings must be CookieSettings")
         return cls(
             signer=SessionTokenSigner(key_config.key_ring),
-            settings=CookieSettings(
-                access_max_age_seconds=key_config.access_ttl_seconds,
-                refresh_max_age_seconds=key_config.refresh_ttl_seconds,
-            ),
+            settings=cookie_settings,
             clock=clock,
         )
 

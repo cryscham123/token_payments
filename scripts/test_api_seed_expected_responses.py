@@ -68,7 +68,7 @@ def test_seed_plan_is_explicit_manual_contract_using_existing_schema_tables_and_
     assert "psql" in seed["execution"]["command"]["argv"]
 
     assert REQUIRED_SEED_FIELDS <= set(seed["ids"])
-    assert seed["ids"]["testNetworkChainId"] == 31337
+    assert seed["ids"]["testNetworkChainId"] == 1337
     assert seed["ids"]["testNetworkAccountPlaceholder"] == "${TEST_NETWORK_ACCOUNT}"
     assert seed["ids"]["paymentDestinationWallet"].startswith("0x")
 

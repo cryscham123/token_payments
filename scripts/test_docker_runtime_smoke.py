@@ -66,6 +66,7 @@ def test_docker_runtime_readiness_smoke_validates_static_contracts_without_docke
             ".dockerignore",
             "docker-compose.yml",
             ".env.example",
+            "requirements-runtime.txt",
             "app/postgres/init.d/001-token-payments-schema.sql",
             "app/test_network/Dockerfile",
         ],

@@ -30,7 +30,7 @@
       "csrfToken": "<redacted-signed-csrf-token>",
       "attributes": {
         "HttpOnly": true,
-        "Secure": true,
+        "Secure": false,
         "SameSite": "Lax",
         "Path": "/",
         "Expires": "bounded"

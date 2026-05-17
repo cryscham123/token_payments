@@ -124,12 +124,12 @@ def _build_api_readiness_command_sequence(env_file: str) -> tuple[tuple[str, tup
     return (
         (
             "api-compose-config",
-            ("docker", "compose", "--env-file", env_file, "--profile", "api", "config", "--services"),
+            ("docker", "compose", "--env-file", env_file, "config", "--services"),
             "docker",
         ),
         (
             "build-api-service",
-            ("docker", "compose", "--env-file", env_file, "--profile", "api", "build", "token_payments_api"),
+            ("docker", "compose", "--env-file", env_file, "build", "token_payments_api"),
             "docker",
         ),
         (
@@ -139,7 +139,7 @@ def _build_api_readiness_command_sequence(env_file: str) -> tuple[tuple[str, tup
         ),
         (
             "start-api-service",
-            ("docker", "compose", "--env-file", env_file, "--profile", "api", "up", "-d", "token_payments_api"),
+            ("docker", "compose", "--env-file", env_file, "up", "-d", "token_payments_api"),
             "docker",
         ),
         (

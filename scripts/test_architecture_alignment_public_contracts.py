@@ -27,7 +27,7 @@ def test_public_docs_cover_phase_16_architecture_contracts() -> None:
         "`order.Store` and `store_approval.Store` are not the same aggregate",
         "Adapter type: Kafka/message",
         "PostgreSQL is the source of truth for auth users, login challenges, and sessions",
-        "live/prod startup rejects committed placeholder signing values",
+        "live/prod startup rejects committed local dev signing values",
     ):
         assert phrase in combined
 

@@ -5,28 +5,39 @@
     {
       "step": 0,
       "name": "default-compose-api-entrypoint",
-      "status": "pending"
+      "status": "completed",
+      "completed_at": "2026-05-18T01:07:15+0900",
+      "summary": "Default compose now includes token_payments_api through COMPOSE_PROFILES=runtime,smoke,api after cp .env.example .env, so plain docker compose up starts the local live API path. The service keeps the explicit python -m token_payments serve-api --live --confirm-live-api command, env-backed secrets, depends_on readiness ordering, restart policy, and a bounded /healthz healthcheck."
     },
     {
       "step": 1,
       "name": "live-runtime-driver-factory",
-      "status": "pending"
+      "status": "completed",
+      "completed_at": "2026-05-18T01:07:15+0900",
+      "summary": "Added an env-backed live runtime driver factory that builds lazy PostgreSQL, Kafka, wallet signature, blockchain, clock, and ID generator wrappers without opening network connections at import or construction time. Configuration errors use a bounded driver factory error contract, summaries redact DSN/RPC/token material, and the Docker runtime image now installs pinned live dependencies from requirements-runtime.txt."
     },
     {
       "step": 2,
       "name": "local-env-seed-contract",
-      "status": "pending"
+      "status": "completed",
+      "completed_at": "2026-05-18T01:07:15+0900",
+      "summary": "Updated .env.example with local dev only session and CSRF signing material that passes local validation while live/prod rejects committed local dev values. The env contract now aligns API, PostgreSQL, Kafka, CSRF, CORS, readiness, and seed naming, and the Postman seed plan chain/network ids match the local test network configuration."
     },
     {
       "step": 3,
       "name": "health-readiness-live-probes",
-      "status": "pending"
+      "status": "completed",
+      "completed_at": "2026-05-18T01:07:15+0900",
+      "summary": "Completed /healthz and /readyz wiring for the live server path: /healthz remains process-only, while /readyz evaluates injected PostgreSQL SELECT 1, Kafka bootstrap, and blockchain chain id probes with bounded redacted component errors and 503 failure mapping. Readiness payloads and access log events redact cookies, tokens, DSN passwords, private keys, and RPC credentials."
     },
     {
       "step": 4,
       "name": "compose-live-public-verification",
-      "status": "pending"
+      "status": "completed",
+      "completed_at": "2026-05-18T01:07:15+0900",
+      "summary": "Closed the public contract for the local live compose stack: README, app README, and API spec document cp .env.example .env, daemon-less compose config validation, plain docker compose up, manual seed/Postman import, readiness/security smoke, and docker compose down cleanup without claiming production-ready deployment guarantees."
     }
   ],
-  "created_at": "2026-05-18T00:25:36+0900"
+  "created_at": "2026-05-18T00:25:36+0900",
+  "completed_at": "2026-05-18T01:07:15+0900"
 }

@@ -87,7 +87,8 @@
     },
     {
       "dir": "17-docker-compose-live-server",
-      "status": "pending"
+      "status": "completed",
+      "completed_at": "2026-05-18T01:07:15+0900"
     },
     {
       "dir": "18-siwe-erc1271-auth",

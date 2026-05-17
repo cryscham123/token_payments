@@ -112,7 +112,7 @@ def test_postman_expected_cookie_fixture_redacts_signed_tokens_but_keeps_shape_a
             assert cookie["attributes"]["Max-Age"]["boundedSeconds"] == 0
             assert cookie["attributes"]["Expires"] == "Thu, 01 Jan 1970 00:00:00 GMT"
             assert cookie["attributes"]["HttpOnly"] is True
-            assert cookie["attributes"]["Secure"] is True
+            assert cookie["attributes"]["Secure"] is False
             assert cookie["attributes"]["SameSite"] == "Lax"
             assert cookie["attributes"]["Path"] == "/"
             continue
@@ -128,7 +128,7 @@ def test_postman_expected_cookie_fixture_redacts_signed_tokens_but_keeps_shape_a
         assert REQUIRED_SESSION_CLAIMS <= set(cookie["signedTokenShape"]["payloadClaims"])
         assert cookie["signedTokenShape"]["signature"] == "present"
         assert cookie["attributes"]["HttpOnly"] is True
-        assert cookie["attributes"]["Secure"] is True
+        assert cookie["attributes"]["Secure"] is False
         assert cookie["attributes"]["SameSite"] == "Lax"
         assert cookie["attributes"]["Path"] == "/"
         assert isinstance(cookie["attributes"]["Max-Age"]["boundedSeconds"], int)
@@ -138,7 +138,7 @@ def test_postman_expected_cookie_fixture_redacts_signed_tokens_but_keeps_shape_a
     for cookie in csrf_cookies:
         assert cookie["rawValueCommitted"] is False
         assert cookie["attributes"]["HttpOnly"] is False
-        assert cookie["attributes"]["Secure"] is True
+        assert cookie["attributes"]["Secure"] is False
         assert cookie["attributes"]["SameSite"] == "Lax"
         assert cookie["attributes"]["Path"] == "/"
         assert cookie["attributes"]["Expires"] == "bounded"

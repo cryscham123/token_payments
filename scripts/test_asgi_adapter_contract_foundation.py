@@ -210,7 +210,7 @@ def test_asgi_app_handles_lifespan_and_websocket_scopes_without_long_running_loo
     lifespan_sent = _run_asgi(
         app,
         {"type": "lifespan"},
-        [{"type": "lifespan.startup"}],
+        [{"type": "lifespan.startup"}, {"type": "lifespan.shutdown"}],
     )
     websocket_sent = _run_asgi(
         app,
@@ -219,10 +219,8 @@ def test_asgi_app_handles_lifespan_and_websocket_scopes_without_long_running_loo
     )
 
     assert lifespan_sent == [
-        {
-            "type": "lifespan.startup.failed",
-            "message": "Unsupported ASGI scope type: lifespan",
-        }
+        {"type": "lifespan.startup.complete"},
+        {"type": "lifespan.shutdown.complete"},
     ]
     assert websocket_sent == [
         {

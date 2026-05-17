@@ -34,6 +34,7 @@ REQUIRED_DOCKERFILE_COPY_SOURCES = {
     ".dockerignore",
     "docker-compose.yml",
     ".env.example",
+    "requirements-runtime.txt",
     "app/postgres/init.d/001-token-payments-schema.sql",
     "app/test_network/Dockerfile",
 }
@@ -62,7 +63,7 @@ def test_dockerfile_exists_and_uses_python_312_runtime_base() -> None:
     dockerfile = _read_required(ROOT / "Dockerfile")
 
     assert re.search(r"(?m)^FROM\s+python:3\.12(?:[-\w.]*)(?:\s+AS\s+\w+)?\s*$", dockerfile)
-    assert "pip install" not in dockerfile.lower()
+    assert "python -m pip install --no-cache-dir -r /workspace/requirements-runtime.txt" in dockerfile
 
 
 def test_dockerfile_sets_internal_app_pythonpath_and_bounded_health_command() -> None:

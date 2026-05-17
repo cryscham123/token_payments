@@ -126,7 +126,10 @@ def test_env_compose_and_postgres_schema_cover_adapter_infrastructure() -> None:
         "ADAPTER_KAFKA_CLIENT_ID=",
         "ADAPTER_OUTBOX_BATCH_SIZE=",
         "ADAPTER_WALLET_SIGNATURE_DOMAIN=",
-        "ADAPTER_BLOCKCHAIN_RPC_URL=http://localhost:8545",
+        "ADAPTER_BLOCKCHAIN_RPC_SCHEME=http",
+        "ADAPTER_BLOCKCHAIN_RPC_HOST=test_network",
+        "ADAPTER_BLOCKCHAIN_RPC_PORT=8545",
+        "ADAPTER_BLOCKCHAIN_RPC_URL=",
         "ADAPTER_BLOCKCHAIN_CHAIN_ID=1337",
     ):
         assert key in env_example

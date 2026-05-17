@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
+import re
 from types import MappingProxyType
 from typing import Any, Mapping, Protocol, Sequence
 
@@ -35,11 +36,15 @@ class OperatorSortDirection(StrEnum):
 SENSITIVE_DETAIL_MARKERS = (
     "authorization",
     "cookie",
+    "dsn",
     "password",
     "private",
     "secret",
     "signature",
     "token",
+)
+SENSITIVE_TEXT_PATTERN = re.compile(
+    r"(?i)\b(authorization|cookie|dsn|password|private(?:[_-]?key)?|secret|signature|token)\b\s*[:=]\s*[^,\s;]+"
 )
 
 
@@ -72,7 +77,11 @@ class ReadinessProbeResult:
         if self.error_code is not None:
             object.__setattr__(self, "error_code", _require_text(self.error_code, "ReadinessProbeResult.error_code"))
         if self.message is not None:
-            object.__setattr__(self, "message", _require_text(self.message, "ReadinessProbeResult.message"))
+            object.__setattr__(
+                self,
+                "message",
+                _redact_text(_require_text(self.message, "ReadinessProbeResult.message")),
+            )
 
     def to_dict(self) -> dict[str, JsonValue]:
         payload: dict[str, JsonValue] = {
@@ -956,8 +965,10 @@ def _redacted_json_mapping(value: Mapping[str, Any]) -> dict[str, JsonValue]:
 def _redacted_json_value(key: str, value: Any) -> JsonValue:
     if _is_sensitive_key(key):
         return "<redacted>"
-    if value is None or isinstance(value, bool | int | float | str):
+    if value is None or isinstance(value, bool | int | float):
         return value
+    if isinstance(value, str):
+        return _redact_text(value)
     if isinstance(value, datetime):
         return _require_aware_datetime(value, key).isoformat()
     if isinstance(value, Mapping):
@@ -970,6 +981,10 @@ def _redacted_json_value(key: str, value: Any) -> JsonValue:
 def _is_sensitive_key(key: str) -> bool:
     normalized = key.lower()
     return any(marker in normalized for marker in SENSITIVE_DETAIL_MARKERS)
+
+
+def _redact_text(value: str) -> str:
+    return SENSITIVE_TEXT_PATTERN.sub(lambda match: f"{match.group(1)}=<redacted>", value)
 
 
 def _coerce_tuple(values: tuple[object, ...], item_type: type, field_name: str):

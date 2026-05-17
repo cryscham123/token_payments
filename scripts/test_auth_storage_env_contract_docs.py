@@ -27,10 +27,10 @@ def test_env_example_documents_local_secret_override_and_live_placeholder_reject
     env_example = _read(".env.example")
     docs = "\n".join(_read(path) for path in ("README.md", "app/README.md", "docs/API_SPEC.md"))
 
-    assert "copy this file to .env and replace session and CSRF signing placeholders" in env_example
-    assert "live/prod startup rejects committed placeholder signing values" in docs
-    assert "SESSION_SIGNING_KEYS=local-dev-placeholder=replace_with_local_dev_only_session_signing_key" in env_example
-    assert "CSRF_SIGNING_KEY=replace_with_local_dev_only_csrf_signing_key" in env_example
+    assert "Local dev only signing values below are committed only for localhost use" in env_example
+    assert "live/prod startup rejects committed local dev signing values" in docs
+    assert "SESSION_SIGNING_KEYS=local-dev-2026=local_dev_only_session_signing_key" in env_example
+    assert "CSRF_SIGNING_KEY=local_dev_only_csrf_signing_key" in env_example
 
 
 def test_env_example_does_not_commit_real_secret_material() -> None:
@@ -44,10 +44,15 @@ def test_env_example_does_not_commit_real_secret_material() -> None:
     assert values
     for key, value in values.items():
         lowered = value.lower()
-        assert "replace_with_local_dev_only" in lowered or key in {
-            "ADAPTER_POSTGRES_DSN",
-            "ADAPTER_BLOCKCHAIN_RPC_URL",
-        }, key
+        assert (
+            "replace_with_local_dev_only" in lowered
+            or "local_dev_only" in lowered
+            or key in {
+                "ADAPTER_POSTGRES_DSN",
+                "ADAPTER_BLOCKCHAIN_RPC_URL",
+                "ADAPTER_BLOCKCHAIN_RPC_PATH",
+            }
+        ), key
         assert "prod" not in lowered
         assert "mainnet" not in lowered
         assert "seed phrase" not in lowered

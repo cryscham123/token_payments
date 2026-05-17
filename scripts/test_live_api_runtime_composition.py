@@ -72,12 +72,19 @@ def test_live_runtime_config_from_env_parses_api_and_adapter_settings_with_redac
     assert config.kafka_bootstrap_servers == ("kafka:9092",)
     assert config.kafka_client_id == "token-payments-local"
     assert config.wallet_signature_domain == "token-payments.local"
-    assert config.blockchain_rpc_url == "http://localhost:8545"
+    assert config.blockchain_rpc_url == "http://test_network:8545"
+    assert env_values["ADAPTER_BLOCKCHAIN_RPC_URL"] == ""
+    assert env_values["ADAPTER_BLOCKCHAIN_RPC_HOST"] == "test_network"
+    assert env_values["ADAPTER_BLOCKCHAIN_RPC_PORT"] == "8545"
     assert config.blockchain_chain_id == 1337
     assert config.blockchain_native_symbol == "ETH"
     assert config.blockchain_native_decimals == 18
     assert config.blockchain_token_address == env_values["ADAPTER_BLOCKCHAIN_TOKEN_ADDRESS"]
     assert str(config.blockchain_gas_buffer_rate) == "0.10"
+    assert config.cookie_secure is False
+    assert config.cookie_samesite == "Lax"
+    assert config.csrf_cookie_name == "csrf_token"
+    assert config.csrf_header_name == "X-CSRF-Token"
 
     debug_payload = config.to_redacted_dict()
     encoded = json.dumps(debug_payload, ensure_ascii=True, sort_keys=True)
