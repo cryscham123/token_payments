@@ -1,0 +1,32 @@
+{
+  "project": "Token Payments",
+  "phase": "15-postman-docker-api-readiness",
+  "steps": [
+    {
+      "step": 0,
+      "name": "compose-api-service-contract",
+      "status": "pending"
+    },
+    {
+      "step": 1,
+      "name": "postman-cookie-auth-flow",
+      "status": "pending"
+    },
+    {
+      "step": 2,
+      "name": "api-seed-and-expected-responses",
+      "status": "pending"
+    },
+    {
+      "step": 3,
+      "name": "docker-api-readiness-security-smoke",
+      "status": "pending"
+    },
+    {
+      "step": 4,
+      "name": "postman-docker-api-public-verification",
+      "status": "pending"
+    }
+  ],
+  "created_at": "2026-05-17T09:10:29+0900"
+}

@@ -1,13 +1,19 @@
 """Runtime contracts for Token Payments API and worker entrypoints."""
 
-from .browser_preview import (
-    DEFAULT_BROWSER_PREVIEW_HOST,
-    DEFAULT_BROWSER_PREVIEW_PORT,
-    BrowserPreviewHttpServer,
-    BrowserPreviewRequestHandler,
-    build_browser_preview_server,
-    render_browser_preview_document,
-    serve_browser_preview,
+from importlib import import_module as _import_module
+
+from .composition import (
+    LIVE_RUNTIME_DEPENDENCY_MISSING,
+    REQUIRED_LIVE_DEPENDENCIES,
+    BlockchainClient,
+    KafkaProducerClient,
+    LiveApiComposition,
+    LiveRuntimeConfig,
+    LiveRuntimeDependencies,
+    LiveRuntimeDependencyError,
+    PostgresSessionFactory,
+    WalletSignatureClient,
+    describe_live_runtime_dependencies,
 )
 from .config import RuntimeConfig
 from .contracts import (
@@ -62,6 +68,7 @@ __all__ = [
     "AVAILABLE_SMOKE_SCENARIOS",
     "BrowserPreviewHttpServer",
     "BrowserPreviewRequestHandler",
+    "BlockchainClient",
     "Clock",
     "CommandDispatchResult",
     "CommandDispatchStatus",
@@ -73,6 +80,12 @@ __all__ = [
     "IdGenerator",
     "JsonValue",
     "KafkaConsumerWorker",
+    "KafkaProducerClient",
+    "LIVE_RUNTIME_DEPENDENCY_MISSING",
+    "LiveApiComposition",
+    "LiveRuntimeConfig",
+    "LiveRuntimeDependencies",
+    "LiveRuntimeDependencyError",
     "OperatorDashboardQuery",
     "OperatorErrorSnapshot",
     "OperatorObservabilityQueryPort",
@@ -87,8 +100,10 @@ __all__ = [
     "PaymentReceiptPollingWorker",
     "PaymentTimeoutCandidate",
     "PaymentTimeoutWorker",
+    "PostgresSessionFactory",
     "RuntimeConfig",
     "RuntimeContainer",
+    "REQUIRED_LIVE_DEPENDENCIES",
     "SMOKE_CONTRACT",
     "SmokeResult",
     "SmokeScenarioResult",
@@ -97,14 +112,36 @@ __all__ = [
     "PostgresOperatorObservabilityQuery",
     "UNKNOWN_SMOKE_SCENARIO_ERROR",
     "UnknownSmokeScenario",
+    "WalletSignatureClient",
     "WorkerBatchResult",
     "WorkerLoopOptions",
     "WorkerRunSummary",
     "WorkerRuntime",
     "build_browser_preview_server",
+    "describe_live_runtime_dependencies",
     "describe_smoke_registry",
     "dispatch_runtime_command",
     "render_browser_preview_document",
     "run_smoke_scenario",
     "serve_browser_preview",
 ]
+
+_BROWSER_PREVIEW_EXPORTS = frozenset(
+    {
+        "DEFAULT_BROWSER_PREVIEW_HOST",
+        "DEFAULT_BROWSER_PREVIEW_PORT",
+        "BrowserPreviewHttpServer",
+        "BrowserPreviewRequestHandler",
+        "build_browser_preview_server",
+        "render_browser_preview_document",
+        "serve_browser_preview",
+    }
+)
+
+
+def __getattr__(name: str):
+    if name in _BROWSER_PREVIEW_EXPORTS:
+        value = getattr(_import_module("token_payments.runtime.browser_preview"), name)
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -8,6 +8,7 @@
 - [Architecture](docs/ARCHITECTURE.md)
 - [Domain Model](docs/DOMAIN_MODEL.md)
 - [Sequence Flows](docs/SEQUENCES.md)
+- [API Spec](docs/API_SPEC.md)
 - [ADR](docs/ADR.md)
 - [UI Guide](docs/UI_GUIDE.md)
 - [Harness Engineering](docs/HARNESS.md)
@@ -112,7 +113,7 @@ docker compose --env-file .env down
 Postman-ready API roadmap:
 
 - `13-fastapi-asgi-adapter`: 기존 framework-neutral route manifest와 facade contract를 유지하면서 ASGI/FastAPI app factory를 얇게 추가한다.
-- `14-live-api-runtime-composition`: 실제 Auth/Order/Checkout/Payment/Operator facade를 PostgreSQL, Kafka, test network adapter와 조립하고 long-running `token_payments_api` runtime entrypoint를 추가한다.
+- `14-live-api-runtime-composition`: 먼저 live config/dependency contract를 고정하고, 이후 step에서 실제 facade wiring과 long-running `token_payments_api` runtime entrypoint를 완성한다.
 - `15-postman-docker-api-readiness`: `docker compose up -d ... token_payments_api` 후 Postman에서 호출할 collection/examples, seed flow, expected response contract를 고정한다.
 
 ## Foundation 검증
@@ -451,3 +452,9 @@ Next phase candidates:
 - live API runtime composition: wire the real facades to PostgreSQL, Kafka, and test network adapters behind a long-running API entrypoint.
 - Postman Docker API readiness: add the compose API service, request examples, seed flow, and expected responses for local Postman verification.
 - FastAPI optional dependency live smoke: verify the manually installed FastAPI/Uvicorn runtime in an explicit live environment outside the default harness path.
+
+## Live API Runtime Composition Contract
+
+Step 0 of live API runtime composition fixes the public contract for `LiveRuntimeConfig`, `LiveRuntimeDependencies`, `LiveApiComposition`, and `describe_live_runtime_dependencies`. The contract parses API and adapter environment keys, reports the externally injected PostgreSQL session factory, Kafka producer, wallet signature client, blockchain client, clock, and id generator, and returns redacted JSON-safe metadata for readiness tooling.
+
+This step still does not start an API server, import PostgreSQL/Kafka/Blockchain/FastAPI/Uvicorn drivers, read local `.env`, or open network sockets. Concrete facade wiring and the long-running live server entrypoint are completed by later phase 14 steps before phase 15 adds Postman/Docker API readiness fixtures.
