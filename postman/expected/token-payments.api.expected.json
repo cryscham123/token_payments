@@ -1,0 +1,400 @@
+{
+  "contract": "token-payments.postman.expected-responses.v1",
+  "routeSummarySource": "docs/API_SPEC.md",
+  "postmanCollection": "postman/token-payments.local.postman_collection.json",
+  "collectionRequestIds": [
+    "requestLoginChallenge",
+    "loginWithMetaMask",
+    "refreshSession",
+    "logout",
+    "getCurrentUser",
+    "expiredAccessTokenRejected",
+    "invalidSignatureAccessTokenRejected"
+  ],
+  "headerExamples": {
+    "Set-Cookie": {
+      "rawValuesCommitted": false,
+      "accessToken": "<redacted-signed-session-token>",
+      "refreshToken": "<redacted-signed-session-token>",
+      "csrfToken": "<redacted-signed-csrf-token>",
+      "attributes": {
+        "HttpOnly": true,
+        "Secure": true,
+        "SameSite": "Lax",
+        "Path": "/",
+        "Expires": "bounded"
+      }
+    },
+    "X-CSRF-Token": "{{csrfToken}}",
+    "Idempotency-Key": "postman-checkout-create-order-001",
+    "X-Request-Id": "postman-request-id-001"
+  },
+  "routes": [
+    {
+      "operationId": "requestLoginChallenge",
+      "requestName": "1. Request login challenge",
+      "method": "POST",
+      "path": "/auth/challenges",
+      "status": 201,
+      "headers": {
+        "X-Request-Id": "postman-auth-challenge-001",
+        "Set-Cookie": "csrf_token=<redacted-signed-csrf-token>; Secure; SameSite=Lax; Path=/; Expires=<bounded-http-date>"
+      },
+      "body": {
+        "walletAddress": "0x1111111111111111111111111111111111111111",
+        "signingMessage": "<metamask-personal-sign-message>",
+        "csrfToken": "<redacted-signed-csrf-token>"
+      }
+    },
+    {
+      "operationId": "loginWithMetaMask",
+      "requestName": "2. Login with MetaMask signature",
+      "method": "POST",
+      "path": "/auth/sessions",
+      "status": 200,
+      "headers": {
+        "X-CSRF-Token": "{{csrfToken}}",
+        "X-Request-Id": "postman-auth-login-001",
+        "Set-Cookie": "access_token=<redacted-signed-session-token>; refresh_token=<redacted-signed-session-token>; csrf_token=<redacted-signed-csrf-token>"
+      },
+      "body": {
+        "token": {
+          "accessToken": "<set-cookie>",
+          "refreshToken": "<set-cookie>",
+          "transport": "cookie"
+        },
+        "session": {
+          "sessionId": "<session-id>"
+        }
+      }
+    },
+    {
+      "operationId": "refreshSession",
+      "requestName": "3. Refresh session with cookie jar",
+      "method": "POST",
+      "path": "/auth/sessions/refresh",
+      "status": 200,
+      "headers": {
+        "X-CSRF-Token": "{{csrfToken}}",
+        "X-Request-Id": "postman-auth-refresh-001",
+        "Set-Cookie": "access_token=<redacted-signed-session-token>; refresh_token=<redacted-signed-session-token>; csrf_token=<redacted-signed-csrf-token>"
+      },
+      "body": {
+        "token": {
+          "transport": "cookie"
+        },
+        "csrfToken": "<redacted-signed-csrf-token>"
+      }
+    },
+    {
+      "operationId": "logout",
+      "requestName": "4. Logout with cookie jar",
+      "method": "DELETE",
+      "path": "/auth/sessions",
+      "status": 204,
+      "headers": {
+        "X-CSRF-Token": "{{csrfToken}}",
+        "X-Request-Id": "postman-auth-logout-001",
+        "Set-Cookie": "access_token=; refresh_token=; Max-Age=0; Path=/"
+      },
+      "body": {
+        "status": "deleted"
+      }
+    },
+    {
+      "operationId": "getCurrentUser",
+      "requestName": "5. Get current user with cookie jar",
+      "method": "GET",
+      "path": "/auth/me",
+      "status": 200,
+      "headers": {
+        "X-Request-Id": "postman-auth-me-001"
+      },
+      "body": {
+        "walletAddress": "0x1111111111111111111111111111111111111111",
+        "role": "CUSTOMER"
+      }
+    },
+    {
+      "operationId": "createOrder",
+      "requestName": "Create checkout order",
+      "method": "POST",
+      "path": "/orders",
+      "status": 201,
+      "headers": {
+        "X-CSRF-Token": "{{csrfToken}}",
+        "Idempotency-Key": "postman-checkout-create-order-001",
+        "X-Request-Id": "postman-order-create-001"
+      },
+      "body": {
+        "orderId": "<order-id>",
+        "trackingId": "<tracking-id>",
+        "status": "PENDING",
+        "payment": {
+          "paymentId": "<payment-id>",
+          "destinationWallet": "0x2222222222222222222222222222222222222222"
+        }
+      }
+    },
+    {
+      "operationId": "getCheckoutTrackingByTrackingId",
+      "requestName": "Get checkout tracking by tracking id",
+      "method": "GET",
+      "path": "/checkouts/tracking/{trackingId}",
+      "status": 200,
+      "headers": {
+        "X-Request-Id": "postman-checkout-tracking-001"
+      },
+      "body": {
+        "trackingId": "<tracking-id>",
+        "pendingAction": "SIGN_PAYMENT"
+      }
+    },
+    {
+      "operationId": "getCheckoutTrackingByOrderId",
+      "requestName": "Get checkout tracking by order id",
+      "method": "GET",
+      "path": "/checkouts/orders/{orderId}",
+      "status": 200,
+      "headers": {
+        "X-Request-Id": "postman-checkout-order-001"
+      },
+      "body": {
+        "orderId": "<order-id>",
+        "status": "APPROVED"
+      }
+    },
+    {
+      "operationId": "submitTransactionHash",
+      "requestName": "Submit transaction hash",
+      "method": "POST",
+      "path": "/payments/transaction-hashes",
+      "status": 202,
+      "headers": {
+        "X-CSRF-Token": "{{csrfToken}}",
+        "Idempotency-Key": "postman-payment-submit-tx-001",
+        "X-Request-Id": "postman-payment-submit-001"
+      },
+      "body": {
+        "paymentId": "<payment-id>",
+        "orderId": "<order-id>",
+        "status": "SUBMITTED",
+        "txHash": "<local-test-network-transaction-hash>"
+      }
+    },
+    {
+      "operationId": "getOperatorDashboard",
+      "requestName": "Get operator dashboard",
+      "method": "GET",
+      "path": "/operator/dashboard",
+      "status": 200,
+      "headers": {
+        "X-Request-Id": "postman-operator-dashboard-001"
+      },
+      "body": {
+        "orders": [
+          {
+            "orderId": "<order-id>",
+            "status": "PENDING"
+          }
+        ],
+        "outbox": []
+      }
+    },
+    {
+      "operationId": "getOperatorOrderDetail",
+      "requestName": "Get operator order detail",
+      "method": "GET",
+      "path": "/operator/orders/{orderId}",
+      "status": 200,
+      "headers": {
+        "X-Request-Id": "postman-operator-order-001"
+      },
+      "body": {
+        "orderId": "<order-id>",
+        "status": "CANCELLED"
+      }
+    },
+    {
+      "operationId": "getOperatorPaymentDetail",
+      "requestName": "Get operator payment detail",
+      "method": "GET",
+      "path": "/operator/payments/{paymentId}",
+      "status": 200,
+      "headers": {
+        "X-Request-Id": "postman-operator-payment-001"
+      },
+      "body": {
+        "paymentId": "<payment-id>",
+        "status": "FAILED"
+      }
+    },
+    {
+      "operationId": "getOperatorOutboxDetail",
+      "requestName": "Get operator outbox detail",
+      "method": "GET",
+      "path": "/operator/outbox/{messageId}",
+      "status": 200,
+      "headers": {
+        "X-Request-Id": "postman-operator-outbox-001"
+      },
+      "body": {
+        "messageId": "<outbox-message-id>",
+        "status": "FAILED"
+      }
+    },
+    {
+      "operationId": "cancelOperatorOrder",
+      "requestName": "Cancel operator order",
+      "method": "POST",
+      "path": "/operator/orders/{orderId}/cancel",
+      "status": 202,
+      "headers": {
+        "X-CSRF-Token": "{{csrfToken}}",
+        "Idempotency-Key": "postman-operator-cancel-order-001",
+        "X-Request-Id": "postman-operator-cancel-001"
+      },
+      "body": {
+        "orderId": "<order-id>",
+        "status": "CANCELLED"
+      }
+    },
+    {
+      "operationId": "retryOperatorOutboxMessage",
+      "requestName": "Retry operator outbox message",
+      "method": "POST",
+      "path": "/operator/outbox/{messageId}/retry",
+      "status": 202,
+      "headers": {
+        "X-CSRF-Token": "{{csrfToken}}",
+        "Idempotency-Key": "postman-operator-retry-outbox-001",
+        "X-Request-Id": "postman-operator-retry-001"
+      },
+      "body": {
+        "messageId": "<outbox-message-id>",
+        "status": "READY"
+      }
+    },
+    {
+      "operationId": "replayOperatorMessage",
+      "requestName": "Replay operator message",
+      "method": "POST",
+      "path": "/operator/messages/{messageId}/replay",
+      "status": 202,
+      "headers": {
+        "X-CSRF-Token": "{{csrfToken}}",
+        "Idempotency-Key": "postman-operator-replay-message-001",
+        "X-Request-Id": "postman-operator-replay-001"
+      },
+      "body": {
+        "messageId": "<message-id>",
+        "status": "REPLAYED"
+      }
+    }
+  ],
+  "flows": {
+    "happyPathCheckout": {
+      "operations": [
+        "requestLoginChallenge",
+        "loginWithMetaMask",
+        "createOrder",
+        "getCheckoutTrackingByTrackingId",
+        "submitTransactionHash",
+        "getCheckoutTrackingByOrderId"
+      ],
+      "finalOrderStatus": "APPROVED"
+    },
+    "compensationCheckout": {
+      "operations": [
+        "createOrder",
+        "submitTransactionHash",
+        "getCheckoutTrackingByOrderId",
+        "getOperatorOrderDetail"
+      ],
+      "finalOrderStatus": "CANCELLED",
+      "expectedCompensationCommands": [
+        "ReleaseInventoryCommand",
+        "CancelOrderCommand"
+      ]
+    },
+    "operatorActionRecovery": {
+      "operations": [
+        "getOperatorDashboard",
+        "getOperatorOrderDetail",
+        "getOperatorPaymentDetail",
+        "getOperatorOutboxDetail",
+        "cancelOperatorOrder",
+        "retryOperatorOutboxMessage",
+        "replayOperatorMessage"
+      ]
+    }
+  },
+  "securityCases": [
+    {
+      "name": "expired access token rejected",
+      "operationId": "getCurrentUser",
+      "status": 401,
+      "rawSecretMaterialCommitted": false,
+      "body": {
+        "error": {
+          "code": "INVALID_AUTH_TOKEN"
+        }
+      }
+    },
+    {
+      "name": "invalid signature access token rejected",
+      "operationId": "getCurrentUser",
+      "status": 401,
+      "rawSecretMaterialCommitted": false,
+      "body": {
+        "error": {
+          "code": "INVALID_AUTH_TOKEN"
+        }
+      }
+    },
+    {
+      "name": "missing csrf token rejected",
+      "operationId": "createOrder",
+      "status": 403,
+      "rawSecretMaterialCommitted": false,
+      "body": {
+        "error": {
+          "code": "CSRF_TOKEN_REQUIRED"
+        }
+      }
+    },
+    {
+      "name": "duplicate idempotency conflict",
+      "operationId": "createOrder",
+      "status": 409,
+      "rawSecretMaterialCommitted": false,
+      "body": {
+        "error": {
+          "code": "IDEMPOTENCY_CONFLICT"
+        }
+      }
+    },
+    {
+      "name": "oversized body rejected",
+      "operationId": "createOrder",
+      "status": 413,
+      "rawSecretMaterialCommitted": false,
+      "body": {
+        "error": {
+          "code": "REQUEST_BODY_TOO_LARGE"
+        }
+      }
+    },
+    {
+      "name": "malformed json rejected",
+      "operationId": "createOrder",
+      "status": 400,
+      "rawSecretMaterialCommitted": false,
+      "body": {
+        "error": {
+          "code": "MALFORMED_JSON"
+        }
+      }
+    }
+  ]
+}
