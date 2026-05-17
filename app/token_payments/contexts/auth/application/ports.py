@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from enum import StrEnum
 from typing import Protocol
 
 from token_payments.contexts.auth.domain import (
@@ -47,6 +48,36 @@ class LoginResult:
     user: User
     session: AuthSession
     issued_token: IssuedToken
+
+
+class WalletSignatureVerificationFailure(StrEnum):
+    INVALID_SIGNATURE = "INVALID_SIGNATURE"
+    WALLET_MISMATCH = "WALLET_MISMATCH"
+    UNSUPPORTED_CHAIN = "UNSUPPORTED_CHAIN"
+
+
+@dataclass(frozen=True)
+class WalletSignatureVerificationResult:
+    verified: bool
+    failure: WalletSignatureVerificationFailure | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.verified, bool):
+            raise ValueError("WalletSignatureVerificationResult.verified must be a bool")
+        if self.verified and self.failure is not None:
+            raise ValueError("verified wallet signature results cannot include a failure")
+        if not self.verified:
+            if self.failure is None:
+                raise ValueError("failed wallet signature results require a failure")
+            object.__setattr__(self, "failure", WalletSignatureVerificationFailure(self.failure))
+
+    @classmethod
+    def verified(cls) -> "WalletSignatureVerificationResult":
+        return cls(verified=True)
+
+    @classmethod
+    def failed(cls, failure: WalletSignatureVerificationFailure) -> "WalletSignatureVerificationResult":
+        return cls(verified=False, failure=failure)
 
 
 @dataclass(frozen=True)
@@ -117,7 +148,13 @@ class AuthSessionRepository(Protocol):
 
 
 class WalletSignatureVerifier(Protocol):
-    def recover_address(self, message: str, signature: str) -> WalletAddress:
+    def verify_signature(
+        self,
+        wallet: WalletAddress,
+        message: str,
+        signature: str,
+        chain_id: int,
+    ) -> WalletSignatureVerificationResult:
         ...
 
 

@@ -19,6 +19,7 @@ from token_payments.contexts.auth.application import (  # noqa: E402
     LoginChallengeRepository,
     TokenIssuer,
     UserRepository,
+    WalletSignatureVerificationResult,
     WalletSignatureVerifier,
 )
 from token_payments.contexts.auth.domain import (  # noqa: E402
@@ -134,8 +135,12 @@ def test_auth_input_and_output_ports_are_defined_as_protocol_contracts() -> None
     ):
         assert getattr(port, "_is_protocol", False), f"{port.__name__} must be a Protocol"
 
-    hints = get_type_hints(WalletSignatureVerifier.recover_address)
-    assert hints["return"] is WalletAddress
+    hints = get_type_hints(WalletSignatureVerifier.verify_signature)
+    assert hints["wallet"] is WalletAddress
+    assert hints["message"] is str
+    assert hints["signature"] is str
+    assert hints["chain_id"] is int
+    assert hints["return"] is WalletSignatureVerificationResult
 
 
 def test_auth_context_does_not_import_external_adapters_or_clients() -> None:
