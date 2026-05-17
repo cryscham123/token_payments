@@ -106,6 +106,7 @@ DEFAULT_POSTGRES_DSN = "postgresql://token_payments:<redacted>@postgres:5432/tok
 DEFAULT_KAFKA_BOOTSTRAP_SERVERS = ("kafka:9092",)
 DEFAULT_KAFKA_CLIENT_ID = "token-payments-local"
 DEFAULT_WALLET_SIGNATURE_DOMAIN = "token-payments.local"
+DEFAULT_WALLET_SIGNATURE_TIMEOUT_SECONDS = 3.0
 DEFAULT_BLOCKCHAIN_RPC_SCHEME = "http"
 DEFAULT_BLOCKCHAIN_RPC_HOST = "localhost"
 DEFAULT_BLOCKCHAIN_RPC_PORT = 8545
@@ -175,6 +176,9 @@ class LiveRuntimeConfig:
     kafka_bootstrap_servers: tuple[str, ...] | str = DEFAULT_KAFKA_BOOTSTRAP_SERVERS
     kafka_client_id: str = DEFAULT_KAFKA_CLIENT_ID
     wallet_signature_domain: str = DEFAULT_WALLET_SIGNATURE_DOMAIN
+    wallet_signature_rpc_url: str = field(default=DEFAULT_BLOCKCHAIN_RPC_URL, repr=False)
+    wallet_signature_chain_id: int = DEFAULT_BLOCKCHAIN_CHAIN_ID
+    wallet_signature_timeout_seconds: float = DEFAULT_WALLET_SIGNATURE_TIMEOUT_SECONDS
     blockchain_rpc_url: str = field(default=DEFAULT_BLOCKCHAIN_RPC_URL, repr=False)
     blockchain_chain_id: int = DEFAULT_BLOCKCHAIN_CHAIN_ID
     blockchain_native_symbol: str = DEFAULT_BLOCKCHAIN_NATIVE_SYMBOL
@@ -223,6 +227,30 @@ class LiveRuntimeConfig:
             self,
             "wallet_signature_domain",
             _require_text(self.wallet_signature_domain, "ADAPTER_WALLET_SIGNATURE_DOMAIN"),
+        )
+        object.__setattr__(
+            self,
+            "wallet_signature_rpc_url",
+            _require_text(
+                self.wallet_signature_rpc_url,
+                "ADAPTER_AUTH_WALLET_SIGNATURE_RPC_URL",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "wallet_signature_chain_id",
+            _require_positive_int(
+                self.wallet_signature_chain_id,
+                "ADAPTER_AUTH_WALLET_SIGNATURE_CHAIN_ID",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "wallet_signature_timeout_seconds",
+            _require_positive_number(
+                self.wallet_signature_timeout_seconds,
+                "ADAPTER_AUTH_WALLET_SIGNATURE_TIMEOUT_SECONDS",
+            ),
         )
         object.__setattr__(
             self,
@@ -325,6 +353,12 @@ class LiveRuntimeConfig:
         session_key_config = SessionKeyConfig.from_env(source, runtime_environment=runtime_environment)
         csrf_env = _csrf_env_with_session_fallback(source, session_key_config)
         csrf_config = CsrfTokenConfig.from_env(csrf_env, runtime_environment=runtime_environment)
+        blockchain_rpc_url = _blockchain_rpc_url_from_env(source)
+        blockchain_chain_id = _parse_int(
+            source,
+            "ADAPTER_BLOCKCHAIN_CHAIN_ID",
+            DEFAULT_BLOCKCHAIN_CHAIN_ID,
+        )
         return cls(
             api_host=source.get("RUNTIME_API_HOST", "0.0.0.0"),
             api_port=_parse_int(source, "RUNTIME_API_PORT", 8000),
@@ -340,12 +374,19 @@ class LiveRuntimeConfig:
                 "ADAPTER_WALLET_SIGNATURE_DOMAIN",
                 DEFAULT_WALLET_SIGNATURE_DOMAIN,
             ),
-            blockchain_rpc_url=_blockchain_rpc_url_from_env(source),
-            blockchain_chain_id=_parse_int(
+            wallet_signature_rpc_url=_wallet_signature_rpc_url_from_env(source, blockchain_rpc_url),
+            wallet_signature_chain_id=_parse_int(
                 source,
-                "ADAPTER_BLOCKCHAIN_CHAIN_ID",
-                DEFAULT_BLOCKCHAIN_CHAIN_ID,
+                "ADAPTER_AUTH_WALLET_SIGNATURE_CHAIN_ID",
+                blockchain_chain_id,
             ),
+            wallet_signature_timeout_seconds=_parse_float(
+                source,
+                "ADAPTER_AUTH_WALLET_SIGNATURE_TIMEOUT_SECONDS",
+                DEFAULT_WALLET_SIGNATURE_TIMEOUT_SECONDS,
+            ),
+            blockchain_rpc_url=blockchain_rpc_url,
+            blockchain_chain_id=blockchain_chain_id,
             blockchain_native_symbol=source.get(
                 "ADAPTER_BLOCKCHAIN_NATIVE_SYMBOL",
                 DEFAULT_BLOCKCHAIN_NATIVE_SYMBOL,
@@ -440,7 +481,9 @@ class LiveRuntimeConfig:
                 },
                 "walletSignature": {
                     "domain": self.wallet_signature_domain,
-                    "supportedChainIds": [self.blockchain_chain_id],
+                    "rpcUrl": _redact_url_secret(self.wallet_signature_rpc_url),
+                    "supportedChainIds": [self.wallet_signature_chain_id],
+                    "timeoutSeconds": self.wallet_signature_timeout_seconds,
                     "clientInjectedExternally": True,
                 },
                 "blockchain": {
@@ -613,18 +656,91 @@ class LazyKafkaProducerClient:
 
 @dataclass(frozen=True)
 class EthAccountWalletSignatureClient:
-    """Lazy eth-account wallet signature recovery client."""
+    """Lazy eth-account recovery and JSON-RPC ERC-1271 auth client."""
 
     domain: str
+    rpc_url: str | None = None
+    chain_id: int | None = None
+    timeout_seconds: float = DEFAULT_WALLET_SIGNATURE_TIMEOUT_SECONDS
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "domain", _require_text(self.domain, "ADAPTER_WALLET_SIGNATURE_DOMAIN"))
+        if self.rpc_url is not None:
+            object.__setattr__(
+                self,
+                "rpc_url",
+                _require_text(self.rpc_url, "ADAPTER_AUTH_WALLET_SIGNATURE_RPC_URL"),
+            )
+        if self.chain_id is not None:
+            object.__setattr__(
+                self,
+                "chain_id",
+                _require_positive_int(self.chain_id, "ADAPTER_AUTH_WALLET_SIGNATURE_CHAIN_ID"),
+            )
+        object.__setattr__(
+            self,
+            "timeout_seconds",
+            _require_positive_number(
+                self.timeout_seconds,
+                "ADAPTER_AUTH_WALLET_SIGNATURE_TIMEOUT_SECONDS",
+            ),
+        )
 
     def recover_address(self, message: str, signature: str) -> str:
         account_module = importlib.import_module("eth_account")
         messages_module = importlib.import_module("eth_account.messages")
         encoded = messages_module.encode_defunct(text=_require_text(message, "message"))
         return account_module.Account.recover_message(encoded, signature=_require_text(signature, "signature"))
+
+    def get_code(self, request: Mapping[str, object] | None = None, **kwargs: object) -> str:
+        payload = dict(request or kwargs)
+        self._ensure_request_chain(payload)
+        address = _require_text(str(payload.get("address") or payload.get("wallet") or ""), "address")
+        return str(self._rpc("eth_getCode", (address, "latest")))
+
+    def call_contract(self, request: Mapping[str, object] | None = None, **kwargs: object) -> str:
+        payload = dict(request or kwargs)
+        self._ensure_request_chain(payload)
+        to = _require_text(str(payload.get("to") or payload.get("address") or ""), "to")
+        data = _require_text(str(payload.get("data") or ""), "data")
+        return str(self._rpc("eth_call", ({"to": to, "data": data}, "latest")))
+
+    def _ensure_request_chain(self, payload: Mapping[str, object]) -> None:
+        if self.chain_id is None:
+            return
+        raw_chain_id = payload.get("chain_id") or payload.get("chainId")
+        if raw_chain_id is None:
+            return
+        actual = (
+            int(str(raw_chain_id), 16)
+            if isinstance(raw_chain_id, str) and raw_chain_id.startswith("0x")
+            else int(raw_chain_id)
+        )
+        if actual != self.chain_id:
+            raise ValueError("ADAPTER_AUTH_WALLET_SIGNATURE_CHAIN_ID mismatch")
+
+    def _rpc(self, method: str, params: Sequence[object]) -> Any:
+        if self.rpc_url is None:
+            raise ValueError("ADAPTER_AUTH_WALLET_SIGNATURE_RPC_URL is not configured")
+        urllib_request = importlib.import_module("urllib.request")
+        payload = json.dumps(
+            {"jsonrpc": "2.0", "id": 1, "method": method, "params": list(params)},
+            ensure_ascii=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        request = urllib_request.Request(
+            self.rpc_url,
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib_request.urlopen(request, timeout=self.timeout_seconds) as response:
+            decoded = json.loads(response.read().decode("utf-8"))
+        if not isinstance(decoded, Mapping):
+            raise ValueError("JSON-RPC response must be an object")
+        if "error" in decoded:
+            raise ValueError(f"JSON-RPC {method} failed: {decoded['error']}")
+        return decoded.get("result")
 
 
 @dataclass(frozen=True)
@@ -849,7 +965,12 @@ def build_live_runtime_dependencies_from_env(
                 bootstrap_servers=live_config.kafka_bootstrap_servers,
                 client_id=live_config.kafka_client_id,
             ),
-            wallet_signature_client=EthAccountWalletSignatureClient(live_config.wallet_signature_domain),
+            wallet_signature_client=EthAccountWalletSignatureClient(
+                live_config.wallet_signature_domain,
+                rpc_url=live_config.wallet_signature_rpc_url,
+                chain_id=live_config.wallet_signature_chain_id,
+                timeout_seconds=live_config.wallet_signature_timeout_seconds,
+            ),
             blockchain_client=JsonRpcBlockchainClient(
                 rpc_url=live_config.blockchain_rpc_url,
                 chain_id=live_config.blockchain_chain_id,
@@ -1090,7 +1211,7 @@ class _TransactionalAuthUseCase:
             sessions=PostgresAuthSessionRepository(connection),
             signature_verifier=ClientWalletSignatureVerifier(
                 self._dependencies.wallet_signature_client,
-                supported_chain_ids=(self._config.blockchain_chain_id,),
+                supported_chain_ids=(self._config.wallet_signature_chain_id,),
             ),
             token_issuer=_RuntimeTokenIssuer(
                 self._dependencies.clock,
@@ -1574,6 +1695,13 @@ def _blockchain_rpc_url_from_env(env: Mapping[str, str]) -> str:
     if path and not path.startswith("/"):
         path = f"/{path}"
     return f"{scheme}://{host}:{port}{path}"
+
+
+def _wallet_signature_rpc_url_from_env(env: Mapping[str, str], default_rpc_url: str) -> str:
+    override = env.get("ADAPTER_AUTH_WALLET_SIGNATURE_RPC_URL")
+    if override is not None and override.strip():
+        return override.strip()
+    return _require_text(default_rpc_url, "ADAPTER_AUTH_WALLET_SIGNATURE_RPC_URL")
 
 
 def _csrf_env_with_session_fallback(env: Mapping[str, str], session_key_config: SessionKeyConfig) -> Mapping[str, str]:
