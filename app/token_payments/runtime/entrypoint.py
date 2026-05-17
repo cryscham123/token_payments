@@ -95,6 +95,7 @@ class ContractRuntimeContainer:
         from token_payments.api import http_route_manifest
 
         routes = list(http_route_manifest())
+        fastapi_metadata = _fastapi_availability_metadata()
         return CommandDispatchResult.succeeded(
             command=command_name,
             summary=f"{command_name} route manifest listed {len(routes)} route(s); server was not started",
@@ -103,8 +104,13 @@ class ContractRuntimeContainer:
                 "http": {
                     "adapter": "framework-neutral-wsgi",
                     "longRunning": False,
+                    "serverStarted": False,
                     "routeCount": len(routes),
                     "routes": routes,
+                    "asgiFactory": "token_payments.api.build_asgi_app",
+                    "fastapiAvailable": fastapi_metadata["fastapiAvailable"],
+                    "fastapiFactory": "token_payments.api.build_fastapi_app",
+                    "fastapiUnavailableReason": fastapi_metadata["fastapiUnavailableReason"],
                     "wsgiFactory": "token_payments.api.build_wsgi_app",
                 },
             },
@@ -164,3 +170,19 @@ def _normalize_command(command: str) -> str:
     if not isinstance(command, str) or not command.strip():
         return "health"
     return command.strip()
+
+
+def _fastapi_availability_metadata() -> dict[str, bool | str | None]:
+    from token_payments.api.fastapi import is_fastapi_available
+
+    available = is_fastapi_available()
+    return {
+        "fastapiAvailable": available,
+        "fastapiUnavailableReason": None
+        if available
+        else (
+            "FastAPI adapter is unavailable because optional dependency `fastapi` is not installed. "
+            "Install it manually in the production runtime environment with `pip install fastapi` "
+            "before building the FastAPI app."
+        ),
+    }

@@ -67,7 +67,8 @@
     },
     {
       "dir": "13-fastapi-asgi-adapter",
-      "status": "pending"
+      "status": "completed",
+      "completed_at": "2026-05-17T09:05:37+0900"
     }
   ]
 }
