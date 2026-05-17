@@ -291,6 +291,43 @@ Next phase candidates:
 - live API runtime composition: wire the real facades to PostgreSQL, Kafka, and test network adapters behind a long-running API entrypoint.
 - Postman Docker API readiness: add the compose API service, request examples, seed flow, and expected responses for local Postman verification.
 
+## ASGI/FastAPI Thin Adapter
+
+The ASGI/FastAPI Thin Adapter keeps the existing route manifest and facade contract as the stable API boundary. `build_asgi_app` adapts the framework-neutral `HttpRouter` without new runtime packages, and `build_fastapi_app` is optional FastAPI dependency production wiring. Importing `token_payments.api` and running preview commands does not require FastAPI; an explicit production runtime installs `fastapi` and calls the factory when it is ready to serve.
+
+`api` and `serve-api` return bounded JSON previews with `wsgiFactory`, `asgiFactory`, `fastapiFactory`, `fastapiAvailable`, `longRunning=false`, and `serverStarted=false`. The harness default path does not start a server, does not bind a network port, and does not access DB, Kafka, Docker, Blockchain RPC, or local `.env`; this is the no-server-start boundary.
+
+Verification commands:
+
+```bash
+python3 -m pytest scripts/test_fastapi_asgi_public_contracts.py scripts/test_fastapi_thin_adapter.py scripts/test_asgi_adapter_contract_foundation.py scripts/test_wsgi_runtime_preview.py scripts/test_api_worker_runtime_public_contracts.py scripts/test_browser_preview_public_contracts.py
+PYTHONPATH=app python3 -m token_payments api
+PYTHONPATH=app python3 -m token_payments serve-api
+python3 scripts/validate_phases.py
+```
+
+manual production serve example after explicit dependency installation and real route composition:
+
+```python
+# production_api.py
+from token_payments.api import HttpRouter, build_fastapi_app
+
+router = HttpRouter()
+# Register production facades and route helpers in the explicit composition module.
+app = build_fastapi_app(router)
+```
+
+```bash
+python3 -m pip install fastapi uvicorn
+PYTHONPATH=app uvicorn production_api:app --host 0.0.0.0 --port 8000
+```
+
+Next phase candidates:
+
+- live API runtime composition: wire the real facades to PostgreSQL, Kafka, and test network adapters behind a long-running API entrypoint.
+- Postman Docker API readiness: add the compose API service, request examples, seed flow, and expected responses for local Postman verification.
+- FastAPI optional dependency live smoke: verify the manually installed FastAPI/Uvicorn runtime in an explicit live environment outside the default harness path.
+
 ## API / Worker Runtime Contracts
 
 The API layer exposes framework-neutral facades: `AuthApi`, `OrdersApi`, `CheckoutApi`, `PaymentsApi`, and `OperatorApi`. They accept `ApiRequest` and return `ApiResponse` so a later HTTP framework can adapt them without changing the application contracts.
