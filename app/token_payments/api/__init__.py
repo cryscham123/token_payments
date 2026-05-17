@@ -32,6 +32,13 @@ from .http import (
     register_operator_routes,
     register_payment_routes,
 )
+from .idempotency import (
+    IDEMPOTENCY_KEY_CONFLICT,
+    IDEMPOTENCY_KEY_HEADER,
+    IdempotencyKeyConflict,
+    idempotency_conflict_response,
+    idempotency_key_from_request,
+)
 from .operator import AdminRoleOperatorPolicy, OperatorAccessPolicy, OperatorApi, OperatorClaims
 from .operator_actions import (
     AdminRoleOperatorActionPolicy,
@@ -88,6 +95,9 @@ __all__ = [
     "HttpRoute",
     "HttpRouteSpec",
     "HttpRouter",
+    "IDEMPOTENCY_KEY_CONFLICT",
+    "IDEMPOTENCY_KEY_HEADER",
+    "IdempotencyKeyConflict",
     "JsonValue",
     "ORDER_HTTP_ROUTES",
     "OPERATOR_ACTION_HTTP_ROUTES",
@@ -123,6 +133,8 @@ __all__ = [
     "build_wsgi_app",
     "describe_http_routes",
     "http_route_manifest",
+    "idempotency_conflict_response",
+    "idempotency_key_from_request",
     "is_fastapi_available",
     "json_response",
     "list_http_route_specs",

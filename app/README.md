@@ -338,7 +338,9 @@ Next phase candidates:
 
 Step 0 exposes `LiveRuntimeConfig`, `LiveRuntimeDependencies`, `LiveApiComposition`, and `describe_live_runtime_dependencies` as the live API composition surface. The contract parses API and adapter environment keys, describes externally injected PostgreSQL, Kafka, wallet signature, blockchain, clock, and ID dependencies, and redacts DSN passwords and token-address placeholders from JSON/debug metadata.
 
-This contract does not start a server, import live drivers, read local `.env`, or open sockets. Concrete facade wiring and the long-running API server entrypoint remain later phase 14 work before Postman/Docker readiness is added in phase 15.
+The explicit live server entrypoint is `PYTHONPATH=app python3 -m token_payments serve-api --live --dry-run` for the bounded plan and `PYTHONPATH=app python3 -m token_payments serve-api --live --confirm-live-api` for an approved live start. `api` and `serve-api` without `--live` still return the no-server-start preview. `--live` without `--confirm-live-api` returns bounded refusal JSON, and dry-run/refusal paths do not bind a port, read local `.env`, or require FastAPI/Uvicorn.
+
+The live server adds system-only `/healthz` and `/readyz` routes outside the public route manifest. `/healthz` is process-only, `/readyz` uses injected readiness probes, structured access log events are redacted, and mutating commands accept the standard `Idempotency-Key` header while preserving existing body-based command ids.
 
 ## API / Worker Runtime Contracts
 

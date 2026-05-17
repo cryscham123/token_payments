@@ -1,5 +1,9 @@
 # API Spec: Token Payments
 
+This document captures the Live API Runtime Composition boundary for the local Token Payments backend.
+
+Default `api`/`serve-api` commands keep the no-server-start preview boundary. Use `PYTHONPATH=app python3 -m token_payments serve-api --live --dry-run` for a bounded live server plan, and `PYTHONPATH=app python3 -m token_payments serve-api --live --confirm-live-api` only when an approved live environment is ready to start the long-running server.
+
 이 문서는 `14-live-api-runtime-composition`과 `15-postman-docker-api-readiness`가 끝난 뒤의 로컬 backend API를 기준으로 한 최종 명세 초안이다. Route surface는 현재 `app/token_payments/api/http.py`의 route manifest 16개를 기준으로 고정한다.
 
 ## Runtime Assumptions
@@ -64,6 +68,14 @@ Cookie-authenticated mutating requests (`POST`, `PUT`, `PATCH`, `DELETE`) must i
 Credentialed CORS must use an origin allowlist from `CORS_ALLOWED_ORIGINS`. `Access-Control-Allow-Origin: *` must not be used with credentials. Preflight `OPTIONS` is handled at the adapter guard before facade/application service dispatch and returns bounded CORS headers. Disallowed origins return `403 CORS_ORIGIN_FORBIDDEN`.
 
 Request body size is bounded by `REQUEST_BODY_MAX_BYTES`. Exceeding it returns `413 REQUEST_BODY_TOO_LARGE`; malformed JSON remains `400 MALFORMED_JSON`.
+
+## Live System Routes And Observability
+
+`GET /healthz` and `GET /readyz` are live server-only system routes and are not part of the 16-route public facade manifest. `/healthz` reports process/runtime health only and must not open PostgreSQL, Kafka, Blockchain, Docker, or local `.env`. `/readyz` summarizes injected PostgreSQL/Kafka/Blockchain readiness probes; unavailable components return `503` with bounded component details.
+
+All HTTP responses include `X-Request-Id` when a request id is known, and an incoming `X-Request-Id` is preserved. Live access log events include method, path template or route id, status, request id, duration, actor summary, and error code. Access logs must not record cookie values, signed tokens, authorization headers, private keys, signatures, or full request bodies.
+
+`Idempotency-Key` is the standard header for mutating command endpoints. It is wired to order creation causation, payment transaction hash command ids, and operator action idempotency keys. Existing body fields (`commandId` or `idempotencyKey`) remain supported for compatibility. If a header and body id disagree, the API returns `400 IDEMPOTENCY_KEY_CONFLICT`.
 
 ## Common Error Shape
 

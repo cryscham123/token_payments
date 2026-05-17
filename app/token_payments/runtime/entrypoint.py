@@ -54,7 +54,7 @@ class ContractRuntimeContainer:
                 details={"config": self.config.to_dict(), "worker": summary.to_dict()},
             )
         if command_name in {"api", "serve-api"}:
-            return self._dispatch_api_preview(command_name)
+            return self._dispatch_api_command(command_name, command_parts[1:])
         if command_name == "ui":
             return self._dispatch_ui_preview(command_parts[1] if len(command_parts) > 1 else None)
         if command_name == "smoke":
@@ -91,6 +91,11 @@ class ContractRuntimeContainer:
             details={"preview": preview},
         )
 
+    def _dispatch_api_command(self, command_name: str, args: Sequence[str]) -> CommandDispatchResult:
+        if "--live" in args:
+            return self._dispatch_live_api_server(command_name, args)
+        return self._dispatch_api_preview(command_name)
+
     def _dispatch_api_preview(self, command_name: str) -> CommandDispatchResult:
         from token_payments.api import http_route_manifest
 
@@ -114,6 +119,38 @@ class ContractRuntimeContainer:
                     "wsgiFactory": "token_payments.api.build_wsgi_app",
                 },
             },
+        )
+
+    def _dispatch_live_api_server(self, command_name: str, args: Sequence[str]) -> CommandDispatchResult:
+        from token_payments.runtime.api_server import describe_live_api_server_plan, run_live_api_server
+
+        if "--dry-run" in args:
+            plan = describe_live_api_server_plan()
+            return CommandDispatchResult.succeeded(
+                command=command_name,
+                summary=f"{command_name} live API server dry run planned; server was not started",
+                details={"liveApiServer": plan.to_dict()},
+            )
+
+        result = run_live_api_server(confirmed="--confirm-live-api" in args)
+        if result.status == "started":
+            return CommandDispatchResult.succeeded(
+                command=command_name,
+                summary=f"{command_name} live API server started",
+                details={"liveApiServer": result.to_dict()},
+            )
+        if result.status == "refused":
+            return CommandDispatchResult.failed(
+                command=command_name,
+                summary=f"{command_name} live API server confirmation required; server was not started",
+                exit_code=0,
+                details={"liveApiServer": result.to_dict()},
+            )
+        return CommandDispatchResult.failed(
+            command=command_name,
+            summary=f"{command_name} live API server could not start: {result.error.get('message') if result.error else result.status}",
+            exit_code=1,
+            details={"liveApiServer": result.to_dict()},
         )
 
     def _dispatch_smoke(self, scenario: str | None) -> CommandDispatchResult:
@@ -159,6 +196,8 @@ def _command_from_args(args: Sequence[str]) -> str:
     if not args:
         return "health"
     command = _normalize_command(args[0])
+    if command in {"api", "serve-api"} and len(args) > 1:
+        return " ".join([command, *(str(arg).strip() for arg in args[1:] if str(arg).strip())])
     if command in {"ui", "smoke"} and len(args) > 1:
         selector = args[1].strip() if isinstance(args[1], str) else ""
         if selector:

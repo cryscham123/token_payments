@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from types import MappingProxyType
 from typing import Any, Mapping, Protocol, Sequence
@@ -24,12 +24,183 @@ from token_payments.shared.domain import (
     WalletAddress,
 )
 
-from .contracts import HealthState
+from .contracts import HealthState, JsonValue
 
 
 class OperatorSortDirection(StrEnum):
     ASC = "ASC"
     DESC = "DESC"
+
+
+SENSITIVE_DETAIL_MARKERS = (
+    "authorization",
+    "cookie",
+    "password",
+    "private",
+    "secret",
+    "signature",
+    "token",
+)
+
+
+class ReadinessProbe(Protocol):
+    """Injected readiness probe used by live-only system routes."""
+
+    def check(self) -> "ReadinessProbeResult":
+        ...
+
+
+@dataclass(frozen=True)
+class ReadinessProbeResult:
+    """JSON-safe readiness result for one live dependency component."""
+
+    component: str
+    state: HealthState
+    checked_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    details: Mapping[str, Any] = field(default_factory=dict)
+    error_code: str | None = None
+    message: str | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "component", _require_text(self.component, "ReadinessProbeResult.component"))
+        if not isinstance(self.state, HealthState):
+            object.__setattr__(self, "state", HealthState(str(self.state)))
+        object.__setattr__(self, "checked_at", _require_aware_datetime(self.checked_at, "checked_at"))
+        if not isinstance(self.details, Mapping):
+            raise ValueError("ReadinessProbeResult.details must be a mapping")
+        object.__setattr__(self, "details", MappingProxyType(_redacted_json_mapping(self.details)))
+        if self.error_code is not None:
+            object.__setattr__(self, "error_code", _require_text(self.error_code, "ReadinessProbeResult.error_code"))
+        if self.message is not None:
+            object.__setattr__(self, "message", _require_text(self.message, "ReadinessProbeResult.message"))
+
+    def to_dict(self) -> dict[str, JsonValue]:
+        payload: dict[str, JsonValue] = {
+            "component": self.component,
+            "state": self.state.value,
+            "checkedAt": self.checked_at.isoformat(),
+            "details": dict(self.details),
+        }
+        if self.error_code is not None:
+            payload["error"] = {
+                "code": self.error_code,
+                "message": self.message or self.error_code,
+            }
+        return payload
+
+
+@dataclass(frozen=True)
+class RuntimeReadinessStatus:
+    """Aggregate readiness payload returned by the live-only /readyz route."""
+
+    components: tuple[ReadinessProbeResult, ...]
+    checked_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.components, tuple):
+            raise ValueError("RuntimeReadinessStatus.components must be a tuple")
+        if any(not isinstance(component, ReadinessProbeResult) for component in self.components):
+            raise ValueError("RuntimeReadinessStatus.components must contain ReadinessProbeResult values")
+        object.__setattr__(self, "checked_at", _require_aware_datetime(self.checked_at, "checked_at"))
+
+    @property
+    def state(self) -> HealthState:
+        if all(component.state is HealthState.OK for component in self.components):
+            return HealthState.OK
+        return HealthState.UNAVAILABLE
+
+    @property
+    def ready(self) -> bool:
+        return self.state is HealthState.OK
+
+    @property
+    def status_code(self) -> int:
+        return 200 if self.ready else 503
+
+    def to_dict(self) -> dict[str, JsonValue]:
+        return {
+            "component": "runtime-readiness",
+            "state": self.state.value,
+            "checkedAt": self.checked_at.isoformat(),
+            "components": [component.to_dict() for component in self.components],
+        }
+
+
+@dataclass(frozen=True)
+class AccessLogEvent:
+    """Structured, redacted access log event contract for live HTTP requests."""
+
+    method: str
+    path_template: str
+    route_id: str
+    status: int
+    request_id: str
+    duration_ms: float
+    actor: Mapping[str, Any] = field(default_factory=dict)
+    error_code: str | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "method", _require_text(self.method, "AccessLogEvent.method").upper())
+        object.__setattr__(self, "path_template", _require_text(self.path_template, "AccessLogEvent.path_template"))
+        object.__setattr__(self, "route_id", _require_text(self.route_id, "AccessLogEvent.route_id"))
+        if isinstance(self.status, bool) or not isinstance(self.status, int):
+            raise ValueError("AccessLogEvent.status must be an integer")
+        object.__setattr__(self, "request_id", _require_text(self.request_id, "AccessLogEvent.request_id"))
+        if isinstance(self.duration_ms, bool) or not isinstance(self.duration_ms, (int, float)) or self.duration_ms < 0:
+            raise ValueError("AccessLogEvent.duration_ms must be a non-negative number")
+        if not isinstance(self.actor, Mapping):
+            raise ValueError("AccessLogEvent.actor must be a mapping")
+        object.__setattr__(self, "actor", MappingProxyType(_redacted_json_mapping(self.actor)))
+        if self.error_code is not None:
+            object.__setattr__(self, "error_code", _require_text(self.error_code, "AccessLogEvent.error_code"))
+
+    def to_dict(self) -> dict[str, JsonValue]:
+        return {
+            "method": self.method,
+            "pathTemplate": self.path_template,
+            "routeId": self.route_id,
+            "status": self.status,
+            "requestId": self.request_id,
+            "durationMs": self.duration_ms,
+            "actor": dict(self.actor),
+            "errorCode": self.error_code,
+        }
+
+
+def evaluate_readiness(
+    probes: Sequence[ReadinessProbe],
+    *,
+    checked_at: datetime | None = None,
+) -> RuntimeReadinessStatus:
+    """Evaluate injected readiness probes and convert failures to bounded JSON."""
+
+    results: list[ReadinessProbeResult] = []
+    for probe in probes:
+        try:
+            result = probe.check()
+        except Exception as exc:
+            result = ReadinessProbeResult(
+                component=_probe_component(probe),
+                state=HealthState.UNAVAILABLE,
+                checked_at=checked_at or datetime.now(UTC),
+                error_code="READINESS_PROBE_FAILED",
+                message=f"{type(exc).__name__}: {exc}",
+            )
+        if not isinstance(result, ReadinessProbeResult):
+            raise ValueError("readiness probes must return ReadinessProbeResult")
+        results.append(result)
+    return RuntimeReadinessStatus(components=tuple(results), checked_at=checked_at or datetime.now(UTC))
+
+
+def actor_summary(auth_context: Any | None) -> dict[str, JsonValue]:
+    if auth_context is None:
+        return {"authenticated": False}
+    return {
+        "authenticated": True,
+        "userId": getattr(auth_context, "user_id", None),
+        "role": getattr(auth_context, "role", None),
+        "scopes": list(getattr(auth_context, "scopes", ()) or ()),
+    }
 
 
 @dataclass(frozen=True)
@@ -771,6 +942,36 @@ def _row_value(row: Mapping[str, Any] | object, key: str) -> Any:
     return getattr(row, key)
 
 
+def _probe_component(probe: object) -> str:
+    component = getattr(probe, "component", None)
+    if isinstance(component, str) and component.strip():
+        return component.strip()
+    return type(probe).__name__
+
+
+def _redacted_json_mapping(value: Mapping[str, Any]) -> dict[str, JsonValue]:
+    return {str(key): _redacted_json_value(str(key), item) for key, item in value.items()}
+
+
+def _redacted_json_value(key: str, value: Any) -> JsonValue:
+    if _is_sensitive_key(key):
+        return "<redacted>"
+    if value is None or isinstance(value, bool | int | float | str):
+        return value
+    if isinstance(value, datetime):
+        return _require_aware_datetime(value, key).isoformat()
+    if isinstance(value, Mapping):
+        return _redacted_json_mapping(value)
+    if isinstance(value, tuple | list):
+        return [_redacted_json_value(key, item) for item in value]
+    return str(value)
+
+
+def _is_sensitive_key(key: str) -> bool:
+    normalized = key.lower()
+    return any(marker in normalized for marker in SENSITIVE_DETAIL_MARKERS)
+
+
 def _coerce_tuple(values: tuple[object, ...], item_type: type, field_name: str):
     if not isinstance(values, tuple):
         raise ValueError(f"OperatorObservabilitySnapshot.{field_name} must be a tuple")
@@ -806,6 +1007,7 @@ def _require_aware_datetime(value: datetime, field_name: str) -> datetime:
 
 
 __all__ = [
+    "AccessLogEvent",
     "OperatorDashboardQuery",
     "OperatorErrorSnapshot",
     "OperatorObservabilityQueryPort",
@@ -817,4 +1019,9 @@ __all__ = [
     "OperatorSortDirection",
     "OperatorWorkerSnapshot",
     "PostgresOperatorObservabilityQuery",
+    "ReadinessProbe",
+    "ReadinessProbeResult",
+    "RuntimeReadinessStatus",
+    "actor_summary",
+    "evaluate_readiness",
 ]

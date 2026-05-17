@@ -72,7 +72,8 @@
     },
     {
       "dir": "14-live-api-runtime-composition",
-      "status": "pending"
+      "status": "completed",
+      "completed_at": "2026-05-17T19:00:23+0900"
     },
     {
       "dir": "15-postman-docker-api-readiness",
