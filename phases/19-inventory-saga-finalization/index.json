@@ -5,28 +5,44 @@
     {
       "step": 0,
       "name": "confirm-inventory-command-contract",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-18T12:56:13+0900",
+      "completed_at": "2026-05-18T12:56:13+0900",
+      "summary": "ConfirmInventoryCommand contract, InventoryConfirmedEvent messaging/topic mapping, handler export, confirm outbox payload metadata, and reservation confirm idempotency/rejection tests were added and verified."
     },
     {
       "step": 1,
       "name": "approval-to-inventory-confirm-wiring",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-18T12:56:13+0900",
+      "completed_at": "2026-05-18T12:56:13+0900",
+      "summary": "CheckoutProcessManager now emits deterministic ConfirmInventoryCommand for OrderApprovedEvent while preserving release/refund/cancel compensation for rejection, payment failure, and payment expiration; sequence docs were updated."
     },
     {
       "step": 2,
       "name": "inventory-listener-runtime-wiring",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-18T12:56:13+0900",
+      "completed_at": "2026-05-18T12:56:13+0900",
+      "summary": "InventoryKafkaCommandListener now deserializes and dispatches ConfirmInventoryCommand, topic resolver maps confirm command/event topics, and live worker registry preview includes the inventory command listener without starting broker loops."
     },
     {
       "step": 3,
       "name": "inventory-idempotency-observability",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-18T12:56:13+0900",
+      "completed_at": "2026-05-18T12:56:13+0900",
+      "summary": "Inventory reserve/confirm/release idempotency and observability payloads now preserve stock counters, reservation status, correlationId, causationId, and PostgreSQL reservation status roundtrips."
     },
     {
       "step": 4,
       "name": "inventory-saga-public-verification",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-18T12:56:13+0900",
+      "completed_at": "2026-05-18T12:56:13+0900",
+      "summary": "Public docs and README now describe reserve/release/confirm saga behavior, ConfirmInventoryCommand remains internal to message listeners with no public HTTP route, and phase metadata reflects completion."
     }
   ],
-  "created_at": "2026-05-18T00:25:36+0900"
+  "created_at": "2026-05-18T00:25:36+0900",
+  "completed_at": "2026-05-18T12:56:13+0900"
 }

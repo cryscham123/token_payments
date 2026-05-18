@@ -97,11 +97,13 @@
     },
     {
       "dir": "19-inventory-saga-finalization",
-      "status": "pending"
+      "status": "completed",
+      "completed_at": "2026-05-18T12:56:13+0900"
     },
     {
       "dir": "20-store-owner-inventory-api",
-      "status": "pending"
+      "status": "completed",
+      "completed_at": "2026-05-18T13:43:44+0900"
     }
   ]
 }

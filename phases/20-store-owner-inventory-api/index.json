@@ -5,28 +5,39 @@
     {
       "step": 0,
       "name": "store-owner-inventory-domain-commands",
-      "status": "pending"
+      "status": "completed",
+      "summary": "Added audited store-owner inventory business commands for stock intake, total-stock correction, sale pause/resume, duplicate detection, and saleStatus domain behavior.",
+      "completed_at": "2026-05-18T13:43:44+0900"
     },
     {
       "step": 1,
       "name": "store-owner-inventory-query-api",
-      "status": "pending"
+      "status": "completed",
+      "summary": "Added listStoreOwnerInventory route, StoreOwnerInventoryApi query facade, query repository contract, PostgreSQL query adapter, and docs for STORE_OWNER own-store vs ADMIN inventory visibility.",
+      "completed_at": "2026-05-18T13:43:44+0900"
     },
     {
       "step": 2,
       "name": "store-owner-stock-mutation-api",
-      "status": "pending"
+      "status": "completed",
+      "summary": "Added stock intake, correction, pause, and resume HTTP routes with Idempotency-Key/CSRF handling, command dispatch, route manifest entries, and Postman expected fixtures.",
+      "completed_at": "2026-05-18T13:43:44+0900"
     },
     {
       "step": 3,
       "name": "inventory-authz-audit-idempotency",
-      "status": "pending"
+      "status": "completed",
+      "summary": "Enforced STORE_OWNER ownership and ADMIN override checks, persisted inventory audit records with before/after stock and actor metadata, and kept duplicate idempotency retries from writing extra audit or inventory rows.",
+      "completed_at": "2026-05-18T13:43:44+0900"
     },
     {
       "step": 4,
       "name": "store-owner-inventory-public-verification",
-      "status": "pending"
+      "status": "completed",
+      "summary": "Locked public route/docs/Postman contracts for the 21-route manifest and documented that UI implementation and manual order approval remain out of this phase.",
+      "completed_at": "2026-05-18T13:43:44+0900"
     }
   ],
-  "created_at": "2026-05-18T00:25:36+0900"
+  "created_at": "2026-05-18T00:25:36+0900",
+  "completed_at": "2026-05-18T13:43:44+0900"
 }
