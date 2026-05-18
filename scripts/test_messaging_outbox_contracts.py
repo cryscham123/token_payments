@@ -31,6 +31,7 @@ def test_checkout_message_names_cover_process_manager_sequence() -> None:
     assert {event.value for event in CheckoutEventName} == {
         "OrderCreatedEvent",
         "InventoryReservedEvent",
+        "InventoryConfirmedEvent",
         "PaymentConfirmedEvent",
         "PaymentFailedEvent",
         "PaymentExpiredEvent",
@@ -42,6 +43,7 @@ def test_checkout_message_names_cover_process_manager_sequence() -> None:
         "ReserveInventoryCommand",
         "InitiatePaymentCommand",
         "RequestStoreApprovalCommand",
+        "ConfirmInventoryCommand",
         "ReleaseInventoryCommand",
         "RefundPaymentCommand",
         "CancelOrderCommand",

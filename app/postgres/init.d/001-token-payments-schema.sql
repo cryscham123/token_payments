@@ -211,11 +211,12 @@ CREATE TABLE IF NOT EXISTS product_inventory (
     available_stock INTEGER NOT NULL CHECK (available_stock >= 0),
     reserved_stock INTEGER NOT NULL DEFAULT 0 CHECK (reserved_stock >= 0),
     total_stock INTEGER NOT NULL CHECK (total_stock >= 0),
+    sale_status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (sale_status IN ('ACTIVE', 'PAUSED')),
     version INTEGER NOT NULL DEFAULT 0 CHECK (version >= 0),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (product_id, store_id),
-    CHECK (available_stock + reserved_stock <= total_stock)
+    CHECK (available_stock + reserved_stock = total_stock)
 );
 
 CREATE INDEX IF NOT EXISTS idx_product_inventory_store_id
@@ -240,6 +241,33 @@ CREATE INDEX IF NOT EXISTS idx_inventory_reservations_order_id
 
 CREATE INDEX IF NOT EXISTS idx_inventory_reservations_status_created_at
     ON inventory_reservations (status, created_at);
+
+CREATE TABLE IF NOT EXISTS inventory_audit_log (
+    audit_id BIGSERIAL PRIMARY KEY,
+    actor_user_id UUID NOT NULL,
+    actor_role TEXT NOT NULL CHECK (actor_role IN ('STORE_OWNER', 'ADMIN')),
+    store_id UUID NOT NULL,
+    product_id UUID NOT NULL,
+    action TEXT NOT NULL CHECK (action IN ('increaseStock', 'correctStock', 'pauseSales', 'resumeSales')),
+    before_available_stock INTEGER NOT NULL CHECK (before_available_stock >= 0),
+    before_reserved_stock INTEGER NOT NULL CHECK (before_reserved_stock >= 0),
+    before_total_stock INTEGER NOT NULL CHECK (before_total_stock >= 0),
+    before_sale_status TEXT NOT NULL CHECK (before_sale_status IN ('ACTIVE', 'PAUSED')),
+    after_available_stock INTEGER NOT NULL CHECK (after_available_stock >= 0),
+    after_reserved_stock INTEGER NOT NULL CHECK (after_reserved_stock >= 0),
+    after_total_stock INTEGER NOT NULL CHECK (after_total_stock >= 0),
+    after_sale_status TEXT NOT NULL CHECK (after_sale_status IN ('ACTIVE', 'PAUSED')),
+    reason TEXT NOT NULL,
+    request_id TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    recorded_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    FOREIGN KEY (product_id, store_id)
+        REFERENCES product_inventory (product_id, store_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_inventory_audit_store_recorded_at
+    ON inventory_audit_log (store_id, recorded_at);
 
 CREATE TABLE IF NOT EXISTS payments (
     payment_id UUID PRIMARY KEY,

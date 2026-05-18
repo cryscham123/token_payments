@@ -616,6 +616,191 @@
           }
         },
         {
+          "id": "listStoreOwnerInventory",
+          "name": "List store owner inventory",
+          "description": "Lists inventory rows visible to the authenticated STORE_OWNER or ADMIN session.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/store-owner/inventory",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "store-owner",
+                "inventory"
+              ],
+              "query": [
+                {
+                  "key": "storeId",
+                  "value": "{{storeId}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "increaseStoreOwnerInventoryStock",
+          "name": "Increase store owner inventory stock",
+          "description": "Records audited stock intake for a product. Requires STORE_OWNER ownership or ADMIN role.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "postman-inventory-intake-001"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/store-owner/stores/{{storeId}}/inventory/{{productId}}/intake",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "store-owner",
+                "stores",
+                "{{storeId}}",
+                "inventory",
+                "{{productId}}",
+                "intake"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantity\": 5,\n  \"reason\": \"Postman stock intake smoke\"\n}"
+            }
+          }
+        },
+        {
+          "id": "correctStoreOwnerInventoryStock",
+          "name": "Correct store owner inventory stock",
+          "description": "Sets audited target total stock. Target total must not be lower than reserved stock.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "postman-inventory-correction-001"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/store-owner/stores/{{storeId}}/inventory/{{productId}}/corrections",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "store-owner",
+                "stores",
+                "{{storeId}}",
+                "inventory",
+                "{{productId}}",
+                "corrections"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetTotalStock\": 20,\n  \"reason\": \"Postman cycle count smoke\"\n}"
+            }
+          }
+        },
+        {
+          "id": "pauseStoreOwnerInventorySales",
+          "name": "Pause store owner inventory sales",
+          "description": "Pauses new order availability without releasing existing reservations.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "postman-inventory-pause-001"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/store-owner/stores/{{storeId}}/inventory/{{productId}}/pause",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "store-owner",
+                "stores",
+                "{{storeId}}",
+                "inventory",
+                "{{productId}}",
+                "pause"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Postman sale pause smoke\"\n}"
+            }
+          }
+        },
+        {
+          "id": "resumeStoreOwnerInventorySales",
+          "name": "Resume store owner inventory sales",
+          "description": "Resumes new order availability after a pause.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "postman-inventory-resume-001"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/store-owner/stores/{{storeId}}/inventory/{{productId}}/resume",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "store-owner",
+                "stores",
+                "{{storeId}}",
+                "inventory",
+                "{{productId}}",
+                "resume"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Postman sale resume smoke\"\n}"
+            }
+          }
+        },
+        {
           "id": "getOperatorDashboard",
           "name": "Get operator dashboard",
           "description": "Local Postman request skeleton for the API route manifest; authentication uses the Postman cookie jar.",

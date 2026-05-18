@@ -19,6 +19,7 @@ from .composition import (
     LiveRuntimeDependencies,
     LiveRuntimeDriverConfigurationError,
     LiveRuntimeDependencyError,
+    LiveWorkerDescriptor,
     PostgresReadinessProbe,
     PostgresSessionFactory,
     PsycopgPostgresSessionFactory,
@@ -29,7 +30,9 @@ from .composition import (
     build_live_api_router,
     build_live_readiness_probes,
     build_live_runtime_dependencies_from_env,
+    describe_live_worker_registry,
     describe_live_runtime_dependencies,
+    live_worker_registry,
 )
 from .config import RuntimeConfig
 from .contracts import (
@@ -151,6 +154,7 @@ __all__ = [
     "LiveRuntimeDependencies",
     "LiveRuntimeDriverConfigurationError",
     "LiveRuntimeDependencyError",
+    "LiveWorkerDescriptor",
     "OperatorDashboardQuery",
     "OperatorErrorSnapshot",
     "OperatorObservabilityQueryPort",
@@ -204,10 +208,12 @@ __all__ = [
     "build_live_system_router",
     "actor_summary",
     "describe_live_api_server_plan",
+    "describe_live_worker_registry",
     "describe_live_runtime_dependencies",
     "describe_smoke_registry",
     "dispatch_runtime_command",
     "evaluate_readiness",
+    "live_worker_registry",
     "render_browser_preview_document",
     "run_smoke_scenario",
     "run_live_api_server",

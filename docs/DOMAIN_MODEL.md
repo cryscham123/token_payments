@@ -101,6 +101,7 @@
 - `ReserveInventory`
 - `InitiatePayment`
 - `RequestStoreApproval`
+- `ConfirmInventory`
 - `ReleaseInventory`
 - `RefundPayment`
 - `CancelOrder`
@@ -183,7 +184,7 @@
 
 | Aggregate | 주요 필드 | 주요 행위 |
 | --- | --- | --- |
-| `ProductInventory` | `ProductId`, `StoreId`, `availableStock`, `reservedStock`, `totalStock`, `InventoryReservation[]` | `reserveInventory`, `releaseReservation`, `confirmReservation`, `increaseStock`, `decreaseStock` |
+| `ProductInventory` | `ProductId`, `StoreId`, `availableStock`, `reservedStock`, `totalStock`, `saleStatus`, `InventoryReservation[]` | `reserveInventory`, `releaseReservation`, `confirmReservation`, `increaseStock`, `correctTotalStock`, `pauseSales`, `resumeSales` |
 | `InventoryReservation` | `ReservationId`, `OrderId`, `reservedQty`, `ReservationStatus`, `createdAt` | `confirm`, `cancel` |
 
 ### Value Objects
@@ -191,6 +192,7 @@
 - `ReservationId(UUID)`, `ProductId(UUID)`, `StoreId(UUID)`, `OrderId(UUID)`
 - `Quantity(value, isValid, add, subtract)`
 - `ReservationStatus`: `PENDING`, `CONFIRMED`, `CANCELLED`
+- `InventorySaleStatus`: `ACTIVE`, `PAUSED`
 
 ### Events
 
@@ -203,6 +205,8 @@
 
 ### Ports and Adapters
 
-- Input: `reserveInventory`, `confirmReservation`, `releaseReservation`, `handleReservationTimeout` (Adapter type: internal application), `getInventoryStatus`, `updateStock` (future Adapter type: HTTP for store owner inventory API)
-- Output: `InventoryRepository`, `ProcessedCommandRepository`, `OutboxMessageRepository`, `InventoryEventPublisher`, `OrderEventListener`, `PaymentEventListener`, `StoreRepository`
+- Input: `reserveInventory` / `ReserveInventoryCommand`, `confirmReservation` / `ConfirmInventoryCommand`, `releaseReservation` / `ReleaseInventoryCommand`, `handleReservationTimeout` (Adapter type: internal application), `listStoreOwnerInventory`, `increaseStoreOwnerInventoryStock`, `correctStoreOwnerInventoryStock`, `pauseStoreOwnerInventorySales`, `resumeStoreOwnerInventorySales` (Adapter type: HTTP for store owner inventory API)
+- Output: `InventoryRepository`, `InventoryQueryRepository`, `InventoryAuditRepository`, `ProcessedCommandRepository`, `OutboxMessageRepository`, `InventoryEventPublisher`, `OrderEventListener`, `PaymentEventListener`, `StoreRepository`
 - Adapters: Kafka + Outbox messaging, PostgreSQL repositories
+
+Product sale availability is stored canonically in the inventory context as `ProductInventory.saleStatus`. `STORE_OWNER` can manage only own store inventory while `ADMIN` can query or mutate any store inventory. Store approval/order catalog projections can consume this status in later projection work; this phase does not expose customer public inventory or manual order approval HTTP APIs.

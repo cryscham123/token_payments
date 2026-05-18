@@ -18,6 +18,7 @@ from token_payments.contexts.checkout.adapter.kafka import CheckoutKafkaEventLis
 from token_payments.contexts.checkout.application import CheckoutProcessManager  # noqa: E402
 from token_payments.contexts.inventory.adapter.kafka import InventoryKafkaCommandListener  # noqa: E402
 from token_payments.contexts.inventory.application import (  # noqa: E402
+    ConfirmInventoryCommand,
     ReleaseInventoryCommand,
     ReserveInventoryCommand,
 )
@@ -143,6 +144,22 @@ def test_command_listeners_deserialize_and_dispatch_supported_context_commands()
         )
     )
 
+    confirm_id = CommandId.for_order_action(ORDER_ID, CheckoutCommandName.CONFIRM_INVENTORY)
+    InventoryKafkaCommandListener(
+        command_handler=inventory_handler,
+        processed_commands=FakeProcessedCommandRepository(),
+    ).handle(
+        _command_message(
+            CheckoutCommandName.CONFIRM_INVENTORY,
+            confirm_id,
+            {
+                "productId": str(PRODUCT_ID),
+                "storeId": str(STORE_ID),
+                "requestedAt": NOW.isoformat(),
+            },
+        )
+    )
+
     release_id = CommandId.for_order_action(ORDER_ID, CheckoutCommandName.RELEASE_INVENTORY)
     InventoryKafkaCommandListener(
         command_handler=inventory_handler,
@@ -227,6 +244,12 @@ def test_command_listeners_deserialize_and_dispatch_supported_context_commands()
     assert release_command.command_id == release_id
     assert release_command.product_id == PRODUCT_ID
     assert release_command.store_id == STORE_ID
+
+    confirm_command = inventory_handler.confirm_calls[0]
+    assert isinstance(confirm_command, ConfirmInventoryCommand)
+    assert confirm_command.command_id == confirm_id
+    assert confirm_command.product_id == PRODUCT_ID
+    assert confirm_command.store_id == STORE_ID
 
     initiate_command = payment_handler.initiate_calls[0]
     assert isinstance(initiate_command, InitiatePaymentCommand)
@@ -484,6 +507,7 @@ class FakeInventoryCommandHandler:
     def __init__(self) -> None:
         self.reserve_calls: list[ReserveInventoryCommand] = []
         self.release_calls: list[ReleaseInventoryCommand] = []
+        self.confirm_calls: list[ConfirmInventoryCommand] = []
 
     def reserve_inventory(self, command: ReserveInventoryCommand) -> FakeHandlerResult:
         self.reserve_calls.append(command)
@@ -491,6 +515,10 @@ class FakeInventoryCommandHandler:
 
     def release_inventory(self, command: ReleaseInventoryCommand) -> FakeHandlerResult:
         self.release_calls.append(command)
+        return FakeHandlerResult(command.command_id, command.order_id)
+
+    def confirm_inventory(self, command: ConfirmInventoryCommand) -> FakeHandlerResult:
+        self.confirm_calls.append(command)
         return FakeHandlerResult(command.command_id, command.order_id)
 
 

@@ -131,7 +131,8 @@ def test_checkout_process_manager_decides_success_flow_commands() -> None:
     assert [command.name for command in order_created] == [CheckoutCommandName.RESERVE_INVENTORY]
     assert [command.name for command in inventory_reserved] == [CheckoutCommandName.INITIATE_PAYMENT]
     assert [command.name for command in payment_confirmed] == [CheckoutCommandName.REQUEST_STORE_APPROVAL]
-    assert order_approved == ()
+    assert [command.name for command in order_approved] == [CheckoutCommandName.CONFIRM_INVENTORY]
+    assert [str(command.command_id) for command in order_approved] == [f"{ORDER_ID}:ConfirmInventoryCommand"]
 
 
 def test_checkout_process_manager_decides_payment_failure_compensation_commands() -> None:

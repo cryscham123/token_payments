@@ -89,17 +89,24 @@ def test_operator_action_api_contracts_policy_routes_and_register_helper_are_pub
     assert getattr(api.OperatorMessageReplayPort, "_is_protocol", False)
 
 
-def test_http_route_manifest_keeps_phase_7_routes_and_adds_phase_8_operator_action_routes() -> None:
+def test_http_route_manifest_keeps_existing_routes_and_adds_store_owner_inventory_routes() -> None:
     from token_payments.api import http_route_manifest, list_http_route_specs
 
     manifest = list(http_route_manifest())
     specs = list(list_http_route_specs())
     operation_ids = [entry["operationId"] for entry in manifest]
 
-    assert len(manifest) == 16
+    assert len(manifest) == 21
     assert len(operation_ids) == len(set(operation_ids))
     assert PHASE_7_OPERATION_IDS <= set(operation_ids)
     assert PHASE_8_OPERATION_IDS <= set(operation_ids)
+    assert {
+        "listStoreOwnerInventory",
+        "increaseStoreOwnerInventoryStock",
+        "correctStoreOwnerInventoryStock",
+        "pauseStoreOwnerInventorySales",
+        "resumeStoreOwnerInventorySales",
+    } <= set(operation_ids)
     assert operation_ids[-3:] == [
         "cancelOperatorOrder",
         "retryOperatorOutboxMessage",

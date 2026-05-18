@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from typing import Any, Mapping, Protocol
 
 from token_payments.contexts.inventory.application import (
+    ConfirmInventoryCommand,
     InventoryCommandHandler,
     ReleaseInventoryCommand,
     ReserveInventoryCommand,
@@ -91,6 +92,17 @@ class InventoryKafkaCommandListener:
                 event_message_id=_event_message_id(payload),
             )
             handler_result = self._command_handler.release_inventory(command)
+        elif command_name is CheckoutCommandName.CONFIRM_INVENTORY:
+            command = ConfirmInventoryCommand(
+                command_id=command_id,
+                order_id=order_id,
+                product_id=_product_id(_required_payload_text(payload, "productId", "product_id", field_name="productId")),
+                store_id=_store_id(_required_payload_text(payload, "storeId", "store_id", field_name="storeId")),
+                requested_at=_command_time(payload),
+                causation_id=_causation_id(message, payload),
+                event_message_id=_event_message_id(payload),
+            )
+            handler_result = self._command_handler.confirm_inventory(command)
         else:
             raise MalformedKafkaMessage(f"unsupported inventory commandName `{command_name.value}`")
 

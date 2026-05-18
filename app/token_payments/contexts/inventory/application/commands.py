@@ -5,8 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+from token_payments.contexts.auth.domain import UserRole
 from token_payments.contexts.inventory.domain import Quantity
-from token_payments.shared.domain import CommandId, MessageId, OrderId, ProductId, StoreId
+from token_payments.shared.domain import CommandId, MessageId, OrderId, ProductId, StoreId, UserId
 
 
 @dataclass(frozen=True)
@@ -56,6 +57,73 @@ class ConfirmInventoryCommand:
         _validate_common_command(self)
 
 
+@dataclass(frozen=True)
+class StoreOwnerIncreaseStockCommand:
+    command_id: CommandId
+    store_id: StoreId
+    product_id: ProductId
+    actor_user_id: UserId
+    actor_role: UserRole | str
+    quantity: Quantity | int
+    reason: str
+    requested_at: datetime
+    request_id: str
+
+    def __post_init__(self) -> None:
+        _validate_store_owner_command(self)
+        quantity = _coerce_quantity(self.quantity)
+        if not quantity.is_positive:
+            raise ValueError("StoreOwnerIncreaseStockCommand.quantity must be a positive quantity")
+        object.__setattr__(self, "quantity", quantity)
+
+
+@dataclass(frozen=True)
+class StoreOwnerCorrectStockCommand:
+    command_id: CommandId
+    store_id: StoreId
+    product_id: ProductId
+    actor_user_id: UserId
+    actor_role: UserRole | str
+    target_total_stock: Quantity | int
+    reason: str
+    requested_at: datetime
+    request_id: str
+
+    def __post_init__(self) -> None:
+        _validate_store_owner_command(self)
+        object.__setattr__(self, "target_total_stock", _coerce_quantity(self.target_total_stock))
+
+
+@dataclass(frozen=True)
+class PauseProductSalesCommand:
+    command_id: CommandId
+    store_id: StoreId
+    product_id: ProductId
+    actor_user_id: UserId
+    actor_role: UserRole | str
+    reason: str
+    requested_at: datetime
+    request_id: str
+
+    def __post_init__(self) -> None:
+        _validate_store_owner_command(self)
+
+
+@dataclass(frozen=True)
+class ResumeProductSalesCommand:
+    command_id: CommandId
+    store_id: StoreId
+    product_id: ProductId
+    actor_user_id: UserId
+    actor_role: UserRole | str
+    reason: str
+    requested_at: datetime
+    request_id: str
+
+    def __post_init__(self) -> None:
+        _validate_store_owner_command(self)
+
+
 def _validate_common_command(
     command: ReserveInventoryCommand | ReleaseInventoryCommand | ConfirmInventoryCommand,
 ) -> None:
@@ -80,6 +148,33 @@ def _validate_common_command(
         )
     if not isinstance(command.event_message_id, MessageId):
         raise ValueError(f"{type(command).__name__}.event_message_id must be a MessageId")
+
+
+def _validate_store_owner_command(
+    command: (
+        StoreOwnerIncreaseStockCommand
+        | StoreOwnerCorrectStockCommand
+        | PauseProductSalesCommand
+        | ResumeProductSalesCommand
+    ),
+) -> None:
+    if not isinstance(command.command_id, CommandId):
+        raise ValueError(f"{type(command).__name__}.command_id must be a CommandId")
+    if not isinstance(command.store_id, StoreId):
+        raise ValueError(f"{type(command).__name__}.store_id must be a StoreId")
+    if not isinstance(command.product_id, ProductId):
+        raise ValueError(f"{type(command).__name__}.product_id must be a ProductId")
+    if not isinstance(command.actor_user_id, UserId):
+        raise ValueError(f"{type(command).__name__}.actor_user_id must be a UserId")
+    if not isinstance(command.actor_role, UserRole):
+        object.__setattr__(command, "actor_role", UserRole(_require_text(str(command.actor_role), "actor_role")))
+    object.__setattr__(command, "reason", _require_text(command.reason, f"{type(command).__name__}.reason"))
+    object.__setattr__(
+        command,
+        "requested_at",
+        _require_aware_datetime(command.requested_at, f"{type(command).__name__}.requested_at"),
+    )
+    object.__setattr__(command, "request_id", _require_text(command.request_id, f"{type(command).__name__}.request_id"))
 
 
 def _coerce_quantity(value: Quantity | int) -> Quantity:

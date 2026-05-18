@@ -38,7 +38,9 @@ CheckoutProcessManager consumes checkout events from the checkout context adapte
 17. CheckoutProcessManager가 `RequestStoreApprovalCommand`를 발행한다.
 18. Store Approval Context가 주문을 검증하고 승인한다.
 19. Store Approval Context가 `OrderApprovedEvent`를 발행한다.
-20. Order API 또는 주문 context listener가 주문을 `APPROVED`로 완료한다.
+20. CheckoutProcessManager가 `OrderApprovedEvent`를 소비하고 `ConfirmInventoryCommand`를 발행한다.
+21. Inventory Context가 `ConfirmInventoryCommand`를 수신해 예약을 `CONFIRMED`로 바꾸고 `InventoryConfirmedEvent`를 발행한다.
+22. Order API 또는 주문 context listener가 주문을 `APPROVED`로 완료한다.
 
 ### 트랜잭션 규칙
 
@@ -52,6 +54,7 @@ CheckoutProcessManager consumes checkout events from the checkout context adapte
 | --- | --- |
 | `PaymentFailedEvent` | CheckoutProcessManager가 `ReleaseInventoryCommand`와 `CancelOrderCommand`를 발행한다 |
 | `PaymentExpiredEvent` | CheckoutProcessManager가 `ReleaseInventoryCommand`와 `CancelOrderCommand`를 발행한다 |
+| `OrderApprovedEvent` | CheckoutProcessManager가 `ConfirmInventoryCommand`를 발행해 예약 재고를 최종 판매 확정으로 전환한다 |
 | `OrderRejectedEvent` | CheckoutProcessManager가 `RefundPaymentCommand`, `ReleaseInventoryCommand`, `CancelOrderCommand`를 발행한다 |
 | 중복 `MessageId` | 이미 처리된 메시지로 판단하고 추가 커맨드를 발행하지 않는다 |
 

@@ -12,6 +12,11 @@
     "getCheckoutTrackingByTrackingId",
     "getCheckoutTrackingByOrderId",
     "submitTransactionHash",
+    "listStoreOwnerInventory",
+    "increaseStoreOwnerInventoryStock",
+    "correctStoreOwnerInventoryStock",
+    "pauseStoreOwnerInventorySales",
+    "resumeStoreOwnerInventorySales",
     "getOperatorDashboard",
     "getOperatorOrderDetail",
     "getOperatorPaymentDetail",
@@ -235,6 +240,121 @@
         "orderId": "<order-id>",
         "status": "SUBMITTED",
         "txHash": "<local-test-network-transaction-hash>"
+      }
+    },
+    {
+      "operationId": "listStoreOwnerInventory",
+      "requestName": "List store owner inventory",
+      "method": "GET",
+      "path": "/store-owner/inventory",
+      "status": 200,
+      "headers": {
+        "X-Request-Id": "postman-store-owner-inventory-list-001"
+      },
+      "body": {
+        "inventory": [
+          {
+            "storeId": "<store-id>",
+            "productId": "<product-id>",
+            "availableStock": 25,
+            "reservedStock": 0,
+            "confirmedStock": 0,
+            "soldStock": 0,
+            "totalStock": 25,
+            "saleStatus": "ACTIVE",
+            "updatedAt": "<timestamp>"
+          }
+        ]
+      }
+    },
+    {
+      "operationId": "increaseStoreOwnerInventoryStock",
+      "requestName": "Increase store owner inventory stock",
+      "method": "POST",
+      "path": "/store-owner/stores/{storeId}/inventory/{productId}/intake",
+      "status": 202,
+      "headers": {
+        "X-CSRF-Token": "{{csrfToken}}",
+        "Idempotency-Key": "postman-inventory-intake-001",
+        "X-Request-Id": "postman-inventory-intake-001"
+      },
+      "body": {
+        "action": "increaseStock",
+        "status": "accepted",
+        "storeId": "<store-id>",
+        "productId": "<product-id>",
+        "inventory": {
+          "availableStock": 30,
+          "reservedStock": 0,
+          "totalStock": 30,
+          "saleStatus": "ACTIVE"
+        }
+      }
+    },
+    {
+      "operationId": "correctStoreOwnerInventoryStock",
+      "requestName": "Correct store owner inventory stock",
+      "method": "POST",
+      "path": "/store-owner/stores/{storeId}/inventory/{productId}/corrections",
+      "status": 202,
+      "headers": {
+        "X-CSRF-Token": "{{csrfToken}}",
+        "Idempotency-Key": "postman-inventory-correction-001",
+        "X-Request-Id": "postman-inventory-correction-001"
+      },
+      "body": {
+        "action": "correctStock",
+        "status": "accepted",
+        "storeId": "<store-id>",
+        "productId": "<product-id>",
+        "inventory": {
+          "availableStock": 18,
+          "reservedStock": 2,
+          "totalStock": 20,
+          "saleStatus": "ACTIVE"
+        }
+      }
+    },
+    {
+      "operationId": "pauseStoreOwnerInventorySales",
+      "requestName": "Pause store owner inventory sales",
+      "method": "POST",
+      "path": "/store-owner/stores/{storeId}/inventory/{productId}/pause",
+      "status": 202,
+      "headers": {
+        "X-CSRF-Token": "{{csrfToken}}",
+        "Idempotency-Key": "postman-inventory-pause-001",
+        "X-Request-Id": "postman-inventory-pause-001"
+      },
+      "body": {
+        "action": "pauseSales",
+        "status": "accepted",
+        "storeId": "<store-id>",
+        "productId": "<product-id>",
+        "inventory": {
+          "saleStatus": "PAUSED"
+        }
+      }
+    },
+    {
+      "operationId": "resumeStoreOwnerInventorySales",
+      "requestName": "Resume store owner inventory sales",
+      "method": "POST",
+      "path": "/store-owner/stores/{storeId}/inventory/{productId}/resume",
+      "status": 202,
+      "headers": {
+        "X-CSRF-Token": "{{csrfToken}}",
+        "Idempotency-Key": "postman-inventory-resume-001",
+        "X-Request-Id": "postman-inventory-resume-001"
+      },
+      "body": {
+        "action": "resumeSales",
+        "status": "accepted",
+        "storeId": "<store-id>",
+        "productId": "<product-id>",
+        "inventory": {
+          "saleStatus": "ACTIVE"
+        }
       }
     },
     {

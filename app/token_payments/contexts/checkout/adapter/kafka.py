@@ -165,6 +165,8 @@ def _command_payload(
             "sourceEventName": source_event_name.value,
         }
     )
+    if "productId" not in payload and isinstance(payload.get("productIds"), list) and payload["productIds"]:
+        payload["productId"] = str(payload["productIds"][0])
     return payload
 
 

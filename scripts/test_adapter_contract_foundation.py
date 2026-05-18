@@ -119,10 +119,12 @@ def test_topic_resolver_maps_checkout_events_and_commands() -> None:
 
     assert resolver.topic_for(CheckoutEventName.ORDER_CREATED) == "order.events"
     assert resolver.topic_for(CheckoutEventName.INVENTORY_RESERVED) == "inventory.events"
+    assert resolver.topic_for(CheckoutEventName.INVENTORY_CONFIRMED) == "inventory.events"
     assert resolver.topic_for(CheckoutEventName.PAYMENT_CONFIRMED) == "payment.events"
     assert resolver.topic_for(CheckoutEventName.PAYMENT_EXPIRED) == "payment.events"
     assert resolver.topic_for(CheckoutEventName.ORDER_REJECTED) == "store-approval.events"
     assert resolver.topic_for(CheckoutCommandName.RESERVE_INVENTORY) == "inventory.commands"
+    assert resolver.topic_for(CheckoutCommandName.CONFIRM_INVENTORY) == "inventory.commands"
     assert resolver.topic_for(CheckoutCommandName.REFUND_PAYMENT) == "payment.commands"
     assert resolver.topic_for(CheckoutCommandName.CANCEL_ORDER) == "order.commands"
     assert resolver.topic_for("RequestStoreApprovalCommand") == "store-approval.commands"

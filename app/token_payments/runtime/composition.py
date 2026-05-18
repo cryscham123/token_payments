@@ -29,6 +29,12 @@ from token_payments.contexts.auth.application import (
     RequestLoginChallengeCommand,
 )
 from token_payments.contexts.auth.domain import AuthEvent, AuthSession, IssuedToken, User
+from token_payments.contexts.inventory.adapter import (
+    PostgresInventoryAuditRepository,
+    PostgresInventoryQueryRepository,
+    PostgresInventoryRepository,
+)
+from token_payments.contexts.inventory.application import StoreOwnerInventoryCommandHandler
 from token_payments.contexts.order.adapter import (
     PostgresCheckoutTrackingQuery,
     PostgresCustomerRepository,
@@ -57,6 +63,8 @@ from token_payments.contexts.payment.application import (
     SubmitTransactionHashCommand,
 )
 from token_payments.shared.domain import (
+    CheckoutCommandName,
+    CheckoutEventName,
     CommandId,
     CommandMetadata,
     MessageId,
@@ -1029,6 +1037,86 @@ class LiveApiComposition:
 
 
 @dataclass(frozen=True)
+class LiveWorkerDescriptor:
+    """No-start worker registry entry for live runtime composition previews."""
+
+    name: str
+    topic: str
+    listener: str
+    message_names: tuple[str, ...]
+    long_running: bool = False
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "name", _require_text(self.name, "LiveWorkerDescriptor.name"))
+        object.__setattr__(self, "topic", _require_text(self.topic, "LiveWorkerDescriptor.topic"))
+        object.__setattr__(self, "listener", _require_text(self.listener, "LiveWorkerDescriptor.listener"))
+        names = tuple(_require_text(name, "LiveWorkerDescriptor.message_names") for name in self.message_names)
+        if not names:
+            raise ValueError("LiveWorkerDescriptor.message_names must not be empty")
+        object.__setattr__(self, "message_names", names)
+        if not isinstance(self.long_running, bool):
+            raise ValueError("LiveWorkerDescriptor.long_running must be a bool")
+
+    def to_dict(self) -> dict[str, JsonValue]:
+        return {
+            "name": self.name,
+            "topic": self.topic,
+            "listener": self.listener,
+            "messageNames": list(self.message_names),
+            "longRunning": self.long_running,
+        }
+
+
+def live_worker_registry() -> tuple[LiveWorkerDescriptor, ...]:
+    """Return live worker listener entries without constructing broker clients."""
+
+    return (
+        LiveWorkerDescriptor(
+            name="checkout-process-manager",
+            topic="checkout.events",
+            listener="token_payments.contexts.checkout.adapter.kafka.CheckoutKafkaEventListener",
+            message_names=tuple(event.value for event in CheckoutEventName),
+        ),
+        LiveWorkerDescriptor(
+            name="inventory-command-listener",
+            topic="inventory.commands",
+            listener="token_payments.contexts.inventory.adapter.kafka.InventoryKafkaCommandListener",
+            message_names=(
+                CheckoutCommandName.RESERVE_INVENTORY.value,
+                CheckoutCommandName.RELEASE_INVENTORY.value,
+                CheckoutCommandName.CONFIRM_INVENTORY.value,
+            ),
+        ),
+        LiveWorkerDescriptor(
+            name="payment-command-listener",
+            topic="payment.commands",
+            listener="token_payments.contexts.payment.adapter.kafka.PaymentKafkaCommandListener",
+            message_names=(
+                CheckoutCommandName.INITIATE_PAYMENT.value,
+                CheckoutCommandName.REFUND_PAYMENT.value,
+            ),
+        ),
+        LiveWorkerDescriptor(
+            name="store-approval-command-listener",
+            topic="store-approval.commands",
+            listener="token_payments.contexts.store_approval.adapter.kafka.StoreApprovalKafkaCommandListener",
+            message_names=(CheckoutCommandName.REQUEST_STORE_APPROVAL.value,),
+        ),
+    )
+
+
+def describe_live_worker_registry() -> dict[str, JsonValue]:
+    registry = live_worker_registry()
+    return {
+        "runtime": "live-worker",
+        "longRunning": False,
+        "serverStarted": False,
+        "externalConnectionsOpened": False,
+        "workers": [worker.to_dict() for worker in registry],
+    }
+
+
+@dataclass(frozen=True)
 class LiveApiFacades:
     """Framework-neutral facade instances wired to live application services."""
 
@@ -1036,6 +1124,7 @@ class LiveApiFacades:
     orders: Any
     checkout: Any
     payments: Any
+    inventory: Any
     operator: Any
     operator_action: Any
 
@@ -1062,6 +1151,12 @@ def register_payment_routes(router: Any, payments_api: Any) -> Any:
     from token_payments.api import register_payment_routes as _register_payment_routes
 
     return _register_payment_routes(router, payments_api)
+
+
+def register_store_owner_inventory_routes(router: Any, inventory_api: Any) -> Any:
+    from token_payments.api import register_store_owner_inventory_routes as _register_store_owner_inventory_routes
+
+    return _register_store_owner_inventory_routes(router, inventory_api)
 
 
 def register_operator_routes(router: Any, operator_api: Any) -> Any:
@@ -1092,6 +1187,7 @@ def build_live_api_facades(
         OperatorOutboxActionExecutor,
         OrdersApi,
         PaymentsApi,
+        StoreOwnerInventoryApi,
     )
 
     live_config = config or LiveRuntimeConfig.from_env()
@@ -1107,6 +1203,10 @@ def build_live_api_facades(
         orders=OrdersApi(_TransactionalOrderUseCase(live_dependencies)),
         checkout=CheckoutApi(_TransactionalCheckoutTrackingQuery(live_dependencies)),
         payments=PaymentsApi(payment_handler),
+        inventory=StoreOwnerInventoryApi(
+            query=_TransactionalInventoryQuery(live_dependencies),
+            command_handler=_TransactionalStoreOwnerInventoryCommandHandler(live_dependencies),
+        ),
         operator=OperatorApi(_TransactionalOperatorObservabilityQuery(live_dependencies)),
         operator_action=OperatorActionApi(
             cancel_order_executor=OperatorCancelOrderActionExecutor(order_command_handler),
@@ -1141,6 +1241,7 @@ def build_live_api_router(
     register_order_routes(router, facades.orders)
     register_checkout_routes(router, facades.checkout)
     register_payment_routes(router, facades.payments)
+    register_store_owner_inventory_routes(router, facades.inventory)
     register_operator_routes(router, facades.operator)
     register_operator_action_routes(router, facades.operator_action)
     return router
@@ -1316,6 +1417,58 @@ class _TransactionalPaymentCommandHandler:
             blockchain_adapter=blockchain,
             timeout_scheduler=_NoopPaymentTimeoutScheduler(),
             transaction_service=ClientTransactionService(self._dependencies.blockchain_client),
+        )
+
+
+class _TransactionalInventoryQuery:
+    def __init__(self, dependencies: LiveRuntimeDependencies) -> None:
+        self._dependencies = dependencies
+
+    def list_inventory(self, store_id=None):
+        return _with_transaction(
+            self._dependencies,
+            lambda connection: PostgresInventoryQueryRepository(connection).list_inventory(store_id),
+        )
+
+    def list_inventory_for_owner(self, owner_user_id, store_id=None):
+        return _with_transaction(
+            self._dependencies,
+            lambda connection: PostgresInventoryQueryRepository(connection).list_inventory_for_owner(owner_user_id, store_id),
+        )
+
+    def owner_for_store(self, store_id):
+        return _with_transaction(
+            self._dependencies,
+            lambda connection: PostgresInventoryQueryRepository(connection).owner_for_store(store_id),
+        )
+
+
+class _TransactionalStoreOwnerInventoryCommandHandler:
+    def __init__(self, dependencies: LiveRuntimeDependencies) -> None:
+        self._dependencies = dependencies
+
+    def increase_stock(self, command):
+        return self._execute(lambda handler: handler.increase_stock(command))
+
+    def correct_stock(self, command):
+        return self._execute(lambda handler: handler.correct_stock(command))
+
+    def pause_sales(self, command):
+        return self._execute(lambda handler: handler.pause_sales(command))
+
+    def resume_sales(self, command):
+        return self._execute(lambda handler: handler.resume_sales(command))
+
+    def _execute(self, callback: Callable[[StoreOwnerInventoryCommandHandler], Any]) -> Any:
+        return _with_transaction(
+            self._dependencies,
+            lambda connection: callback(
+                StoreOwnerInventoryCommandHandler(
+                    inventory_repository=PostgresInventoryRepository(connection),
+                    processed_commands=PostgresProcessedCommandRepository(connection),
+                    audit_repository=PostgresInventoryAuditRepository(connection),
+                )
+            ),
         )
 
 
@@ -1876,6 +2029,7 @@ __all__ = [
     "LiveRuntimeDependencies",
     "LiveRuntimeDriverConfigurationError",
     "LiveRuntimeDependencyError",
+    "LiveWorkerDescriptor",
     "PostgresReadinessProbe",
     "PostgresSessionFactory",
     "PsycopgPostgresSessionFactory",
@@ -1887,5 +2041,7 @@ __all__ = [
     "build_live_api_router",
     "build_live_readiness_probes",
     "build_live_runtime_dependencies_from_env",
+    "describe_live_worker_registry",
     "describe_live_runtime_dependencies",
+    "live_worker_registry",
 ]

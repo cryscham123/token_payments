@@ -372,6 +372,7 @@ def list_http_route_specs() -> tuple[HttpRouteSpec, ...]:
         *ORDER_HTTP_ROUTES.values(),
         *CHECKOUT_HTTP_ROUTES.values(),
         *PAYMENT_HTTP_ROUTES.values(),
+        *STORE_OWNER_INVENTORY_HTTP_ROUTES.values(),
         *OPERATOR_HTTP_ROUTES.values(),
         *OPERATOR_ACTION_HTTP_ROUTES.values(),
     )
@@ -469,6 +470,38 @@ def register_payment_routes(router: HttpRouter, payments_api: Any) -> tuple[Http
             router,
             PAYMENT_HTTP_ROUTES["submit_transaction_hash"],
             payments_api.submit_transaction_hash,
+        ),
+    )
+
+
+def register_store_owner_inventory_routes(router: HttpRouter, inventory_api: Any) -> tuple[HttpRoute, ...]:
+    """Register store-owner inventory facade routes on an existing router."""
+
+    return (
+        _add_manifest_route(
+            router,
+            STORE_OWNER_INVENTORY_HTTP_ROUTES["list_inventory"],
+            inventory_api.list_inventory,
+        ),
+        _add_manifest_route(
+            router,
+            STORE_OWNER_INVENTORY_HTTP_ROUTES["increase_stock"],
+            inventory_api.increase_stock,
+        ),
+        _add_manifest_route(
+            router,
+            STORE_OWNER_INVENTORY_HTTP_ROUTES["correct_stock"],
+            inventory_api.correct_stock,
+        ),
+        _add_manifest_route(
+            router,
+            STORE_OWNER_INVENTORY_HTTP_ROUTES["pause_sales"],
+            inventory_api.pause_sales,
+        ),
+        _add_manifest_route(
+            router,
+            STORE_OWNER_INVENTORY_HTTP_ROUTES["resume_sales"],
+            inventory_api.resume_sales,
         ),
     )
 
@@ -929,6 +962,33 @@ PAYMENT_HTTP_ROUTES: Mapping[str, HttpRouteSpec] = MappingProxyType(
 )
 
 
+STORE_OWNER_INVENTORY_HTTP_ROUTES: Mapping[str, HttpRouteSpec] = MappingProxyType(
+    {
+        "list_inventory": HttpRouteSpec("GET", "/store-owner/inventory", "listStoreOwnerInventory"),
+        "increase_stock": HttpRouteSpec(
+            "POST",
+            "/store-owner/stores/{storeId}/inventory/{productId}/intake",
+            "increaseStoreOwnerInventoryStock",
+        ),
+        "correct_stock": HttpRouteSpec(
+            "POST",
+            "/store-owner/stores/{storeId}/inventory/{productId}/corrections",
+            "correctStoreOwnerInventoryStock",
+        ),
+        "pause_sales": HttpRouteSpec(
+            "POST",
+            "/store-owner/stores/{storeId}/inventory/{productId}/pause",
+            "pauseStoreOwnerInventorySales",
+        ),
+        "resume_sales": HttpRouteSpec(
+            "POST",
+            "/store-owner/stores/{storeId}/inventory/{productId}/resume",
+            "resumeStoreOwnerInventorySales",
+        ),
+    }
+)
+
+
 OPERATOR_HTTP_ROUTES: Mapping[str, HttpRouteSpec] = MappingProxyType(
     {
         "get_dashboard": HttpRouteSpec("GET", "/operator/dashboard", "getOperatorDashboard"),
@@ -969,6 +1029,7 @@ __all__ = [
     "OPERATOR_ACTION_HTTP_ROUTES",
     "OPERATOR_HTTP_ROUTES",
     "PAYMENT_HTTP_ROUTES",
+    "STORE_OWNER_INVENTORY_HTTP_ROUTES",
     "WsgiApplication",
     "WsgiStartResponse",
     "build_wsgi_app",
@@ -981,4 +1042,5 @@ __all__ = [
     "register_operator_action_routes",
     "register_operator_routes",
     "register_payment_routes",
+    "register_store_owner_inventory_routes",
 ]

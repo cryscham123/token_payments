@@ -140,7 +140,7 @@ python3 .githooks/pre_commit_check.py
 
 다음 phase 작업 후보:
 
-- `inventory`: `ProductInventory`, `InventoryReservation`, 재고 예약/확정/해제 command handler와 멱등 처리.
+- `inventory`: `ProductInventory`, `InventoryReservation`, `ReserveInventoryCommand`, `ConfirmInventoryCommand`, `ReleaseInventoryCommand`, `InventoryConfirmedEvent`, 재고 예약/확정/해제 command handler와 멱등 처리.
 - `payment`: `Payment`, `PaymentAuthorization`, txHash 제출, receipt 확인, `AWAITING_SIGNATURE` 만료 scheduler.
 - `store-approval`: 주문 상세 검증, 승인/반려 이벤트, 반려 시 보상 흐름 연결.
 - `adapter`: PostgreSQL repository, outbox relay, Kafka publisher/listener, Blockchain RPC/MetaMask boundary 구현.
@@ -149,7 +149,7 @@ python3 .githooks/pre_commit_check.py
 
 Checkout core phase는 adapter 구현 전에 inventory, payment, store-approval bounded context의 순수 domain/application 계약을 고정한다. 현재 공개 계약은 다음을 포함한다.
 
-- `inventory`: `ProductInventory`, `InventoryReservation`, 재고 예약/확정/해제 command DTO, `InventoryCommandHandler`, repository/outbox/processed-command port.
+- `inventory`: `ProductInventory`, `InventoryReservation`, `ReserveInventoryCommand`, `ConfirmInventoryCommand`, `ReleaseInventoryCommand`, `InventoryConfirmedEvent`, 재고 예약/확정/해제 command DTO, `InventoryCommandHandler`, repository/outbox/processed-command port.
 - `payment`: `Payment`, `PaymentAuthorization`, gas estimate buffer, txHash 제출, receipt 확인, 만료/환불 command DTO, `PaymentCommandHandler`, Blockchain RPC/timeout/transaction port.
 - `store-approval`: `Store`, `OrderDetail`, 승인/반려 이벤트, `RequestStoreApprovalCommand`, `StoreApprovalService`, store/order-detail/outbox/processed-command port.
 
@@ -521,7 +521,7 @@ Checkout Process is a separate saga/process context, not an order context submod
 
 PostgreSQL is the source of truth for auth users, login challenges, and sessions. Refresh reuse detection uses the PostgreSQL session repository hash/salt/rotation model. Redis is optional cache-aside/TTL optimization, not a live required dependency. Local runs must copy `.env.example` to `.env`; live/prod startup rejects committed local dev signing values, so replace session and CSRF signing material for non-local environments.
 
-Public HTTP route surface stays bound to the current 16-route manifest. `approveOrder`/`request_store_approval` are Kafka/message listener inputs, and store owner manual order approval HTTP API is not in current scope. manual order approval HTTP API is not an active roadmap item. ERC-20/USDC/USDT payment support is not an immediate roadmap phase.
+Public HTTP route surface stays bound to the current 21-route manifest, including the store owner inventory API. `STORE_OWNER` can query or mutate only own store inventory; admin can query or mutate any store inventory. Stock intake, target stock correction, sale pause, and sale resume are audited, idempotent inventory commands. `approveOrder`/`request_store_approval` are Kafka/message listener inputs, and store owner manual order approval HTTP API is not in current scope. manual order approval HTTP API is not an active roadmap item. UI implementation remains a separate phase. ERC-20/USDC/USDT payment support is not an immediate roadmap phase.
 
 Next phase order:
 

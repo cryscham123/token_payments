@@ -157,7 +157,11 @@ def test_context_adapter_public_contract_exports_postgres_repositories() -> None
     import token_payments.contexts.payment.adapter as payment_adapter
     import token_payments.contexts.store_approval.adapter as store_approval_adapter
 
-    assert set(inventory_adapter.__all__) == {"PostgresInventoryRepository"}
+    assert set(inventory_adapter.__all__) == {
+        "PostgresInventoryAuditRepository",
+        "PostgresInventoryQueryRepository",
+        "PostgresInventoryRepository",
+    }
     assert set(payment_adapter.__all__) == {
         "PostgresPaymentAuthorizationRepository",
         "PostgresPaymentRepository",

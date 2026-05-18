@@ -17,6 +17,11 @@ class ReservationStatus(StrEnum):
     CANCELLED = "CANCELLED"
 
 
+class InventorySaleStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    PAUSED = "PAUSED"
+
+
 @dataclass(frozen=True)
 class ReservationId:
     value: UUID
@@ -126,6 +131,7 @@ class ProductInventory:
     available_stock: Quantity | int
     reserved_stock: Quantity | int
     total_stock: Quantity | int
+    sale_status: InventorySaleStatus | str = InventorySaleStatus.ACTIVE
     reservations: tuple[InventoryReservation, ...] = ()
 
     def __post_init__(self) -> None:
@@ -140,6 +146,7 @@ class ProductInventory:
         object.__setattr__(self, "available_stock", available_stock)
         object.__setattr__(self, "reserved_stock", reserved_stock)
         object.__setattr__(self, "total_stock", total_stock)
+        object.__setattr__(self, "sale_status", _coerce_sale_status(self.sale_status))
         object.__setattr__(
             self,
             "reservations",
@@ -223,6 +230,30 @@ class ProductInventory:
             available_stock=self.available_stock.subtract(quantity),
             total_stock=self.total_stock.subtract(quantity),
         )
+
+    def correct_total_stock(self, target_total_stock: Quantity | int) -> Self:
+        target = _coerce_quantity(target_total_stock)
+        if target.value < self.reserved_stock.value:
+            raise ValueError("total stock cannot be lower than reserved stock")
+        return replace(
+            self,
+            available_stock=Quantity(target.value - self.reserved_stock.value),
+            total_stock=target,
+        )
+
+    def pause_sales(self) -> Self:
+        if self.sale_status is InventorySaleStatus.PAUSED:
+            return self
+        return replace(self, sale_status=InventorySaleStatus.PAUSED)
+
+    def resume_sales(self) -> Self:
+        if self.sale_status is InventorySaleStatus.ACTIVE:
+            return self
+        return replace(self, sale_status=InventorySaleStatus.ACTIVE)
+
+    @property
+    def available_for_new_orders(self) -> bool:
+        return self.sale_status is InventorySaleStatus.ACTIVE and self.available_stock.value > 0
 
     def record_reserved(self, order_id: OrderId, created_at: datetime | None = None) -> "InventoryReservedEvent":
         return InventoryReservedEvent(inventory=self, order_id=order_id, created_at=created_at or datetime.now(UTC))
@@ -428,6 +459,15 @@ def _coerce_reservation_status(value: ReservationStatus | str) -> ReservationSta
         return ReservationStatus(str(value))
     except ValueError as exc:
         raise ValueError("InventoryReservation.status must be a ReservationStatus") from exc
+
+
+def _coerce_sale_status(value: InventorySaleStatus | str) -> InventorySaleStatus:
+    if isinstance(value, InventorySaleStatus):
+        return value
+    try:
+        return InventorySaleStatus(str(value))
+    except ValueError as exc:
+        raise ValueError("ProductInventory.sale_status must be an InventorySaleStatus") from exc
 
 
 def _coerce_reservations(

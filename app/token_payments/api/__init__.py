@@ -13,6 +13,7 @@ from .http import (
     OPERATOR_ACTION_HTTP_ROUTES,
     OPERATOR_HTTP_ROUTES,
     PAYMENT_HTTP_ROUTES,
+    STORE_OWNER_INVENTORY_HTTP_ROUTES,
     HttpHandler,
     HttpRequest,
     HttpResponse,
@@ -31,6 +32,7 @@ from .http import (
     register_operator_action_routes,
     register_operator_routes,
     register_payment_routes,
+    register_store_owner_inventory_routes,
 )
 from .idempotency import (
     IDEMPOTENCY_KEY_CONFLICT,
@@ -64,6 +66,7 @@ from .operator_actions import (
 )
 from .orders import OrdersApi
 from .payments import PaymentsApi
+from .inventory import StoreOwnerInventoryApi
 
 _FASTAPI_ADAPTER_EXPORTS = frozenset(
     {
@@ -126,6 +129,8 @@ __all__ = [
     "OrdersApi",
     "PAYMENT_HTTP_ROUTES",
     "PaymentsApi",
+    "STORE_OWNER_INVENTORY_HTTP_ROUTES",
+    "StoreOwnerInventoryApi",
     "WsgiApplication",
     "WsgiStartResponse",
     "build_asgi_app",
@@ -144,6 +149,7 @@ __all__ = [
     "register_operator_action_routes",
     "register_operator_routes",
     "register_payment_routes",
+    "register_store_owner_inventory_routes",
 ]
 
 

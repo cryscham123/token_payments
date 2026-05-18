@@ -56,6 +56,7 @@ class CheckoutProcessManager:
     _COMMANDS_BY_EVENT: dict[CheckoutEventName, tuple[CheckoutCommandName, ...]] = {
         CheckoutEventName.ORDER_CREATED: (CheckoutCommandName.RESERVE_INVENTORY,),
         CheckoutEventName.INVENTORY_RESERVED: (CheckoutCommandName.INITIATE_PAYMENT,),
+        CheckoutEventName.INVENTORY_CONFIRMED: (),
         CheckoutEventName.PAYMENT_CONFIRMED: (CheckoutCommandName.REQUEST_STORE_APPROVAL,),
         CheckoutEventName.PAYMENT_FAILED: (
             CheckoutCommandName.RELEASE_INVENTORY,
@@ -65,12 +66,13 @@ class CheckoutProcessManager:
             CheckoutCommandName.RELEASE_INVENTORY,
             CheckoutCommandName.CANCEL_ORDER,
         ),
-        CheckoutEventName.ORDER_APPROVED: (),
+        CheckoutEventName.ORDER_APPROVED: (CheckoutCommandName.CONFIRM_INVENTORY,),
         CheckoutEventName.ORDER_REJECTED: (
             CheckoutCommandName.REFUND_PAYMENT,
             CheckoutCommandName.RELEASE_INVENTORY,
             CheckoutCommandName.CANCEL_ORDER,
         ),
+        CheckoutEventName.ORDER_CANCELLED: (),
     }
 
     def handle(self, event: CheckoutProcessEvent) -> tuple[CheckoutCommandDecision, ...]:

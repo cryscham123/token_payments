@@ -14,8 +14,8 @@ def test_api_spec_documents_current_public_http_route_manifest() -> None:
     api_spec = _read("docs/API_SPEC.md")
     manifest = list(http_route_manifest())
 
-    assert len(manifest) == 16
-    assert "Public HTTP route surface is exactly the current 16-route manifest" in api_spec
+    assert len(manifest) == 21
+    assert "Public HTTP route surface is exactly the current 21-route manifest" in api_spec
     for entry in manifest:
         assert f"`{entry['operationId']}`" in api_spec
         assert f"`{entry['path']}`" in api_spec
@@ -28,14 +28,16 @@ def test_api_spec_separates_http_message_and_internal_inputs() -> None:
         "Public HTTP route surface",
         "Message listener input surface",
         "Internal application port surface",
+        "Store owner inventory API surface",
     ):
         assert heading in api_spec
 
     for phrase in (
         "`approveOrder`/`request_store_approval` are Kafka/message listener inputs",
         "store owner manual order approval HTTP API is not in current scope",
-        "`reserveInventory`, `releaseInventory`, and future `confirmInventory` are checkout saga internal commands",
-        "store owner inventory API is reserved for phase 20",
+        "`ReserveInventoryCommand`, `ReleaseInventoryCommand`, and `ConfirmInventoryCommand` are checkout saga internal commands",
+        "Store owners can query or mutate only own store inventory",
+        "admin can query or mutate any store inventory",
     ):
         assert phrase in api_spec
 

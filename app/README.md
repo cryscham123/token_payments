@@ -146,7 +146,7 @@ The `ui` runtime command returns bounded JSON and does not start an HTTP server.
 Next phase candidates:
 
 - docker compose integration smoke: PostgreSQL, Kafka, test network, runtime health, worker, and UI preview from `.env.example`.
-- happy-path e2e checkout: order creation through inventory reservation, payment confirmation, and store approval.
+- happy-path e2e checkout: order creation through inventory reservation, payment confirmation, store approval, `ConfirmInventoryCommand`, and `InventoryConfirmedEvent`.
 - compensation e2e checkout: payment failure, payment expiration, and store rejection compensation command idempotency.
 
 ## E2E Integration Readiness
@@ -396,7 +396,7 @@ Checkout Process is a separate saga/process context, not an order context submod
 
 PostgreSQL is the source of truth for auth users, login challenges, and sessions. Refresh reuse detection uses the PostgreSQL session repository hash/salt/rotation model. Redis is optional cache-aside/TTL optimization, not a live required dependency. Local runs must copy `.env.example` to `.env`; live/prod startup rejects committed local dev signing values, so replace session and CSRF signing material for non-local environments.
 
-Public HTTP route surface stays bound to the current 16-route manifest. `approveOrder`/`request_store_approval` are Kafka/message listener inputs, and store owner manual order approval HTTP API is not in current scope. manual order approval HTTP API is not an active roadmap item. ERC-20/USDC/USDT payment support is not an immediate roadmap phase.
+Public HTTP route surface stays bound to the current 21-route manifest, including the store owner inventory API. `STORE_OWNER` can query or mutate only own store inventory; admin can query or mutate any store inventory. Stock intake, target stock correction, sale pause, and sale resume are audited, idempotent inventory commands. `approveOrder`/`request_store_approval` are Kafka/message listener inputs, and store owner manual order approval HTTP API is not in current scope. manual order approval HTTP API is not an active roadmap item. UI implementation remains a separate phase. ERC-20/USDC/USDT payment support is not an immediate roadmap phase.
 
 Next phase order:
 

@@ -4,13 +4,13 @@ This document captures the Live API Runtime Composition boundary for the local T
 
 Default `api`/`serve-api` commands keep the no-server-start preview boundary. Use `PYTHONPATH=app python3 -m token_payments serve-api --live --dry-run` for a bounded live server plan, and `PYTHONPATH=app python3 -m token_payments serve-api --live --confirm-live-api` only when an approved live environment is ready to start the long-running server.
 
-이 문서는 `14-live-api-runtime-composition`과 `15-postman-docker-api-readiness`가 끝난 뒤의 로컬 backend API를 기준으로 한 최종 명세 초안이다. Route surface는 현재 `app/token_payments/api/http.py`의 route manifest 16개를 기준으로 고정한다.
+이 문서는 `20-store-owner-inventory-api`가 끝난 뒤의 로컬 backend API를 기준으로 한 최종 명세 초안이다. Route surface는 현재 `app/token_payments/api/http.py`의 route manifest 21개를 기준으로 고정한다.
 
 ## Route Surface Contract
 
 ### Public HTTP route surface
 
-Public HTTP route surface is exactly the current 16-route manifest from `app/token_payments/api/http.py`. This manifest contains auth session routes, order creation, checkout tracking, payment txHash submission, operator dashboard/detail reads, and cancel/retry/replay operator actions. It does not include store owner manual approval routes or checkout saga command endpoints.
+Public HTTP route surface is exactly the current 21-route manifest from `app/token_payments/api/http.py`. This manifest contains auth session routes, order creation, checkout tracking, payment txHash submission, store owner inventory query/mutation routes, operator dashboard/detail reads, and cancel/retry/replay operator actions. It does not include store owner manual approval routes or checkout saga command endpoints.
 
 ### Message listener input surface
 
@@ -18,9 +18,17 @@ Public HTTP route surface is exactly the current 16-route manifest from `app/tok
 
 ### Internal application port surface
 
-`reserveInventory`, `releaseInventory`, and future `confirmInventory` are checkout saga internal commands. They are emitted by `CheckoutProcessManager` and handled by application/message adapters, not exposed as public customer HTTP APIs. store owner inventory API is reserved for phase 20 and remains unimplemented in the phase 16 contract.
+`ReserveInventoryCommand`, `ReleaseInventoryCommand`, and `ConfirmInventoryCommand` are checkout saga internal commands. They are emitted by `CheckoutProcessManager` and handled by application/message adapters, not exposed as public customer HTTP APIs. Successful `OrderApprovedEvent` processing emits `ConfirmInventoryCommand`, and the inventory context records `InventoryConfirmedEvent`; payment failure, payment expiration, and order rejection still emit release/compensation commands.
 
-Operator action APIs are admin-only recovery endpoints. Store owner inventory API is a separate future surface with store-owner authorization and must not be confused with admin operator recovery endpoints.
+Operator action APIs are admin-only recovery endpoints. Store owner inventory API is a separate surface with store-owner authorization and must not be confused with admin operator recovery endpoints. Store owners can query or mutate only own store inventory; admin can query or mutate any store inventory. The store owner inventory API manages stock and sale pause/resume only. Store owner manual order approval HTTP API is not in current scope, and manual order approval HTTP API is not an active roadmap item.
+
+### Store owner inventory API surface
+
+`GET /store-owner/inventory` returns inventory rows visible to the authenticated session. `STORE_OWNER` sessions are limited to own store inventory, including optional `storeId` filtering; `ADMIN` sessions can query all rows or a specific store. `CUSTOMER` and unauthenticated sessions are rejected.
+
+Inventory mutations use audited business commands rather than raw stock writes. The supported actions are stock intake, target total stock correction, sale pause, and sale resume. Mutations require cookie/session auth, `Idempotency-Key`, CSRF for browser cookie auth, `reason`, and server-side role/ownership checks. Stock correction cannot set `totalStock` below `reservedStock`. Sale pause/resume only changes new-order availability and does not release existing reservations.
+
+Product sale availability is stored canonically in the inventory context as `ProductInventory.sale_status`. Store approval/order catalog projections may consume that status in later projection work, but this phase does not add a customer public inventory route.
 
 ## Runtime Assumptions
 
@@ -98,7 +106,7 @@ Request body size is bounded by `REQUEST_BODY_MAX_BYTES`. Exceeding it returns `
 
 ## Live System Routes And Observability
 
-`GET /healthz` and `GET /readyz` are live server-only system routes and are not part of the 16-route public facade manifest. `/healthz` reports process/runtime health only and must not open PostgreSQL, Kafka, Blockchain, Docker, or local `.env`. `/readyz` summarizes injected PostgreSQL/Kafka/Blockchain readiness probes; unavailable components return `503` with bounded component details.
+`GET /healthz` and `GET /readyz` are live server-only system routes and are not part of the 21-route public facade manifest. `/healthz` reports process/runtime health only and must not open PostgreSQL, Kafka, Blockchain, Docker, or local `.env`. `/readyz` summarizes injected PostgreSQL/Kafka/Blockchain readiness probes; unavailable components return `503` with bounded component details.
 
 All HTTP responses include `X-Request-Id` when a request id is known, and an incoming `X-Request-Id` is preserved. Live access log events include method, path template or route id, status, request id, duration, actor summary, and error code. Access logs must not record cookie values, signed tokens, authorization headers, private keys, signatures, or full request bodies.
 
@@ -140,6 +148,11 @@ Common status codes:
 | `getCheckoutTrackingByTrackingId` | `GET` | `/checkouts/tracking/{trackingId}` |
 | `getCheckoutTrackingByOrderId` | `GET` | `/checkouts/orders/{orderId}` |
 | `submitTransactionHash` | `POST` | `/payments/transaction-hashes` |
+| `listStoreOwnerInventory` | `GET` | `/store-owner/inventory` |
+| `increaseStoreOwnerInventoryStock` | `POST` | `/store-owner/stores/{storeId}/inventory/{productId}/intake` |
+| `correctStoreOwnerInventoryStock` | `POST` | `/store-owner/stores/{storeId}/inventory/{productId}/corrections` |
+| `pauseStoreOwnerInventorySales` | `POST` | `/store-owner/stores/{storeId}/inventory/{productId}/pause` |
+| `resumeStoreOwnerInventorySales` | `POST` | `/store-owner/stores/{storeId}/inventory/{productId}/resume` |
 | `getOperatorDashboard` | `GET` | `/operator/dashboard` |
 | `getOperatorOrderDetail` | `GET` | `/operator/orders/{orderId}` |
 | `getOperatorPaymentDetail` | `GET` | `/operator/payments/{paymentId}` |

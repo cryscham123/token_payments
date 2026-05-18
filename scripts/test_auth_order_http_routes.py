@@ -114,10 +114,20 @@ def test_auth_http_routes_call_existing_auth_facade_methods() -> None:
     )
 
     assert challenge.status_code == 201
-    assert _json(challenge.body) == {
+    challenge_payload = _json(challenge.body)
+    assert challenge_payload == {
         "expiresAt": (NOW + timedelta(minutes=5)).isoformat(),
         "nonce": "nonce-route",
         "signingMessage": "sign nonce-route",
+        "signatureVerification": {
+            "erc1271MagicValue": "0x1626ba7e",
+            "erc6492": "future_scope",
+            "messageFormat": "SIWE_V1",
+            "requiresDeployedCode": True,
+            "signatureVerificationMethod": "SIWE_PERSONAL_SIGN_EOA_OR_ERC1271",
+            "smartWalletStandard": "ERC-1271",
+            "supportedWalletTypes": ["EOA", "DEPLOYED_SMART_WALLET"],
+        },
         "walletAddress": NORMALIZED_WALLET,
     }
     assert isinstance(use_case.calls[-1], RequestLoginChallengeCommand)
