@@ -77,6 +77,7 @@ from token_payments.shared.domain import (
 from token_payments.shared.adapter.postgres import (
     PostgresOutboxMessageRepository,
     PostgresProcessedCommandRepository,
+    ensure_postgres_schema_compatibility,
 )
 
 from .contracts import Clock, HealthState, IdGenerator, JsonValue
@@ -595,6 +596,7 @@ class PsycopgPostgresSessionFactory:
 
     dsn: str
     connect_timeout_seconds: float = 3.0
+    _schema_compatibility_checked: bool = field(default=False, init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "dsn", _require_text(self.dsn, "ADAPTER_POSTGRES_DSN"))
@@ -606,7 +608,22 @@ class PsycopgPostgresSessionFactory:
 
     def __call__(self) -> Any:
         psycopg = importlib.import_module("psycopg")
-        return psycopg.connect(self.dsn, connect_timeout=int(self.connect_timeout_seconds))
+        psycopg_rows = importlib.import_module("psycopg.rows")
+        session = psycopg.connect(
+            self.dsn,
+            connect_timeout=int(self.connect_timeout_seconds),
+            row_factory=psycopg_rows.dict_row,
+        )
+        if not self._schema_compatibility_checked:
+            try:
+                ensure_postgres_schema_compatibility(session)
+            except Exception:
+                close = getattr(session, "close", None)
+                if callable(close):
+                    close()
+                raise
+            object.__setattr__(self, "_schema_compatibility_checked", True)
+        return session
 
 
 @dataclass
@@ -1129,10 +1146,21 @@ class LiveApiFacades:
     operator_action: Any
 
 
-def register_auth_routes(router: Any, auth_api: Any, *, session_transport: Any | None = None) -> Any:
+def register_auth_routes(
+    router: Any,
+    auth_api: Any,
+    *,
+    session_transport: Any | None = None,
+    csrf_token_service: Any | None = None,
+) -> Any:
     from token_payments.api import register_auth_routes as _register_auth_routes
 
-    return _register_auth_routes(router, auth_api, session_transport=session_transport)
+    return _register_auth_routes(
+        router,
+        auth_api,
+        session_transport=session_transport,
+        csrf_token_service=csrf_token_service,
+    )
 
 
 def register_order_routes(router: Any, orders_api: Any) -> Any:
@@ -1771,22 +1799,48 @@ class _NoopPaymentTimeoutScheduler:
 
 def _with_transaction(dependencies: LiveRuntimeDependencies, callback: Callable[[Any], Any]) -> Any:
     session = dependencies.postgres_session_factory()
+    try:
+        transaction_factory = _transaction_factory(session)
+        if transaction_factory is not None:
+            with transaction_factory() as transaction:
+                connection = transaction if callable(getattr(transaction, "execute", None)) else session
+                try:
+                    result = callback(connection)
+                except Exception:
+                    rollback = getattr(transaction, "rollback", None)
+                    if callable(rollback):
+                        rollback()
+                    raise
+                commit = getattr(transaction, "commit", None)
+                if callable(commit):
+                    commit()
+                return result
+
+        try:
+            result = callback(session)
+        except Exception:
+            rollback = getattr(session, "rollback", None)
+            if callable(rollback):
+                rollback()
+            raise
+        commit = getattr(session, "commit", None)
+        if callable(commit):
+            commit()
+        return result
+    finally:
+        close = getattr(session, "close", None)
+        if callable(close):
+            close()
+
+
+def _transaction_factory(session: Any) -> Callable[[], Any] | None:
     begin = getattr(session, "begin", None)
     if callable(begin):
-        with begin() as transaction:
-            connection = transaction if callable(getattr(transaction, "execute", None)) else session
-            try:
-                result = callback(connection)
-            except Exception:
-                rollback = getattr(transaction, "rollback", None)
-                if callable(rollback):
-                    rollback()
-                raise
-            commit = getattr(transaction, "commit", None)
-            if callable(commit):
-                commit()
-            return result
-    return callback(session)
+        return begin
+    transaction = getattr(session, "transaction", None)
+    if callable(transaction):
+        return transaction
+    return None
 
 
 def _new_id(generator: IdGenerator | Any, field_name: str) -> str:

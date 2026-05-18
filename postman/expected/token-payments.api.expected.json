@@ -541,11 +541,11 @@
     {
       "name": "duplicate idempotency conflict",
       "operationId": "createOrder",
-      "status": 409,
+      "status": 400,
       "rawSecretMaterialCommitted": false,
       "body": {
         "error": {
-          "code": "IDEMPOTENCY_CONFLICT"
+          "code": "IDEMPOTENCY_KEY_CONFLICT"
         }
       }
     },

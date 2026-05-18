@@ -367,6 +367,9 @@ def test_postgres_operator_observability_query_reads_orders_payments_outbox_with
     assert "from orders" in normalized_sql
     assert "from payments" in normalized_sql
     assert "from outbox_messages" in normalized_sql
+    assert "%(statuses)s::text[]" in normalized_sql
+    assert "%(store_id)s::uuid" in normalized_sql
+    assert "%(chain_id)s::integer" in normalized_sql
     assert "insert into" not in normalized_sql
     assert "update " not in normalized_sql
     assert "delete from" not in normalized_sql

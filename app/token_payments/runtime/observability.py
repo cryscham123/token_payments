@@ -512,11 +512,11 @@ LEFT JOIN LATERAL (
     ORDER BY outbox_messages.created_at DESC
     LIMIT 1
 ) AS latest_outbox ON true
-WHERE (%(statuses)s IS NULL OR orders.status = ANY(%(statuses)s) OR payments.status = ANY(%(statuses)s))
-  AND (%(store_id)s IS NULL OR orders.store_id = %(store_id)s)
-  AND (%(chain_id)s IS NULL OR orders.total_amount_chain_id = %(chain_id)s OR payments.chain_id = %(chain_id)s)
-  AND (%(failed_only)s IS FALSE OR jsonb_array_length(orders.failure_messages) > 0 OR payments.failure_reason IS NOT NULL)
-  AND (%(page_token)s IS NULL OR %(page_token)s IS NOT NULL)
+WHERE (%(statuses)s::text[] IS NULL OR orders.status = ANY(%(statuses)s::text[]) OR payments.status = ANY(%(statuses)s::text[]))
+  AND (%(store_id)s::uuid IS NULL OR orders.store_id = %(store_id)s::uuid)
+  AND (%(chain_id)s::integer IS NULL OR orders.total_amount_chain_id = %(chain_id)s::integer OR payments.chain_id = %(chain_id)s::integer)
+  AND (%(failed_only)s::boolean IS FALSE OR jsonb_array_length(orders.failure_messages) > 0 OR payments.failure_reason IS NOT NULL)
+  AND (%(page_token)s::text IS NULL OR %(page_token)s::text IS NOT NULL)
 ORDER BY {sort_column} {sort_direction}, orders.order_id {sort_direction}
 LIMIT %(limit)s
 """
@@ -543,11 +543,11 @@ SELECT
     payments.updated_at
 FROM payments
 LEFT JOIN orders ON orders.order_id = payments.order_id
-WHERE (%(statuses)s IS NULL OR payments.status = ANY(%(statuses)s))
-  AND (%(store_id)s IS NULL OR orders.store_id = %(store_id)s)
-  AND (%(chain_id)s IS NULL OR payments.chain_id = %(chain_id)s)
-  AND (%(failed_only)s IS FALSE OR payments.failure_reason IS NOT NULL OR payments.status IN ('FAILED', 'EXPIRED'))
-  AND (%(page_token)s IS NULL OR %(page_token)s IS NOT NULL)
+WHERE (%(statuses)s::text[] IS NULL OR payments.status = ANY(%(statuses)s::text[]))
+  AND (%(store_id)s::uuid IS NULL OR orders.store_id = %(store_id)s::uuid)
+  AND (%(chain_id)s::integer IS NULL OR payments.chain_id = %(chain_id)s::integer)
+  AND (%(failed_only)s::boolean IS FALSE OR payments.failure_reason IS NOT NULL OR payments.status IN ('FAILED', 'EXPIRED'))
+  AND (%(page_token)s::text IS NULL OR %(page_token)s::text IS NOT NULL)
 ORDER BY {sort_column} {sort_direction}, payments.payment_id {sort_direction}
 LIMIT %(limit)s
 """
@@ -566,36 +566,36 @@ SELECT
     outbox_messages.published_at,
     COALESCE(outbox_messages.published_at, outbox_messages.created_at) AS updated_at
 FROM outbox_messages
-WHERE (%(statuses)s IS NULL OR outbox_messages.status = ANY(%(statuses)s))
-  AND (%(failed_only)s IS FALSE OR outbox_messages.last_error IS NOT NULL OR outbox_messages.status = 'FAILED')
-  AND (%(retry_candidates_only)s IS FALSE OR outbox_messages.status = 'FAILED')
-  AND (%(page_token)s IS NULL OR %(page_token)s IS NOT NULL)
+WHERE (%(statuses)s::text[] IS NULL OR outbox_messages.status = ANY(%(statuses)s::text[]))
+  AND (%(failed_only)s::boolean IS FALSE OR outbox_messages.last_error IS NOT NULL OR outbox_messages.status = 'FAILED')
+  AND (%(retry_candidates_only)s::boolean IS FALSE OR outbox_messages.status = 'FAILED')
+  AND (%(page_token)s::text IS NULL OR %(page_token)s::text IS NOT NULL)
 ORDER BY {sort_column} {sort_direction}, outbox_messages.message_identity {sort_direction}
 LIMIT %(limit)s
 """
 
 SELECT_OPERATOR_ORDER_DETAIL_SQL = SELECT_OPERATOR_ORDERS_SQL.replace(
-    "WHERE (%(statuses)s IS NULL OR orders.status = ANY(%(statuses)s) OR payments.status = ANY(%(statuses)s))",
-    "WHERE orders.order_id = %(order_id)s",
+    "WHERE (%(statuses)s::text[] IS NULL OR orders.status = ANY(%(statuses)s::text[]) OR payments.status = ANY(%(statuses)s::text[]))",
+    "WHERE orders.order_id = %(order_id)s::uuid",
 )
 
 SELECT_OPERATOR_PAYMENT_DETAIL_SQL = SELECT_OPERATOR_PAYMENTS_SQL.replace(
-    "WHERE (%(statuses)s IS NULL OR payments.status = ANY(%(statuses)s))",
-    "WHERE payments.payment_id = %(payment_id)s",
+    "WHERE (%(statuses)s::text[] IS NULL OR payments.status = ANY(%(statuses)s::text[]))",
+    "WHERE payments.payment_id = %(payment_id)s::uuid",
 )
 
 SELECT_OPERATOR_PAYMENTS_BY_ORDER_SQL = SELECT_OPERATOR_PAYMENTS_SQL.replace(
-    "WHERE (%(statuses)s IS NULL OR payments.status = ANY(%(statuses)s))",
-    "WHERE payments.order_id = %(order_id)s",
+    "WHERE (%(statuses)s::text[] IS NULL OR payments.status = ANY(%(statuses)s::text[]))",
+    "WHERE payments.order_id = %(order_id)s::uuid",
 )
 
 SELECT_OPERATOR_OUTBOX_DETAIL_SQL = SELECT_OPERATOR_OUTBOX_SQL.replace(
-    "WHERE (%(statuses)s IS NULL OR outbox_messages.status = ANY(%(statuses)s))",
+    "WHERE (%(statuses)s::text[] IS NULL OR outbox_messages.status = ANY(%(statuses)s::text[]))",
     "WHERE outbox_messages.kind = %(kind)s AND outbox_messages.message_identity = %(message_identity)s",
 )
 
 SELECT_OPERATOR_OUTBOX_BY_KEY_SQL = SELECT_OPERATOR_OUTBOX_SQL.replace(
-    "WHERE (%(statuses)s IS NULL OR outbox_messages.status = ANY(%(statuses)s))",
+    "WHERE (%(statuses)s::text[] IS NULL OR outbox_messages.status = ANY(%(statuses)s::text[]))",
     "WHERE outbox_messages.message_key = %(message_key)s",
 )
 

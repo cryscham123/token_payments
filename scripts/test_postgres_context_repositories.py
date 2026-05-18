@@ -172,6 +172,21 @@ def test_context_adapter_public_contract_exports_postgres_repositories() -> None
     }
 
 
+def test_inventory_query_sql_casts_nullable_store_filter_for_live_psycopg() -> None:
+    import token_payments.contexts.inventory.adapter.postgres as inventory_postgres
+
+    combined_sql = "\n".join(
+        (
+            inventory_postgres.SELECT_INVENTORY_SNAPSHOTS_SQL,
+            inventory_postgres.SELECT_OWNER_INVENTORY_SNAPSHOTS_SQL,
+        )
+    )
+
+    assert "%(store_id)s::uuid IS NULL" in combined_sql
+    assert "inv.store_id = %(store_id)s::uuid" in combined_sql
+    assert "stores.owner_user_id = %(owner_user_id)s::uuid" in combined_sql
+
+
 def test_domain_and_application_layers_do_not_import_postgres_adapters() -> None:
     violations: dict[str, list[str]] = {}
     for context in ("inventory", "payment", "store_approval"):

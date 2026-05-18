@@ -271,6 +271,34 @@ def test_asgi_body_limit_uses_request_body_limit_contract_before_dispatch() -> N
     assert calls == []
 
 
+def test_asgi_preflight_204_sends_no_body_for_h11_compatibility() -> None:
+    router = HttpRouter(request_guard=_guard())
+    router.add_route(
+        "POST",
+        "/orders",
+        lambda request: json_response({"ok": True}, request_id=request.request_id),
+        operation_id="createOrder",
+    )
+
+    sent = _run_asgi_http(
+        build_asgi_app(router),
+        {
+            "type": "http",
+            "method": "OPTIONS",
+            "path": "/orders",
+            "query_string": b"",
+            "headers": [
+                (b"origin", LOCAL_ORIGIN.encode("ascii")),
+                (b"access-control-request-method", b"POST"),
+                (b"x-request-id", b"req-asgi-preflight"),
+            ],
+        },
+    )
+
+    assert _start(sent)["status"] == 204
+    assert _body(sent) == b""
+
+
 def test_security_guard_source_avoids_frameworks_drivers_and_live_clients() -> None:
     imports = _imported_roots(ROOT / "app/token_payments/runtime/security.py")
 

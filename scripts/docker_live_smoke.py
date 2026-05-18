@@ -5,11 +5,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shlex
 import subprocess
 import sys
 from pathlib import Path
+from time import monotonic, sleep
 from typing import Any, Callable
 
 
@@ -18,13 +20,17 @@ API_READINESS_CONTRACT = "token-payments.postman-docker-api-readiness.plan.v1"
 API_READINESS_SCENARIO = "postman-docker-api-readiness"
 ENV_FILE = ".env"
 ENV_EXAMPLE_FILE = ".env.example"
+API_COOKIE_JAR_PATH = Path("/tmp/token-payments-postman.cookies")
 MAX_OUTPUT_CHARS = 1200
+API_OVERSIZED_BODY_BYTES = 1_048_577
+API_OVERSIZED_BODY_PATH = Path("/tmp/token-payments-oversized-body.bin")
 SECRET_KEY_PATTERN = re.compile(r"(account|api[_-]?key|dsn|key|password|private|secret|seed|token)", re.IGNORECASE)
 SIGNED_TOKEN_PATTERN = re.compile(r"\b[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b")
 COOKIE_VALUE_PATTERN = re.compile(r"(?i)\b(access_token|refresh_token|csrf_token)=([^;\s]+)")
 CSRF_HEADER_PATTERN = re.compile(r"(?i)\b((?:x-csrf-token|csrf-token)\s*[:=]\s*)([^\r\n;]+)")
 COOKIE_HEADER_PATTERN = re.compile(r"(?im)^(cookie\s*:\s*)([^\r\n]+)")
 AUTHORIZATION_HEADER_PATTERN = re.compile(r"(?im)^(authorization\s*:\s*bearer\s+)([^\r\n]+)")
+CURL_HTTP_ERROR_PATTERN = re.compile(r"The requested URL returned error: (?P<status>\d{3})")
 REQUIRED_SERVICES = (
     "postgres",
     "kafka",
@@ -49,6 +55,7 @@ API_COMMAND_TIMEOUT_SECONDS = {
     "api-compose-config": 30,
     "build-api-service": 240,
     "start-infrastructure": 180,
+    "seed-local-fixtures": 30,
     "start-api-service": 180,
     "validate-session-signing-keys": 30,
     "healthz": 30,
@@ -66,10 +73,22 @@ API_COMMAND_TIMEOUT_SECONDS = {
     "operator-action-smoke": 60,
     "cleanup": 90,
 }
+API_HTTP_READINESS_RETRY_STEPS = {"healthz", "readyz"}
+API_HTTP_READINESS_RETRY_DELAY_SECONDS = 1.0
+API_EXPECTED_HTTP_ERRORS = {
+    "expired-token-rejected": (401, "INVALID_AUTH_TOKEN"),
+    "invalid-signature-rejected": (401, "INVALID_AUTH_TOKEN"),
+    "csrf-failure": (403, "CSRF_TOKEN_MISSING"),
+    "csrf-success": (401, "INVALID_AUTH_TOKEN"),
+    "oversized-body": (413, "REQUEST_BODY_TOO_LARGE"),
+    "malformed-json": (400, "MALFORMED_JSON"),
+    "idempotency-duplicate": (400, "IDEMPOTENCY_KEY_CONFLICT"),
+}
 API_COMMAND_RUNNER_STEPS = {
     "api-compose-config",
     "build-api-service",
     "start-infrastructure",
+    "seed-local-fixtures",
     "start-api-service",
     "validate-session-signing-keys",
 }
@@ -121,6 +140,25 @@ def _build_command_sequence(env_file: str) -> tuple[tuple[str, tuple[str, ...]],
 def _build_api_readiness_command_sequence(env_file: str) -> tuple[tuple[str, tuple[str, ...], str], ...]:
     base_url = "http://localhost:8000"
     wallet_address = "0x1111111111111111111111111111111111111111"
+    user_id = "11111111-1111-4111-8111-111111111111"
+    store_id = "44444444-4444-4444-8444-444444444444"
+    product_id = "55555555-5555-4555-8555-555555555555"
+    login_domain = "token-payments.local"
+    login_uri = "https://token-payments.local"
+    chain_id = 1337
+    checkout_order = {
+        "storeId": store_id,
+        "deliveryAddress": {
+            "id": "postman-address-1",
+            "street": "7 Checkout Avenue",
+        },
+        "items": [
+            {
+                "productId": product_id,
+                "quantity": 1,
+            }
+        ],
+    }
     return (
         (
             "api-compose-config",
@@ -143,6 +181,28 @@ def _build_api_readiness_command_sequence(env_file: str) -> tuple[tuple[str, tup
             "docker",
         ),
         (
+            "seed-local-fixtures",
+            (
+                "docker",
+                "compose",
+                "--env-file",
+                env_file,
+                "exec",
+                "-T",
+                "postgres",
+                "psql",
+                "-U",
+                "token_payments",
+                "-d",
+                "token_payments",
+                "-v",
+                "ON_ERROR_STOP=1",
+                "-c",
+                "<seed-sql-generated-by-runner>",
+            ),
+            "docker",
+        ),
+        (
             "validate-session-signing-keys",
             ("python3", "-m", "token_payments", "serve-api", "--live", "--dry-run"),
             "security",
@@ -153,16 +213,24 @@ def _build_api_readiness_command_sequence(env_file: str) -> tuple[tuple[str, tup
             "auth-cookie-flow",
             _curl(
                 "--cookie-jar",
-                "/tmp/token-payments-postman.cookies",
+                str(API_COOKIE_JAR_PATH),
                 "--cookie",
-                "/tmp/token-payments-postman.cookies",
+                str(API_COOKIE_JAR_PATH),
                 "--request",
                 "POST",
                 f"{base_url}/auth/challenges",
                 "--header",
                 "Content-Type: application/json",
                 "--data",
-                json.dumps({"walletAddress": wallet_address}, separators=(",", ":")),
+                json.dumps(
+                    {
+                        "walletAddress": wallet_address,
+                        "domain": login_domain,
+                        "uri": login_uri,
+                        "chainId": chain_id,
+                    },
+                    separators=(",", ":"),
+                ),
             ),
             "postman",
         ),
@@ -227,7 +295,7 @@ def _build_api_readiness_command_sequence(env_file: str) -> tuple[tuple[str, tup
                 "OPTIONS",
                 f"{base_url}/orders",
                 "--header",
-                "Origin: http://localhost:3000",
+                "Origin: http://localhost:5173",
                 "--header",
                 "Access-Control-Request-Method: POST",
                 "--header",
@@ -276,9 +344,11 @@ def _build_api_readiness_command_sequence(env_file: str) -> tuple[tuple[str, tup
                 "--header",
                 "Idempotency-Key: postman-duplicate-checkout",
                 "--header",
+                f"X-User-Id: {user_id}",
+                "--header",
                 "X-CSRF-Token: <csrf-token>",
                 "--data",
-                "<checkout-order-json>",
+                json.dumps(checkout_order | {"idempotencyKey": "postman-body-conflict"}, separators=(",", ":")),
             ),
             "http",
         ),
@@ -293,9 +363,11 @@ def _build_api_readiness_command_sequence(env_file: str) -> tuple[tuple[str, tup
                 "--header",
                 "Idempotency-Key: postman-happy-path-checkout",
                 "--header",
+                f"X-User-Id: {user_id}",
+                "--header",
                 "X-CSRF-Token: <csrf-token>",
                 "--data",
-                "<checkout-order-json>",
+                json.dumps(checkout_order, separators=(",", ":")),
             ),
             "postman",
         ),
@@ -306,7 +378,11 @@ def _build_api_readiness_command_sequence(env_file: str) -> tuple[tuple[str, tup
                 "GET",
                 f"{base_url}/operator/dashboard",
                 "--header",
-                "Cookie: access_token=<operator-session-token>; csrf_token=<csrf-token>",
+                "X-User-Id: operator-1",
+                "--header",
+                "X-User-Role: ADMIN",
+                "--header",
+                "X-User-Scopes: operator:read,operator:action",
             ),
             "postman",
         ),
@@ -734,27 +810,43 @@ def _run_api_smoke_command(
 ) -> dict[str, Any]:
     timeout = API_COMMAND_TIMEOUT_SECONDS[name]
     if runner is not None:
-        return _normalize_runner_result(name, argv, category, timeout, runner(name, argv, root, redactions), redactions)
-    try:
-        completed = subprocess.run(
-            list(argv),
-            cwd=root,
-            shell=False,
-            text=True,
-            capture_output=True,
-            timeout=timeout,
-            check=False,
+        return _normalize_expected_http_error(
+            name,
+            _normalize_runner_result(name, argv, category, timeout, runner(name, argv, root, redactions), redactions),
         )
-        return _normalize_runner_result(name, argv, category, timeout, completed, redactions)
+    attempts = 0
+    deadline = monotonic() + timeout
+    try:
+        while True:
+            attempts += 1
+            execution_argv = _materialize_api_command_argv(name, argv, root)
+            completed = subprocess.run(
+                list(execution_argv),
+                cwd=root,
+                env=_api_command_env(name, root),
+                shell=False,
+                text=True,
+                capture_output=True,
+                timeout=max(0.1, deadline - monotonic()),
+                check=False,
+            )
+            result = _normalize_runner_result(name, argv, category, timeout, completed, redactions)
+            result = _normalize_expected_http_error(name, result)
+            if not _should_retry_api_command(name, result, deadline):
+                return _with_attempt_count(result, attempts)
+            sleep(min(API_HTTP_READINESS_RETRY_DELAY_SECONDS, max(0.0, deadline - monotonic())))
     except subprocess.TimeoutExpired as exc:
-        return {
-            **_api_command_payload(name, argv, category),
-            "timeoutSeconds": timeout,
-            "exitCode": None,
-            "stdout": _sanitize_output(_to_text(exc.stdout), redactions),
-            "stderr": _sanitize_output(_to_text(exc.stderr), redactions),
-            "timedOut": True,
-        }
+        return _with_attempt_count(
+            {
+                **_api_command_payload(name, argv, category),
+                "timeoutSeconds": timeout,
+                "exitCode": None,
+                "stdout": _sanitize_output(_to_text(exc.stdout), redactions),
+                "stderr": _sanitize_output(_to_text(exc.stderr), redactions),
+                "timedOut": True,
+            },
+            attempts or 1,
+        )
 
 
 def _normalize_runner_result(
@@ -813,7 +905,148 @@ def _run_docker_command(name: str, argv: tuple[str, ...], root: Path, redactions
             "stdout": _sanitize_output(_to_text(exc.stdout), redactions),
             "stderr": _sanitize_output(_to_text(exc.stderr), redactions),
             "timedOut": True,
+    }
+
+
+def _normalize_expected_http_error(name: str, result: dict[str, Any]) -> dict[str, Any]:
+    expected = API_EXPECTED_HTTP_ERRORS.get(name)
+    if expected is None or result["timedOut"]:
+        return result
+    expected_status, expected_code = expected
+    actual_status = _curl_error_status(result.get("stderr", ""))
+    actual_code = _error_code_from_json(result.get("stdout", ""))
+    if result["exitCode"] == 22 and actual_status == expected_status and actual_code == expected_code:
+        return result | {
+            "exitCode": 0,
+            "expectedHttpStatus": expected_status,
+            "expectedErrorCode": expected_code,
         }
+    return result | {
+        "expectedHttpStatus": expected_status,
+        "expectedErrorCode": expected_code,
+    }
+
+
+def _materialize_api_command_argv(name: str, argv: tuple[str, ...], root: Path) -> tuple[str, ...]:
+    if name == "seed-local-fixtures":
+        seed_sql = _seed_sql_from_plan(root)
+        return tuple(value.replace("<seed-sql-generated-by-runner>", seed_sql) for value in argv)
+    if name == "csrf-success":
+        csrf_token = _csrf_token_from_cookie_jar(API_COOKIE_JAR_PATH)
+        if csrf_token is None:
+            return argv
+        return tuple(value.replace("<csrf-token>", csrf_token) for value in argv)
+    if name == "oversized-body":
+        _write_oversized_body_file(API_OVERSIZED_BODY_PATH)
+        return tuple(
+            value.replace("<oversized-body-generated-by-runner>", f"@{API_OVERSIZED_BODY_PATH}") for value in argv
+        )
+    return argv
+
+
+def _seed_sql_from_plan(root: Path) -> str:
+    plan_path = root / "postman" / "fixtures" / "token-payments.local.seed-plan.json"
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    statements: list[str] = []
+    for record in plan.get("records", ()):
+        if not isinstance(record, dict):
+            continue
+        table = _sql_identifier(str(record["table"]))
+        columns = tuple(_sql_identifier(str(column)) for column in record["columns"])
+        values = record["values"]
+        if not isinstance(values, dict):
+            raise ValueError("seed plan record values must be an object")
+        literals = tuple(_sql_literal(values[column]) for column in record["columns"])
+        statements.append(
+            f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({', '.join(literals)}) ON CONFLICT DO NOTHING;"
+        )
+    return "\n".join(statements)
+
+
+def _sql_identifier(value: str) -> str:
+    if not re.fullmatch(r"[a-z_][a-z0-9_]*", value):
+        raise ValueError(f"unsafe seed SQL identifier: {value}")
+    return value
+
+
+def _sql_literal(value: Any) -> str:
+    if value is None:
+        return "NULL"
+    if isinstance(value, bool):
+        return "TRUE" if value else "FALSE"
+    if isinstance(value, int | float):
+        return str(value)
+    if isinstance(value, list | dict):
+        return f"'{_sql_quote(json.dumps(value, ensure_ascii=True, separators=(',', ':')))}'::jsonb"
+    return f"'{_sql_quote(str(value))}'"
+
+
+def _sql_quote(value: str) -> str:
+    return value.replace("'", "''")
+
+
+def _write_oversized_body_file(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("x" * API_OVERSIZED_BODY_BYTES, encoding="utf-8")
+
+
+def _csrf_token_from_cookie_jar(path: Path) -> str | None:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split("\t")
+        if len(parts) >= 7 and parts[5] == "csrf_token" and parts[6].strip():
+            return parts[6].strip()
+    return None
+
+
+def _curl_error_status(stderr: str) -> int | None:
+    match = CURL_HTTP_ERROR_PATTERN.search(stderr)
+    if match is None:
+        return None
+    return int(match.group("status"))
+
+
+def _error_code_from_json(stdout: str) -> str | None:
+    try:
+        body = json.loads(stdout)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(body, dict):
+        return None
+    error = body.get("error")
+    if not isinstance(error, dict):
+        return None
+    code = error.get("code")
+    return code if isinstance(code, str) else None
+
+
+def _api_command_env(name: str, root: Path) -> dict[str, str] | None:
+    if name != "validate-session-signing-keys":
+        return None
+    env = os.environ.copy()
+    app_path = str(root / "app")
+    existing_pythonpath = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = (
+        os.pathsep.join((app_path, existing_pythonpath))
+        if existing_pythonpath
+        else app_path
+    )
+    return env
+
+
+def _should_retry_api_command(name: str, result: dict[str, Any], deadline: float) -> bool:
+    return name in API_HTTP_READINESS_RETRY_STEPS and _command_failed(result) and monotonic() < deadline
+
+
+def _with_attempt_count(result: dict[str, Any], attempts: int) -> dict[str, Any]:
+    if attempts > 1:
+        return result | {"attempts": attempts}
+    return result
 
 
 def _command_failed(result: dict[str, Any]) -> bool:

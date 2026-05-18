@@ -130,14 +130,15 @@ async def _body_from_asgi_receive(receive: AsgiReceive, *, max_body_bytes: int) 
 
 
 async def _send_http_response(send: AsgiSend, response: HttpResponse) -> None:
+    body = _body_for_status(response.status_code, response.body)
     await send(
         {
             "type": "http.response.start",
             "status": response.status_code,
-            "headers": _headers_to_asgi(response.header_items()),
+            "headers": _headers_to_asgi(_headers_for_body(response.header_items(), body)),
         }
     )
-    await send({"type": "http.response.body", "body": response.body, "more_body": False})
+    await send({"type": "http.response.body", "body": body, "more_body": False})
 
 
 def _error_response(*, status_code: int, code: str, message: str) -> HttpResponse:
@@ -177,6 +178,26 @@ def _headers_from_asgi_scope(scope: AsgiScope) -> dict[str, str]:
 def _headers_to_asgi(headers: Mapping[str, str] | tuple[tuple[str, str], ...]) -> list[tuple[bytes, bytes]]:
     items = headers.items() if isinstance(headers, Mapping) else headers
     return [(_header_bytes(name), _header_bytes(value)) for name, value in items]
+
+
+def _headers_for_body(headers: tuple[tuple[str, str], ...], body: bytes) -> tuple[tuple[str, str], ...]:
+    output: list[tuple[str, str]] = []
+    content_length_seen = False
+    for name, value in headers:
+        if name.lower() == "content-length":
+            output.append((name, str(len(body))))
+            content_length_seen = True
+        else:
+            output.append((name, value))
+    if not content_length_seen:
+        output.append(("Content-Length", str(len(body))))
+    return tuple(output)
+
+
+def _body_for_status(status_code: int, body: bytes) -> bytes:
+    if 100 <= status_code < 200 or status_code in {204, 304}:
+        return b""
+    return body
 
 
 def _message_body(value: Any) -> bytes:

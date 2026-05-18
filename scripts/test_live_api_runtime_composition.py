@@ -168,6 +168,111 @@ def test_live_dependency_validation_uses_bounded_error_contract() -> None:
     assert json.loads(json.dumps(error)) == error
 
 
+def test_psycopg_session_factory_applies_schema_compatibility_once(monkeypatch: Any) -> None:
+    import token_payments.runtime.composition as composition
+
+    sessions = [_FakePsycopgSession(), _FakePsycopgSession()]
+    dict_row = object()
+
+    def fake_import_module(name: str) -> Any:
+        if name == "psycopg.rows":
+            return type("FakePsycopgRows", (), {"dict_row": dict_row})
+        assert name == "psycopg"
+
+        class FakePsycopg:
+            @staticmethod
+            def connect(
+                dsn: str,
+                *,
+                connect_timeout: int,
+                row_factory: object,
+            ) -> _FakePsycopgSession:
+                assert dsn == "postgresql://token_payments:secret@postgres:5432/token_payments"
+                assert connect_timeout == 3
+                assert row_factory is dict_row
+                return sessions.pop(0)
+
+        return FakePsycopg
+
+    monkeypatch.setattr(composition.importlib, "import_module", fake_import_module)
+
+    factory = composition.PsycopgPostgresSessionFactory(
+        "postgresql://token_payments:secret@postgres:5432/token_payments"
+    )
+
+    first = factory()
+    second = factory()
+
+    normalized_sql = _normalize_sql("\n".join(first.statements))
+    assert "alter table if exists auth_login_challenges" in normalized_sql
+    assert "add column if not exists domain text" in normalized_sql
+    assert "add column if not exists uri text" in normalized_sql
+    assert "add column if not exists chain_id integer" in normalized_sql
+    assert "alter table if exists auth_users" in normalized_sql
+    assert "add column if not exists last_login_at timestamptz" in normalized_sql
+    assert "alter table if exists auth_sessions" in normalized_sql
+    assert "add column if not exists wallet_address text" in normalized_sql
+    assert "add column if not exists refresh_token_rotation_version integer" in normalized_sql
+    assert first.commits == 1
+    assert second.statements == []
+    assert second.commits == 0
+
+
+def test_with_transaction_commits_and_closes_psycopg_style_session_without_begin() -> None:
+    import token_payments.runtime.composition as composition
+
+    session = _FakePsycopgSession()
+    dependencies = composition.LiveRuntimeDependencies(postgres_session_factory=lambda: session)
+
+    result = composition._with_transaction(
+        dependencies,
+        lambda connection: connection.execute("INSERT INTO auth_login_challenges (nonce_value) VALUES ('n')") or "ok",
+    )
+
+    assert result == "ok"
+    assert session.statements == ["INSERT INTO auth_login_challenges (nonce_value) VALUES ('n')"]
+    assert session.commits == 1
+    assert session.rollbacks == 0
+    assert session.closed is True
+
+
+def test_live_auth_route_registration_forwards_session_transport_and_csrf_service(monkeypatch: Any) -> None:
+    import token_payments.api as api
+    import token_payments.runtime.composition as composition
+
+    captured: dict[str, Any] = {}
+
+    def fake_register_auth_routes(
+        router: Any,
+        auth_api: Any,
+        *,
+        session_transport: Any | None = None,
+        csrf_token_service: Any | None = None,
+    ) -> tuple[Any, Any]:
+        captured["router"] = router
+        captured["auth_api"] = auth_api
+        captured["session_transport"] = session_transport
+        captured["csrf_token_service"] = csrf_token_service
+        return ("registered", csrf_token_service)
+
+    monkeypatch.setattr(api, "register_auth_routes", fake_register_auth_routes)
+
+    result = composition.register_auth_routes(
+        "router",
+        "auth-api",
+        session_transport="cookie-session",
+        csrf_token_service="csrf-service",
+    )
+
+    assert result == ("registered", "csrf-service")
+    assert captured == {
+        "router": "router",
+        "auth_api": "auth-api",
+        "session_transport": "cookie-session",
+        "csrf_token_service": "csrf-service",
+    }
+
+
 def test_live_composition_source_and_import_path_avoid_drivers_frameworks_and_sockets() -> None:
     imported_roots = _imported_roots(ROOT / "app/token_payments/runtime/composition.py")
 
@@ -237,6 +342,10 @@ def _imported_roots(path: Path) -> set[str]:
     return roots
 
 
+def _normalize_sql(value: str) -> str:
+    return " ".join(value.lower().split())
+
+
 class _FailIfCalled:
     def __init__(self, name: str) -> None:
         self.name = name
@@ -245,3 +354,23 @@ class _FailIfCalled:
     def __call__(self, *_args: Any, **_kwargs: Any) -> Any:
         self.calls += 1
         raise AssertionError(f"{self.name} must be injected but not called during composition")
+
+
+class _FakePsycopgSession:
+    def __init__(self) -> None:
+        self.statements: list[str] = []
+        self.commits = 0
+        self.rollbacks = 0
+        self.closed = False
+
+    def execute(self, sql: str, _params: Any | None = None) -> None:
+        self.statements.append(sql)
+
+    def commit(self) -> None:
+        self.commits += 1
+
+    def rollback(self) -> None:
+        self.rollbacks += 1
+
+    def close(self) -> None:
+        self.closed = True

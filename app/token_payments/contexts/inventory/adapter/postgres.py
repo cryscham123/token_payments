@@ -49,7 +49,7 @@ LEFT JOIN (
 ) confirmed
   ON confirmed.product_id = inv.product_id
  AND confirmed.store_id = inv.store_id
-WHERE (%(store_id)s IS NULL OR inv.store_id = %(store_id)s)
+WHERE (%(store_id)s::uuid IS NULL OR inv.store_id = %(store_id)s::uuid)
 ORDER BY inv.store_id, inv.product_id
 """
 
@@ -74,8 +74,8 @@ LEFT JOIN (
 ) confirmed
   ON confirmed.product_id = inv.product_id
  AND confirmed.store_id = inv.store_id
-WHERE stores.owner_user_id = %(owner_user_id)s
-  AND (%(store_id)s IS NULL OR inv.store_id = %(store_id)s)
+WHERE stores.owner_user_id = %(owner_user_id)s::uuid
+  AND (%(store_id)s::uuid IS NULL OR inv.store_id = %(store_id)s::uuid)
 ORDER BY inv.store_id, inv.product_id
 """
 

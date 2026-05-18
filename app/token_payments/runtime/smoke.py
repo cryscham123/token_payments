@@ -176,6 +176,7 @@ POSTMAN_DOCKER_API_READINESS_COMMAND_SEQUENCE = (
     "build-api-service",
     "start-infrastructure",
     "start-api-service",
+    "seed-local-fixtures",
     "validate-session-signing-keys",
     "healthz",
     "readyz",
