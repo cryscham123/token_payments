@@ -1,0 +1,43 @@
+{
+  "project": "Token Payments",
+  "phase": "21-admin-store-catalog-provisioning",
+  "steps": [
+    {
+      "step": 0,
+      "name": "admin-store-ownership-domain-schema",
+      "status": "completed",
+      "summary": "Canonical store_catalog domain/schema contracts were added with store-scoped OWNER/MANAGER membership, wallet/chain settings on StoreProfile, minimal StoreProduct fields, additive PostgreSQL tables, and CUSTOMER-compatible inventory audit role support.",
+      "completed_at": "2026-05-20T01:30:00+0900"
+    },
+    {
+      "step": 1,
+      "name": "admin-store-ownership-provisioning-api",
+      "status": "completed",
+      "summary": "Admin-only createOrReuseStoreUser, createStore, and grantStoreMembership HTTP routes were added; provisioning reuses existing wallet identities, writes canonical store membership plus order/store-approval projections, and ignores client-provided role escalation.",
+      "completed_at": "2026-05-20T01:31:00+0900"
+    },
+    {
+      "step": 2,
+      "name": "store-owner-product-registration-api",
+      "status": "completed",
+      "summary": "Store-owner product registration now authorizes by active store membership or ADMIN override and writes store_catalog_products, order_store_products, store_approval_products, and initial product_inventory consistently.",
+      "completed_at": "2026-05-20T01:32:00+0900"
+    },
+    {
+      "step": 3,
+      "name": "ownership-authz-audit-idempotency",
+      "status": "completed",
+      "summary": "Catalog mutations and store-owner APIs require idempotency keys, detect same-key payload conflicts, record catalog/inventory audit context including store-scoped role, and allow CUSTOMER-role owners through membership checks.",
+      "completed_at": "2026-05-20T01:33:00+0900"
+    },
+    {
+      "step": 4,
+      "name": "admin-store-catalog-public-verification",
+      "status": "completed",
+      "summary": "Public route docs, Postman expected responses, collection skeletons, local seed metadata, and phase metadata were updated for the 25-route admin store catalog and store-owner product registration surface.",
+      "completed_at": "2026-05-20T01:34:00+0900"
+    }
+  ],
+  "created_at": "2026-05-20T00:00:00+0900",
+  "completed_at": "2026-05-20T01:34:00+0900"
+}

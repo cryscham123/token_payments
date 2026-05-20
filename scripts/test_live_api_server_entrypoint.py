@@ -38,7 +38,7 @@ def test_default_serve_api_still_returns_bounded_preview_without_starting_server
     assert payload["summary"].endswith("server was not started")
     assert http["serverStarted"] is False
     assert http["longRunning"] is False
-    assert http["routeCount"] == 21
+    assert http["routeCount"] == 25
 
 
 def test_live_dry_run_returns_server_plan_without_binding_network_port() -> None:
@@ -51,7 +51,7 @@ def test_live_dry_run_returns_server_plan_without_binding_network_port() -> None
     assert plan["host"] == "0.0.0.0"
     assert plan["port"] == 8000
     assert plan["appFactory"] == "token_payments.runtime.api_server.build_live_asgi_application"
-    assert plan["routeCount"] == 21
+    assert plan["routeCount"] == 25
     assert plan["requiresConfirmation"] is True
     assert plan["serverStarted"] is False
     assert plan["longRunning"] is True

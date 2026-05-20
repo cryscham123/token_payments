@@ -1,0 +1,2 @@
+"""Store catalog bounded context."""
+

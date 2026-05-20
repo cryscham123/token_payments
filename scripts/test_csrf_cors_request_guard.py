@@ -69,7 +69,7 @@ def test_login_challenge_issues_signed_csrf_token_cookie_without_expanding_route
     assert "Path=/" in csrf_cookie
     assert "HttpOnly" not in csrf_cookie
     assert "auth/csrf" not in {route["path"] for route in __import__("token_payments.api").api.http_route_manifest()}
-    assert len(__import__("token_payments.api").api.http_route_manifest()) == 21
+    assert len(__import__("token_payments.api").api.http_route_manifest()) == 25
 
 
 def test_cookie_authenticated_mutating_requests_require_valid_double_submit_csrf() -> None:

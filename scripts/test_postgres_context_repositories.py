@@ -184,7 +184,8 @@ def test_inventory_query_sql_casts_nullable_store_filter_for_live_psycopg() -> N
 
     assert "%(store_id)s::uuid IS NULL" in combined_sql
     assert "inv.store_id = %(store_id)s::uuid" in combined_sql
-    assert "stores.owner_user_id = %(owner_user_id)s::uuid" in combined_sql
+    assert "store_catalog_store_memberships" in combined_sql
+    assert "memberships.user_id = %(owner_user_id)s::uuid" in combined_sql
 
 
 def test_domain_and_application_layers_do_not_import_postgres_adapters() -> None:

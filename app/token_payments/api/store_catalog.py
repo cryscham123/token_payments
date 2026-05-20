@@ -1,0 +1,294 @@
+"""Framework-neutral admin store provisioning and catalog API handlers."""
+
+from __future__ import annotations
+
+from typing import Any, Mapping
+
+from token_payments.contexts.auth.domain import UserRole
+from token_payments.contexts.store_catalog.application.commands import (
+    CreateOrReuseStoreUserCommand,
+    CreateStoreCommand,
+    GrantStoreMembershipCommand,
+    RegisterStoreProductCommand,
+    payload_hash,
+)
+from token_payments.contexts.store_catalog.application.ports import StoreCatalogCommandStatus
+from token_payments.contexts.store_catalog.domain import StoreMembershipRole
+from token_payments.shared.domain import CommandId, Crypto, ProductId, StoreId, UserId, WalletAddress
+
+from .contracts import ApiRequest, ApiResponse, json_response
+from .idempotency import IdempotencyKeyConflict, idempotency_conflict_response, idempotency_key_from_request
+
+
+class StoreCatalogApi:
+    """Admin provisioning and store-owner product registration facade."""
+
+    def __init__(self, use_case: Any, *, id_generator: Any | None = None) -> None:
+        self._use_case = use_case
+        self._id_generator = id_generator
+
+    def create_or_reuse_store_user(self, request: ApiRequest) -> ApiResponse:
+        try:
+            claims = _require_admin(request)
+            body = _body(request)
+            idempotency_key = _required_idempotency_key(request, body)
+            command = CreateOrReuseStoreUserCommand(
+                command_id=CommandId(idempotency_key),
+                wallet_address=WalletAddress(_required_text(body, "walletAddress")),
+                requested_at=request.received_at,
+                request_id=request.request_id,
+                payload_hash=payload_hash(_idempotency_payload(request, body, claims.user_id)),
+            )
+            return _result_response(
+                self._use_case.create_or_reuse_store_user(command),
+                request.request_id,
+                created_status=201,
+            )
+        except _ApiError as exc:
+            return exc.response(request.request_id)
+        except IdempotencyKeyConflict as exc:
+            return idempotency_conflict_response(exc, request.request_id)
+        except ValueError as exc:
+            return _error_response("VALIDATION_ERROR", str(exc), 400, request.request_id)
+
+    def create_store(self, request: ApiRequest) -> ApiResponse:
+        try:
+            claims = _require_admin(request)
+            body = _body(request)
+            idempotency_key = _required_idempotency_key(request, body)
+            store_id = _optional_text(body, "storeId") or _new_id(self._id_generator)
+            command = CreateStoreCommand(
+                command_id=CommandId(idempotency_key),
+                actor_user_id=claims.user_id,
+                store_id=StoreId(store_id),
+                owner_user_id=UserId(_required_text(body, "ownerUserId")),
+                store_wallet=WalletAddress(_required_text(body, "storeWalletAddress")),
+                supported_chain_ids=_required_int_tuple(body, "supportedChainIds"),
+                active=_optional_bool(body, "active", True),
+                requested_at=request.received_at,
+                request_id=request.request_id,
+                payload_hash=payload_hash(_idempotency_payload(request, body, claims.user_id)),
+            )
+            return _result_response(self._use_case.create_store(command), request.request_id, created_status=201)
+        except _ApiError as exc:
+            return exc.response(request.request_id)
+        except IdempotencyKeyConflict as exc:
+            return idempotency_conflict_response(exc, request.request_id)
+        except ValueError as exc:
+            return _error_response("VALIDATION_ERROR", str(exc), 400, request.request_id)
+
+    def grant_store_membership(self, request: ApiRequest) -> ApiResponse:
+        try:
+            claims = _require_admin(request)
+            body = _body(request)
+            idempotency_key = _required_idempotency_key(request, body)
+            command = GrantStoreMembershipCommand(
+                command_id=CommandId(idempotency_key),
+                actor_user_id=claims.user_id,
+                store_id=StoreId(_lookup_value(request, "storeId")),
+                user_id=UserId(_required_text(body, "userId")),
+                role=StoreMembershipRole(_optional_text(body, "role") or StoreMembershipRole.MANAGER.value),
+                active=_optional_bool(body, "active", True),
+                requested_at=request.received_at,
+                request_id=request.request_id,
+                payload_hash=payload_hash(_idempotency_payload(request, body, claims.user_id)),
+            )
+            return _result_response(
+                self._use_case.grant_store_membership(command),
+                request.request_id,
+                created_status=201,
+            )
+        except _ApiError as exc:
+            return exc.response(request.request_id)
+        except IdempotencyKeyConflict as exc:
+            return idempotency_conflict_response(exc, request.request_id)
+        except ValueError as exc:
+            return _error_response("VALIDATION_ERROR", str(exc), 400, request.request_id)
+
+    def register_store_product(self, request: ApiRequest) -> ApiResponse:
+        try:
+            claims = _require_authenticated(request)
+            body = _body(request)
+            idempotency_key = _required_idempotency_key(request, body)
+            command = RegisterStoreProductCommand(
+                command_id=CommandId(idempotency_key),
+                actor_user_id=claims.user_id,
+                actor_platform_role=claims.role,
+                store_id=StoreId(_lookup_value(request, "storeId")),
+                product_id=ProductId(_required_text(body, "productId")),
+                name=_required_text(body, "name"),
+                price=_price(body),
+                initial_total_stock=_required_int(body, "initialTotalStock"),
+                active=_optional_bool(body, "active", _optional_bool(body, "available", True)),
+                requested_at=request.received_at,
+                request_id=request.request_id,
+                payload_hash=payload_hash(_idempotency_payload(request, body, claims.user_id)),
+            )
+            return _result_response(
+                self._use_case.register_store_product(command),
+                request.request_id,
+                created_status=201,
+            )
+        except _ApiError as exc:
+            return exc.response(request.request_id)
+        except IdempotencyKeyConflict as exc:
+            return idempotency_conflict_response(exc, request.request_id)
+        except ValueError as exc:
+            return _error_response("VALIDATION_ERROR", str(exc), 400, request.request_id)
+
+
+class _Claims:
+    def __init__(self, *, user_id: UserId, role: UserRole) -> None:
+        self.user_id = user_id
+        self.role = role
+
+
+class _ApiError(ValueError):
+    def __init__(self, code: str, message: str, status_code: int) -> None:
+        self.code = code
+        self.status_code = status_code
+        super().__init__(message)
+
+    def response(self, request_id: str) -> ApiResponse:
+        return _error_response(self.code, str(self), self.status_code, request_id)
+
+
+def _require_admin(request: ApiRequest) -> _Claims:
+    claims = _require_authenticated(request)
+    if claims.role is not UserRole.ADMIN:
+        raise _ApiError("ADMIN_REQUIRED", "admin session is required", 403)
+    return claims
+
+
+def _require_authenticated(request: ApiRequest) -> _Claims:
+    context = request.auth_context
+    if context is None or context.user_id is None or context.role is None:
+        raise _ApiError("AUTHENTICATION_REQUIRED", "authenticated session is required", 401)
+    return _Claims(user_id=UserId(context.user_id), role=UserRole(context.role))
+
+
+def _required_idempotency_key(request: ApiRequest, body: Mapping[str, Any]) -> str:
+    key = idempotency_key_from_request(request, body)
+    if key is None:
+        raise _ApiError("IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key header or body idempotencyKey is required", 400)
+    return key
+
+
+def _result_response(result: Any, request_id: str, *, created_status: int) -> ApiResponse:
+    if result.status is StoreCatalogCommandStatus.CONFLICT:
+        return json_response(result.payload, status_code=409, request_id=request_id)
+    if result.status is StoreCatalogCommandStatus.REJECTED:
+        code = str(result.rejection_reason or result.payload.get("error", {}).get("code", "CATALOG_COMMAND_REJECTED"))
+        return json_response(result.payload, status_code=_status_for_rejection(code), request_id=request_id)
+    status_code = 200 if result.status is StoreCatalogCommandStatus.DUPLICATE else created_status
+    return json_response(result.payload, status_code=status_code, request_id=request_id)
+
+
+def _status_for_rejection(code: str) -> int:
+    if code.endswith("_FORBIDDEN"):
+        return 403
+    if code.endswith("_NOT_FOUND"):
+        return 404
+    if code.endswith("_CONFLICT"):
+        return 409
+    if code in {"STORE_INACTIVE", "UNSUPPORTED_PRICE_CHAIN"}:
+        return 409
+    return 400
+
+
+def _body(request: ApiRequest) -> Mapping[str, Any]:
+    if not isinstance(request.body, Mapping):
+        raise _ApiError("VALIDATION_ERROR", "request body must be an object", 400)
+    return request.body
+
+
+def _idempotency_payload(request: ApiRequest, body: Mapping[str, Any], actor_user_id: UserId) -> dict[str, Any]:
+    return {
+        "method": request.method,
+        "path": request.path,
+        "query": dict(request.query),
+        "body": dict(body),
+        "actorUserId": str(actor_user_id),
+    }
+
+
+def _price(body: Mapping[str, Any]) -> Crypto:
+    raw = body.get("price")
+    if not isinstance(raw, Mapping):
+        raise ValueError("price must be an object")
+    return Crypto(
+        amount=_required_text(raw, "amount"),
+        symbol=_required_text(raw, "symbol"),
+        chain_id=_required_int(raw, "chainId"),
+        token_address=_optional_text(raw, "tokenAddress"),
+        decimals=_required_int(raw, "decimals"),
+    )
+
+
+def _lookup_value(request: ApiRequest, key: str) -> str:
+    value = request.query.get(key)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    raise ValueError(f"{key} is required")
+
+
+def _required_text(body: Mapping[str, Any], key: str) -> str:
+    value = body.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{key} is required")
+    return value.strip()
+
+
+def _optional_text(body: Mapping[str, Any], key: str) -> str | None:
+    value = body.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{key} must be a non-empty string")
+    return value.strip()
+
+
+def _required_int(body: Mapping[str, Any], key: str) -> int:
+    value = body.get(key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{key} must be an integer")
+    return value
+
+
+def _required_int_tuple(body: Mapping[str, Any], key: str) -> tuple[int, ...]:
+    values = body.get(key)
+    if not isinstance(values, list) or not values:
+        raise ValueError(f"{key} must be a non-empty array")
+    return tuple(_int_value(value, key) for value in values)
+
+
+def _int_value(value: Any, field_name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{field_name} must contain integers")
+    return value
+
+
+def _optional_bool(body: Mapping[str, Any], key: str, default: bool) -> bool:
+    value = body.get(key, default)
+    if not isinstance(value, bool):
+        raise ValueError(f"{key} must be a boolean")
+    return value
+
+
+def _new_id(generator: Any | None) -> str:
+    if generator is None:
+        return str(StoreId.new())
+    new_id = getattr(generator, "new_id", None)
+    if callable(new_id):
+        return str(new_id())
+    if callable(generator):
+        return str(generator())
+    raise ValueError("id_generator must expose new_id() or be callable")
+
+
+def _error_response(code: str, message: str, status_code: int, request_id: str) -> ApiResponse:
+    return json_response(
+        {"error": {"code": code, "message": message}},
+        status_code=status_code,
+        request_id=request_id,
+    )

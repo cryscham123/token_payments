@@ -13,13 +13,16 @@ def test_http_adapter_public_exports_cover_router_routes_wsgi_and_manifest_helpe
     import token_payments.api as api
 
     expected_exports = {
+        "ADMIN_STORE_CATALOG_HTTP_ROUTES",
         "AUTH_HTTP_ROUTES",
         "CHECKOUT_HTTP_ROUTES",
         "ORDER_HTTP_ROUTES",
         "OPERATOR_ACTION_HTTP_ROUTES",
         "OPERATOR_HTTP_ROUTES",
         "PAYMENT_HTTP_ROUTES",
+        "STORE_OWNER_CATALOG_HTTP_ROUTES",
         "STORE_OWNER_INVENTORY_HTTP_ROUTES",
+        "StoreCatalogApi",
         "HttpRequest",
         "HttpResponse",
         "HttpRoute",
@@ -35,6 +38,7 @@ def test_http_adapter_public_exports_cover_router_routes_wsgi_and_manifest_helpe
         "register_operator_action_routes",
         "register_operator_routes",
         "register_payment_routes",
+        "register_store_catalog_routes",
         "register_store_owner_inventory_routes",
     }
 
@@ -49,7 +53,7 @@ def test_http_route_manifest_includes_every_phase_7_route_family() -> None:
     described = list(describe_http_routes())
 
     assert described == manifest
-    assert len(manifest) == 21
+    assert len(manifest) == 25
     assert {entry["operationId"] for entry in manifest} == {
         "requestLoginChallenge",
         "loginWithMetaMask",
@@ -60,6 +64,10 @@ def test_http_route_manifest_includes_every_phase_7_route_family() -> None:
         "getCheckoutTrackingByTrackingId",
         "getCheckoutTrackingByOrderId",
         "submitTransactionHash",
+        "createOrReuseStoreUser",
+        "createStore",
+        "grantStoreMembership",
+        "registerStoreProduct",
         "listStoreOwnerInventory",
         "increaseStoreOwnerInventoryStock",
         "correctStoreOwnerInventoryStock",
@@ -78,6 +86,7 @@ def test_http_route_manifest_includes_every_phase_7_route_family() -> None:
         "orders",
         "checkouts",
         "payments",
+        "admin",
         "store-owner",
         "operator",
     }

@@ -54,6 +54,7 @@ class InventoryAuditRecord:
     request_id: str
     idempotency_key: str
     recorded_at: datetime
+    actor_store_role: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.actor_user_id, UserId):
@@ -80,6 +81,8 @@ class InventoryAuditRecord:
         object.__setattr__(self, "request_id", _text(self.request_id, "request_id"))
         object.__setattr__(self, "idempotency_key", _text(self.idempotency_key, "idempotency_key"))
         object.__setattr__(self, "recorded_at", _aware_datetime(self.recorded_at, "recorded_at"))
+        if self.actor_store_role is not None:
+            object.__setattr__(self, "actor_store_role", _text(self.actor_store_role, "actor_store_role"))
 
 
 class InventoryRepository(Protocol):
@@ -115,6 +118,9 @@ class InventoryQueryRepository(Protocol):
         ...
 
     def owner_for_store(self, store_id: StoreId) -> UserId | None:
+        ...
+
+    def store_role_for_user(self, store_id: StoreId, user_id: UserId) -> str | None:
         ...
 
 

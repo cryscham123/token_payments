@@ -62,6 +62,8 @@ from token_payments.contexts.payment.application import (
     RefundPaymentCommand,
     SubmitTransactionHashCommand,
 )
+from token_payments.contexts.store_catalog.adapter import PostgresStoreCatalogRepository
+from token_payments.contexts.store_catalog.application import StoreCatalogApplicationService
 from token_payments.shared.domain import (
     CheckoutCommandName,
     CheckoutEventName,
@@ -1141,6 +1143,7 @@ class LiveApiFacades:
     orders: Any
     checkout: Any
     payments: Any
+    catalog: Any
     inventory: Any
     operator: Any
     operator_action: Any
@@ -1181,6 +1184,12 @@ def register_payment_routes(router: Any, payments_api: Any) -> Any:
     return _register_payment_routes(router, payments_api)
 
 
+def register_store_catalog_routes(router: Any, catalog_api: Any) -> Any:
+    from token_payments.api import register_store_catalog_routes as _register_store_catalog_routes
+
+    return _register_store_catalog_routes(router, catalog_api)
+
+
 def register_store_owner_inventory_routes(router: Any, inventory_api: Any) -> Any:
     from token_payments.api import register_store_owner_inventory_routes as _register_store_owner_inventory_routes
 
@@ -1215,6 +1224,7 @@ def build_live_api_facades(
         OperatorOutboxActionExecutor,
         OrdersApi,
         PaymentsApi,
+        StoreCatalogApi,
         StoreOwnerInventoryApi,
     )
 
@@ -1231,6 +1241,10 @@ def build_live_api_facades(
         orders=OrdersApi(_TransactionalOrderUseCase(live_dependencies)),
         checkout=CheckoutApi(_TransactionalCheckoutTrackingQuery(live_dependencies)),
         payments=PaymentsApi(payment_handler),
+        catalog=StoreCatalogApi(
+            _TransactionalStoreCatalogUseCase(live_dependencies),
+            id_generator=live_dependencies.id_generator,
+        ),
         inventory=StoreOwnerInventoryApi(
             query=_TransactionalInventoryQuery(live_dependencies),
             command_handler=_TransactionalStoreOwnerInventoryCommandHandler(live_dependencies),
@@ -1269,6 +1283,7 @@ def build_live_api_router(
     register_order_routes(router, facades.orders)
     register_checkout_routes(router, facades.checkout)
     register_payment_routes(router, facades.payments)
+    register_store_catalog_routes(router, facades.catalog)
     register_store_owner_inventory_routes(router, facades.inventory)
     register_operator_routes(router, facades.operator)
     register_operator_action_routes(router, facades.operator_action)
@@ -1468,6 +1483,34 @@ class _TransactionalInventoryQuery:
         return _with_transaction(
             self._dependencies,
             lambda connection: PostgresInventoryQueryRepository(connection).owner_for_store(store_id),
+        )
+
+
+class _TransactionalStoreCatalogUseCase:
+    def __init__(self, dependencies: LiveRuntimeDependencies) -> None:
+        self._dependencies = dependencies
+
+    def create_or_reuse_store_user(self, command):
+        return self._execute(lambda service: service.create_or_reuse_store_user(command))
+
+    def create_store(self, command):
+        return self._execute(lambda service: service.create_store(command))
+
+    def grant_store_membership(self, command):
+        return self._execute(lambda service: service.grant_store_membership(command))
+
+    def register_store_product(self, command):
+        return self._execute(lambda service: service.register_store_product(command))
+
+    def _execute(self, callback: Callable[[StoreCatalogApplicationService], Any]) -> Any:
+        return _with_transaction(
+            self._dependencies,
+            lambda connection: callback(
+                StoreCatalogApplicationService(
+                    repository=PostgresStoreCatalogRepository(connection),
+                    user_id_generator=self._dependencies.id_generator,
+                )
+            ),
         )
 
 

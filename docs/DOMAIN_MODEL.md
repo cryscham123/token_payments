@@ -26,7 +26,7 @@
 - `WalletAddress(address, normalize)`
 - `AuthNonce(value, expiresAt)`
 - `IssuedToken(accessToken, refreshToken, expiresAt)`
-- `UserRole`: `CUSTOMER`, `STORE_OWNER`, `ADMIN`
+- `UserRole`: `CUSTOMER`, `STORE_OWNER`, `ADMIN`. `STORE_OWNER` remains only for backward-compatible session/data interpretation; new store management paths use store ownership/membership, not a global `STORE_OWNER` account role.
 - `ChallengeStatus`: `ISSUED`, `VERIFIED`, `EXPIRED`, `REJECTED`
 - `RefreshTokenHash(hash, salt, rotationVersion)`
 - `LoginFailureReason`: `INVALID_SIGNATURE`, `EXPIRED_CHALLENGE`, `REUSED_NONCE`, `WALLET_MISMATCH`, `SIWE_MESSAGE_MISMATCH`
@@ -81,6 +81,29 @@
 - Adapters: Kafka + Outbox messaging, PostgreSQL repositories
 
 `order.Store` is the order/catalog projection for order creation and checkout tracking. `order.Store` and `store_approval.Store` are not the same aggregate and must not share persistence or DTOs by default.
+
+## Store Catalog Context
+
+### Aggregates
+
+| Aggregate | 주요 필드 | 주요 행위 |
+| --- | --- | --- |
+| `StoreProfile` | `StoreId`, `ownerUserId`, `active`, `storeWallet`, `supportedChainIds` | store 단위 wallet/chain 설정과 active 상태 보존 |
+| `StoreMembership` | `StoreId`, `UserId`, store-scoped `role`, `active` | `OWNER`/`MANAGER` 등 store-scoped 권한 판단 |
+| `StoreProduct` | `StoreId`, `ProductId`, `name`, `Crypto price`, `active` | 최소 checkout catalog item 등록 |
+
+### Value Objects
+
+- `StoreMembershipRole`: `OWNER`, `MANAGER`
+- `StoreId`, `ProductId`, `UserId`, `WalletAddress`, `Crypto`
+
+### Ports and Adapters
+
+- Input: `createOrReuseStoreUser`, `createStore`, `grantStoreMembership`, `registerStoreProduct` (Adapter type: HTTP)
+- Output: `CatalogWriteRepository`, catalog idempotency/audit persistence, checkout catalog projection writers, store approval projection writers, inventory projection writer
+- Adapters: PostgreSQL canonical `store_catalog_stores`, `store_catalog_store_memberships`, `store_catalog_products`, write-through projection tables
+
+`store_catalog` is the canonical store ownership and minimal catalog source. `order_stores`, `order_store_products`, `store_approval_stores`, `store_approval_products`, and `product_inventory` remain runtime projections so existing checkout, approval, and inventory flows keep their read paths. A customer wallet can own/manage a store by adding `store_catalog_store_memberships` for the existing `auth_users.user_id`; no duplicate wallet row or global role change is required. Store wallet and supported chain settings are stored on `StoreProfile`, not the owner account. Product description/category/tags/images/search metadata is future scope.
 
 ## Checkout Process Manager
 
@@ -209,4 +232,4 @@
 - Output: `InventoryRepository`, `InventoryQueryRepository`, `InventoryAuditRepository`, `ProcessedCommandRepository`, `OutboxMessageRepository`, `InventoryEventPublisher`, `OrderEventListener`, `PaymentEventListener`, `StoreRepository`
 - Adapters: Kafka + Outbox messaging, PostgreSQL repositories
 
-Product sale availability is stored canonically in the inventory context as `ProductInventory.saleStatus`. `STORE_OWNER` can manage only own store inventory while `ADMIN` can query or mutate any store inventory. Store approval/order catalog projections can consume this status in later projection work; this phase does not expose customer public inventory or manual order approval HTTP APIs.
+Product sale availability is stored canonically in the inventory context as `ProductInventory.saleStatus`. Store owners/managers are authorized by active store membership, so a `CUSTOMER` role account can manage its own store inventory without role coercion; `ADMIN` can query or mutate any store inventory. Store approval/order catalog projections can consume this status in later projection work; this phase does not expose customer public inventory or manual order approval HTTP APIs.

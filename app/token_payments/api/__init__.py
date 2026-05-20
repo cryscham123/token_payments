@@ -7,12 +7,14 @@ from .asgi import AsgiApplication, AsgiReceive, AsgiScope, AsgiSend, build_asgi_
 from .checkout import CheckoutApi
 from .contracts import ApiAuthContext, ApiRequest, ApiResponse, JsonValue, json_response
 from .http import (
+    ADMIN_STORE_CATALOG_HTTP_ROUTES,
     AUTH_HTTP_ROUTES,
     CHECKOUT_HTTP_ROUTES,
     ORDER_HTTP_ROUTES,
     OPERATOR_ACTION_HTTP_ROUTES,
     OPERATOR_HTTP_ROUTES,
     PAYMENT_HTTP_ROUTES,
+    STORE_OWNER_CATALOG_HTTP_ROUTES,
     STORE_OWNER_INVENTORY_HTTP_ROUTES,
     HttpHandler,
     HttpRequest,
@@ -32,6 +34,7 @@ from .http import (
     register_operator_action_routes,
     register_operator_routes,
     register_payment_routes,
+    register_store_catalog_routes,
     register_store_owner_inventory_routes,
 )
 from .idempotency import (
@@ -67,6 +70,7 @@ from .operator_actions import (
 from .orders import OrdersApi
 from .payments import PaymentsApi
 from .inventory import StoreOwnerInventoryApi
+from .store_catalog import StoreCatalogApi
 
 _FASTAPI_ADAPTER_EXPORTS = frozenset(
     {
@@ -79,6 +83,7 @@ _FASTAPI_ADAPTER_EXPORTS = frozenset(
 __all__ = [
     "AdminRoleOperatorActionPolicy",
     "AdminRoleOperatorPolicy",
+    "ADMIN_STORE_CATALOG_HTTP_ROUTES",
     "AUTH_HTTP_ROUTES",
     "AuthApi",
     "ApiRequest",
@@ -129,7 +134,9 @@ __all__ = [
     "OrdersApi",
     "PAYMENT_HTTP_ROUTES",
     "PaymentsApi",
+    "STORE_OWNER_CATALOG_HTTP_ROUTES",
     "STORE_OWNER_INVENTORY_HTTP_ROUTES",
+    "StoreCatalogApi",
     "StoreOwnerInventoryApi",
     "WsgiApplication",
     "WsgiStartResponse",
@@ -149,6 +156,7 @@ __all__ = [
     "register_operator_action_routes",
     "register_operator_routes",
     "register_payment_routes",
+    "register_store_catalog_routes",
     "register_store_owner_inventory_routes",
 ]
 

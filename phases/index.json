@@ -104,6 +104,11 @@
       "dir": "20-store-owner-inventory-api",
       "status": "completed",
       "completed_at": "2026-05-18T13:43:44+0900"
+    },
+    {
+      "dir": "21-admin-store-catalog-provisioning",
+      "status": "completed",
+      "completed_at": "2026-05-20T01:34:00+0900"
     }
   ]
 }

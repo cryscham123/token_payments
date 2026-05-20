@@ -204,6 +204,7 @@ class StoreOwnerInventoryCommandHandler:
                 request_id=command.request_id,
                 idempotency_key=str(command.command_id),
                 recorded_at=command.requested_at,
+                actor_store_role=command.actor_store_role,
             )
         )
         return _require_text(str(audit_id), "InventoryAuditRepository.record") if audit_id is not None else None

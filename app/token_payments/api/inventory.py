@@ -36,21 +36,16 @@ class StoreOwnerInventoryApi:
             store_id = _optional_store_id(request.query.get("storeId"))
             if claims.role is UserRole.ADMIN:
                 snapshots = self._query.list_inventory(store_id)
-            elif claims.role is UserRole.STORE_OWNER:
-                snapshots = self._query.list_inventory_for_owner(claims.user_id, store_id)
             else:
-                return _error_response(
-                    "STORE_OWNER_INVENTORY_FORBIDDEN",
-                    "store owner or admin role is required",
-                    403,
-                    request.request_id,
-                )
+                snapshots = self._list_inventory_for_member(claims, store_id)
             return json_response(
                 {"inventory": [_snapshot_payload(snapshot) for snapshot in snapshots]},
                 request_id=request.request_id,
             )
         except _AuthenticationRequired:
             return _error_response("AUTHENTICATION_REQUIRED", "authenticated session is required", 401, request.request_id)
+        except _InventoryForbidden as exc:
+            return _error_response(exc.code, str(exc), 403, request.request_id)
         except ValueError as exc:
             return _error_response("VALIDATION_ERROR", str(exc), 400, request.request_id)
 
@@ -81,9 +76,9 @@ class StoreOwnerInventoryApi:
                     request.request_id,
                 )
             reason = _required_text(body, "reason")
-            forbidden = self._mutation_forbidden(claims, store_id)
-            if forbidden is not None:
-                return forbidden(request.request_id)
+            permission = self._mutation_permission(claims, store_id)
+            if permission.forbidden is not None:
+                return permission.forbidden(request.request_id)
             handler = self._require_command_handler()
             command_id = CommandId(idempotency_key)
             common = {
@@ -95,6 +90,7 @@ class StoreOwnerInventoryApi:
                 "reason": reason,
                 "requested_at": request.received_at,
                 "request_id": request.request_id,
+                "actor_store_role": permission.store_role,
             }
             result = self._dispatch(handler, action=action, body=body, common=common)
             return self._mutation_response(action, result, request.request_id)
@@ -105,23 +101,55 @@ class StoreOwnerInventoryApi:
         except ValueError as exc:
             return _error_response("VALIDATION_ERROR", str(exc), 400, request.request_id)
 
-    def _mutation_forbidden(self, claims: "_InventoryClaims", store_id: StoreId):
+    def _list_inventory_for_member(
+        self,
+        claims: "_InventoryClaims",
+        store_id: StoreId | None,
+    ) -> tuple[InventorySnapshot, ...]:
+        list_for_member = getattr(self._query, "list_inventory_for_member", None)
+        if callable(list_for_member):
+            return list_for_member(claims.user_id, store_id)
+        if claims.role is UserRole.STORE_OWNER:
+            return self._query.list_inventory_for_owner(claims.user_id, store_id)
+        raise _InventoryForbidden("STORE_OWNER_INVENTORY_FORBIDDEN", "store ownership or membership is required")
+
+    def _mutation_permission(self, claims: "_InventoryClaims", store_id: StoreId) -> "_InventoryPermission":
         if claims.role is UserRole.ADMIN:
-            return None
+            return _InventoryPermission(store_role=None, forbidden=None)
+        store_role_for_user = getattr(self._query, "store_role_for_user", None)
+        if callable(store_role_for_user):
+            store_role = store_role_for_user(store_id, claims.user_id)
+            if store_role is not None:
+                return _InventoryPermission(store_role=str(store_role), forbidden=None)
+            return _InventoryPermission(
+                store_role=None,
+                forbidden=lambda request_id: _error_response(
+                    "STORE_OWNER_STORE_FORBIDDEN",
+                    "store ownership or membership is required",
+                    403,
+                    request_id,
+                ),
+            )
         if claims.role is not UserRole.STORE_OWNER:
-            return lambda request_id: _error_response(
-                "STORE_OWNER_INVENTORY_FORBIDDEN",
-                "store owner or admin role is required",
-                403,
-                request_id,
+            return _InventoryPermission(
+                store_role=None,
+                forbidden=lambda request_id: _error_response(
+                    "STORE_OWNER_INVENTORY_FORBIDDEN",
+                    "store ownership or membership is required",
+                    403,
+                    request_id,
+                ),
             )
         if self._query.owner_for_store(store_id) == claims.user_id:
-            return None
-        return lambda request_id: _error_response(
-            "STORE_OWNER_STORE_FORBIDDEN",
-            "store owner cannot access another store inventory",
-            403,
-            request_id,
+            return _InventoryPermission(store_role=None, forbidden=None)
+        return _InventoryPermission(
+            store_role=None,
+            forbidden=lambda request_id: _error_response(
+                "STORE_OWNER_STORE_FORBIDDEN",
+                "store ownership or membership is required",
+                403,
+                request_id,
+            ),
         )
 
     def _require_command_handler(self) -> Any:
@@ -184,10 +212,22 @@ class _AuthenticationRequired(ValueError):
     pass
 
 
+class _InventoryForbidden(ValueError):
+    def __init__(self, code: str, message: str) -> None:
+        self.code = code
+        super().__init__(message)
+
+
 class _InventoryClaims:
     def __init__(self, *, user_id: UserId, role: UserRole) -> None:
         self.user_id = user_id
         self.role = role
+
+
+class _InventoryPermission:
+    def __init__(self, *, store_role: str | None, forbidden: Any | None) -> None:
+        self.store_role = store_role
+        self.forbidden = forbidden
 
 
 def _claims_from_request(request: ApiRequest) -> _InventoryClaims:

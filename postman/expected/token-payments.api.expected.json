@@ -12,6 +12,10 @@
     "getCheckoutTrackingByTrackingId",
     "getCheckoutTrackingByOrderId",
     "submitTransactionHash",
+    "createOrReuseStoreUser",
+    "createStore",
+    "grantStoreMembership",
+    "registerStoreProduct",
     "listStoreOwnerInventory",
     "increaseStoreOwnerInventoryStock",
     "correctStoreOwnerInventoryStock",
@@ -240,6 +244,91 @@
         "orderId": "<order-id>",
         "status": "SUBMITTED",
         "txHash": "<local-test-network-transaction-hash>"
+      }
+    },
+    {
+      "operationId": "createOrReuseStoreUser",
+      "requestName": "Admin create or reuse store user",
+      "method": "POST",
+      "path": "/admin/store-users",
+      "status": 201,
+      "headers": {
+        "X-CSRF-Token": "{{csrfToken}}",
+        "Idempotency-Key": "postman-admin-store-user-001",
+        "X-Request-Id": "postman-admin-store-user-001"
+      },
+      "body": {
+        "operation": "createOrReuseStoreUser",
+        "platformRole": "CUSTOMER",
+        "globalStoreOwnerRoleGranted": false,
+        "userCreated": true,
+        "userReused": false
+      }
+    },
+    {
+      "operationId": "createStore",
+      "requestName": "Admin create store",
+      "method": "POST",
+      "path": "/admin/stores",
+      "status": 201,
+      "headers": {
+        "X-CSRF-Token": "{{csrfToken}}",
+        "Idempotency-Key": "postman-admin-create-store-001",
+        "X-Request-Id": "postman-admin-create-store-001"
+      },
+      "body": {
+        "operation": "createStore",
+        "storeCreated": true,
+        "ownershipCreated": true,
+        "projections": {
+          "canonical": "store_catalog_stores",
+          "order": "order_stores",
+          "storeApproval": "store_approval_stores"
+        }
+      }
+    },
+    {
+      "operationId": "grantStoreMembership",
+      "requestName": "Admin grant store membership",
+      "method": "POST",
+      "path": "/admin/stores/{storeId}/memberships",
+      "status": 201,
+      "headers": {
+        "X-CSRF-Token": "{{csrfToken}}",
+        "Idempotency-Key": "postman-admin-grant-membership-001",
+        "X-Request-Id": "postman-admin-grant-membership-001"
+      },
+      "body": {
+        "operation": "grantStoreMembership",
+        "membership": {
+          "role": "MANAGER",
+          "active": true
+        },
+        "ownershipCreated": true
+      }
+    },
+    {
+      "operationId": "registerStoreProduct",
+      "requestName": "Store owner register product",
+      "method": "POST",
+      "path": "/store-owner/stores/{storeId}/products",
+      "status": 201,
+      "headers": {
+        "X-CSRF-Token": "{{csrfToken}}",
+        "Idempotency-Key": "postman-store-owner-register-product-001",
+        "X-Request-Id": "postman-store-owner-register-product-001"
+      },
+      "body": {
+        "operation": "registerStoreProduct",
+        "storeId": "{{storeId}}",
+        "productId": "{{productId}}",
+        "initialTotalStock": 25,
+        "projections": {
+          "canonical": "store_catalog_products",
+          "order": "order_store_products",
+          "storeApproval": "store_approval_products",
+          "inventory": "product_inventory"
+        }
       }
     },
     {

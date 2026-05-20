@@ -616,6 +616,154 @@
           }
         },
         {
+          "id": "createOrReuseStoreUser",
+          "name": "Admin create or reuse store user",
+          "description": "Admin-only provisioning that creates or reuses a normal CUSTOMER auth identity for store ownership.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "postman-admin-store-user-001"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/store-users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "store-users"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"walletAddress\": \"{{storeOwnerWallet}}\"\n}"
+            }
+          }
+        },
+        {
+          "id": "createStore",
+          "name": "Admin create store",
+          "description": "Admin-only store provisioning writes canonical store ownership and checkout/store-approval projections.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "postman-admin-create-store-001"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/stores",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "stores"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"storeId\": \"{{storeId}}\",\n  \"ownerUserId\": \"{{storeOwnerUserId}}\",\n  \"storeWalletAddress\": \"{{storeWalletAddress}}\",\n  \"supportedChainIds\": [{{chainId}}],\n  \"active\": true\n}"
+            }
+          }
+        },
+        {
+          "id": "grantStoreMembership",
+          "name": "Admin grant store membership",
+          "description": "Admin-only membership grant for store-scoped OWNER or MANAGER permissions.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "postman-admin-grant-membership-001"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/stores/{{storeId}}/memberships",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "stores",
+                "{{storeId}}",
+                "memberships"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{storeOwnerUserId}}\",\n  \"role\": \"OWNER\",\n  \"active\": true\n}"
+            }
+          }
+        },
+        {
+          "id": "registerStoreProduct",
+          "name": "Store owner register product",
+          "description": "Registers a minimal checkoutable product and writes canonical catalog, checkout, approval, and inventory projections.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "postman-store-owner-register-product-001"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/store-owner/stores/{{storeId}}/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "store-owner",
+                "stores",
+                "{{storeId}}",
+                "products"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": \"{{productId}}\",\n  \"name\": \"Local Hoodie\",\n  \"price\": {\n    \"amount\": \"10.000000000000000000\",\n    \"symbol\": \"TPAY\",\n    \"chainId\": {{chainId}},\n    \"tokenAddress\": \"{{paymentTokenAddress}}\",\n    \"decimals\": 18\n  },\n  \"initialTotalStock\": 25,\n  \"active\": true\n}"
+            }
+          }
+        },
+        {
           "id": "listStoreOwnerInventory",
           "name": "List store owner inventory",
           "description": "Lists inventory rows visible to the authenticated STORE_OWNER or ADMIN session.",

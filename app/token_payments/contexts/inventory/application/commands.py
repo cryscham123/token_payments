@@ -68,6 +68,7 @@ class StoreOwnerIncreaseStockCommand:
     reason: str
     requested_at: datetime
     request_id: str
+    actor_store_role: str | None = None
 
     def __post_init__(self) -> None:
         _validate_store_owner_command(self)
@@ -88,6 +89,7 @@ class StoreOwnerCorrectStockCommand:
     reason: str
     requested_at: datetime
     request_id: str
+    actor_store_role: str | None = None
 
     def __post_init__(self) -> None:
         _validate_store_owner_command(self)
@@ -104,6 +106,7 @@ class PauseProductSalesCommand:
     reason: str
     requested_at: datetime
     request_id: str
+    actor_store_role: str | None = None
 
     def __post_init__(self) -> None:
         _validate_store_owner_command(self)
@@ -119,6 +122,7 @@ class ResumeProductSalesCommand:
     reason: str
     requested_at: datetime
     request_id: str
+    actor_store_role: str | None = None
 
     def __post_init__(self) -> None:
         _validate_store_owner_command(self)
@@ -175,6 +179,12 @@ def _validate_store_owner_command(
         _require_aware_datetime(command.requested_at, f"{type(command).__name__}.requested_at"),
     )
     object.__setattr__(command, "request_id", _require_text(command.request_id, f"{type(command).__name__}.request_id"))
+    if command.actor_store_role is not None:
+        object.__setattr__(
+            command,
+            "actor_store_role",
+            _require_text(command.actor_store_role, f"{type(command).__name__}.actor_store_role"),
+        )
 
 
 def _coerce_quantity(value: Quantity | int) -> Quantity:

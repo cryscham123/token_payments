@@ -64,8 +64,9 @@ SELECT
     inv.sale_status,
     inv.updated_at
 FROM product_inventory inv
-JOIN order_stores stores
-  ON stores.store_id = inv.store_id
+JOIN store_catalog_store_memberships memberships
+  ON memberships.store_id = inv.store_id
+ AND memberships.active = true
 LEFT JOIN (
     SELECT product_id, store_id, SUM(reserved_qty) AS confirmed_stock
     FROM inventory_reservations
@@ -74,15 +75,23 @@ LEFT JOIN (
 ) confirmed
   ON confirmed.product_id = inv.product_id
  AND confirmed.store_id = inv.store_id
-WHERE stores.owner_user_id = %(owner_user_id)s::uuid
+WHERE memberships.user_id = %(owner_user_id)s::uuid
   AND (%(store_id)s::uuid IS NULL OR inv.store_id = %(store_id)s::uuid)
 ORDER BY inv.store_id, inv.product_id
 """
 
 SELECT_STORE_OWNER_SQL = """
 SELECT owner_user_id
-FROM order_stores
+FROM store_catalog_stores
 WHERE store_id = %(store_id)s
+"""
+
+SELECT_STORE_ROLE_SQL = """
+SELECT role
+FROM store_catalog_store_memberships
+WHERE store_id = %(store_id)s
+  AND user_id = %(user_id)s
+  AND active = true
 """
 
 SELECT_RESERVATIONS_SQL = """
@@ -143,6 +152,7 @@ INSERT INTO inventory_audit_log (
     reason,
     request_id,
     idempotency_key,
+    actor_store_role,
     recorded_at
 ) VALUES (
     %(actor_user_id)s,
@@ -161,6 +171,7 @@ INSERT INTO inventory_audit_log (
     %(reason)s,
     %(request_id)s,
     %(idempotency_key)s,
+    %(actor_store_role)s,
     %(recorded_at)s
 )
 ON CONFLICT (idempotency_key) DO NOTHING
@@ -348,6 +359,24 @@ class PostgresInventoryQueryRepository:
             return None
         return UserId(_row_value(row, "owner_user_id"))
 
+    def store_role_for_user(self, store_id: StoreId, user_id: UserId) -> str | None:
+        if not isinstance(store_id, StoreId):
+            raise ValueError("PostgresInventoryQueryRepository.store_role_for_user requires a StoreId")
+        if not isinstance(user_id, UserId):
+            raise ValueError("PostgresInventoryQueryRepository.store_role_for_user requires a UserId")
+        row = _fetch_one(
+            self._connection.execute(
+                SELECT_STORE_ROLE_SQL,
+                {
+                    "store_id": str(store_id),
+                    "user_id": str(user_id),
+                },
+            )
+        )
+        if row is None:
+            return None
+        return str(_row_value(row, "role"))
+
 
 class PostgresInventoryAuditRepository:
     """Persist store owner inventory mutation audit records."""
@@ -378,6 +407,7 @@ class PostgresInventoryAuditRepository:
                     "reason": audit_record.reason,
                     "request_id": audit_record.request_id,
                     "idempotency_key": audit_record.idempotency_key,
+                    "actor_store_role": audit_record.actor_store_role,
                     "recorded_at": audit_record.recorded_at,
                 },
             )

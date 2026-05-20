@@ -372,6 +372,8 @@ def list_http_route_specs() -> tuple[HttpRouteSpec, ...]:
         *ORDER_HTTP_ROUTES.values(),
         *CHECKOUT_HTTP_ROUTES.values(),
         *PAYMENT_HTTP_ROUTES.values(),
+        *ADMIN_STORE_CATALOG_HTTP_ROUTES.values(),
+        *STORE_OWNER_CATALOG_HTTP_ROUTES.values(),
         *STORE_OWNER_INVENTORY_HTTP_ROUTES.values(),
         *OPERATOR_HTTP_ROUTES.values(),
         *OPERATOR_ACTION_HTTP_ROUTES.values(),
@@ -470,6 +472,33 @@ def register_payment_routes(router: HttpRouter, payments_api: Any) -> tuple[Http
             router,
             PAYMENT_HTTP_ROUTES["submit_transaction_hash"],
             payments_api.submit_transaction_hash,
+        ),
+    )
+
+
+def register_store_catalog_routes(router: HttpRouter, catalog_api: Any) -> tuple[HttpRoute, ...]:
+    """Register admin store provisioning and store-owner catalog routes."""
+
+    return (
+        _add_manifest_route(
+            router,
+            ADMIN_STORE_CATALOG_HTTP_ROUTES["create_or_reuse_store_user"],
+            catalog_api.create_or_reuse_store_user,
+        ),
+        _add_manifest_route(
+            router,
+            ADMIN_STORE_CATALOG_HTTP_ROUTES["create_store"],
+            catalog_api.create_store,
+        ),
+        _add_manifest_route(
+            router,
+            ADMIN_STORE_CATALOG_HTTP_ROUTES["grant_store_membership"],
+            catalog_api.grant_store_membership,
+        ),
+        _add_manifest_route(
+            router,
+            STORE_OWNER_CATALOG_HTTP_ROUTES["register_product"],
+            catalog_api.register_store_product,
         ),
     )
 
@@ -962,6 +991,30 @@ PAYMENT_HTTP_ROUTES: Mapping[str, HttpRouteSpec] = MappingProxyType(
 )
 
 
+ADMIN_STORE_CATALOG_HTTP_ROUTES: Mapping[str, HttpRouteSpec] = MappingProxyType(
+    {
+        "create_or_reuse_store_user": HttpRouteSpec("POST", "/admin/store-users", "createOrReuseStoreUser"),
+        "create_store": HttpRouteSpec("POST", "/admin/stores", "createStore"),
+        "grant_store_membership": HttpRouteSpec(
+            "POST",
+            "/admin/stores/{storeId}/memberships",
+            "grantStoreMembership",
+        ),
+    }
+)
+
+
+STORE_OWNER_CATALOG_HTTP_ROUTES: Mapping[str, HttpRouteSpec] = MappingProxyType(
+    {
+        "register_product": HttpRouteSpec(
+            "POST",
+            "/store-owner/stores/{storeId}/products",
+            "registerStoreProduct",
+        ),
+    }
+)
+
+
 STORE_OWNER_INVENTORY_HTTP_ROUTES: Mapping[str, HttpRouteSpec] = MappingProxyType(
     {
         "list_inventory": HttpRouteSpec("GET", "/store-owner/inventory", "listStoreOwnerInventory"),
@@ -1017,6 +1070,7 @@ OPERATOR_ACTION_HTTP_ROUTES: Mapping[str, HttpRouteSpec] = MappingProxyType(
 
 
 __all__ = [
+    "ADMIN_STORE_CATALOG_HTTP_ROUTES",
     "AUTH_HTTP_ROUTES",
     "CHECKOUT_HTTP_ROUTES",
     "HttpHandler",
@@ -1030,6 +1084,7 @@ __all__ = [
     "OPERATOR_HTTP_ROUTES",
     "PAYMENT_HTTP_ROUTES",
     "STORE_OWNER_INVENTORY_HTTP_ROUTES",
+    "STORE_OWNER_CATALOG_HTTP_ROUTES",
     "WsgiApplication",
     "WsgiStartResponse",
     "build_wsgi_app",
@@ -1042,5 +1097,6 @@ __all__ = [
     "register_operator_action_routes",
     "register_operator_routes",
     "register_payment_routes",
+    "register_store_catalog_routes",
     "register_store_owner_inventory_routes",
 ]

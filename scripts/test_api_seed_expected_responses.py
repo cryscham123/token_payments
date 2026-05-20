@@ -18,6 +18,9 @@ DOCS_API_SPEC_PATH = ROOT / "docs" / "API_SPEC.md"
 
 REQUIRED_SEED_TABLES = {
     "auth_users",
+    "store_catalog_stores",
+    "store_catalog_store_memberships",
+    "store_catalog_products",
     "order_customers",
     "order_stores",
     "order_store_products",

@@ -106,6 +106,79 @@ CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id
 CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires_at
     ON auth_sessions (expires_at);
 
+CREATE TABLE IF NOT EXISTS store_catalog_stores (
+    store_id UUID PRIMARY KEY,
+    owner_user_id UUID NOT NULL REFERENCES auth_users (user_id),
+    active BOOLEAN NOT NULL DEFAULT true,
+    store_wallet_address TEXT NOT NULL,
+    supported_chain_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_store_catalog_stores_owner_user_id
+    ON store_catalog_stores (owner_user_id);
+
+CREATE TABLE IF NOT EXISTS store_catalog_store_memberships (
+    store_id UUID NOT NULL REFERENCES store_catalog_stores (store_id),
+    user_id UUID NOT NULL REFERENCES auth_users (user_id),
+    role TEXT NOT NULL CHECK (role IN ('OWNER', 'MANAGER')),
+    active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (store_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_store_catalog_memberships_user_active
+    ON store_catalog_store_memberships (user_id, active);
+
+CREATE TABLE IF NOT EXISTS store_catalog_products (
+    store_id UUID NOT NULL REFERENCES store_catalog_stores (store_id),
+    product_id UUID NOT NULL,
+    name TEXT NOT NULL,
+    price_numeric NUMERIC(38, 18) NOT NULL CHECK (price_numeric >= 0),
+    price_symbol TEXT NOT NULL,
+    price_chain_id INTEGER NOT NULL CHECK (price_chain_id > 0),
+    price_token_address TEXT,
+    price_decimals INTEGER NOT NULL CHECK (price_decimals >= 0),
+    active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (store_id, product_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_store_catalog_products_store_active
+    ON store_catalog_products (store_id, active);
+
+CREATE TABLE IF NOT EXISTS store_catalog_idempotency (
+    handler TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL,
+    payload_hash TEXT NOT NULL,
+    response_payload JSONB NOT NULL,
+    recorded_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (handler, idempotency_key)
+);
+
+CREATE TABLE IF NOT EXISTS store_catalog_audit_log (
+    audit_id BIGSERIAL PRIMARY KEY,
+    actor_user_id UUID NOT NULL REFERENCES auth_users (user_id),
+    action TEXT NOT NULL,
+    store_id UUID,
+    product_id UUID,
+    target_user_id UUID,
+    request_id TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL,
+    before_state JSONB NOT NULL,
+    after_state JSONB NOT NULL,
+    recorded_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (idempotency_key, action)
+);
+
+CREATE INDEX IF NOT EXISTS idx_store_catalog_audit_store_recorded_at
+    ON store_catalog_audit_log (store_id, recorded_at);
+
 CREATE TABLE IF NOT EXISTS order_customers (
     customer_id UUID PRIMARY KEY,
     user_id UUID NOT NULL UNIQUE,
@@ -245,7 +318,7 @@ CREATE INDEX IF NOT EXISTS idx_inventory_reservations_status_created_at
 CREATE TABLE IF NOT EXISTS inventory_audit_log (
     audit_id BIGSERIAL PRIMARY KEY,
     actor_user_id UUID NOT NULL,
-    actor_role TEXT NOT NULL CHECK (actor_role IN ('STORE_OWNER', 'ADMIN')),
+    actor_role TEXT NOT NULL CHECK (actor_role IN ('CUSTOMER', 'STORE_OWNER', 'ADMIN')),
     store_id UUID NOT NULL,
     product_id UUID NOT NULL,
     action TEXT NOT NULL CHECK (action IN ('increaseStock', 'correctStock', 'pauseSales', 'resumeSales')),
@@ -260,6 +333,7 @@ CREATE TABLE IF NOT EXISTS inventory_audit_log (
     reason TEXT NOT NULL,
     request_id TEXT NOT NULL,
     idempotency_key TEXT NOT NULL UNIQUE,
+    actor_store_role TEXT CHECK (actor_store_role IS NULL OR actor_store_role IN ('OWNER', 'MANAGER')),
     recorded_at TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     FOREIGN KEY (product_id, store_id)

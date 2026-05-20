@@ -102,6 +102,85 @@ POSTGRES_SCHEMA_COMPATIBILITY_SQL: tuple[str, ...] = (
     ALTER TABLE IF EXISTS auth_sessions
         ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMPTZ
     """,
+    """
+    CREATE TABLE IF NOT EXISTS store_catalog_stores (
+        store_id UUID PRIMARY KEY,
+        owner_user_id UUID NOT NULL,
+        active BOOLEAN NOT NULL DEFAULT true,
+        store_wallet_address TEXT NOT NULL,
+        supported_chain_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS store_catalog_store_memberships (
+        store_id UUID NOT NULL,
+        user_id UUID NOT NULL,
+        role TEXT NOT NULL CHECK (role IN ('OWNER', 'MANAGER')),
+        active BOOLEAN NOT NULL DEFAULT true,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (store_id, user_id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS store_catalog_products (
+        store_id UUID NOT NULL,
+        product_id UUID NOT NULL,
+        name TEXT NOT NULL,
+        price_numeric NUMERIC(38, 18) NOT NULL CHECK (price_numeric >= 0),
+        price_symbol TEXT NOT NULL,
+        price_chain_id INTEGER NOT NULL CHECK (price_chain_id > 0),
+        price_token_address TEXT,
+        price_decimals INTEGER NOT NULL CHECK (price_decimals >= 0),
+        active BOOLEAN NOT NULL DEFAULT true,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (store_id, product_id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS store_catalog_idempotency (
+        handler TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL,
+        payload_hash TEXT NOT NULL,
+        response_payload JSONB NOT NULL,
+        recorded_at TIMESTAMPTZ NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (handler, idempotency_key)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS store_catalog_audit_log (
+        audit_id BIGSERIAL PRIMARY KEY,
+        actor_user_id UUID NOT NULL,
+        action TEXT NOT NULL,
+        store_id UUID,
+        product_id UUID,
+        target_user_id UUID,
+        request_id TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL,
+        before_state JSONB NOT NULL,
+        after_state JSONB NOT NULL,
+        recorded_at TIMESTAMPTZ NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE (idempotency_key, action)
+    )
+    """,
+    """
+    ALTER TABLE IF EXISTS inventory_audit_log
+        ADD COLUMN IF NOT EXISTS actor_store_role TEXT
+    """,
+    """
+    ALTER TABLE IF EXISTS inventory_audit_log
+        DROP CONSTRAINT IF EXISTS inventory_audit_log_actor_role_check
+    """,
+    """
+    ALTER TABLE IF EXISTS inventory_audit_log
+        ADD CONSTRAINT inventory_audit_log_actor_role_check
+        CHECK (actor_role IN ('CUSTOMER', 'STORE_OWNER', 'ADMIN'))
+    """,
 )
 
 
