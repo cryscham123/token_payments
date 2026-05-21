@@ -8,7 +8,7 @@ from enum import StrEnum
 from typing import Any, Mapping, Protocol
 
 from token_payments.contexts.auth.domain import User
-from token_payments.contexts.store_catalog.domain import StoreMembership, StoreMembershipRole, StoreProduct, StoreProfile
+from token_payments.contexts.store_catalog.domain import PublicStoreId, StoreMembership, StoreMembershipRole, StoreProduct, StoreProfile
 from token_payments.shared.domain import ProductId, StoreId, UserId, WalletAddress
 
 
@@ -108,6 +108,12 @@ class CatalogWriteRepository(Protocol):
         ...
 
     def get_store(self, store_id: StoreId) -> StoreProfile | None:
+        ...
+
+    def get_store_by_public_id(self, public_store_id: PublicStoreId) -> StoreProfile | None:
+        ...
+
+    def list_stores_for_member(self, user_id: UserId) -> tuple[StoreProfile, ...]:
         ...
 
     def save_store(self, store: StoreProfile) -> None:

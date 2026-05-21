@@ -3,8 +3,11 @@
 from .commands import (
     CreateOrReuseStoreUserCommand,
     CreateStoreCommand,
+    GetStoreProfileQuery,
     GrantStoreMembershipCommand,
+    ListMerchantStoresQuery,
     RegisterStoreProductCommand,
+    UpdateStoreProfileCommand,
 )
 from .ports import (
     CatalogAuditRecord,
@@ -21,10 +24,12 @@ __all__ = [
     "CatalogWriteRepository",
     "CreateOrReuseStoreUserCommand",
     "CreateStoreCommand",
+    "GetStoreProfileQuery",
     "GrantStoreMembershipCommand",
+    "ListMerchantStoresQuery",
     "RegisterStoreProductCommand",
+    "UpdateStoreProfileCommand",
     "StoreCatalogApplicationService",
     "StoreCatalogCommandResult",
     "StoreCatalogCommandStatus",
 ]
-

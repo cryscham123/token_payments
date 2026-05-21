@@ -5,9 +5,17 @@ from __future__ import annotations
 import json
 from typing import Any, Mapping
 
-from token_payments.contexts.auth.domain import User, UserRole
+from token_payments.contexts.auth.domain import Group, GroupId, GroupType, User, UserRole
 from token_payments.contexts.store_catalog.application import CatalogAuditRecord, CatalogIdempotencyRecord
-from token_payments.contexts.store_catalog.domain import StoreMembership, StoreMembershipRole, StoreProduct, StoreProfile
+from token_payments.contexts.store_catalog.domain import (
+    PublicStoreId,
+    StoreMembership,
+    StoreMembershipRole,
+    StorePaymentSettings,
+    StoreProduct,
+    StoreProfile,
+    StoreStatus,
+)
 from token_payments.shared.adapter.postgres import PostgresConnection
 from token_payments.shared.domain import Crypto, ProductId, StoreId, UserId, WalletAddress
 
@@ -66,27 +74,160 @@ ON CONFLICT (handler, idempotency_key) DO NOTHING
 """
 
 SELECT_STORE_SQL = """
-SELECT store_id, owner_user_id, active, store_wallet_address, supported_chain_ids
+SELECT
+    store_id,
+    public_store_id,
+    owner_user_id,
+    group_id,
+    display_name,
+    description,
+    status,
+    support_email,
+    support_email_public,
+    business_registration_label,
+    store_wallet_address,
+    supported_chain_ids,
+    created_at,
+    updated_at
 FROM store_catalog_stores
 WHERE store_id = %(store_id)s
+"""
+
+SELECT_STORE_BY_PUBLIC_ID_SQL = """
+SELECT
+    store_id,
+    public_store_id,
+    owner_user_id,
+    group_id,
+    display_name,
+    description,
+    status,
+    support_email,
+    support_email_public,
+    business_registration_label,
+    store_wallet_address,
+    supported_chain_ids,
+    created_at,
+    updated_at
+FROM store_catalog_stores
+WHERE public_store_id = %(public_store_id)s
+"""
+
+SELECT_STORES_FOR_MEMBER_SQL = """
+SELECT
+    s.store_id,
+    s.public_store_id,
+    s.owner_user_id,
+    s.group_id,
+    s.display_name,
+    s.description,
+    s.status,
+    s.support_email,
+    s.support_email_public,
+    s.business_registration_label,
+    s.store_wallet_address,
+    s.supported_chain_ids,
+    s.created_at,
+    s.updated_at
+FROM store_catalog_stores s
+JOIN store_catalog_store_memberships m ON m.store_id = s.store_id
+WHERE m.user_id = %(user_id)s
+  AND m.active = true
+ORDER BY s.display_name ASC, s.public_store_id ASC
+"""
+
+SELECT_MERCHANT_GROUP_FOR_STORE_SQL = """
+SELECT group_id, group_type, name, active, resource_type, resource_id
+FROM auth_groups
+WHERE group_type = 'MERCHANT'
+  AND resource_type = 'store'
+  AND resource_id = %(store_id)s
+ORDER BY created_at ASC, group_id ASC
+LIMIT 1
+"""
+
+INSERT_MERCHANT_GROUP_SQL = """
+INSERT INTO auth_groups (
+    group_id,
+    group_type,
+    name,
+    resource_type,
+    resource_id,
+    active
+) VALUES (
+    %(group_id)s,
+    'MERCHANT',
+    %(name)s,
+    'store',
+    %(store_id)s,
+    true
+)
+ON CONFLICT (group_id) DO UPDATE SET
+    name = EXCLUDED.name,
+    resource_type = EXCLUDED.resource_type,
+    resource_id = EXCLUDED.resource_id,
+    active = true,
+    updated_at = now()
+"""
+
+UPSERT_GROUP_MEMBERSHIP_SQL = """
+INSERT INTO auth_group_memberships (
+    group_id,
+    user_id,
+    role_id,
+    active
+) VALUES (
+    %(group_id)s,
+    %(user_id)s,
+    %(role_id)s,
+    %(active)s
+)
+ON CONFLICT (group_id, user_id) DO UPDATE SET
+    role_id = EXCLUDED.role_id,
+    active = EXCLUDED.active,
+    updated_at = now()
 """
 
 UPSERT_STORE_SQL = """
 INSERT INTO store_catalog_stores (
     store_id,
+    public_store_id,
     owner_user_id,
+    group_id,
+    display_name,
+    description,
+    status,
+    support_email,
+    support_email_public,
+    business_registration_label,
     active,
     store_wallet_address,
     supported_chain_ids
 ) VALUES (
     %(store_id)s,
+    %(public_store_id)s,
     %(owner_user_id)s,
+    %(group_id)s,
+    %(display_name)s,
+    %(description)s,
+    %(status)s,
+    %(support_email)s,
+    %(support_email_public)s,
+    %(business_registration_label)s,
     %(active)s,
     %(store_wallet_address)s,
     %(supported_chain_ids)s::jsonb
 )
 ON CONFLICT (store_id) DO UPDATE SET
+    public_store_id = store_catalog_stores.public_store_id,
     owner_user_id = EXCLUDED.owner_user_id,
+    group_id = COALESCE(EXCLUDED.group_id, store_catalog_stores.group_id),
+    display_name = EXCLUDED.display_name,
+    description = EXCLUDED.description,
+    status = EXCLUDED.status,
+    support_email = EXCLUDED.support_email,
+    support_email_public = EXCLUDED.support_email_public,
+    business_registration_label = EXCLUDED.business_registration_label,
     active = EXCLUDED.active,
     store_wallet_address = EXCLUDED.store_wallet_address,
     supported_chain_ids = EXCLUDED.supported_chain_ids,
@@ -385,6 +526,54 @@ class PostgresStoreCatalogRepository:
         row = _fetch_one(self._connection.execute(SELECT_STORE_SQL, {"store_id": str(store_id)}))
         return _row_to_store(row) if row is not None else None
 
+    def get_store_by_public_id(self, public_store_id: PublicStoreId) -> StoreProfile | None:
+        row = _fetch_one(
+            self._connection.execute(
+                SELECT_STORE_BY_PUBLIC_ID_SQL,
+                {"public_store_id": str(public_store_id)},
+            )
+        )
+        return _row_to_store(row) if row is not None else None
+
+    def list_stores_for_member(self, user_id: UserId) -> tuple[StoreProfile, ...]:
+        result = self._connection.execute(SELECT_STORES_FOR_MEMBER_SQL, {"user_id": str(user_id)})
+        return tuple(_row_to_store(row) for row in result)
+
+    def merchant_group_for_store(self, store_id: StoreId) -> Group | None:
+        row = _fetch_one(
+            self._connection.execute(
+                SELECT_MERCHANT_GROUP_FOR_STORE_SQL,
+                {"store_id": str(store_id)},
+            )
+        )
+        return _row_to_group(row) if row is not None else None
+
+    def ensure_merchant_group_for_store(self, store_id: StoreId) -> GroupId:
+        existing = self.merchant_group_for_store(store_id)
+        if existing is not None:
+            return existing.group_id
+        group_id = GroupId.new()
+        self._connection.execute(
+            INSERT_MERCHANT_GROUP_SQL,
+            {
+                "group_id": str(group_id),
+                "name": f"Merchant store {store_id}",
+                "store_id": str(store_id),
+            },
+        )
+        return group_id
+
+    def grant_group_membership(self, group_id: GroupId, user_id: UserId, role_id: str, *, active: bool) -> None:
+        self._connection.execute(
+            UPSERT_GROUP_MEMBERSHIP_SQL,
+            {
+                "group_id": str(group_id),
+                "user_id": str(user_id),
+                "role_id": str(role_id),
+                "active": bool(active),
+            },
+        )
+
     def save_store(self, store: StoreProfile) -> None:
         self._connection.execute(UPSERT_STORE_SQL, _store_params(store))
 
@@ -507,13 +696,38 @@ def _row_to_idempotency(row: Mapping[str, Any] | object) -> CatalogIdempotencyRe
     )
 
 
-def _row_to_store(row: Mapping[str, Any] | object) -> StoreProfile:
-    return StoreProfile(
-        store_id=StoreId(_row_value(row, "store_id")),
-        owner_user_id=UserId(_row_value(row, "owner_user_id")),
+def _row_to_group(row: Mapping[str, Any] | object) -> Group:
+    return Group(
+        group_id=GroupId(_row_value(row, "group_id")),
+        group_type=GroupType(_row_value(row, "group_type")),
+        name=str(_row_value(row, "name")),
         active=bool(_row_value(row, "active")),
-        store_wallet=WalletAddress(str(_row_value(row, "store_wallet_address"))),
-        supported_chain_ids=_chain_ids(_row_value(row, "supported_chain_ids")),
+        resource_type=_optional_row_value(row, "resource_type"),
+        resource_id=_optional_row_value(row, "resource_id"),
+    )
+
+
+def _row_to_store(row: Mapping[str, Any] | object) -> StoreProfile:
+    store_id = StoreId(_row_value(row, "store_id"))
+    return StoreProfile(
+        store_id=store_id,
+        public_store_id=_optional_row_value(row, "public_store_id") or PublicStoreId.for_store_id(store_id),
+        owner_user_id=UserId(_row_value(row, "owner_user_id")),
+        group_id=_optional_row_value(row, "group_id"),
+        display_name=str(_optional_row_value(row, "display_name") or "Untitled Store"),
+        description=_optional_row_value(row, "description"),
+        status=StoreStatus(str(_optional_row_value(row, "status") or ("ACTIVE" if _optional_row_value(row, "active") is not False else "SUSPENDED"))),
+        support_email=_optional_row_value(row, "support_email"),
+        support_email_public=bool(_optional_row_value(row, "support_email_public") or False),
+        business_registration_label=_optional_row_value(row, "business_registration_label"),
+        created_at=_optional_row_value(row, "created_at"),
+        updated_at=_optional_row_value(row, "updated_at"),
+        payment_settings=StorePaymentSettings(
+            store_id=store_id,
+            store_wallet=WalletAddress(str(_row_value(row, "store_wallet_address"))),
+            supported_chain_ids=_chain_ids(_row_value(row, "supported_chain_ids")),
+            active=bool(_optional_row_value(row, "active") if _optional_row_value(row, "active") is not None else True),
+        ),
     )
 
 
@@ -545,9 +759,17 @@ def _row_to_product(row: Mapping[str, Any] | object) -> StoreProduct:
 def _store_params(store: StoreProfile) -> dict[str, Any]:
     return {
         "store_id": str(store.store_id),
+        "public_store_id": str(store.public_store_id),
         "owner_user_id": str(store.owner_user_id),
+        "group_id": str(store.group_id) if store.group_id is not None else None,
+        "display_name": store.display_name,
+        "description": store.description,
+        "status": store.status.value,
+        "support_email": store.support_email,
+        "support_email_public": store.support_email_public,
+        "business_registration_label": store.business_registration_label,
         "active": store.active,
-        "store_wallet_address": str(store.store_wallet),
+        "store_wallet_address": str(store.store_wallet) if store.store_wallet is not None else None,
         "supported_chain_ids": json.dumps(list(store.supported_chain_ids)),
     }
 

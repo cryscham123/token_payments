@@ -116,15 +116,25 @@
       "table": "store_catalog_stores",
       "columns": [
         "store_id",
+        "public_store_id",
         "owner_user_id",
         "group_id",
+        "display_name",
+        "description",
+        "status",
+        "support_email_public",
         "active",
         "store_wallet_address",
         "supported_chain_ids"
       ],
       "values": {
         "store_id": "44444444-4444-4444-8444-444444444444",
+        "public_store_id": "st_demo_store_001",
         "owner_user_id": "33333333-3333-4333-8333-333333333333",
+        "display_name": "Demo Store",
+        "description": "Local token payments demo store",
+        "status": "ACTIVE",
+        "support_email_public": false,
         "active": true,
         "store_wallet_address": "0x2222222222222222222222222222222222222222",
         "supported_chain_ids": [

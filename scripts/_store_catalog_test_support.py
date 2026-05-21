@@ -159,6 +159,20 @@ class FakeStoreCatalogRepository:
     def get_store(self, store_id: StoreId) -> StoreProfile | None:
         return self.stores.get(store_id)
 
+    def get_store_by_public_id(self, public_store_id) -> StoreProfile | None:
+        return next(
+            (store for store in self.stores.values() if str(store.public_store_id) == str(public_store_id)),
+            None,
+        )
+
+    def list_stores_for_member(self, user_id: UserId) -> tuple[StoreProfile, ...]:
+        store_ids = {
+            store_id
+            for (store_id, member_user_id), membership in self.memberships.items()
+            if member_user_id == user_id and membership.active
+        }
+        return tuple(store for store_id, store in self.stores.items() if store_id in store_ids)
+
     def save_store(self, store: StoreProfile) -> None:
         self.stores[store.store_id] = store
 

@@ -220,17 +220,78 @@ CREATE INDEX IF NOT EXISTS idx_auth_group_invitations_group_status
 
 CREATE TABLE IF NOT EXISTS store_catalog_stores (
     store_id UUID PRIMARY KEY,
+    public_store_id TEXT NOT NULL,
     owner_user_id UUID NOT NULL REFERENCES auth_users (user_id),
     group_id UUID REFERENCES auth_groups (group_id),
+    display_name TEXT NOT NULL,
+    description TEXT,
+    status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'SUSPENDED')),
+    support_email TEXT,
+    support_email_public BOOLEAN NOT NULL DEFAULT false,
+    business_registration_label TEXT,
     active BOOLEAN NOT NULL DEFAULT true,
     store_wallet_address TEXT NOT NULL,
     supported_chain_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (length(public_store_id) BETWEEN 8 AND 64),
+    CHECK (public_store_id !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'),
+    CHECK (length(display_name) BETWEEN 1 AND 120),
+    CHECK (description IS NULL OR length(description) <= 2000),
+    CHECK (support_email IS NULL OR length(support_email) <= 254),
+    CHECK (business_registration_label IS NULL OR length(business_registration_label) <= 160)
 );
+
+ALTER TABLE IF EXISTS store_catalog_stores
+    ADD COLUMN IF NOT EXISTS public_store_id TEXT;
+
+ALTER TABLE IF EXISTS store_catalog_stores
+    ADD COLUMN IF NOT EXISTS display_name TEXT;
+
+ALTER TABLE IF EXISTS store_catalog_stores
+    ADD COLUMN IF NOT EXISTS description TEXT;
+
+ALTER TABLE IF EXISTS store_catalog_stores
+    ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'ACTIVE';
+
+ALTER TABLE IF EXISTS store_catalog_stores
+    ADD COLUMN IF NOT EXISTS support_email TEXT;
+
+ALTER TABLE IF EXISTS store_catalog_stores
+    ADD COLUMN IF NOT EXISTS support_email_public BOOLEAN NOT NULL DEFAULT false;
+
+ALTER TABLE IF EXISTS store_catalog_stores
+    ADD COLUMN IF NOT EXISTS business_registration_label TEXT;
+
+UPDATE store_catalog_stores
+SET public_store_id = 'st_' || substr(md5(store_id::text), 1, 24)
+WHERE public_store_id IS NULL;
+
+UPDATE store_catalog_stores
+SET display_name = 'Untitled Store'
+WHERE display_name IS NULL;
+
+UPDATE store_catalog_stores
+SET status = 'ACTIVE'
+WHERE status IS NULL;
+
+ALTER TABLE IF EXISTS store_catalog_stores
+    ALTER COLUMN public_store_id SET NOT NULL;
+
+ALTER TABLE IF EXISTS store_catalog_stores
+    ALTER COLUMN display_name SET NOT NULL;
+
+ALTER TABLE IF EXISTS store_catalog_stores
+    ALTER COLUMN status SET NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_store_catalog_stores_public_store_id
+    ON store_catalog_stores (public_store_id);
 
 CREATE INDEX IF NOT EXISTS idx_store_catalog_stores_owner_user_id
     ON store_catalog_stores (owner_user_id);
+
+CREATE INDEX IF NOT EXISTS idx_store_catalog_stores_group_id
+    ON store_catalog_stores (group_id);
 
 CREATE TABLE IF NOT EXISTS store_catalog_store_memberships (
     store_id UUID NOT NULL REFERENCES store_catalog_stores (store_id),
