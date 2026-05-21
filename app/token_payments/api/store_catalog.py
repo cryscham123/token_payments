@@ -8,12 +8,15 @@ from token_payments.contexts.auth.domain import UserRole
 from token_payments.contexts.store_catalog.application.commands import (
     CreateOrReuseStoreUserCommand,
     CreateStoreCommand,
+    GetStoreProfileQuery,
     GrantStoreMembershipCommand,
+    ListMerchantStoresQuery,
     RegisterStoreProductCommand,
+    UpdateStoreProfileCommand,
     payload_hash,
 )
 from token_payments.contexts.store_catalog.application.ports import StoreCatalogCommandStatus
-from token_payments.contexts.store_catalog.domain import StoreMembershipRole
+from token_payments.contexts.store_catalog.domain import PublicStoreId, StoreMembershipRole
 from token_payments.shared.domain import CommandId, Crypto, ProductId, StoreId, UserId, WalletAddress
 
 from .contracts import ApiRequest, ApiResponse, json_response
@@ -61,15 +64,88 @@ class StoreCatalogApi:
                 command_id=CommandId(idempotency_key),
                 actor_user_id=claims.user_id,
                 store_id=StoreId(store_id),
+                public_store_id=_optional_public_store_id(body, "publicStoreId"),
                 owner_user_id=UserId(_required_text(body, "ownerUserId")),
                 store_wallet=WalletAddress(_required_text(body, "storeWalletAddress")),
                 supported_chain_ids=_required_int_tuple(body, "supportedChainIds"),
                 active=_optional_bool(body, "active", True),
+                display_name=_optional_text(body, "displayName") or "Untitled Store",
+                description=_optional_text(body, "description"),
+                support_email=_optional_text(body, "supportEmail"),
+                support_email_public=_optional_bool(body, "supportEmailPublic", False),
+                business_registration_label=_optional_text(body, "businessRegistrationLabel"),
                 requested_at=request.received_at,
                 request_id=request.request_id,
                 payload_hash=payload_hash(_idempotency_payload(request, body, claims.user_id)),
             )
             return _result_response(self._use_case.create_store(command), request.request_id, created_status=201)
+        except _ApiError as exc:
+            return exc.response(request.request_id)
+        except IdempotencyKeyConflict as exc:
+            return idempotency_conflict_response(exc, request.request_id)
+        except ValueError as exc:
+            return _error_response("VALIDATION_ERROR", str(exc), 400, request.request_id)
+
+    def get_store_profile(self, request: ApiRequest) -> ApiResponse:
+        try:
+            public_store_id = PublicStoreId(_lookup_value(request, "publicStoreId"))
+            store = self._use_case.get_store_profile(GetStoreProfileQuery(public_store_id))
+            if store is None:
+                return _error_response("STORE_NOT_FOUND", "store profile was not found", 404, request.request_id)
+            return json_response({"store": store}, request_id=request.request_id)
+        except ValueError as exc:
+            return _error_response("VALIDATION_ERROR", str(exc), 400, request.request_id)
+
+    def list_merchant_stores(self, request: ApiRequest) -> ApiResponse:
+        try:
+            claims = _require_authenticated(request)
+            if "store:read" not in claims.scopes and "store:read:any" not in claims.scopes:
+                raise _ApiError("STORE_PROFILE_FORBIDDEN", "store:read permission is required", 403)
+            stores = self._use_case.list_merchant_stores(ListMerchantStoresQuery(claims.user_id))
+            return json_response({"stores": list(stores)}, request_id=request.request_id)
+        except _ApiError as exc:
+            return exc.response(request.request_id)
+        except ValueError as exc:
+            return _error_response("VALIDATION_ERROR", str(exc), 400, request.request_id)
+
+    def update_store_profile(self, request: ApiRequest) -> ApiResponse:
+        try:
+            claims = _require_authenticated(request)
+            if "store:write" not in claims.scopes and "store:write:any" not in claims.scopes:
+                raise _ApiError("STORE_PROFILE_FORBIDDEN", "store:write permission is required", 403)
+            body = _body(request)
+            _reject_unknown_fields(
+                body,
+                {
+                    "displayName",
+                    "description",
+                    "supportEmail",
+                    "supportEmailPublic",
+                    "businessRegistrationLabel",
+                    "idempotencyKey",
+                    "commandId",
+                },
+            )
+            idempotency_key = _required_idempotency_key(request, body)
+            command = UpdateStoreProfileCommand(
+                command_id=CommandId(idempotency_key),
+                actor_user_id=claims.user_id,
+                public_store_id=PublicStoreId(_lookup_value(request, "publicStoreId")),
+                display_name=_optional_text(body, "displayName"),
+                description=_optional_text(body, "description"),
+                support_email=_optional_text(body, "supportEmail"),
+                support_email_public=_optional_bool_or_none(body, "supportEmailPublic"),
+                business_registration_label=_optional_text(body, "businessRegistrationLabel"),
+                platform_override="store:write:any" in claims.scopes,
+                requested_at=request.received_at,
+                request_id=request.request_id,
+                payload_hash=payload_hash(_idempotency_payload(request, body, claims.user_id)),
+            )
+            return _result_response(
+                self._use_case.update_store_profile(command),
+                request.request_id,
+                created_status=200,
+            )
         except _ApiError as exc:
             return exc.response(request.request_id)
         except IdempotencyKeyConflict as exc:
@@ -268,6 +344,11 @@ def _optional_text(body: Mapping[str, Any], key: str) -> str | None:
     return value.strip()
 
 
+def _optional_public_store_id(body: Mapping[str, Any], key: str) -> PublicStoreId | None:
+    value = _optional_text(body, key)
+    return PublicStoreId(value) if value is not None else None
+
+
 def _required_int(body: Mapping[str, Any], key: str) -> int:
     value = body.get(key)
     if isinstance(value, bool) or not isinstance(value, int):
@@ -293,6 +374,21 @@ def _optional_bool(body: Mapping[str, Any], key: str, default: bool) -> bool:
     if not isinstance(value, bool):
         raise ValueError(f"{key} must be a boolean")
     return value
+
+
+def _optional_bool_or_none(body: Mapping[str, Any], key: str) -> bool | None:
+    if key not in body:
+        return None
+    value = body.get(key)
+    if not isinstance(value, bool):
+        raise ValueError(f"{key} must be a boolean")
+    return value
+
+
+def _reject_unknown_fields(body: Mapping[str, Any], allowed: set[str]) -> None:
+    unknown = sorted(str(key) for key in body if key not in allowed)
+    if unknown:
+        raise ValueError(f"unknown store profile field(s): {', '.join(unknown)}")
 
 
 def _new_id(generator: Any | None) -> str:

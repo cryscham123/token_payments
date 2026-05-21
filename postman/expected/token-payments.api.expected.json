@@ -12,6 +12,9 @@
     "getCheckoutTrackingByTrackingId",
     "getCheckoutTrackingByOrderId",
     "submitTransactionHash",
+    "getStoreProfile",
+    "listMerchantStores",
+    "updateStoreProfile",
     "createOrReuseStoreUser",
     "createStore",
     "grantStoreMembership",
@@ -255,6 +258,73 @@
         "orderId": "<order-id>",
         "status": "SUBMITTED",
         "txHash": "<local-test-network-transaction-hash>"
+      }
+    },
+    {
+      "operationId": "getStoreProfile",
+      "requestName": "Get public store profile",
+      "method": "GET",
+      "path": "/stores/{publicStoreId}",
+      "status": 200,
+      "headers": {
+        "X-Request-Id": "postman-store-profile-public-001"
+      },
+      "body": {
+        "store": {
+          "publicStoreId": "st_demo_store_001",
+          "displayName": "Demo Store",
+          "displayNameHtml": "Demo Store",
+          "description": "Local token payments demo store",
+          "descriptionHtml": "Local token payments demo store",
+          "status": "ACTIVE"
+        }
+      }
+    },
+    {
+      "operationId": "listMerchantStores",
+      "requestName": "List merchant stores",
+      "method": "GET",
+      "path": "/merchant/stores",
+      "status": 200,
+      "headers": {
+        "X-Request-Id": "postman-merchant-stores-001"
+      },
+      "body": {
+        "stores": [
+          {
+            "publicStoreId": "st_demo_store_001",
+            "displayName": "Demo Store",
+            "displayNameHtml": "Demo Store",
+            "description": "Local token payments demo store",
+            "descriptionHtml": "Local token payments demo store",
+            "status": "ACTIVE"
+          }
+        ]
+      }
+    },
+    {
+      "operationId": "updateStoreProfile",
+      "requestName": "Update store profile",
+      "method": "PATCH",
+      "path": "/merchant/stores/{publicStoreId}/profile",
+      "status": 200,
+      "headers": {
+        "X-CSRF-Token": "{{csrfToken}}",
+        "Idempotency-Key": "postman-update-store-profile-001",
+        "X-Request-Id": "postman-update-store-profile-001"
+      },
+      "body": {
+        "operation": "updateStoreProfile",
+        "status": "updated",
+        "store": {
+          "publicStoreId": "st_demo_store_001",
+          "displayName": "Demo Store",
+          "displayNameHtml": "Demo Store",
+          "description": "Local token payments demo store",
+          "descriptionHtml": "Local token payments demo store",
+          "status": "ACTIVE",
+          "supportEmailPublic": false
+        }
       }
     },
     {

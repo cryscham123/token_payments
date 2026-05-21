@@ -372,6 +372,7 @@ def list_http_route_specs() -> tuple[HttpRouteSpec, ...]:
         *ORDER_HTTP_ROUTES.values(),
         *CHECKOUT_HTTP_ROUTES.values(),
         *PAYMENT_HTTP_ROUTES.values(),
+        *STORE_PROFILE_HTTP_ROUTES.values(),
         *ADMIN_STORE_CATALOG_HTTP_ROUTES.values(),
         *STORE_OWNER_CATALOG_HTTP_ROUTES.values(),
         *STORE_OWNER_INVENTORY_HTTP_ROUTES.values(),
@@ -478,9 +479,24 @@ def register_payment_routes(router: HttpRouter, payments_api: Any) -> tuple[Http
 
 
 def register_store_catalog_routes(router: HttpRouter, catalog_api: Any) -> tuple[HttpRoute, ...]:
-    """Register admin store provisioning and store-owner catalog routes."""
+    """Register public store profile, admin provisioning, and store-owner catalog routes."""
 
     return (
+        _add_manifest_route(
+            router,
+            STORE_PROFILE_HTTP_ROUTES["get_profile"],
+            catalog_api.get_store_profile,
+        ),
+        _add_manifest_route(
+            router,
+            STORE_PROFILE_HTTP_ROUTES["list_merchant_stores"],
+            catalog_api.list_merchant_stores,
+        ),
+        _add_manifest_route(
+            router,
+            STORE_PROFILE_HTTP_ROUTES["update_profile"],
+            catalog_api.update_store_profile,
+        ),
         _add_manifest_route(
             router,
             ADMIN_STORE_CATALOG_HTTP_ROUTES["create_or_reuse_store_user"],
@@ -1007,6 +1023,19 @@ PAYMENT_HTTP_ROUTES: Mapping[str, HttpRouteSpec] = MappingProxyType(
 )
 
 
+STORE_PROFILE_HTTP_ROUTES: Mapping[str, HttpRouteSpec] = MappingProxyType(
+    {
+        "get_profile": HttpRouteSpec("GET", "/stores/{publicStoreId}", "getStoreProfile"),
+        "list_merchant_stores": HttpRouteSpec("GET", "/merchant/stores", "listMerchantStores"),
+        "update_profile": HttpRouteSpec(
+            "PATCH",
+            "/merchant/stores/{publicStoreId}/profile",
+            "updateStoreProfile",
+        ),
+    }
+)
+
+
 ADMIN_STORE_CATALOG_HTTP_ROUTES: Mapping[str, HttpRouteSpec] = MappingProxyType(
     {
         "create_or_reuse_store_user": HttpRouteSpec("POST", "/admin/store-users", "createOrReuseStoreUser"),
@@ -1114,6 +1143,7 @@ __all__ = [
     "OPERATOR_ACTION_HTTP_ROUTES",
     "OPERATOR_HTTP_ROUTES",
     "PAYMENT_HTTP_ROUTES",
+    "STORE_PROFILE_HTTP_ROUTES",
     "STORE_OWNER_INVENTORY_HTTP_ROUTES",
     "STORE_OWNER_CATALOG_HTTP_ROUTES",
     "WsgiApplication",

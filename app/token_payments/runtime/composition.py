@@ -1718,6 +1718,15 @@ class _TransactionalStoreCatalogUseCase:
     def create_store(self, command):
         return self._execute(lambda service: service.create_store(command))
 
+    def get_store_profile(self, query):
+        return self._execute(lambda service: service.get_store_profile(query))
+
+    def list_merchant_stores(self, query):
+        return self._execute(lambda service: service.list_merchant_stores(query))
+
+    def update_store_profile(self, command):
+        return self._execute(lambda service: service.update_store_profile(command))
+
     def grant_store_membership(self, command):
         return self._execute(lambda service: service.grant_store_membership(command))
 

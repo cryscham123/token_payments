@@ -130,7 +130,7 @@ Merchant groups are created by store provisioning and linked to one store or mer
 
 | Aggregate | 주요 필드 | 주요 행위 |
 | --- | --- | --- |
-| `StoreProfile` | `StoreId`, `GroupId`, `displayName`, `description`, `status`, `supportEmail`, `businessRegistrationLabel`, `createdAt`, `updatedAt` | public/private business profile 보존 |
+| `StoreProfile` | internal `StoreId`, external `PublicStoreId`, `GroupId`, `displayName`, `description`, `status`, `supportEmail`, `supportEmailPublic`, `businessRegistrationLabel`, `createdAt`, `updatedAt` | public/private business profile 보존 |
 | `StorePaymentSettings` | `StoreId`, `storeWallet`, `supportedChainIds`, `active` | payment destination/chain 설정 보존 |
 | `StoreMembership` | `StoreId`, `UserId`, store-scoped `role`, `active` | compatibility path; new authorization uses merchant group membership |
 | `StoreProduct` | `StoreId`, `ProductId`, `title`, `description`, `category`, `tags`, `media`, `attributes`, `status`, `visibility`, `Crypto price` | canonical product catalog item |
@@ -138,15 +138,15 @@ Merchant groups are created by store provisioning and linked to one store or mer
 ### Value Objects
 
 - `StoreMembershipRole`: `OWNER`, `MANAGER` compatibility only while merchant group RBAC migrates.
-- `StoreId`, `ProductId`, `UserId`, `GroupId`, `WalletAddress`, `Crypto`
+- `StoreId`, `PublicStoreId`, `ProductId`, `UserId`, `GroupId`, `WalletAddress`, `Crypto`
 
 ### Ports and Adapters
 
-- Input: `createOrReuseStoreUser`, `createStore`, `grantStoreMembership`, `registerStoreProduct` (Adapter type: HTTP)
+- Input: `getStoreProfile`, `listMerchantStores`, `updateStoreProfile`, `createOrReuseStoreUser`, `createStore`, `grantStoreMembership`, `registerStoreProduct` (Adapter type: HTTP)
 - Output: `CatalogWriteRepository`, catalog idempotency/audit persistence, checkout catalog projection writers, store approval projection writers, inventory projection writer
 - Adapters: PostgreSQL canonical `store_catalog_stores`, `store_catalog_store_memberships`, `store_catalog_products`, write-through projection tables
 
-`store_catalog` is the canonical store ownership and catalog source. `order_stores`, `order_store_products`, `store_approval_stores`, `store_approval_products`, and `product_inventory` remain runtime projections so existing checkout, approval, and inventory flows keep their read paths. A customer wallet can own/manage a store by adding merchant group membership for the existing `auth_users.user_id`; no duplicate wallet row or global role change is required.
+`store_catalog` is the canonical store ownership and catalog source. Canonical store profile lookup uses stable external `PublicStoreId`/`public_store_id`; internal UUID `store_id` stays inside persistence and internal service boundaries. `public_store_id` is unique/indexed and must not be a raw UUID primary key or sequential id. `order_stores`, `order_store_products`, `store_approval_stores`, `store_approval_products`, and `product_inventory` remain runtime projections so existing checkout, approval, and inventory flows keep their read paths. Checkout projection tables must not be extended into the canonical store business profile source. A customer wallet can own/manage a store by adding merchant group membership for the existing `auth_users.user_id`; no duplicate wallet row or global role change is required.
 
 Store business profile and payment settings are separate. `store:write` updates business profile fields such as display name, description, and support contact. Settlement wallet and supported chain changes are policy-gated payment settings flows, not public profile edits. Owner transfer, member invite/remove, and role/permission changes belong to RBAC/membership provisioning, not `updateStoreProfile`.
 

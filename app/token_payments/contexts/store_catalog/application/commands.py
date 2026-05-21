@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Mapping
 
 from token_payments.contexts.auth.domain import UserRole
-from token_payments.contexts.store_catalog.domain import StoreMembershipRole
+from token_payments.contexts.store_catalog.domain import PublicStoreId, StoreMembershipRole
 from token_payments.shared.domain import CommandId, Crypto, ProductId, StoreId, UserId, WalletAddress
 
 
@@ -37,6 +37,12 @@ class CreateStoreCommand:
     requested_at: datetime
     request_id: str
     payload_hash: str
+    public_store_id: PublicStoreId | None = None
+    display_name: str = "Untitled Store"
+    description: str | None = None
+    support_email: str | None = None
+    support_email_public: bool = False
+    business_registration_label: str | None = None
 
     def __post_init__(self) -> None:
         _validate_common(self)
@@ -44,6 +50,8 @@ class CreateStoreCommand:
             raise ValueError("CreateStoreCommand.actor_user_id must be a UserId")
         if not isinstance(self.store_id, StoreId):
             raise ValueError("CreateStoreCommand.store_id must be a StoreId")
+        if self.public_store_id is not None and not isinstance(self.public_store_id, PublicStoreId):
+            object.__setattr__(self, "public_store_id", PublicStoreId(str(self.public_store_id)))
         if not isinstance(self.owner_user_id, UserId):
             raise ValueError("CreateStoreCommand.owner_user_id must be a UserId")
         if not isinstance(self.store_wallet, WalletAddress):
@@ -57,6 +65,68 @@ class CreateStoreCommand:
             raise ValueError("CreateStoreCommand.supported_chain_ids must not be empty")
         if not isinstance(self.active, bool):
             raise ValueError("CreateStoreCommand.active must be a bool")
+        object.__setattr__(self, "display_name", _text(self.display_name, "display_name"))
+        if self.description is not None:
+            object.__setattr__(self, "description", _text(self.description, "description"))
+        if self.support_email is not None:
+            object.__setattr__(self, "support_email", _text(self.support_email, "support_email"))
+        if not isinstance(self.support_email_public, bool):
+            raise ValueError("CreateStoreCommand.support_email_public must be a bool")
+        if self.business_registration_label is not None:
+            object.__setattr__(
+                self,
+                "business_registration_label",
+                _text(self.business_registration_label, "business_registration_label"),
+            )
+
+
+@dataclass(frozen=True)
+class GetStoreProfileQuery:
+    public_store_id: PublicStoreId
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.public_store_id, PublicStoreId):
+            object.__setattr__(self, "public_store_id", PublicStoreId(str(self.public_store_id)))
+
+
+@dataclass(frozen=True)
+class ListMerchantStoresQuery:
+    actor_user_id: UserId
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.actor_user_id, UserId):
+            raise ValueError("ListMerchantStoresQuery.actor_user_id must be a UserId")
+
+
+@dataclass(frozen=True)
+class UpdateStoreProfileCommand:
+    command_id: CommandId
+    actor_user_id: UserId
+    public_store_id: PublicStoreId
+    display_name: str | None
+    description: str | None
+    support_email: str | None
+    support_email_public: bool | None
+    business_registration_label: str | None
+    platform_override: bool
+    requested_at: datetime
+    request_id: str
+    payload_hash: str
+
+    def __post_init__(self) -> None:
+        _validate_common(self)
+        if not isinstance(self.actor_user_id, UserId):
+            raise ValueError("UpdateStoreProfileCommand.actor_user_id must be a UserId")
+        if not isinstance(self.public_store_id, PublicStoreId):
+            object.__setattr__(self, "public_store_id", PublicStoreId(str(self.public_store_id)))
+        for field_name in ("display_name", "description", "support_email", "business_registration_label"):
+            value = getattr(self, field_name)
+            if value is not None:
+                object.__setattr__(self, field_name, _text(value, field_name))
+        if self.support_email_public is not None and not isinstance(self.support_email_public, bool):
+            raise ValueError("UpdateStoreProfileCommand.support_email_public must be a bool")
+        if not isinstance(self.platform_override, bool):
+            raise ValueError("UpdateStoreProfileCommand.platform_override must be a bool")
 
 
 @dataclass(frozen=True)
@@ -148,4 +218,3 @@ def _text(value: str, field_name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field_name} must be a non-empty string")
     return value.strip()
-
