@@ -21,13 +21,15 @@
 1. `scripts/test_profile_catalog_public_contracts.py`를 추가한다.
    - docs가 user identity, user profile, group membership을 구분해야 한다.
    - docs가 store business profile, store payment settings, product catalog, inventory를 구분해야 한다.
+   - docs가 internal `store_id`/`product_id`와 public `public_store_id`/`public_product_id`를 구분해야 한다.
+   - docs와 Postman examples는 store/product public read routes를 `publicStoreId`/`publicProductId` 기반으로 설명해야 한다.
    - docs는 store/product slug를 phase 23 필수 field나 route key로 설명하지 않아야 한다.
    - docs는 SKU를 phase 23 필수 field나 자동 생성 field로 설명하지 않아야 한다.
    - docs는 user/store/product display name이 중복 가능하지만 bounded validation 대상임을 설명해야 한다.
    - docs는 입력값 검증 커버리지를 이미 구현됨, 부분 구현, phase 23에서 구현할 항목으로 구분해야 한다.
    - docs는 UUID/wallet/tx hash/crypto/operator sort/body guard 같은 기존 방어와 profile/catalog text/email/URL/tag/category/JSON validation 같은 신규 작업을 구분해야 한다.
-   - Postman collection/expected fixture는 user profile, store profile, product detail, catalog query examples를 포함해야 한다.
-   - local seed plan은 platform admin, merchant group, store profile, product details, public product listing fixture를 포함해야 한다.
+   - Postman collection/expected fixture는 user profile, store profile, product detail, store/product public read API, catalog query examples를 포함해야 한다.
+   - local seed plan은 platform admin, merchant group, store profile, product details, public store/product ids, public product listing fixture를 포함해야 한다.
    - docs는 Elasticsearch, DID, email account recovery를 future scope로 남겨야 한다.
 2. README/app README를 갱신한다.
    - phase 23 산출물과 다음 phase 후보를 정리한다.
@@ -53,6 +55,7 @@ python3 scripts/validate_phases.py
 - 검색 엔진, DID, 이메일 복구 구현을 이 phase에 추가하지 마라.
 - local seed에 real secret, private key, seed phrase, production token을 넣지 마라.
 - profile/catalog docs에서 auth identity와 public profile을 혼동하지 마라.
+- docs나 fixtures에 internal UUID PK를 public route key처럼 남기지 마라.
 - Claude 전용 파일이나 명령을 추가하지 마라.
 - `scripts/execute.py`에 프로젝트별 구현 로직을 넣지 마라.
 - `step*-output.json`을 추적 대상으로 만들지 마라.

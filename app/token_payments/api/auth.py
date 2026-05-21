@@ -9,15 +9,18 @@ from token_payments.contexts.auth.application import (
     AuthErrorCode,
     AuthUseCase,
     CurrentUserQuery,
+    GetCurrentUserProfileQuery,
+    GetUserProfileQuery,
     LoginChallengeResult,
     LoginResult,
     LoginWithMetaMaskCommand,
     LogoutCommand,
     RefreshSessionCommand,
     RequestLoginChallengeCommand,
+    UpdateUserProfileCommand,
 )
 from token_payments.contexts.auth.application.siwe import SIWE_VERSION
-from token_payments.contexts.auth.domain import AuthSession, RefreshTokenHash, SessionId, User
+from token_payments.contexts.auth.domain import AuthSession, RefreshTokenHash, SessionId, User, UserProfile
 from token_payments.shared.domain import UserId
 
 from .contracts import ApiRequest, ApiResponse, json_response
@@ -112,6 +115,82 @@ class AuthApi:
         except (AuthApplicationError, ValueError) as exc:
             return _error_response(_coerce_auth_error(exc), request.request_id)
 
+    def current_user_profile(self, request: ApiRequest) -> ApiResponse:
+        try:
+            actor_user_id = _authenticated_user_id(request)
+            profile = self._use_case.getCurrentUserProfile(GetCurrentUserProfileQuery(user_id=UserId(actor_user_id)))
+            if profile is None:
+                return _profile_error_response(
+                    "USER_PROFILE_NOT_FOUND",
+                    "user profile was not found",
+                    404,
+                    request.request_id,
+                )
+            return json_response(
+                {"profile": _profile_payload(profile, include_contact=True)},
+                status_code=200,
+                request_id=request.request_id,
+            )
+        except (AuthApplicationError, ValueError) as exc:
+            return _error_response(_coerce_auth_error(exc), request.request_id)
+
+    def get_user_profile(self, request: ApiRequest) -> ApiResponse:
+        try:
+            target_user_id = _target_profile_user_id(request)
+            profile = self._use_case.getUserProfile(GetUserProfileQuery(user_id=UserId(target_user_id)))
+            if profile is None:
+                return _profile_error_response(
+                    "USER_PROFILE_NOT_FOUND",
+                    "user profile was not found",
+                    404,
+                    request.request_id,
+                )
+            return json_response(
+                {
+                    "profile": _profile_payload(
+                        profile,
+                        include_contact=_can_view_profile_contact(request, target_user_id),
+                    )
+                },
+                status_code=200,
+                request_id=request.request_id,
+            )
+        except (AuthApplicationError, ValueError) as exc:
+            return _error_response(_coerce_auth_error(exc), request.request_id)
+
+    def update_current_user_profile(self, request: ApiRequest) -> ApiResponse:
+        try:
+            actor_user_id = _authenticated_user_id(request)
+            target_user_id = _target_profile_user_id(request, default_user_id=actor_user_id)
+            if actor_user_id != target_user_id and not _has_scope(request, "user:manage"):
+                return _profile_error_response(
+                    "USER_PROFILE_FORBIDDEN",
+                    "user:manage permission is required to update another user profile",
+                    403,
+                    request.request_id,
+                )
+            body = _request_body(request)
+            profile = self._use_case.updateUserProfile(
+                UpdateUserProfileCommand(
+                    actor_user_id=UserId(actor_user_id),
+                    target_user_id=UserId(target_user_id),
+                    display_name=_optional_profile_text(body, "displayName"),
+                    email=_optional_profile_text(body, "email"),
+                    locale=_optional_profile_text(body, "locale"),
+                    timezone=_optional_profile_text(body, "timezone"),
+                    requested_at=request.received_at,
+                    request_id=request.request_id,
+                    actor_scopes=request.auth_context.scopes if request.auth_context is not None else (),
+                )
+            )
+            return json_response(
+                {"profile": _profile_payload(profile, include_contact=True)},
+                status_code=200,
+                request_id=request.request_id,
+            )
+        except (AuthApplicationError, ValueError) as exc:
+            return _error_response(_coerce_auth_error(exc), request.request_id)
+
 
 def _challenge_payload(result: LoginChallengeResult) -> dict[str, Any]:
     challenge = result.challenge
@@ -173,6 +252,66 @@ def _session_payload(session: AuthSession) -> dict[str, Any]:
             "rotationVersion": session.refresh_token_hash.rotation_version,
         },
     }
+
+
+def _profile_payload(profile: UserProfile, *, include_contact: bool) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "userId": str(profile.user_id),
+        "displayName": profile.display_name,
+        "displayNameHtml": profile.display_name_html,
+        "locale": profile.locale,
+        "timezone": profile.timezone,
+        "status": profile.status.value,
+        "createdAt": profile.created_at.isoformat() if profile.created_at is not None else None,
+        "updatedAt": profile.updated_at.isoformat() if profile.updated_at is not None else None,
+    }
+    if include_contact:
+        payload.update(
+            {
+                "email": profile.email,
+                "emailVerifiedAt": (
+                    profile.email_verified_at.isoformat() if profile.email_verified_at is not None else None
+                ),
+            }
+        )
+    return payload
+
+
+def _authenticated_user_id(request: ApiRequest) -> str:
+    if request.auth_context is None or request.auth_context.user_id is None:
+        raise AuthApplicationError(AuthErrorCode.AUTHENTICATION_REQUIRED, "authenticated session is required")
+    return request.auth_context.user_id
+
+
+def _target_profile_user_id(request: ApiRequest, *, default_user_id: str | None = None) -> str:
+    value = request.query.get("userId")
+    if value is None and isinstance(request.body, Mapping):
+        value = request.body.get("userId")
+    if value is None:
+        value = default_user_id
+    if not isinstance(value, str) or not value.strip():
+        raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, "userId is required")
+    return value.strip()
+
+
+def _can_view_profile_contact(request: ApiRequest, target_user_id: str) -> bool:
+    context = request.auth_context
+    if context is None or context.user_id is None:
+        return False
+    return context.user_id == target_user_id or "user:manage" in context.scopes
+
+
+def _has_scope(request: ApiRequest, scope: str) -> bool:
+    return request.auth_context is not None and scope in request.auth_context.scopes
+
+
+def _optional_profile_text(body: Mapping[str, Any], key: str) -> str | None:
+    value = body.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, f"{key} must be a string")
+    return value
 
 
 def _refresh_token_hash_from_body(body: Mapping[str, Any]) -> RefreshTokenHash:
@@ -269,6 +408,9 @@ def _status_for_error(code: AuthErrorCode) -> int:
         AuthErrorCode.EXPIRED_CHALLENGE: 409,
         AuthErrorCode.REUSED_NONCE: 409,
         AuthErrorCode.VALIDATION_ERROR: 400,
+        AuthErrorCode.AUTHENTICATION_REQUIRED: 401,
+        AuthErrorCode.USER_PROFILE_FORBIDDEN: 403,
+        AuthErrorCode.USER_PROFILE_NOT_FOUND: 404,
     }[code]
 
 
@@ -276,6 +418,19 @@ def _coerce_auth_error(error: AuthApplicationError | ValueError) -> AuthApplicat
     if isinstance(error, AuthApplicationError):
         return error
     return AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, str(error))
+
+
+def _profile_error_response(
+    code: str,
+    message: str,
+    status_code: int,
+    request_id: str | None,
+) -> ApiResponse:
+    return json_response(
+        {"error": {"code": code, "message": message}},
+        status_code=status_code,
+        request_id=request_id,
+    )
 
 
 __all__ = ["AuthApi"]

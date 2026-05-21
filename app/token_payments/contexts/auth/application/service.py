@@ -19,6 +19,7 @@ from token_payments.contexts.auth.domain import (
     SessionId,
     User,
     UserLoggedInEvent,
+    UserProfile,
     UserRegisteredEvent,
     WalletVerifiedEvent,
 )
@@ -29,6 +30,8 @@ from .ports import (
     AuthRbacRepository,
     AuthSessionRepository,
     CurrentUserQuery,
+    GetCurrentUserProfileQuery,
+    GetUserProfileQuery,
     LoginChallengeRepository,
     LoginChallengeResult,
     LoginResult,
@@ -37,6 +40,8 @@ from .ports import (
     RefreshSessionCommand,
     RequestLoginChallengeCommand,
     TokenIssuer,
+    UpdateUserProfileCommand,
+    UserProfileRepository,
     UserRepository,
     WalletSignatureVerificationFailure,
     WalletSignatureVerificationResult,
@@ -59,6 +64,9 @@ class AuthErrorCode(StrEnum):
     WALLET_MISMATCH = "WALLET_MISMATCH"
     SIWE_MESSAGE_MISMATCH = "SIWE_MESSAGE_MISMATCH"
     VALIDATION_ERROR = "VALIDATION_ERROR"
+    AUTHENTICATION_REQUIRED = "AUTHENTICATION_REQUIRED"
+    USER_PROFILE_FORBIDDEN = "USER_PROFILE_FORBIDDEN"
+    USER_PROFILE_NOT_FOUND = "USER_PROFILE_NOT_FOUND"
 
 
 class AuthApplicationError(Exception):
@@ -84,6 +92,7 @@ class AuthApplicationService:
         token_issuer: TokenIssuer,
         event_publisher: AuthEventPublisher,
         rbac: AuthRbacRepository | None = None,
+        profiles: UserProfileRepository | None = None,
         challenge_ttl: timedelta = timedelta(minutes=5),
         session_ttl: timedelta = timedelta(days=30),
     ) -> None:
@@ -95,6 +104,7 @@ class AuthApplicationService:
         self._login_challenges = login_challenges
         self._sessions = sessions
         self._rbac = rbac
+        self._profiles = profiles
         self._signature_verifier = signature_verifier
         self._token_issuer = token_issuer
         self._event_publisher = event_publisher
@@ -257,6 +267,63 @@ class AuthApplicationService:
         if user is None or not user.active:
             return None
         return user
+
+    def getCurrentUserProfile(self, query: GetCurrentUserProfileQuery) -> UserProfile | None:
+        if not isinstance(query.user_id, UserId):
+            raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, "user_id must be a UserId")
+        return self._profile_repository().get_by_user_id(query.user_id)
+
+    def getUserProfile(self, query: GetUserProfileQuery) -> UserProfile | None:
+        if not isinstance(query.user_id, UserId):
+            raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, "user_id must be a UserId")
+        return self._profile_repository().get_by_user_id(query.user_id)
+
+    def updateUserProfile(self, command: UpdateUserProfileCommand) -> UserProfile:
+        if not isinstance(command.actor_user_id, UserId):
+            raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, "actor_user_id must be a UserId")
+        if not isinstance(command.target_user_id, UserId):
+            raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, "target_user_id must be a UserId")
+        if command.actor_user_id != command.target_user_id and "user:manage" not in command.actor_scopes:
+            raise AuthApplicationError(
+                AuthErrorCode.USER_PROFILE_FORBIDDEN,
+                "user:manage permission is required to update another user profile",
+            )
+        requested_at = _coerce_datetime(command.requested_at or self._now(), "requested_at")
+        repository = self._profile_repository()
+        existing = repository.get_by_user_id(command.target_user_id)
+        if existing is None:
+            if command.display_name is None:
+                raise AuthApplicationError(
+                    AuthErrorCode.VALIDATION_ERROR,
+                    "display_name is required when creating a profile",
+                )
+            existing = UserProfile(
+                user_id=command.target_user_id,
+                display_name=command.display_name,
+                email=command.email,
+                locale=command.locale,
+                timezone=command.timezone,
+                created_at=requested_at,
+                updated_at=requested_at,
+            )
+        else:
+            existing = existing.update(
+                display_name=command.display_name,
+                email=command.email,
+                locale=command.locale,
+                timezone=command.timezone,
+                updated_at=requested_at,
+            )
+        repository.save(existing)
+        return existing
+
+    def _profile_repository(self) -> UserProfileRepository:
+        if self._profiles is None:
+            raise AuthApplicationError(
+                AuthErrorCode.USER_PROFILE_NOT_FOUND,
+                "user profile repository is not configured",
+            )
+        return self._profiles
 
     def _create_session_and_tokens(self, user: User, device_id: str, now: datetime) -> tuple[AuthSession, IssuedToken]:
         session_id = SessionId(_new_text_id(self._session_id_generator, "session_id_generator"))
@@ -422,6 +489,9 @@ def _message_for_code(code: AuthErrorCode) -> str:
         AuthErrorCode.WALLET_MISMATCH: "wallet address does not match the login challenge",
         AuthErrorCode.SIWE_MESSAGE_MISMATCH: "SIWE login message does not match the issued challenge",
         AuthErrorCode.VALIDATION_ERROR: "invalid auth request",
+        AuthErrorCode.AUTHENTICATION_REQUIRED: "authenticated session is required",
+        AuthErrorCode.USER_PROFILE_FORBIDDEN: "user profile permission denied",
+        AuthErrorCode.USER_PROFILE_NOT_FOUND: "user profile was not found",
     }[code]
 
 

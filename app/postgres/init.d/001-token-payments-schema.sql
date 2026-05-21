@@ -59,6 +59,33 @@ CREATE TABLE IF NOT EXISTS auth_users (
 CREATE INDEX IF NOT EXISTS idx_auth_users_wallet_address
     ON auth_users (wallet_address);
 
+CREATE TABLE IF NOT EXISTS auth_user_profiles (
+    user_id UUID PRIMARY KEY REFERENCES auth_users (user_id),
+    display_name TEXT,
+    email TEXT,
+    email_verified_at TIMESTAMPTZ,
+    locale TEXT,
+    timezone TEXT,
+    status TEXT NOT NULL CHECK (status IN ('ACTIVE', 'SUSPENDED', 'DELETED')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (
+        status = 'DELETED'
+        OR display_name IS NOT NULL
+    ),
+    CHECK (
+        status <> 'DELETED'
+        OR (
+            display_name IS NULL
+            AND email IS NULL
+            AND email_verified_at IS NULL
+        )
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_user_profiles_status
+    ON auth_user_profiles (status);
+
 CREATE TABLE IF NOT EXISTS auth_login_challenges (
     nonce_value TEXT PRIMARY KEY,
     wallet_address TEXT NOT NULL,
