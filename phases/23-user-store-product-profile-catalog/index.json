@@ -13,7 +13,10 @@
     {
       "step": 1,
       "name": "store-profile-public-identity",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-22T08:40:21+0900",
+      "summary": "Added canonical store business profiles with stable publicStoreId identity, bounded profile validation, public/merchant profile APIs, parameter-bound PostgreSQL persistence, and updated route/docs fixtures.",
+      "completed_at": "2026-05-22T08:58:51+0900"
     },
     {
       "step": 2,
