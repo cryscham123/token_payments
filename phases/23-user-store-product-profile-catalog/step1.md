@@ -22,6 +22,8 @@
    - store profile은 `store_id`, `group_id`, `display_name`, `description`, `status`, `support_email`, `business_registration_label`, `created_at`, `updated_at`을 가져야 한다.
    - public store detail은 공개 가능한 field만 반환해야 한다.
    - `store:write`는 `display_name`, `description`, 공개/비공개 support contact 같은 business profile field만 수정할 수 있어야 한다.
+   - `display_name`은 중복 가능하지만 bounded text validation을 거쳐야 한다. `description`과 `business_registration_label`도 길이 상한, 제어 문자, null byte, 로그/CSV 오염 위험 문자를 검증해야 한다.
+   - store profile 입력값은 SQL 문자열 보간 없이 parameter binding으로 저장되고, HTML/UI 출력에서는 escaping되어야 한다.
    - `store:manage` 또는 platform approval은 store status 같은 민감 운영 설정에만 사용한다.
    - slug는 이 phase에 추가하지 않는다. Public/merchant lookup은 안정적인 `store_id` 기반으로 유지하고, human-readable URL은 future scope로 둔다.
    - checkout projection table을 store canonical source로 계속 확장하지 않아야 한다.
@@ -57,6 +59,7 @@ python3 scripts/validate_phases.py
 - private business/contact fields를 public store listing에 무조건 노출하지 마라.
 - payment settlement wallet 설정과 public store profile을 한 DTO에 섞어 노출하지 마라.
 - owner transfer/group membership 변경을 `updateStoreProfile`에 넣지 마라.
+- store profile 입력값을 SQL fragment, HTML, log line, CSV cell로 신뢰하지 마라.
 - Claude 전용 파일이나 명령을 추가하지 마라.
 - `scripts/execute.py`에 프로젝트별 구현 로직을 넣지 마라.
 - `step*-output.json`을 추적 대상으로 만들지 마라.

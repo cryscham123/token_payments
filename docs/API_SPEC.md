@@ -67,6 +67,8 @@ Role and permission definitions start as seed/static catalog data. Phase 22 may 
 
 Phase 23 separates user identity from user profile, store business profile from store payment settings, and product catalog from inventory. Store/product slug fields and SKU fields are not required in phase 23; public and merchant lookup starts with stable `storeId` and `productId`. Human-readable URLs and merchant-managed inventory codes are future scope. User display names, store display names, and product titles are display/search fields and may be duplicated. Settlement wallet/supported chain changes are policy-gated payment settings flows, not `updateStoreProfile`. Owner transfer, member invite/remove, and role changes belong to RBAC/membership provisioning, not store profile update.
 
+All user-provided profile/catalog text fields are data, not executable fragments. APIs must validate bounded length, required/optional emptiness, control characters, null bytes, and normalization policy before persistence. SQL adapters must use parameter binding for values and whitelist any dynamic identifiers such as sort columns or directions. UI/rendering layers must HTML-escape display names, store descriptions, product titles, tags, and media labels before output. Query text and filter values must be parameterized; wildcard behavior for `ILIKE`/text search must be explicit and tested.
+
 User-facing capability summary:
 
 | User type | Allowed capabilities |

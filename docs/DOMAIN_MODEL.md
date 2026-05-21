@@ -144,6 +144,8 @@ Store business profile and payment settings are separate. `store:write` updates 
 
 Store/product slug fields and SKU fields are not part of phase 23. Public and merchant lookup starts with stable `storeId` and `productId`; human-readable URLs and merchant-managed inventory codes are future scope. User display names, store display names, and product titles are display/search fields and may be duplicated.
 
+Profile/catalog text is persisted as bounded data. Domain validation must reject or normalize empty required values, excessive length, control characters, null bytes, and log/CSV injection-prone prefixes where applicable. Persistence adapters must use parameter binding/JSON-safe serialization rather than string-built SQL values, and presentation adapters must escape text before HTML output.
+
 ## Checkout Process Manager
 
 `CheckoutProcessManager`는 `app/token_payments/contexts/checkout/application/process_manager.py`에 위치한 별도 checkout saga/process manager다. Checkout Process is a separate saga/process context, not an order context submodule.

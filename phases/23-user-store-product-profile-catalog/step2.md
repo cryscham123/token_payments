@@ -21,6 +21,8 @@
 1. `scripts/test_product_catalog_detail_model.py`를 추가한다.
    - product catalog는 `product_id`, `store_id`, `title`, `description`, `category`, `tags`, `media`, `attributes`, `status`, `visibility`, `created_at`, `updated_at`을 가져야 한다.
    - `title`/`name`은 표시/검색용 field이며 중복될 수 있다. 시스템 식별과 checkout/order 참조는 `product_id`로 유지한다.
+   - `title`, `description`, `category`, `tags`, `media`, `attributes`는 bounded validation을 거쳐야 한다. 빈 title, 과도한 길이, 제어 문자, null byte, 로그/CSV 오염 위험 문자는 거부하거나 정규화해야 한다.
+   - product 입력값은 SQL 문자열 보간 없이 parameter binding/JSON-safe serialization으로 저장되고, HTML/UI 출력에서는 escaping되어야 한다.
    - SKU는 이 phase에 추가하지 않는다. Merchant-managed inventory code가 필요해지면 optional future field로 별도 정책을 둔다.
    - product slug는 이 phase에 추가하지 않는다. Public/merchant lookup은 안정적인 `product_id` 기반으로 유지하고, human-readable URL은 future scope로 둔다.
    - product status와 inventory sale status는 분리되어야 한다.
@@ -56,6 +58,7 @@ python3 scripts/validate_phases.py
 - product slug를 필수 catalog field나 route key로 추가하지 마라.
 - inventory stock 상태와 product visibility/status를 하나의 enum으로 합치지 마라.
 - product media binary upload/storage를 이 step에 넣지 마라.
+- product 입력값을 SQL fragment, HTML, log line, CSV cell로 신뢰하지 마라.
 - Claude 전용 파일이나 명령을 추가하지 마라.
 - `scripts/execute.py`에 프로젝트별 구현 로직을 넣지 마라.
 - `step*-output.json`을 추적 대상으로 만들지 마라.
