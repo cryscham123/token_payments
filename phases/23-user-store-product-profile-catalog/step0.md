@@ -25,12 +25,14 @@ Auth identity와 표시/연락용 user profile을 분리한다. 이메일 계정
    - profile update는 authenticated self 또는 `user:manage` permission으로만 가능해야 한다.
    - `display_name`은 중복 가능하지만 bounded text validation을 거쳐야 한다. 빈 문자열, 제어 문자, 과도한 길이, null byte, 로그/CSV 오염 위험 문자는 거부하거나 정규화해야 한다.
    - `display_name`, `email`, `locale`, `timezone` 같은 사용자 입력값은 SQL 문자열 보간 없이 parameter binding으로 저장되고, HTML/UI 출력에서는 escaping되어야 한다.
+   - 기존 구현에서 이미 제공되는 UUID value object 검증, request body size/malformed JSON 처리, parameter binding 관례는 유지해야 한다.
+   - 기존 text validation은 non-empty/strip 수준으로 간주하고, profile field의 길이/제어문자/null byte/Unicode normalization/log/CSV injection 방어는 이 step에서 새로 닫아야 한다.
 2. auth/profile domain을 추가한다.
    - 권장 위치: `/app/token_payments/contexts/auth/domain/profile.py` 또는 auth domain 내 명확한 profile model.
    - `UserProfileStatus`는 최소 `ACTIVE`, `SUSPENDED`, `DELETED`를 둔다.
    - `DELETED`는 profile tombstone 상태다. 원래 `display_name`, `email` 같은 PII/contact fields는 redacted/null 처리하고, auth identity/order/audit reference 보존과 혼동하지 않는다.
    - account login disable/revoke는 auth identity/session policy에서 다루며, profile `DELETED`만으로 인증 정책을 대체하지 않는다.
-   - profile validation은 display name length, email shape, locale/timezone text bounds, control character rejection, Unicode normalization policy를 포함한다.
+   - profile validation은 display name length, email shape, locale/timezone text bounds, timezone allowlist 또는 standard name 검증, control character rejection, Unicode normalization policy를 포함한다.
 3. PostgreSQL schema와 adapter를 갱신한다.
    - 권장 테이블: `auth_user_profiles`
    - `auth_users`와 1:1로 연결하되 auth identity table에 display/contact fields를 계속 추가하지 않는다.

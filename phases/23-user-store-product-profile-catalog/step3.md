@@ -28,6 +28,8 @@
    - SQL filter/search는 parameter binding을 사용해야 하며 user input을 SQL fragment로 붙이지 않아야 한다.
    - ORDER BY column/direction은 whitelist 기반으로만 선택해야 한다. `LIMIT`/`OFFSET`/cursor page size는 integer coercion과 상한을 가져야 한다.
    - `ILIKE`/text search wildcard(`%`, `_`)는 허용 정책을 명확히 하고, literal search가 필요하면 escape contract를 테스트해야 한다.
+   - 기존 operator dashboard query의 sort allowlist/limit 상한은 참고하되, catalog query/filter는 별도 구현 전이므로 이 step에서 독립적으로 테스트해야 한다.
+   - unknown query/body fields를 reject할지 ignore할지 API별 정책을 명시하고 테스트해야 한다.
 2. query ports/adapters를 추가한다.
    - store catalog query port와 PostgreSQL adapter를 분리한다.
    - public facade와 merchant/operator facade를 분리하거나 response projection을 명확히 둔다.

@@ -26,6 +26,7 @@
    - nested group은 이 phase 범위가 아니다. `GroupMembership`의 member는 user이며, group 안에 group을 넣는 hierarchy를 만들지 않는다.
    - `PERSONAL` group은 customer 기본 self-scope를 전역 `User.role` 없이 표현하기 위한 얇은 scope로 유지한다.
    - role은 permission 묶음이고, 권한 판단은 role 이름 직접 비교가 아니라 permission lookup으로 가능해야 한다.
+   - role template catalog는 seed/static으로 시작하고, merchant-facing API가 선택할 수 있는 role은 non-owner merchant staff template로 제한되어야 한다.
    - 같은 user가 personal customer group과 merchant group, platform group에 동시에 속할 수 있어야 한다.
    - inactive membership이나 inactive role은 permission을 부여하지 않아야 한다.
    - schema compatibility SQL은 신규 RBAC table을 additive하게 만들고, `auth_users.role` 의존을 새 실행 경로에서 제거해야 한다.
@@ -34,8 +35,10 @@
    - 필요한 경우 migration 중 import 정리를 위해 작은 compatibility alias를 임시로 둘 수 있지만, application/API policy 판단에는 사용하지 않는다.
    - `GroupId`, `RoleId`, `PermissionName` 같은 value object를 추가한다.
    - `GroupMembership`은 `user_id`, `group_id`, `role_id`, `active`, `joined_at`을 가져야 한다.
+   - merchant invitation을 위한 `GroupInvitation`/`InvitationStatus` contract를 준비한다.
 3. PostgreSQL schema를 갱신한다.
    - 권장 테이블: `auth_groups`, `auth_roles`, `auth_permissions`, `auth_role_permissions`, `auth_group_memberships`
+   - merchant invitation을 지원하려면 `auth_group_invitations`를 추가한다.
    - `auth_groups`는 `group_type`, optional `resource_type`, optional `resource_id`를 가진다.
    - merchant store와 group을 연결할 수 있도록 store catalog schema에 `group_id` 참조를 추가한다.
    - `auth_users.role` column을 새 code path에서 읽지 않도록 adapter contract를 바꾼다. 실제 drop은 테스트/fixture 정리 후 별도 migration으로 처리해도 된다.

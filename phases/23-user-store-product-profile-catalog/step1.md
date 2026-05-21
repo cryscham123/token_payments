@@ -23,6 +23,7 @@
    - public store detail은 공개 가능한 field만 반환해야 한다.
    - `store:write`는 `display_name`, `description`, 공개/비공개 support contact 같은 business profile field만 수정할 수 있어야 한다.
    - `display_name`은 중복 가능하지만 bounded text validation을 거쳐야 한다. `description`과 `business_registration_label`도 길이 상한, 제어 문자, null byte, 로그/CSV 오염 위험 문자를 검증해야 한다.
+   - `support_email`은 email shape와 길이 상한을 검증해야 한다. Public 노출 여부는 response projection으로 분리한다.
    - store profile 입력값은 SQL 문자열 보간 없이 parameter binding으로 저장되고, HTML/UI 출력에서는 escaping되어야 한다.
    - `store:manage` 또는 platform approval은 store status 같은 민감 운영 설정에만 사용한다.
    - slug는 이 phase에 추가하지 않는다. Public/merchant lookup은 안정적인 `store_id` 기반으로 유지하고, human-readable URL은 future scope로 둔다.
@@ -37,7 +38,14 @@
    - update는 RBAC policy `store:write`를 사용한다.
    - public response와 owner/operator response를 구분한다.
    - owner transfer, member invite/remove, role/permission 변경은 store profile API가 아니라 RBAC/membership provisioning surface의 책임이다.
+   - merchant owner assignment는 admin/provisioning level에서만 가능하고, store profile update나 merchant member self-service API로 처리하지 않는다.
 4. docs와 seed를 갱신한다.
+
+## 입력값 검증 범위
+
+- 이미 있는 방어: `StoreId`, `UserId`, wallet, chain id, crypto value object 검증과 현재 repository parameter binding 관례는 유지한다.
+- 부분 방어: 기존 store/product text는 주로 non-empty/strip 수준이다. `display_name`, `description`, `business_registration_label`은 별도 bounded text type이나 validator로 격상한다.
+- 새로 닫을 방어: email shape, length, control character/null byte, Unicode normalization, log/CSV injection-prone prefix, HTML escaping, unknown field 정책을 테스트한다.
 
 ## Acceptance Criteria
 

@@ -9,6 +9,7 @@
 - Domain Event는 aggregate 상태 변경 후 outbox에 저장한다.
 - 외부 시스템 호출은 domain model에서 직접 수행하지 않는다.
 - `summary`, `error_message`, `blocked_reason`처럼 다음 자동 실행 판단에 쓰이는 텍스트는 구체적으로 남긴다.
+- 신규 user/store/product/profile 입력값은 표시용 데이터일 뿐 SQL fragment, HTML, log line, CSV cell, permission descriptor로 신뢰하지 않는다. 기존 UUID, wallet, transaction hash, crypto amount, operator sort/limit, request body/idempotency/CSRF 방어는 유지하고, profile/catalog text/email/URL/tag/category/JSON validation은 phase 23에서 명시적으로 추가한다.
 
 ## 사용자 인증 Context
 
@@ -21,6 +22,7 @@
 | `AuthSession` | `SessionId`, `UserId`, `WalletAddress`, `RefreshTokenHash`, `deviceId`, `expiresAt`, `revokedAt` | `create`, `rotateRefreshToken`, `revoke` |
 | `Group` | `GroupId`, `GroupType`, optional `resourceType`, optional `resourceId`, `active` | permission scope/resource boundary |
 | `GroupMembership` | `UserId`, `GroupId`, `RoleId`, `active`, `joinedAt` | user와 permission scope 연결 |
+| `GroupInvitation` | `GroupId`, invite target, `RoleId`, `InvitationStatus`, `expiresAt`, `createdByUserId` | merchant membership invitation |
 | `Role` | `RoleId`, `name`, `active` | permission bundle |
 | `Permission` | `PermissionName`, `description` | API authorization source of truth |
 | `RolePermission` | `RoleId`, `PermissionName` | role-permission mapping |
@@ -33,6 +35,7 @@
 - `IssuedToken(accessToken, refreshToken, expiresAt)`
 - `GroupId`, `RoleId`, `PermissionName`
 - `GroupType`: `PERSONAL`, `MERCHANT`, `PLATFORM`
+- `InvitationStatus`: `PENDING`, `ACCEPTED`, `REVOKED`, `EXPIRED`
 - `UserRole`: legacy compatibility only while phase 22 migrates. New authorization paths must not use `User.role`, `X-User-Role`, `STORE_OWNER`, or `ADMIN` as the permission source.
 - `ChallengeStatus`: `ISSUED`, `VERIFIED`, `EXPIRED`, `REJECTED`
 - `RefreshTokenHash(hash, salt, rotationVersion)`
@@ -53,6 +56,9 @@ Baseline permission catalog:
 | `store:read` | merchant private store detail |
 | `store:write` | store business profile fields |
 | `store:manage` | sensitive store status/settings approval |
+| `merchant_member:read` | merchant member/invitation listing |
+| `merchant_member:invite` | merchant staff invitation create/revoke |
+| `merchant_member:manage` | merchant staff role change/removal |
 | `product:read` | merchant product detail/draft reads |
 | `product:write` | product create/update |
 | `inventory:read` | merchant inventory reads |
@@ -63,7 +69,9 @@ Baseline permission catalog:
 | `rbac:manage` | group/membership/role management |
 | `admin:provision` | platform bootstrap/provisioning |
 
-Role and permission definitions start as seed/static catalog data. Full CRUD APIs for role/permission management are future surface; phase 22 focuses on schema, seed, session claims, policy checks, and provisioning compatibility.
+Baseline role templates are seed/static catalog data. `PERSONAL_CUSTOMER` grants `user:self` in the personal group. `MERCHANT_OWNER`, `MERCHANT_MANAGER`, and `MERCHANT_STAFF` grant merchant-scoped permission bundles; merchant-facing APIs may choose only server-defined non-owner staff templates. `PLATFORM_OPERATOR` and `PLATFORM_ADMIN` are platform group templates and are never selectable through merchant/customer APIs. Full CRUD APIs for role/permission management are future surface; phase 22 focuses on schema, seed, session claims, policy checks, merchant membership/invitation APIs, and provisioning compatibility.
+
+Merchant groups are created by store provisioning and linked to one store or merchant resource. Personal groups are auto-created at signup. Platform groups are seed/manual/admin-provisioned. Nested groups are not supported. Owner transfer is not a merchant self-service mutation; initial owner assignment and sensitive owner changes stay behind `admin:provision` or `rbac:manage` until a separate audited approval workflow exists.
 
 ### Events
 

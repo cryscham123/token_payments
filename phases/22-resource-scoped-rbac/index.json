@@ -19,6 +19,11 @@
     },
     {
       "step": 3,
+      "name": "merchant-group-membership-api",
+      "status": "pending"
+    },
+    {
+      "step": 4,
       "name": "rbac-seed-audit-public-verification",
       "status": "pending"
     }

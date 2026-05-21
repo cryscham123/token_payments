@@ -29,6 +29,8 @@ Inventory, catalog, operator API의 role 분기를 `AuthorizationPolicy.can(...)
    - customer personal group만 가진 user는 operator/catalog/inventory mutation을 수행할 수 없어야 한다.
    - customer self operation은 `user:self` 또는 authenticated self check로만 허용하고, merchant/platform permission으로 승격하지 않아야 한다.
    - store business profile update는 `store:write`, 민감 store 설정은 `store:manage`, product detail write는 `product:write`, inventory mutation은 `inventory:write`로 분리되어야 한다.
+   - merchant member list/invitation은 `merchant_member:read`/`merchant_member:invite`, staff role 변경/제거는 `merchant_member:manage`로 분리되어야 한다.
+   - `MERCHANT_OWNER` assignment/transfer는 merchant-facing policy에서 거부되고 admin/provisioning policy로만 가능해야 한다.
    - outbox retry는 operator action 중에서도 `operator:action`과 `outbox:retry` permission을 함께 요구해야 한다.
 2. authz application module을 추가한다.
    - 권장 위치: `/app/token_payments/contexts/auth/application/authorization.py`

@@ -22,6 +22,10 @@
    - docs가 user identity, user profile, group membership을 구분해야 한다.
    - docs가 store business profile, store payment settings, product catalog, inventory를 구분해야 한다.
    - docs는 store/product slug를 phase 23 필수 field나 route key로 설명하지 않아야 한다.
+   - docs는 SKU를 phase 23 필수 field나 자동 생성 field로 설명하지 않아야 한다.
+   - docs는 user/store/product display name이 중복 가능하지만 bounded validation 대상임을 설명해야 한다.
+   - docs는 입력값 검증 커버리지를 이미 구현됨, 부분 구현, phase 23에서 구현할 항목으로 구분해야 한다.
+   - docs는 UUID/wallet/tx hash/crypto/operator sort/body guard 같은 기존 방어와 profile/catalog text/email/URL/tag/category/JSON validation 같은 신규 작업을 구분해야 한다.
    - Postman collection/expected fixture는 user profile, store profile, product detail, catalog query examples를 포함해야 한다.
    - local seed plan은 platform admin, merchant group, store profile, product details, public product listing fixture를 포함해야 한다.
    - docs는 Elasticsearch, DID, email account recovery를 future scope로 남겨야 한다.

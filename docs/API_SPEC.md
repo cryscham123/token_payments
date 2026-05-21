@@ -32,7 +32,7 @@ Store ownership is represented by canonical store records plus merchant group me
 
 ### Store owner inventory API surface
 
-`GET /store-owner/inventory` returns inventory rows visible to the authenticated session. Merchant sessions are limited by active membership and `inventory:read`, including optional `storeId` filtering; platform sessions need explicit inventory/operator policy permission for cross-store access. A customer identity that owns a store through merchant membership can query/mutate that store without changing its global role. Unauthenticated sessions are rejected.
+`GET /store-owner/inventory` returns inventory rows visible to the authenticated session. Merchant sessions are limited by active membership and `inventory:read`, including optional `storeId` filtering; platform sessions need explicit inventory/operator policy permission for cross-store access. In the current compatibility contract, admin can query or mutate any store inventory; phase 22 replaces that legacy role shortcut with explicit platform policy permission. A customer identity that owns a store through merchant membership can query/mutate that store without changing its global role. Unauthenticated sessions are rejected.
 
 Inventory mutations use audited business commands rather than raw stock writes. The supported actions are stock intake, target total stock correction, sale pause, and sale resume. Mutations require cookie/session auth, `Idempotency-Key`, CSRF for browser cookie auth, `reason`, and server-side role/ownership checks. Stock correction cannot set `totalStock` below `reservedStock`. Sale pause/resume only changes new-order availability and does not release existing reservations.
 
@@ -53,6 +53,9 @@ Baseline permission-to-API mapping:
 | `store:read` | merchant private store detail/listing |
 | `store:write` | store business profile updates: display name, description, support contact |
 | `store:manage` | sensitive store status/settings approval; not owner transfer or membership CRUD |
+| `merchant_member:read` | merchant member and invitation listing for the scoped store |
+| `merchant_member:invite` | merchant staff invitation create/revoke using server-defined merchant role templates |
+| `merchant_member:manage` | merchant staff role change/removal; never platform roles or owner transfer |
 | `product:read` | merchant product detail/draft reads |
 | `product:write` | product create/update APIs |
 | `inventory:read` | store owner inventory reads |
@@ -63,7 +66,35 @@ Baseline permission-to-API mapping:
 | `rbac:manage` | group/membership/role/permission administration |
 | `admin:provision` | platform bootstrap/provisioning APIs |
 
-Role and permission definitions start as seed/static catalog data. Phase 22 may map existing admin store membership provisioning to merchant group membership, but full role/permission CRUD APIs are future surface. If RBAC management APIs are later added, they must be protected by `rbac:manage` and audited with `actorUserId`, optional `groupId`, `permission`, `resourceType`, and `resourceId`.
+Role and permission definitions start as seed/static catalog data. Merchant-facing APIs may select only server-defined merchant role templates. They must never accept raw permission arrays, platform roles, personal roles, or `MERCHANT_OWNER` assignment. Full role/permission CRUD APIs are future surface. If RBAC management APIs are later added, they must be protected by `rbac:manage` and audited with `actorUserId`, optional `groupId`, `permission`, `resourceType`, and `resourceId`.
+
+Baseline role template catalog:
+
+| Role template | Scope | Permissions |
+| --- | --- | --- |
+| `PERSONAL_CUSTOMER` | personal group | `user:self` |
+| `MERCHANT_OWNER` | merchant group | store/product/inventory permissions plus merchant member read/invite/manage |
+| `MERCHANT_MANAGER` | merchant group | store/product/inventory permissions plus merchant member read/invite within policy |
+| `MERCHANT_STAFF` | merchant group | bounded store/product/inventory read/write permissions defined by seed |
+| `PLATFORM_OPERATOR` | platform group | operator dashboard/detail and bounded recovery permissions |
+| `PLATFORM_ADMIN` | platform group | provisioning, RBAC administration, user management, and sensitive approval permissions |
+
+Externally exposed RBAC and membership API surface for phase 22:
+
+| API/function surface | Required authority | Notes |
+| --- | --- | --- |
+| `POST /admin/stores` | `admin:provision` | Creates the canonical store and merchant group, and assigns initial `MERCHANT_OWNER` through provisioning |
+| `POST /admin/stores/{storeId}/memberships` | `admin:provision` or `rbac:manage` | Admin-level compatibility path for setting store membership, including owner assignment during migration |
+| `GET /merchant/stores/{storeId}/members` | `merchant_member:read` | Lists users in the caller's scoped merchant group |
+| `GET /merchant/stores/{storeId}/invitations` | `merchant_member:read` | Lists pending/accepted/revoked invitations for the scoped merchant group |
+| `POST /merchant/stores/{storeId}/invitations` | `merchant_member:invite` | Invites a user/wallet/email target to a non-owner merchant role template |
+| `POST /merchant/invitations/{invitationId}/accept` | authenticated target user | Accepts an invitation and creates membership in the invitation's merchant group |
+| `POST /merchant/invitations/{invitationId}/revoke` | `merchant_member:invite` or `merchant_member:manage` | Revokes pending invitations in the scoped merchant group |
+| `PATCH /merchant/stores/{storeId}/members/{userId}` | `merchant_member:manage` | Changes staff role templates only; cannot grant, revoke, or transfer `MERCHANT_OWNER` |
+| `DELETE /merchant/stores/{storeId}/members/{userId}` | `merchant_member:manage` | Removes non-owner staff membership; must not remove the last owner |
+| `GET /merchant/role-catalog` | authenticated merchant member | Returns server-defined merchant role templates, not raw permission mutation capability |
+
+Platform group creation, platform role assignment, personal group management, permission CRUD, and owner transfer are not merchant/customer APIs. Personal groups are auto-created at signup. Merchant groups are created by store provisioning. Platform groups are seed/manual/admin-provisioned. Owner transfer is a sensitive admin/provisioning flow until a separate audited approval workflow exists.
 
 Phase 23 separates user identity from user profile, store business profile from store payment settings, and product catalog from inventory. Store/product slug fields and SKU fields are not required in phase 23; public and merchant lookup starts with stable `storeId` and `productId`. Human-readable URLs and merchant-managed inventory codes are future scope. User display names, store display names, and product titles are display/search fields and may be duplicated. Settlement wallet/supported chain changes are policy-gated payment settings flows, not `updateStoreProfile`. Owner transfer, member invite/remove, and role changes belong to RBAC/membership provisioning, not store profile update.
 
@@ -74,11 +105,26 @@ User-facing capability summary:
 | User type | Allowed capabilities |
 | --- | --- |
 | Anonymous visitor | public store/product listing and detail, auth challenge request |
-| Logged-in customer | own profile, own sessions, checkout/order creation and tracking, payment tx hash submission |
-| Merchant member/manager | own merchant store reads, allowed business profile updates, product writes, inventory reads/writes |
-| Merchant owner | merchant member capabilities plus store management requests/approvals within RBAC policy |
+| Logged-in customer | own profile, own sessions, checkout/order creation and tracking, payment tx hash submission; no merchant/platform authority from login alone |
+| Merchant staff/member | scoped merchant store reads, role-template-limited product and inventory operations |
+| Merchant manager | merchant staff capabilities plus allowed business profile updates and staff invitations within merchant policy |
+| Merchant owner | merchant manager capabilities plus owner-only store management requests within RBAC policy; owner transfer is not merchant self-service |
 | Platform operator | operator dashboard/detail reads and bounded recovery actions |
 | Platform admin | provisioning, RBAC/membership administration, sensitive approval flows |
+
+Current implementation coverage that phase 22/23 must preserve or close:
+
+| Area | Current coverage | Phase 22/23 requirement |
+| --- | --- | --- |
+| UUID identifiers | Existing value objects validate UUID-like ids for users, stores, products, orders, payments, messages | Reuse value objects at new API boundaries |
+| Wallet and transaction hashes | Existing value objects validate EVM wallet address and tx hash shape | Reuse for profile/payment settings flows; do not accept raw unchecked strings |
+| Crypto values | Existing value objects validate non-negative finite amounts, positive chain ids, decimals, and token address shape | Keep checkout/payment validation separate from product profile display fields |
+| SQL injection baseline | Current PostgreSQL adapters mostly use parameter binding; operator dynamic sort is allowlisted | New profile/catalog query adapters must parameterize values and whitelist dynamic identifiers |
+| Request body and browser mutation guards | Current HTTP/runtime contracts include body size, malformed JSON, CSRF, and idempotency handling for important mutations | New mutating APIs must use the same bounded body, CSRF, and idempotency policies where applicable |
+| Text fields | Current domain text checks are mostly non-empty/strip only | Add length, control character, null byte, normalization, log/CSV injection, and output escaping tests |
+| Email/URL/media/tag/category/JSON attributes | Not implemented as profile/catalog validation | Add explicit shape, length, count, depth, and serialization validation |
+| Merchant invitation/member role changes | Not implemented as public merchant APIs | Add merchant-scoped invitation/member APIs with role-template allowlists and last-owner protections |
+| Role/permission CRUD | Not exposed | Keep seed/static in phase 22; expose only safe merchant role catalog and membership actions |
 
 ## Runtime Assumptions
 

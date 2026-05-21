@@ -20,7 +20,7 @@
 
 1. `scripts/test_rbac_auth_session_claims.py`를 추가한다.
    - SIWE login으로 생성되는 `User`와 session은 전역 role을 저장하지 않아야 한다.
-   - 신규 가입 사용자는 personal group과 `CUSTOMER` role membership을 얻어야 한다.
+   - 신규 가입 사용자는 personal group과 seed/static `PERSONAL_CUSTOMER` role membership을 얻어야 한다.
    - session payload와 cookie transport는 `role` 대신 `activeGroupId`, `groupMemberships` 또는 bounded `scopes` snapshot을 사용해야 한다.
    - `X-User-Role` fallback은 제거하거나 테스트 전용 local fallback에서도 권한 source로 사용하지 않아야 한다.
    - refresh session은 role claim을 재발급하지 않고 user/membership state를 기준으로 안전한 claim을 만든다.
