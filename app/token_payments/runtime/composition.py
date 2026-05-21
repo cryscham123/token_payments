@@ -19,15 +19,19 @@ from token_payments.contexts.auth.adapter import (
     PostgresAuthRbacRepository,
     PostgresAuthSessionRepository,
     PostgresLoginChallengeRepository,
+    PostgresUserProfileRepository,
     PostgresUserRepository,
 )
 from token_payments.contexts.auth.application import (
     AuthApplicationService,
     CurrentUserQuery,
+    GetCurrentUserProfileQuery,
+    GetUserProfileQuery,
     LoginWithMetaMaskCommand,
     LogoutCommand,
     RefreshSessionCommand,
     RequestLoginChallengeCommand,
+    UpdateUserProfileCommand,
 )
 from token_payments.contexts.auth.domain import AuthEvent, AuthSession, IssuedToken, User
 from token_payments.contexts.inventory.adapter import (
@@ -1487,6 +1491,24 @@ class _TransactionalAuthUseCase:
             lambda connection: self._service(connection).getCurrentUser(query),
         )
 
+    def getCurrentUserProfile(self, query: GetCurrentUserProfileQuery):
+        return _with_transaction(
+            self._dependencies,
+            lambda connection: self._service(connection).getCurrentUserProfile(query),
+        )
+
+    def getUserProfile(self, query: GetUserProfileQuery):
+        return _with_transaction(
+            self._dependencies,
+            lambda connection: self._service(connection).getUserProfile(query),
+        )
+
+    def updateUserProfile(self, command: UpdateUserProfileCommand):
+        return _with_transaction(
+            self._dependencies,
+            lambda connection: self._service(connection).updateUserProfile(command),
+        )
+
     def _service(self, connection: Any) -> AuthApplicationService:
         return AuthApplicationService(
             clock=self._dependencies.clock,
@@ -1497,6 +1519,7 @@ class _TransactionalAuthUseCase:
             login_challenges=PostgresLoginChallengeRepository(connection),
             sessions=PostgresAuthSessionRepository(connection),
             rbac=PostgresAuthRbacRepository(connection),
+            profiles=PostgresUserProfileRepository(connection),
             signature_verifier=ClientWalletSignatureVerifier(
                 self._dependencies.wallet_signature_client,
                 supported_chain_ids=(self._config.wallet_signature_chain_id,),

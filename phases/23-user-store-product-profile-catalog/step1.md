@@ -1,4 +1,4 @@
-# Step 1: store-profile-business-details
+# Step 1: store-profile-public-identity
 
 ## 읽어야 할 파일
 
@@ -9,6 +9,8 @@
 - `/app/token_payments/contexts/store_catalog/domain/model.py`
 - `/app/token_payments/contexts/store_catalog/`
 - `/app/token_payments/api/inventory.py`
+- `/app/token_payments/api/store_catalog.py`
+- `/app/token_payments/api/checkout.py`
 - `/app/token_payments/runtime/composition.py`
 - `/scripts/test_admin_store_provisioning_contracts.py`
 - `/scripts/test_rbac_policy_enforcement.py`
@@ -16,27 +18,31 @@
 
 ## 작업
 
-가게를 결제 projection이 아니라 canonical business profile로 보강한다.
+가게를 결제 projection이 아니라 canonical business profile로 보강하고, 내부 DB PK와 외부 API용 public identifier를 처음부터 분리한다.
 
 1. `scripts/test_store_profile_business_details.py`를 추가한다.
-   - store profile은 `store_id`, `group_id`, `display_name`, `description`, `status`, `support_email`, `business_registration_label`, `created_at`, `updated_at`을 가져야 한다.
+   - store profile은 내부 PK `store_id`, 외부 API용 `public_store_id`, `group_id`, `display_name`, `description`, `status`, `support_email`, `business_registration_label`, `created_at`, `updated_at`을 가져야 한다.
+   - `public_store_id`는 unique/indexed/stable이어야 하며, internal UUID PK나 순번형 id를 그대로 노출하지 않아야 한다.
+   - slug/human-readable URL은 future scope로 둘 수 있지만, UUID PK 대신 사용할 public id 개념은 이 step에서 schema/domain/API에 반영해야 한다.
    - public store detail은 공개 가능한 field만 반환해야 한다.
    - `store:write`는 `display_name`, `description`, 공개/비공개 support contact 같은 business profile field만 수정할 수 있어야 한다.
    - `display_name`은 중복 가능하지만 bounded text validation을 거쳐야 한다. `description`과 `business_registration_label`도 길이 상한, 제어 문자, null byte, 로그/CSV 오염 위험 문자를 검증해야 한다.
    - `support_email`은 email shape와 길이 상한을 검증해야 한다. Public 노출 여부는 response projection으로 분리한다.
    - store profile 입력값은 SQL 문자열 보간 없이 parameter binding으로 저장되고, HTML/UI 출력에서는 escaping되어야 한다.
    - `store:manage` 또는 platform approval은 store status 같은 민감 운영 설정에만 사용한다.
-   - slug는 이 phase에 추가하지 않는다. Public/merchant lookup은 안정적인 `store_id` 기반으로 유지하고, human-readable URL은 future scope로 둔다.
+   - public/merchant lookup은 `public_store_id` 기반으로 설계한다. 내부 `store_id`는 persistence와 내부 service boundary에서만 사용한다.
    - checkout projection table을 store canonical source로 계속 확장하지 않아야 한다.
 2. store catalog domain/schema를 갱신한다.
    - 기존 `StoreProfile`이 있다면 payment wallet/chain settings와 business profile field를 명확히 분리한다.
    - settlement wallet/supported chains 변경은 store business profile update가 아니라 별도 policy-gated payment settings flow로 남긴다.
    - 권장 테이블: `store_catalog_store_profiles` 또는 기존 `store_catalog_stores` 확장.
+   - `public_store_id` 생성/backfill/unique index 정책을 migration에 포함한다.
    - group-scoped RBAC의 merchant group과 store를 연결한다.
 3. store profile API를 추가한다.
    - 권장 operation: `getStoreProfile`, `updateStoreProfile`, `listMerchantStores`
    - update는 RBAC policy `store:write`를 사용한다.
    - public response와 owner/operator response를 구분한다.
+   - route path와 response DTO는 `publicStoreId`를 사용하고 internal `storeId`를 public contract로 고정하지 않는다.
    - owner transfer, member invite/remove, role/permission 변경은 store profile API가 아니라 RBAC/membership provisioning surface의 책임이다.
    - merchant owner assignment는 admin/provisioning level에서만 가능하고, store profile update나 merchant member self-service API로 처리하지 않는다.
 4. docs와 seed를 갱신한다.
@@ -63,7 +69,8 @@ python3 scripts/validate_phases.py
 ## 금지사항
 
 - store owner 권한을 user global role로 되돌리지 마라.
-- slug를 필수 profile field나 route key로 추가하지 마라.
+- slug를 필수 profile field나 route key로 추가하지 마라. 단, `public_store_id`는 이 phase에서 추가한다.
+- internal UUID `store_id`를 public/merchant route key로 사용하지 마라.
 - private business/contact fields를 public store listing에 무조건 노출하지 마라.
 - payment settlement wallet 설정과 public store profile을 한 DTO에 섞어 노출하지 마라.
 - owner transfer/group membership 변경을 `updateStoreProfile`에 넣지 마라.

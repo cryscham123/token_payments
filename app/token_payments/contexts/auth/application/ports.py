@@ -17,6 +17,7 @@ from token_payments.contexts.auth.domain import (
     SessionMembership,
     SessionId,
     User,
+    UserProfile,
 )
 from token_payments.shared.domain import UserId, WalletAddress
 
@@ -98,6 +99,29 @@ class CurrentUserQuery:
     user_id: UserId
 
 
+@dataclass(frozen=True)
+class GetCurrentUserProfileQuery:
+    user_id: UserId
+
+
+@dataclass(frozen=True)
+class GetUserProfileQuery:
+    user_id: UserId
+
+
+@dataclass(frozen=True)
+class UpdateUserProfileCommand:
+    actor_user_id: UserId
+    target_user_id: UserId
+    display_name: str | None = None
+    email: str | None = None
+    locale: str | None = None
+    timezone: str | None = None
+    requested_at: datetime | None = None
+    request_id: str | None = None
+    actor_scopes: tuple[str, ...] = ()
+
+
 class AuthUseCase(Protocol):
     def requestLoginChallenge(self, command: RequestLoginChallengeCommand) -> LoginChallengeResult:
         ...
@@ -114,6 +138,15 @@ class AuthUseCase(Protocol):
     def getCurrentUser(self, query: CurrentUserQuery) -> User | None:
         ...
 
+    def getCurrentUserProfile(self, query: GetCurrentUserProfileQuery) -> UserProfile | None:
+        ...
+
+    def getUserProfile(self, query: GetUserProfileQuery) -> UserProfile | None:
+        ...
+
+    def updateUserProfile(self, command: UpdateUserProfileCommand) -> UserProfile:
+        ...
+
 
 class UserRepository(Protocol):
     def save(self, user: User) -> None:
@@ -123,6 +156,14 @@ class UserRepository(Protocol):
         ...
 
     def get_by_wallet(self, wallet: WalletAddress) -> User | None:
+        ...
+
+
+class UserProfileRepository(Protocol):
+    def save(self, profile: UserProfile) -> None:
+        ...
+
+    def get_by_user_id(self, user_id: UserId) -> UserProfile | None:
         ...
 
 

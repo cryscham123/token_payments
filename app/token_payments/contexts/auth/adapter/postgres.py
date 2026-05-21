@@ -19,6 +19,8 @@ from token_payments.contexts.auth.domain import (
     SessionId,
     SessionMembership,
     User,
+    UserProfile,
+    UserProfileStatus,
     UserRole,
 )
 from token_payments.shared.adapter.postgres import PostgresConnection
@@ -67,6 +69,53 @@ ON CONFLICT (user_id) DO UPDATE SET
     active = EXCLUDED.active,
     last_login_at = EXCLUDED.last_login_at,
     updated_at = now()
+"""
+
+SELECT_PROFILE_BY_USER_ID_SQL = """
+SELECT
+    user_id,
+    display_name,
+    email,
+    email_verified_at,
+    locale,
+    timezone,
+    status,
+    created_at,
+    updated_at
+FROM auth_user_profiles
+WHERE user_id = %(user_id)s
+"""
+
+UPSERT_PROFILE_SQL = """
+INSERT INTO auth_user_profiles (
+    user_id,
+    display_name,
+    email,
+    email_verified_at,
+    locale,
+    timezone,
+    status,
+    created_at,
+    updated_at
+) VALUES (
+    %(user_id)s,
+    %(display_name)s,
+    %(email)s,
+    %(email_verified_at)s,
+    %(locale)s,
+    %(timezone)s,
+    %(status)s,
+    %(created_at)s,
+    %(updated_at)s
+)
+ON CONFLICT (user_id) DO UPDATE SET
+    display_name = EXCLUDED.display_name,
+    email = EXCLUDED.email,
+    email_verified_at = EXCLUDED.email_verified_at,
+    locale = EXCLUDED.locale,
+    timezone = EXCLUDED.timezone,
+    status = EXCLUDED.status,
+    updated_at = EXCLUDED.updated_at
 """
 
 SELECT_CHALLENGE_BY_NONCE_SQL = """
@@ -244,6 +293,37 @@ class PostgresUserRepository:
             )
         )
         return _row_to_user(row) if row is not None else None
+
+
+class PostgresUserProfileRepository:
+    """Persist auth user profiles inside an injected transaction."""
+
+    def __init__(self, connection: PostgresConnection) -> None:
+        self._connection = connection
+
+    def save(self, profile: UserProfile) -> None:
+        if not isinstance(profile, UserProfile):
+            raise ValueError("PostgresUserProfileRepository.save requires a UserProfile")
+        self._connection.execute(
+            UPSERT_PROFILE_SQL,
+            {
+                "user_id": str(profile.user_id),
+                "display_name": profile.display_name,
+                "email": profile.email,
+                "email_verified_at": profile.email_verified_at,
+                "locale": profile.locale,
+                "timezone": profile.timezone,
+                "status": profile.status.value,
+                "created_at": profile.created_at,
+                "updated_at": profile.updated_at,
+            },
+        )
+
+    def get_by_user_id(self, user_id: UserId) -> UserProfile | None:
+        if not isinstance(user_id, UserId):
+            raise ValueError("PostgresUserProfileRepository.get_by_user_id requires a UserId")
+        row = _fetch_one(self._connection.execute(SELECT_PROFILE_BY_USER_ID_SQL, {"user_id": str(user_id)}))
+        return _row_to_profile(row) if row is not None else None
 
 
 class PostgresLoginChallengeRepository:
@@ -509,6 +589,20 @@ def _row_to_user(row: Mapping[str, Any] | object) -> User:
         role=UserRole(_row_value(row, "role")),
         active=bool(_row_value(row, "active")),
         last_login_at=_row_value(row, "last_login_at"),
+    )
+
+
+def _row_to_profile(row: Mapping[str, Any] | object) -> UserProfile:
+    return UserProfile(
+        user_id=UserId(_row_value(row, "user_id")),
+        display_name=_row_value(row, "display_name"),
+        email=_optional_row_value(row, "email"),
+        email_verified_at=_row_value(row, "email_verified_at"),
+        locale=_optional_row_value(row, "locale"),
+        timezone=_optional_row_value(row, "timezone"),
+        status=UserProfileStatus(_row_value(row, "status")),
+        created_at=_row_value(row, "created_at"),
+        updated_at=_row_value(row, "updated_at"),
     )
 
 

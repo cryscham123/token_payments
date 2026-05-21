@@ -19,6 +19,35 @@ POSTGRES_SCHEMA_COMPATIBILITY_SQL: tuple[str, ...] = (
         ADD COLUMN IF NOT EXISTS role TEXT
     """,
     """
+    CREATE TABLE IF NOT EXISTS auth_user_profiles (
+        user_id UUID PRIMARY KEY,
+        display_name TEXT,
+        email TEXT,
+        email_verified_at TIMESTAMPTZ,
+        locale TEXT,
+        timezone TEXT,
+        status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'SUSPENDED', 'DELETED')),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        CHECK (
+            status = 'DELETED'
+            OR display_name IS NOT NULL
+        ),
+        CHECK (
+            status <> 'DELETED'
+            OR (
+                display_name IS NULL
+                AND email IS NULL
+                AND email_verified_at IS NULL
+            )
+        )
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_auth_user_profiles_status
+        ON auth_user_profiles (status)
+    """,
+    """
     CREATE TABLE IF NOT EXISTS auth_groups (
         group_id UUID PRIMARY KEY,
         group_type TEXT NOT NULL CHECK (group_type IN ('PERSONAL', 'MERCHANT', 'PLATFORM')),

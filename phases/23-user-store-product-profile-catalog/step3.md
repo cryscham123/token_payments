@@ -1,4 +1,4 @@
-# Step 3: catalog-query-filter-baseline
+# Step 3: store-product-public-read-apis
 
 ## 읽어야 할 파일
 
@@ -6,6 +6,7 @@
 - `/docs/API_SPEC.md`
 - `/app/token_payments/contexts/store_catalog/`
 - `/app/token_payments/api/inventory.py`
+- `/app/token_payments/api/store_catalog.py`
 - `/app/token_payments/api/checkout.py`
 - `/app/token_payments/runtime/composition.py`
 - `/scripts/test_store_owner_inventory_query_api.py`
@@ -15,9 +16,13 @@
 
 ## 작업
 
-유저/가게/상품 정보 보강 이후 기본 조회와 필터링 API를 추가한다. 검색 엔진 연동은 아직 하지 않고 PostgreSQL 기반 baseline query와 future search projection boundary만 둔다.
+유저/가게/상품 정보 보강 이후 주문 생성 전제 조건인 public store/product read API와 기본 필터링 API를 추가한다. 검색 엔진 연동은 아직 하지 않고 PostgreSQL 기반 baseline query와 future search projection boundary만 둔다.
 
 1. `scripts/test_catalog_query_filter_baseline.py`를 추가한다.
+   - `GET /stores/{publicStoreId}`는 public store id 기준으로 store status, public business profile, supported chains/assets, settlement capability summary를 반환해야 한다.
+   - `GET /stores/{publicStoreId}/products`는 판매 가능한 상품 목록, `publicProductId`, display price/currency/asset summary, availability summary를 반환해야 한다.
+   - `GET /stores/{publicStoreId}/products/{publicProductId}`는 상품 상세, price set, inventory availability summary, payment capability를 반환해야 한다.
+   - public read response는 internal `store_id`, `product_id`, `customer_id` 같은 DB PK를 노출하지 않아야 한다.
    - public product listing은 active/public product만 반환해야 한다.
    - merchant product listing은 own store products를 status/visibility/category/tag/query로 filter할 수 있어야 한다.
    - store listing/detail은 public fields와 permission-protected fields를 구분해야 한다.
@@ -36,9 +41,14 @@
 3. API routes를 추가한다.
    - 권장 operation: `listPublicStores`, `getPublicStore`, `listPublicProducts`, `getPublicProduct`
    - 권장 merchant operation: `listMerchantProducts`, `getMerchantProduct`
-   - public/merchant detail lookup은 `store_id`와 `product_id` 기반으로 시작한다. slug 기반 route는 future human-readable URL phase로 남긴다.
+   - public/merchant detail lookup은 `publicStoreId`와 `publicProductId` 기반으로 시작한다. slug 기반 route는 future human-readable URL phase로 남긴다.
    - 필요한 user profile read operation은 step 0 contract와 연결한다.
-4. future search boundary를 문서화한다.
+4. order creation server-side revalidation을 연결한다.
+   - client가 public read API로 확인한 가격/재고/chain/settlement wallet 값을 신뢰하지 않는다.
+   - `POST /orders` 또는 checkout start는 server-side current store/product/price/inventory/payment capability를 다시 검증한다.
+   - disabled store/product, unsupported chain/asset, unavailable inventory는 bounded read error 또는 explicit unavailable state로 표현해야 한다.
+   - gas/fee estimate는 store read DTO의 backend 설정값이 아니라 payment quote/authorization DTO에서 제공하도록 경계를 둔다.
+5. future search boundary를 문서화한다.
    - Elasticsearch는 outbox/projection 기반으로 추후 붙이고, 현재 query API contract를 깨지 않도록 한다.
 
 ## Acceptance Criteria
@@ -58,6 +68,9 @@ python3 scripts/validate_phases.py
 
 - Elasticsearch/OpenSearch client나 Docker service를 이 step에 추가하지 마라.
 - private store/user fields를 public listing에 노출하지 마라.
+- public route path에 internal UUID store/product id를 요구하지 마라.
+- store read response에 `blockchain_gas_buffer_rate` 같은 내부 설정명을 노출하지 마라.
+- order creation에서 client-provided price/inventory/capability 값을 신뢰하지 마라.
 - slug 기반 public route를 이 step의 필수 route surface로 추가하지 마라.
 - unbounded list response를 허용하지 마라.
 - query/filter/sort 입력값을 SQL fragment로 신뢰하지 마라.

@@ -32,6 +32,7 @@ from .model import (
     UserRole,
     WalletVerifiedEvent,
 )
+from .profile import UserProfile, UserProfileStatus
 
 __all__ = [
     "AuthEvent",
@@ -61,6 +62,8 @@ __all__ = [
     "SessionId",
     "User",
     "UserLoggedInEvent",
+    "UserProfile",
+    "UserProfileStatus",
     "UserRegisteredEvent",
     "UserRole",
     "WalletVerifiedEvent",
