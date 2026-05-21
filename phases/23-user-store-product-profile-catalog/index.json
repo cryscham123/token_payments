@@ -1,25 +1,28 @@
 {
   "project": "Token Payments",
-  "phase": "23-user-store-product-profile-catalog",
+  "phase": "23-catalog-domain-public-read-apis",
   "steps": [
     {
       "step": 0,
       "name": "user-profile-domain-schema",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-22T08:28:33+0900",
+      "summary": "Separated auth User identity from bounded UserProfile display/contact data with tombstone redaction, profile API redaction/update authorization, and auth_user_profiles PostgreSQL schema/repository contracts.",
+      "completed_at": "2026-05-22T08:40:21+0900"
     },
     {
       "step": 1,
-      "name": "store-profile-business-details",
+      "name": "store-profile-public-identity",
       "status": "pending"
     },
     {
       "step": 2,
-      "name": "product-catalog-detail-model",
+      "name": "product-catalog-public-identity",
       "status": "pending"
     },
     {
       "step": 3,
-      "name": "catalog-query-filter-baseline",
+      "name": "store-product-public-read-apis",
       "status": "pending"
     },
     {
