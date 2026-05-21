@@ -1,0 +1,32 @@
+{
+  "project": "Token Payments",
+  "phase": "23-user-store-product-profile-catalog",
+  "steps": [
+    {
+      "step": 0,
+      "name": "user-profile-domain-schema",
+      "status": "pending"
+    },
+    {
+      "step": 1,
+      "name": "store-profile-business-details",
+      "status": "pending"
+    },
+    {
+      "step": 2,
+      "name": "product-catalog-detail-model",
+      "status": "pending"
+    },
+    {
+      "step": 3,
+      "name": "catalog-query-filter-baseline",
+      "status": "pending"
+    },
+    {
+      "step": 4,
+      "name": "profile-catalog-public-verification",
+      "status": "pending"
+    }
+  ],
+  "created_at": "2026-05-20T02:10:00+0900"
+}

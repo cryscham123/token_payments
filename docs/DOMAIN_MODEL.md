@@ -16,9 +16,14 @@
 
 | Aggregate | 주요 필드 | 주요 행위 |
 | --- | --- | --- |
-| `User` | `UserId`, `WalletAddress primaryWallet`, `UserRole`, `active`, `lastLoginAt` | `registerByWallet`, `linkWallet`, `recordLogin`, `deactivate` |
+| `User` | `UserId`, `WalletAddress primaryWallet`, `active`, `lastLoginAt` | `registerByWallet`, `linkWallet`, `recordLogin`, `deactivate` |
 | `LoginChallenge` | `WalletAddress`, `AuthNonce`, SIWE `domain`, `uri`, `chainId`, `ChallengeStatus`, `expiresAt` | `issue`, `verifySignature`, `expire` |
 | `AuthSession` | `SessionId`, `UserId`, `WalletAddress`, `RefreshTokenHash`, `deviceId`, `expiresAt`, `revokedAt` | `create`, `rotateRefreshToken`, `revoke` |
+| `Group` | `GroupId`, `GroupType`, optional `resourceType`, optional `resourceId`, `active` | permission scope/resource boundary |
+| `GroupMembership` | `UserId`, `GroupId`, `RoleId`, `active`, `joinedAt` | user와 permission scope 연결 |
+| `Role` | `RoleId`, `name`, `active` | permission bundle |
+| `Permission` | `PermissionName`, `description` | API authorization source of truth |
+| `RolePermission` | `RoleId`, `PermissionName` | role-permission mapping |
 
 ### Value Objects
 
@@ -26,10 +31,39 @@
 - `WalletAddress(address, normalize)`
 - `AuthNonce(value, expiresAt)`
 - `IssuedToken(accessToken, refreshToken, expiresAt)`
-- `UserRole`: `CUSTOMER`, `STORE_OWNER`, `ADMIN`. `STORE_OWNER` remains only for backward-compatible session/data interpretation; new store management paths use store ownership/membership, not a global `STORE_OWNER` account role.
+- `GroupId`, `RoleId`, `PermissionName`
+- `GroupType`: `PERSONAL`, `MERCHANT`, `PLATFORM`
+- `UserRole`: legacy compatibility only while phase 22 migrates. New authorization paths must not use `User.role`, `X-User-Role`, `STORE_OWNER`, or `ADMIN` as the permission source.
 - `ChallengeStatus`: `ISSUED`, `VERIFIED`, `EXPIRED`, `REJECTED`
 - `RefreshTokenHash(hash, salt, rotationVersion)`
 - `LoginFailureReason`: `INVALID_SIGNATURE`, `EXPIRED_CHALLENGE`, `REUSED_NONCE`, `WALLET_MISMATCH`, `SIWE_MESSAGE_MISMATCH`
+
+### RBAC Authorization Model
+
+`User` is the authenticated identity and audit actor. `Group` is not a user-like actor; it is a permission scope/resource boundary. `GroupMembership` connects a user to a group with a role, and `RolePermission` defines the permissions granted by that role. Nested groups are not part of the model.
+
+`PERSONAL` groups are retained as a thin customer self-scope so customer behavior can be represented without a global `CUSTOMER` role. `MERCHANT` groups scope store owner/manager permissions to one store or merchant resource. `PLATFORM` groups scope operator/admin permissions.
+
+Baseline permission catalog:
+
+| Permission | Scope |
+| --- | --- |
+| `user:self` | own profile/session/order/checkout access |
+| `user:manage` | platform-managed user profile status/detail access |
+| `store:read` | merchant private store detail |
+| `store:write` | store business profile fields |
+| `store:manage` | sensitive store status/settings approval |
+| `product:read` | merchant product detail/draft reads |
+| `product:write` | product create/update |
+| `inventory:read` | merchant inventory reads |
+| `inventory:write` | stock intake/correction and sale pause/resume |
+| `operator:read` | operator dashboard/detail reads |
+| `operator:action` | operator recovery actions |
+| `outbox:retry` | outbox retry execution |
+| `rbac:manage` | group/membership/role management |
+| `admin:provision` | platform bootstrap/provisioning |
+
+Role and permission definitions start as seed/static catalog data. Full CRUD APIs for role/permission management are future surface; phase 22 focuses on schema, seed, session claims, policy checks, and provisioning compatibility.
 
 ### Events
 
@@ -88,14 +122,15 @@
 
 | Aggregate | 주요 필드 | 주요 행위 |
 | --- | --- | --- |
-| `StoreProfile` | `StoreId`, `ownerUserId`, `active`, `storeWallet`, `supportedChainIds` | store 단위 wallet/chain 설정과 active 상태 보존 |
-| `StoreMembership` | `StoreId`, `UserId`, store-scoped `role`, `active` | `OWNER`/`MANAGER` 등 store-scoped 권한 판단 |
-| `StoreProduct` | `StoreId`, `ProductId`, `name`, `Crypto price`, `active` | 최소 checkout catalog item 등록 |
+| `StoreProfile` | `StoreId`, `GroupId`, `displayName`, `description`, `status`, `supportEmail`, `businessRegistrationLabel`, `createdAt`, `updatedAt` | public/private business profile 보존 |
+| `StorePaymentSettings` | `StoreId`, `storeWallet`, `supportedChainIds`, `active` | payment destination/chain 설정 보존 |
+| `StoreMembership` | `StoreId`, `UserId`, store-scoped `role`, `active` | compatibility path; new authorization uses merchant group membership |
+| `StoreProduct` | `StoreId`, `ProductId`, `title`, `description`, `category`, `tags`, `media`, `attributes`, `status`, `visibility`, `Crypto price` | canonical product catalog item |
 
 ### Value Objects
 
-- `StoreMembershipRole`: `OWNER`, `MANAGER`
-- `StoreId`, `ProductId`, `UserId`, `WalletAddress`, `Crypto`
+- `StoreMembershipRole`: `OWNER`, `MANAGER` compatibility only while merchant group RBAC migrates.
+- `StoreId`, `ProductId`, `UserId`, `GroupId`, `WalletAddress`, `Crypto`
 
 ### Ports and Adapters
 
@@ -103,7 +138,11 @@
 - Output: `CatalogWriteRepository`, catalog idempotency/audit persistence, checkout catalog projection writers, store approval projection writers, inventory projection writer
 - Adapters: PostgreSQL canonical `store_catalog_stores`, `store_catalog_store_memberships`, `store_catalog_products`, write-through projection tables
 
-`store_catalog` is the canonical store ownership and minimal catalog source. `order_stores`, `order_store_products`, `store_approval_stores`, `store_approval_products`, and `product_inventory` remain runtime projections so existing checkout, approval, and inventory flows keep their read paths. A customer wallet can own/manage a store by adding `store_catalog_store_memberships` for the existing `auth_users.user_id`; no duplicate wallet row or global role change is required. Store wallet and supported chain settings are stored on `StoreProfile`, not the owner account. Product description/category/tags/images/search metadata is future scope.
+`store_catalog` is the canonical store ownership and catalog source. `order_stores`, `order_store_products`, `store_approval_stores`, `store_approval_products`, and `product_inventory` remain runtime projections so existing checkout, approval, and inventory flows keep their read paths. A customer wallet can own/manage a store by adding merchant group membership for the existing `auth_users.user_id`; no duplicate wallet row or global role change is required.
+
+Store business profile and payment settings are separate. `store:write` updates business profile fields such as display name, description, and support contact. Settlement wallet and supported chain changes are policy-gated payment settings flows, not public profile edits. Owner transfer, member invite/remove, and role/permission changes belong to RBAC/membership provisioning, not `updateStoreProfile`.
+
+Store/product slug fields and SKU fields are not part of phase 23. Public and merchant lookup starts with stable `storeId` and `productId`; human-readable URLs and merchant-managed inventory codes are future scope. User display names, store display names, and product titles are display/search fields and may be duplicated.
 
 ## Checkout Process Manager
 
@@ -232,4 +271,4 @@
 - Output: `InventoryRepository`, `InventoryQueryRepository`, `InventoryAuditRepository`, `ProcessedCommandRepository`, `OutboxMessageRepository`, `InventoryEventPublisher`, `OrderEventListener`, `PaymentEventListener`, `StoreRepository`
 - Adapters: Kafka + Outbox messaging, PostgreSQL repositories
 
-Product sale availability is stored canonically in the inventory context as `ProductInventory.saleStatus`. Store owners/managers are authorized by active store membership, so a `CUSTOMER` role account can manage its own store inventory without role coercion; `ADMIN` can query or mutate any store inventory. Store approval/order catalog projections can consume this status in later projection work; this phase does not expose customer public inventory or manual order approval HTTP APIs.
+Product sale availability is stored canonically in the inventory context as `ProductInventory.saleStatus`. Store owners/managers are authorized by merchant group membership and `inventory:read`/`inventory:write`; a customer identity can manage its own store inventory through merchant membership without global role coercion. Platform cross-store access requires explicit operator/admin policy permission. Store approval/order catalog projections can consume this status in later projection work; this phase does not expose customer public inventory or manual order approval HTTP APIs.

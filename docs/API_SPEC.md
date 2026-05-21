@@ -20,23 +20,63 @@ Public HTTP route surface is exactly the current 25-route manifest from `app/tok
 
 `ReserveInventoryCommand`, `ReleaseInventoryCommand`, and `ConfirmInventoryCommand` are checkout saga internal commands. They are emitted by `CheckoutProcessManager` and handled by application/message adapters, not exposed as public customer HTTP APIs. Successful `OrderApprovedEvent` processing emits `ConfirmInventoryCommand`, and the inventory context records `InventoryConfirmedEvent`; payment failure, payment expiration, and order rejection still emit release/compensation commands.
 
-Operator action APIs are admin-only recovery endpoints. Store owner inventory API is a separate surface with store ownership/membership, not a global STORE_OWNER account role, and must not be confused with admin operator recovery endpoints. Store owners can query or mutate only own store inventory through active store membership; admin can query or mutate any store inventory. The store owner inventory API manages stock and sale pause/resume only. Store owner manual order approval HTTP API is not in current scope, and manual order approval HTTP API is not an active roadmap item.
+Operator action APIs are platform recovery endpoints. Current compatibility paths still use an admin role policy, but phase 22 migrates them to platform group permissions such as `operator:read`, `operator:action`, and `outbox:retry`. Store owner inventory API is a separate merchant surface with store ownership/membership, not a global STORE_OWNER account role, and must not be confused with platform operator recovery endpoints. Store owners can query or mutate only own store inventory through active membership; platform operators/admins need explicit policy permission for cross-store access. The store owner inventory API manages stock and sale pause/resume only. Store owner manual order approval HTTP API is not in current scope, and manual order approval HTTP API is not an active roadmap item.
 
 ### Admin store catalog provisioning API surface
 
-`POST /admin/store-users`, `POST /admin/stores`, and `POST /admin/stores/{storeId}/memberships` are admin-only provisioning endpoints. They trust only the server-side cookie/session `ADMIN` claim and ignore any role-like value in the request body. Public customer login never grants a global `STORE_OWNER` role, and admin provisioning creates or reuses a normal auth user identity without changing an existing customer account role.
+`POST /admin/store-users`, `POST /admin/stores`, and `POST /admin/stores/{storeId}/memberships` are provisioning endpoints. Current compatibility paths require server-side admin authority and ignore any role-like value in the request body. Phase 22 migrates this surface to `admin:provision`/`rbac:manage` policy checks. Public customer login never grants a global `STORE_OWNER` role, and provisioning creates or reuses a normal auth user identity without changing an existing customer account role.
 
-Store ownership is represented by canonical `store_catalog_stores` and `store_catalog_store_memberships` records. A wallet that already has a `CUSTOMER` auth user can become a store owner by adding store membership to the existing user id; the same wallet must not create a second `auth_users` row, and customer checkout history/profile rows are preserved. The `ADMIN` role is platform operations authority, while owner/manager permissions are scoped to a specific store.
+Store ownership is represented by canonical store records plus merchant group membership. Compatibility tables such as `store_catalog_store_memberships` may remain during migration, but new authorization paths use group membership and permission lookup. A wallet that already has a customer identity can become a store owner by adding merchant membership to the existing user id; the same wallet must not create a second `auth_users` row, and customer checkout history/profile rows are preserved. Platform operations authority is represented by platform group membership, not a global account role.
 
-`POST /store-owner/stores/{storeId}/products` registers a minimal checkoutable product for an active store. The caller must be an active owner/member of that store, or `ADMIN` can use the same route as an operational override. The command writes through canonical `store_catalog_products`, checkout `order_store_products`, approval `store_approval_products`, and `product_inventory` in one transaction. Product description, category, tags, images, and search index metadata are future scope and are not required request fields.
+`POST /store-owner/stores/{storeId}/products` registers a minimal checkoutable product for an active store. The caller must have `product:write` for that store scope; platform override requires explicit policy permission. The command writes through canonical `store_catalog_products`, checkout `order_store_products`, approval `store_approval_products`, and `product_inventory` in one transaction. Product description, category, tags, images, and search index metadata are phase 23 catalog fields; search engine integration remains future scope.
 
 ### Store owner inventory API surface
 
-`GET /store-owner/inventory` returns inventory rows visible to the authenticated session. Non-admin sessions are limited by active store ownership/membership, including optional `storeId` filtering; `ADMIN` sessions can query all rows or a specific store. A `CUSTOMER` account that owns a store through membership can query/mutate that store without changing its global role. Unauthenticated sessions are rejected.
+`GET /store-owner/inventory` returns inventory rows visible to the authenticated session. Merchant sessions are limited by active membership and `inventory:read`, including optional `storeId` filtering; platform sessions need explicit inventory/operator policy permission for cross-store access. A customer identity that owns a store through merchant membership can query/mutate that store without changing its global role. Unauthenticated sessions are rejected.
 
 Inventory mutations use audited business commands rather than raw stock writes. The supported actions are stock intake, target total stock correction, sale pause, and sale resume. Mutations require cookie/session auth, `Idempotency-Key`, CSRF for browser cookie auth, `reason`, and server-side role/ownership checks. Stock correction cannot set `totalStock` below `reservedStock`. Sale pause/resume only changes new-order availability and does not release existing reservations.
 
 Product sale availability is stored canonically in the inventory context as `ProductInventory.sale_status`. Store approval/order catalog projections may consume that status in later projection work, but this phase does not add a customer public inventory route.
+
+### Planned phase 22/23 RBAC and profile/catalog alignment
+
+Phase 22 removes global account-role authorization from new execution paths. `User` remains the authenticated identity and audit actor. `Group` is a permission scope/resource boundary, not a user-like actor, and nested groups are not part of the model. `GroupMembership` connects a user to a `PERSONAL`, `MERCHANT`, or `PLATFORM` group with a role. Roles are permission bundles; API authorization checks permission plus resource scope through `AuthorizationPolicy.can(...)`.
+
+`PERSONAL` groups are retained as the customer self-scope. They support self operations without granting merchant or platform authority. `MERCHANT` groups scope store owner/manager permissions to a store or merchant resource. `PLATFORM` groups scope operator/admin permissions.
+
+Baseline permission-to-API mapping:
+
+| Permission | API/function surface |
+| --- | --- |
+| `user:self` | current user profile/session and own checkout/order access |
+| `user:manage` | platform-managed user profile detail/status operations |
+| `store:read` | merchant private store detail/listing |
+| `store:write` | store business profile updates: display name, description, support contact |
+| `store:manage` | sensitive store status/settings approval; not owner transfer or membership CRUD |
+| `product:read` | merchant product detail/draft reads |
+| `product:write` | product create/update APIs |
+| `inventory:read` | store owner inventory reads |
+| `inventory:write` | stock intake/correction and sale pause/resume APIs |
+| `operator:read` | operator dashboard/order/payment/outbox detail reads |
+| `operator:action` | operator recovery actions such as cancel/replay |
+| `outbox:retry` | outbox retry execution, in addition to `operator:action` |
+| `rbac:manage` | group/membership/role/permission administration |
+| `admin:provision` | platform bootstrap/provisioning APIs |
+
+Role and permission definitions start as seed/static catalog data. Phase 22 may map existing admin store membership provisioning to merchant group membership, but full role/permission CRUD APIs are future surface. If RBAC management APIs are later added, they must be protected by `rbac:manage` and audited with `actorUserId`, optional `groupId`, `permission`, `resourceType`, and `resourceId`.
+
+Phase 23 separates user identity from user profile, store business profile from store payment settings, and product catalog from inventory. Store/product slug fields and SKU fields are not required in phase 23; public and merchant lookup starts with stable `storeId` and `productId`. Human-readable URLs and merchant-managed inventory codes are future scope. User display names, store display names, and product titles are display/search fields and may be duplicated. Settlement wallet/supported chain changes are policy-gated payment settings flows, not `updateStoreProfile`. Owner transfer, member invite/remove, and role changes belong to RBAC/membership provisioning, not store profile update.
+
+User-facing capability summary:
+
+| User type | Allowed capabilities |
+| --- | --- |
+| Anonymous visitor | public store/product listing and detail, auth challenge request |
+| Logged-in customer | own profile, own sessions, checkout/order creation and tracking, payment tx hash submission |
+| Merchant member/manager | own merchant store reads, allowed business profile updates, product writes, inventory reads/writes |
+| Merchant owner | merchant member capabilities plus store management requests/approvals within RBAC policy |
+| Platform operator | operator dashboard/detail reads and bounded recovery actions |
+| Platform admin | provisioning, RBAC/membership administration, sensitive approval flows |
 
 ## Runtime Assumptions
 
@@ -45,7 +85,7 @@ Product sale availability is stored canonically in the inventory context as `Pro
 - Response body는 JSON object다.
 - 모든 response는 가능하면 `X-Request-Id` header를 포함한다.
 - Client는 `X-Request-Id`를 전달할 수 있다. 없으면 server가 결정적 request id를 생성한다.
-- 운영자 API는 server-side session claim의 `ADMIN` role이 필요하다.
+- 운영자 API는 phase 22 이후 server-side policy check의 `operator:read` 또는 `operator:action` permission이 필요하다. Legacy `ADMIN` role checks are compatibility only until that migration lands.
 - 브라우저 client의 기본 auth transport는 `HttpOnly; Secure; SameSite=Lax` cookie다.
 - 상태 변경 요청은 cookie auth와 함께 `X-CSRF-Token` double-submit token을 전달해야 한다.
 - `Authorization: Bearer <accessToken>`은 non-browser client 또는 explicit integration fallback으로만 사용한다.
@@ -86,7 +126,7 @@ Session cookie values are signed tokens. The live runtime loads signing keys fro
 - `SESSION_ACCESS_TTL_SECONDS`
 - `SESSION_REFRESH_TTL_SECONDS`
 
-`SESSION_SIGNING_KEYS`는 `kid=secret,kid2=previous_secret` 또는 동등한 object 형태로 active key와 previous key를 함께 표현한다. New tokens are signed with the active key. Verification accepts the active key and configured previous keys until token expiry. Tokens must carry a `kid` or equivalent key id. Payload claims include at least `sub`, `sessionId`, `walletAddress`, `role`, `iat`, `exp`, `typ`, and `jti`. Missing signing keys or committed placeholder keys must make live/prod server startup fail with a bounded configuration error.
+`SESSION_SIGNING_KEYS`는 `kid=secret,kid2=previous_secret` 또는 동등한 object 형태로 active key와 previous key를 함께 표현한다. New tokens are signed with the active key. Verification accepts the active key and configured previous keys until token expiry. Tokens must carry a `kid` or equivalent key id. Current compatibility payloads may include `role`; phase 22 target payloads use `sub`, `sessionId`, `walletAddress`, bounded `activeGroupId`/`groupMemberships` or `scopes`, `iat`, `exp`, `typ`, and `jti` instead of global role authority. Missing signing keys or committed placeholder keys must make live/prod server startup fail with a bounded configuration error.
 
 Session signing keys, signed token values, refresh token hashes/salts, and CSRF secrets must never be logged, committed in fixtures, or exposed in runtime previews.
 
@@ -541,14 +581,14 @@ Errors: `400 VALIDATION_ERROR`, `404 PAYMENT_NOT_FOUND`, `404 AUTHORIZATION_NOT_
 
 ## Operator Observability
 
-Operator auth: `ADMIN`.
+Operator auth: current compatibility uses admin role checks; phase 22 target uses `operator:read`.
 
 Local fallback headers:
 
 ```text
 X-User-Id: admin-001
 X-User-Role: ADMIN
-X-User-Scopes: operator:read,operator:write
+X-User-Scopes: operator:read,operator:action,outbox:retry
 ```
 
 ### `GET /operator/dashboard`
@@ -679,7 +719,7 @@ Errors: `400 VALIDATION_ERROR`, `403 OPERATOR_FORBIDDEN`, `404 OPERATOR_RESOURCE
 
 ## Operator Actions
 
-Operator auth: `ADMIN`.
+Operator auth: current compatibility uses admin role checks; phase 22 target uses `operator:action`. Outbox retry also requires `outbox:retry`.
 
 All action responses use:
 
