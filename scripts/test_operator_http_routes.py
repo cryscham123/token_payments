@@ -107,7 +107,7 @@ def test_operator_dashboard_http_route_forwards_filters_to_facade_query() -> Non
         headers={
             "X-Request-Id": "req-operator-dashboard",
             "X-User-Id": str(USER_ID),
-            "X-User-Role": UserRole.ADMIN.value,
+            "X-User-Scopes": "operator:read",
         },
         received_at=NOW,
     )
@@ -142,7 +142,7 @@ def test_operator_order_detail_http_route_preserves_lifecycle_failure_and_latest
     response = router.handle(
         "GET",
         f"/operator/orders/{ORDER_ID}",
-        headers={"X-Request-Id": "req-operator-order", "X-User-Role": UserRole.ADMIN.value},
+        headers={"X-Request-Id": "req-operator-order", "X-User-Scopes": "operator:read"},
         received_at=NOW,
     )
 
@@ -173,14 +173,14 @@ def test_operator_payment_and_outbox_detail_http_routes_preserve_path_params_and
     payment = router.handle(
         "GET",
         f"/operator/payments/{PAYMENT_ID}",
-        headers={"X-Request-Id": "req-operator-payment", "X-User-Role": UserRole.ADMIN.value},
+        headers={"X-Request-Id": "req-operator-payment", "X-User-Scopes": "operator:read"},
         received_at=NOW,
     )
     outbox = router.handle(
         "GET",
         f"/operator/outbox/{MESSAGE_ID}",
         query={"kind": OutboxMessageKind.COMMAND.value},
-        headers={"X-Request-Id": "req-operator-outbox", "X-User-Role": UserRole.ADMIN.value},
+        headers={"X-Request-Id": "req-operator-outbox", "X-User-Scopes": "operator:read"},
         received_at=NOW,
     )
 

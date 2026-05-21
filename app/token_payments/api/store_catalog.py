@@ -87,7 +87,7 @@ class StoreCatalogApi:
                 actor_user_id=claims.user_id,
                 store_id=StoreId(_lookup_value(request, "storeId")),
                 user_id=UserId(_required_text(body, "userId")),
-                role=StoreMembershipRole(_optional_text(body, "role") or StoreMembershipRole.MANAGER.value),
+                role=_store_membership_role(body),
                 active=_optional_bool(body, "active", True),
                 requested_at=request.received_at,
                 request_id=request.request_id,
@@ -108,12 +108,14 @@ class StoreCatalogApi:
     def register_store_product(self, request: ApiRequest) -> ApiResponse:
         try:
             claims = _require_authenticated(request)
+            if "product:write" not in claims.scopes and "product:write:any" not in claims.scopes:
+                raise _ApiError("STORE_OWNER_STORE_FORBIDDEN", "product:write permission is required", 403)
             body = _body(request)
             idempotency_key = _required_idempotency_key(request, body)
             command = RegisterStoreProductCommand(
                 command_id=CommandId(idempotency_key),
                 actor_user_id=claims.user_id,
-                actor_platform_role=claims.role,
+                actor_platform_role=UserRole.ADMIN if "product:write:any" in claims.scopes else UserRole.CUSTOMER,
                 store_id=StoreId(_lookup_value(request, "storeId")),
                 product_id=ProductId(_required_text(body, "productId")),
                 name=_required_text(body, "name"),
@@ -138,9 +140,10 @@ class StoreCatalogApi:
 
 
 class _Claims:
-    def __init__(self, *, user_id: UserId, role: UserRole) -> None:
+    def __init__(self, *, user_id: UserId, scopes: tuple[str, ...], role: UserRole = UserRole.CUSTOMER) -> None:
         self.user_id = user_id
         self.role = role
+        self.scopes = scopes
 
 
 class _ApiError(ValueError):
@@ -155,16 +158,20 @@ class _ApiError(ValueError):
 
 def _require_admin(request: ApiRequest) -> _Claims:
     claims = _require_authenticated(request)
-    if claims.role is not UserRole.ADMIN:
+    if not ({"admin:provision", "rbac:manage"} & set(claims.scopes)):
         raise _ApiError("ADMIN_REQUIRED", "admin session is required", 403)
     return claims
 
 
 def _require_authenticated(request: ApiRequest) -> _Claims:
     context = request.auth_context
-    if context is None or context.user_id is None or context.role is None:
+    if context is None or context.user_id is None:
         raise _ApiError("AUTHENTICATION_REQUIRED", "authenticated session is required", 401)
-    return _Claims(user_id=UserId(context.user_id), role=UserRole(context.role))
+    return _Claims(
+        user_id=UserId(context.user_id),
+        role=UserRole(context.role) if context.role else UserRole.CUSTOMER,
+        scopes=context.scopes,
+    )
 
 
 def _required_idempotency_key(request: ApiRequest, body: Mapping[str, Any]) -> str:
@@ -223,6 +230,19 @@ def _price(body: Mapping[str, Any]) -> Crypto:
         token_address=_optional_text(raw, "tokenAddress"),
         decimals=_required_int(raw, "decimals"),
     )
+
+
+def _store_membership_role(body: Mapping[str, Any]) -> StoreMembershipRole:
+    role_id = _optional_text(body, "roleId")
+    if role_id is not None:
+        role_map = {
+            "MERCHANT_OWNER": StoreMembershipRole.OWNER,
+            "MERCHANT_MANAGER": StoreMembershipRole.MANAGER,
+        }
+        if role_id not in role_map:
+            raise ValueError("roleId must be MERCHANT_OWNER or MERCHANT_MANAGER")
+        return role_map[role_id]
+    return StoreMembershipRole(_optional_text(body, "role") or StoreMembershipRole.MANAGER.value)
 
 
 def _lookup_value(request: ApiRequest, key: str) -> str:

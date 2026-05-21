@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Mapping
 
+from token_payments.contexts.auth.domain import GroupId
 from token_payments.contexts.auth.domain import User, UserRole
 from token_payments.contexts.store_catalog.domain import StoreMembership, StoreMembershipRole, StoreProduct, StoreProfile
 from token_payments.shared.domain import UserId
@@ -98,6 +99,7 @@ class StoreCatalogApplicationService:
         membership = StoreMembership.owner(command.store_id, command.owner_user_id, active=True)
         self._repository.save_store(store)
         self._repository.save_membership(membership)
+        merchant_group_payload = self._ensure_merchant_group_owner(command)
         self._repository.save_order_store_projection(store)
         self._repository.save_store_approval_store_projection(store)
         self._repository.record_audit(
@@ -118,6 +120,10 @@ class StoreCatalogApplicationService:
                     "membership": _membership_payload(membership),
                 },
                 recorded_at=command.requested_at,
+                group_id=merchant_group_payload["groupId"] if merchant_group_payload is not None else None,
+                permission="admin:provision",
+                resource_type="store",
+                resource_id=str(command.store_id),
             )
         )
         return {
@@ -132,6 +138,7 @@ class StoreCatalogApplicationService:
                 "order": "order_stores",
                 "storeApproval": "store_approval_stores",
             },
+            "merchantGroup": merchant_group_payload,
         }
 
     def _grant_store_membership(self, command: GrantStoreMembershipCommand) -> Mapping[str, Any]:
@@ -148,6 +155,7 @@ class StoreCatalogApplicationService:
             active=command.active,
         )
         self._repository.save_membership(membership)
+        merchant_group_payload = self._grant_merchant_group_membership(command)
         self._repository.record_audit(
             CatalogAuditRecord(
                 actor_user_id=command.actor_user_id,
@@ -158,14 +166,19 @@ class StoreCatalogApplicationService:
                 request_id=command.request_id,
                 idempotency_key=str(command.command_id),
                 before={"membership": _membership_payload(previous)},
-                after={"membership": _membership_payload(membership)},
+                after={"membership": _membership_payload(membership), "merchantGroup": merchant_group_payload},
                 recorded_at=command.requested_at,
+                group_id=merchant_group_payload["groupId"] if merchant_group_payload is not None else None,
+                permission="rbac:manage",
+                resource_type="store",
+                resource_id=str(command.store_id),
             )
         )
         return {
             "operation": self.GRANT_MEMBERSHIP_HANDLER,
             "status": "created" if previous is None else "updated",
             "membership": _membership_payload(membership),
+            "merchantGroup": merchant_group_payload,
             "ownershipCreated": previous is None,
             "alreadyProvisioned": previous == membership,
         }
@@ -207,6 +220,9 @@ class StoreCatalogApplicationService:
                 before={"product": _product_payload(previous), "storeRole": store_role.value if store_role else None},
                 after={"product": _product_payload(product), "initialTotalStock": command.initial_total_stock},
                 recorded_at=command.requested_at,
+                permission="product:write:any" if command.actor_platform_role is UserRole.ADMIN else "product:write",
+                resource_type="store",
+                resource_id=str(command.store_id),
             )
         )
         return {
@@ -275,6 +291,44 @@ class StoreCatalogApplicationService:
             return UserId(str(generator()))
         raise ValueError("user_id_generator must expose new_id() or be callable")
 
+    def _ensure_merchant_group_owner(self, command: CreateStoreCommand) -> Mapping[str, Any] | None:
+        ensure_group = getattr(self._repository, "ensure_merchant_group_for_store", None)
+        grant_owner = getattr(self._repository, "grant_group_membership", None)
+        if not callable(ensure_group) or not callable(grant_owner):
+            return None
+        group_id = ensure_group(command.store_id)
+        grant_owner(group_id, command.owner_user_id, "MERCHANT_OWNER", active=True)
+        return {
+            "groupId": str(group_id),
+            "ownerUserId": str(command.owner_user_id),
+            "roleId": "MERCHANT_OWNER",
+        }
+
+    def _grant_merchant_group_membership(self, command: GrantStoreMembershipCommand) -> Mapping[str, Any] | None:
+        group_id = self._merchant_group_id_for_store(command.store_id)
+        grant_membership = getattr(self._repository, "grant_group_membership", None)
+        if group_id is None or not callable(grant_membership):
+            return None
+        role_id = _merchant_role_for_store_role(command.role)
+        grant_membership(group_id, command.user_id, role_id, active=command.active)
+        return {
+            "groupId": str(group_id),
+            "userId": str(command.user_id),
+            "roleId": role_id,
+            "active": command.active,
+        }
+
+    def _merchant_group_id_for_store(self, store_id: Any) -> GroupId | None:
+        merchant_group = getattr(self._repository, "merchant_group_for_store", None)
+        if callable(merchant_group):
+            group = merchant_group(store_id)
+            if group is not None:
+                return group.group_id
+        ensure_group = getattr(self._repository, "ensure_merchant_group_for_store", None)
+        if callable(ensure_group):
+            return ensure_group(store_id)
+        return None
+
 
 def _rejected(code: str, message: str) -> Mapping[str, Any]:
     return {"error": {"code": code, "message": message}}
@@ -301,6 +355,12 @@ def _membership_payload(membership: StoreMembership | None) -> dict[str, Any] | 
         "role": membership.role.value,
         "active": membership.active,
     }
+
+
+def _merchant_role_for_store_role(role: StoreMembershipRole) -> str:
+    if role is StoreMembershipRole.OWNER:
+        return "MERCHANT_OWNER"
+    return "MERCHANT_MANAGER"
 
 
 def _product_payload(product: StoreProduct | None) -> dict[str, Any] | None:

@@ -109,6 +109,27 @@
       "dir": "21-admin-store-catalog-provisioning",
       "status": "completed",
       "completed_at": "2026-05-20T01:34:00+0900"
+    },
+    {
+      "dir": "22-resource-scoped-rbac",
+      "status": "completed",
+      "completed_at": "2026-05-21T16:09:07+0900"
+    },
+    {
+      "dir": "23-user-store-product-profile-catalog",
+      "status": "pending"
+    },
+    {
+      "dir": "24-live-kafka-worker-runtime",
+      "status": "pending"
+    },
+    {
+      "dir": "25-multi-wallet-accounts",
+      "status": "pending"
+    },
+    {
+      "dir": "26-stablecoin-payment-support",
+      "status": "pending"
     }
   ]
 }

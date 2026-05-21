@@ -76,7 +76,7 @@ def test_operator_dashboard_lists_read_models_with_filters_sort_page_tokens_and_
             request_id="req-operator-list",
             method="GET",
             path="/operator/observability",
-            headers={"X-User-Id": str(USER_ID), "X-User-Role": UserRole.ADMIN.value},
+            headers={"X-User-Id": str(USER_ID), "X-User-Scopes": "operator:read"},
             query={
                 "context": "orders,payments,outbox",
                 "status": "FAILED,EXPIRED",
@@ -95,7 +95,7 @@ def test_operator_dashboard_lists_read_models_with_filters_sort_page_tokens_and_
     assert response.status_code == 200
     assert response.request_id == "req-operator-list"
     assert policy.claims == [
-        OperatorClaims(user_id=str(USER_ID), role=UserRole.ADMIN, scopes=()),
+        OperatorClaims(user_id=str(USER_ID), scopes=("operator:read",)),
     ]
     assert query.dashboard_queries == [
         OperatorDashboardQuery(
@@ -257,21 +257,21 @@ def test_operator_policy_denies_non_operator_without_querying() -> None:
             request_id="req-forbidden",
             method="GET",
             path="/operator/observability",
-            headers={"X-User-Id": str(USER_ID), "X-User-Role": UserRole.CUSTOMER.value},
+            headers={"X-User-Id": str(USER_ID), "X-User-Scopes": "user:self"},
             received_at=NOW,
         )
     )
 
     assert response.status_code == 403
     assert response.body["error"]["code"] == "OPERATOR_FORBIDDEN"
-    assert policy.claims == [OperatorClaims(user_id=str(USER_ID), role=UserRole.CUSTOMER, scopes=())]
+    assert policy.claims == [OperatorClaims(user_id=str(USER_ID), scopes=("user:self",))]
     assert query.dashboard_queries == []
     assert query.order_detail_calls == []
     assert query.payment_detail_calls == []
     assert query.outbox_detail_calls == []
 
 
-def test_default_admin_role_policy_allows_admin_role_claim_only() -> None:
+def test_default_operator_policy_uses_operator_read_scope_not_role_header() -> None:
     query = FakeOperatorObservabilityQuery(_dashboard_snapshot())
     api = OperatorApi(query)
 
@@ -280,7 +280,7 @@ def test_default_admin_role_policy_allows_admin_role_claim_only() -> None:
             request_id="req-admin",
             method="GET",
             path="/operator/observability",
-            headers={"X-User-Role": UserRole.ADMIN.value},
+            headers={"X-User-Role": UserRole.ADMIN.value, "X-User-Scopes": "operator:read"},
             received_at=NOW,
         )
     )
@@ -289,7 +289,7 @@ def test_default_admin_role_policy_allows_admin_role_claim_only() -> None:
             request_id="req-customer",
             method="GET",
             path="/operator/observability",
-            headers={"X-User-Role": UserRole.CUSTOMER.value},
+            headers={"X-User-Role": UserRole.ADMIN.value},
             received_at=NOW,
         )
     )

@@ -69,8 +69,8 @@ def test_retry_outbox_message_action_calls_retry_port_and_records_audit_payload(
     assert result.details["requestId"] == REQUEST_ID
     assert result.details["actor"] == {
         "userId": "operator-1",
-        "role": UserRole.ADMIN.value,
-        "scopes": ["operator:action"],
+        "groupId": None,
+        "scopes": ["operator:action", "outbox:retry"],
     }
     assert result.details["reason"] == "broker outage resolved; publish failed OrderCreated event again"
 
@@ -219,7 +219,7 @@ def test_retry_outbox_action_rejects_non_admin_without_calling_retry_port() -> N
 
 
 def _admin() -> OperatorClaims:
-    return OperatorClaims(user_id="operator-1", role=UserRole.ADMIN, scopes=("operator:action",))
+    return OperatorClaims(user_id="operator-1", role=UserRole.ADMIN, scopes=("operator:action", "outbox:retry"))
 
 
 class RecordingRetryPort:

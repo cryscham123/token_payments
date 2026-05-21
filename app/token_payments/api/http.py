@@ -375,6 +375,7 @@ def list_http_route_specs() -> tuple[HttpRouteSpec, ...]:
         *ADMIN_STORE_CATALOG_HTTP_ROUTES.values(),
         *STORE_OWNER_CATALOG_HTTP_ROUTES.values(),
         *STORE_OWNER_INVENTORY_HTTP_ROUTES.values(),
+        *MERCHANT_MEMBERSHIP_HTTP_ROUTES.values(),
         *OPERATOR_HTTP_ROUTES.values(),
         *OPERATOR_ACTION_HTTP_ROUTES.values(),
     )
@@ -532,6 +533,21 @@ def register_store_owner_inventory_routes(router: HttpRouter, inventory_api: Any
             STORE_OWNER_INVENTORY_HTTP_ROUTES["resume_sales"],
             inventory_api.resume_sales,
         ),
+    )
+
+
+def register_merchant_membership_routes(router: HttpRouter, merchant_api: Any) -> tuple[HttpRoute, ...]:
+    """Register MerchantMembershipApi facade routes on an existing router."""
+
+    return (
+        _add_manifest_route(router, MERCHANT_MEMBERSHIP_HTTP_ROUTES["list_members"], merchant_api.list_members),
+        _add_manifest_route(router, MERCHANT_MEMBERSHIP_HTTP_ROUTES["list_invitations"], merchant_api.list_invitations),
+        _add_manifest_route(router, MERCHANT_MEMBERSHIP_HTTP_ROUTES["create_invitation"], merchant_api.create_invitation),
+        _add_manifest_route(router, MERCHANT_MEMBERSHIP_HTTP_ROUTES["accept_invitation"], merchant_api.accept_invitation),
+        _add_manifest_route(router, MERCHANT_MEMBERSHIP_HTTP_ROUTES["revoke_invitation"], merchant_api.revoke_invitation),
+        _add_manifest_route(router, MERCHANT_MEMBERSHIP_HTTP_ROUTES["update_member_role"], merchant_api.update_member_role),
+        _add_manifest_route(router, MERCHANT_MEMBERSHIP_HTTP_ROUTES["remove_member"], merchant_api.remove_member),
+        _add_manifest_route(router, MERCHANT_MEMBERSHIP_HTTP_ROUTES["role_catalog"], merchant_api.role_catalog),
     )
 
 
@@ -1042,6 +1058,20 @@ STORE_OWNER_INVENTORY_HTTP_ROUTES: Mapping[str, HttpRouteSpec] = MappingProxyTyp
 )
 
 
+MERCHANT_MEMBERSHIP_HTTP_ROUTES: Mapping[str, HttpRouteSpec] = MappingProxyType(
+    {
+        "list_members": HttpRouteSpec("GET", "/merchant/stores/{storeId}/members", "listMerchantStoreMembers"),
+        "list_invitations": HttpRouteSpec("GET", "/merchant/stores/{storeId}/invitations", "listMerchantStoreInvitations"),
+        "create_invitation": HttpRouteSpec("POST", "/merchant/stores/{storeId}/invitations", "createMerchantStoreInvitation"),
+        "accept_invitation": HttpRouteSpec("POST", "/merchant/invitations/{invitationId}/accept", "acceptMerchantInvitation"),
+        "revoke_invitation": HttpRouteSpec("POST", "/merchant/invitations/{invitationId}/revoke", "revokeMerchantInvitation"),
+        "update_member_role": HttpRouteSpec("PATCH", "/merchant/stores/{storeId}/members/{userId}", "updateMerchantStoreMemberRole"),
+        "remove_member": HttpRouteSpec("DELETE", "/merchant/stores/{storeId}/members/{userId}", "removeMerchantStoreMember"),
+        "role_catalog": HttpRouteSpec("GET", "/merchant/role-catalog", "getMerchantRoleCatalog"),
+    }
+)
+
+
 OPERATOR_HTTP_ROUTES: Mapping[str, HttpRouteSpec] = MappingProxyType(
     {
         "get_dashboard": HttpRouteSpec("GET", "/operator/dashboard", "getOperatorDashboard"),
@@ -1079,6 +1109,7 @@ __all__ = [
     "HttpRoute",
     "HttpRouteSpec",
     "HttpRouter",
+    "MERCHANT_MEMBERSHIP_HTTP_ROUTES",
     "ORDER_HTTP_ROUTES",
     "OPERATOR_ACTION_HTTP_ROUTES",
     "OPERATOR_HTTP_ROUTES",
@@ -1093,6 +1124,7 @@ __all__ = [
     "list_http_route_specs",
     "register_auth_routes",
     "register_checkout_routes",
+    "register_merchant_membership_routes",
     "register_order_routes",
     "register_operator_action_routes",
     "register_operator_routes",

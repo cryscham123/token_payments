@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import InitVar, dataclass
 from typing import Any, Mapping, Protocol
 
 from token_payments.contexts.auth.domain import UserRole
@@ -25,17 +25,25 @@ from .contracts import ApiRequest, ApiResponse, json_response
 @dataclass(frozen=True)
 class OperatorClaims:
     user_id: str | None = None
-    role: UserRole | str | None = None
     scopes: tuple[str, ...] = ()
+    active_group_id: str | None = None
+    role: InitVar[UserRole | str | None] = None
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, role: UserRole | str | None) -> None:
+        if isinstance(role, property):
+            role = None
         if self.user_id is not None:
             object.__setattr__(self, "user_id", _require_text(self.user_id, "OperatorClaims.user_id"))
-        if self.role is not None and not isinstance(self.role, UserRole):
-            object.__setattr__(self, "role", UserRole(_require_text(str(self.role), "OperatorClaims.role")))
         if not isinstance(self.scopes, tuple):
             raise ValueError("OperatorClaims.scopes must be a tuple")
         object.__setattr__(self, "scopes", tuple(_require_text(scope, "OperatorClaims.scopes") for scope in self.scopes))
+        if self.active_group_id is not None:
+            object.__setattr__(self, "active_group_id", _require_text(self.active_group_id, "OperatorClaims.active_group_id"))
+        object.__setattr__(self, "_legacy_role", _optional_role(role))
+
+    @property
+    def role(self) -> UserRole | None:
+        return getattr(self, "_legacy_role", None)
 
 
 class OperatorAccessPolicy(Protocol):
@@ -44,10 +52,10 @@ class OperatorAccessPolicy(Protocol):
 
 
 class AdminRoleOperatorPolicy:
-    """Minimal policy that accepts an ADMIN role claim supplied by the auth layer."""
+    """Compatibility class name for the phase-22 operator read policy."""
 
     def can_read_observability(self, claims: OperatorClaims) -> bool:
-        return claims.role is UserRole.ADMIN
+        return "operator:read" in claims.scopes
 
 
 class OperatorApi:
@@ -137,15 +145,15 @@ def _claims_from_request(request: ApiRequest) -> OperatorClaims:
     if request.auth_context is not None:
         return OperatorClaims(
             user_id=request.auth_context.user_id,
-            role=_optional_role(request.auth_context.role),
             scopes=request.auth_context.scopes,
+            active_group_id=request.auth_context.active_group_id,
+            role=request.auth_context.role,
         )
     if not request.local_auth_fallback_enabled:
         return OperatorClaims()
     headers = _lower_headers(request.headers)
     return OperatorClaims(
         user_id=_optional_text(headers.get("x-user-id")),
-        role=_optional_role(headers.get("x-user-role")),
         scopes=tuple(_csv_values(headers.get("x-user-scopes"))),
     )
 
@@ -280,6 +288,8 @@ def _csv_values(value: object) -> tuple[str, ...]:
 
 
 def _optional_role(value: object) -> UserRole | None:
+    if isinstance(value, property):
+        return None
     text = _optional_text(value)
     if text is None:
         return None

@@ -106,9 +106,95 @@ CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id
 CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires_at
     ON auth_sessions (expires_at);
 
+CREATE TABLE IF NOT EXISTS auth_groups (
+    group_id UUID PRIMARY KEY,
+    group_type TEXT NOT NULL CHECK (group_type IN ('PERSONAL', 'MERCHANT', 'PLATFORM')),
+    name TEXT NOT NULL,
+    resource_type TEXT,
+    resource_id TEXT,
+    active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (
+        group_type <> 'MERCHANT'
+        OR (resource_type IS NOT NULL AND resource_id IS NOT NULL)
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_groups_resource
+    ON auth_groups (group_type, resource_type, resource_id);
+
+CREATE TABLE IF NOT EXISTS auth_roles (
+    role_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    group_type TEXT NOT NULL CHECK (group_type IN ('PERSONAL', 'MERCHANT', 'PLATFORM')),
+    active BOOLEAN NOT NULL DEFAULT true,
+    merchant_assignable BOOLEAN NOT NULL DEFAULT false,
+    owner_role BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (NOT (merchant_assignable AND owner_role))
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_roles_group_type_active
+    ON auth_roles (group_type, active);
+
+CREATE TABLE IF NOT EXISTS auth_permissions (
+    permission_name TEXT PRIMARY KEY,
+    description TEXT NOT NULL DEFAULT '',
+    active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS auth_role_permissions (
+    role_id TEXT NOT NULL REFERENCES auth_roles (role_id),
+    permission_name TEXT NOT NULL REFERENCES auth_permissions (permission_name),
+    active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (role_id, permission_name)
+);
+
+CREATE TABLE IF NOT EXISTS auth_group_memberships (
+    group_id UUID NOT NULL REFERENCES auth_groups (group_id),
+    user_id UUID NOT NULL REFERENCES auth_users (user_id),
+    role_id TEXT NOT NULL REFERENCES auth_roles (role_id),
+    active BOOLEAN NOT NULL DEFAULT true,
+    joined_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (group_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_group_memberships_user_active
+    ON auth_group_memberships (user_id, active);
+
+CREATE TABLE IF NOT EXISTS auth_group_invitations (
+    invitation_id UUID PRIMARY KEY,
+    group_id UUID NOT NULL REFERENCES auth_groups (group_id),
+    invited_role_id TEXT NOT NULL REFERENCES auth_roles (role_id),
+    invited_by_user_id UUID NOT NULL REFERENCES auth_users (user_id),
+    target_user_id UUID REFERENCES auth_users (user_id),
+    target_wallet_address TEXT,
+    target_email TEXT,
+    status TEXT NOT NULL CHECK (status IN ('PENDING', 'ACCEPTED', 'REVOKED', 'EXPIRED')),
+    expires_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (
+        target_user_id IS NOT NULL
+        OR target_wallet_address IS NOT NULL
+        OR target_email IS NOT NULL
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_group_invitations_group_status
+    ON auth_group_invitations (group_id, status, created_at);
+
 CREATE TABLE IF NOT EXISTS store_catalog_stores (
     store_id UUID PRIMARY KEY,
     owner_user_id UUID NOT NULL REFERENCES auth_users (user_id),
+    group_id UUID REFERENCES auth_groups (group_id),
     active BOOLEAN NOT NULL DEFAULT true,
     store_wallet_address TEXT NOT NULL,
     supported_chain_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -167,6 +253,10 @@ CREATE TABLE IF NOT EXISTS store_catalog_audit_log (
     store_id UUID,
     product_id UUID,
     target_user_id UUID,
+    group_id UUID,
+    permission TEXT,
+    resource_type TEXT,
+    resource_id TEXT,
     request_id TEXT NOT NULL,
     idempotency_key TEXT NOT NULL,
     before_state JSONB NOT NULL,

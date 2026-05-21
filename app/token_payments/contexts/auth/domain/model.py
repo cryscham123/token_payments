@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import InitVar, dataclass, replace
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Self, TypeAlias
@@ -12,9 +12,85 @@ from token_payments.shared.domain import UserId, WalletAddress
 
 
 class UserRole(StrEnum):
+    """Compatibility role enum for legacy fixtures.
+
+    New authorization paths use group memberships and permissions instead of
+    this account-wide value.
+    """
+
     CUSTOMER = "CUSTOMER"
     STORE_OWNER = "STORE_OWNER"
     ADMIN = "ADMIN"
+
+
+class GroupType(StrEnum):
+    PERSONAL = "PERSONAL"
+    MERCHANT = "MERCHANT"
+    PLATFORM = "PLATFORM"
+
+
+class InvitationStatus(StrEnum):
+    PENDING = "PENDING"
+    ACCEPTED = "ACCEPTED"
+    REVOKED = "REVOKED"
+    EXPIRED = "EXPIRED"
+
+
+class MerchantRoleTemplate(StrEnum):
+    MERCHANT_MANAGER = "MERCHANT_MANAGER"
+    MERCHANT_STAFF = "MERCHANT_STAFF"
+
+
+@dataclass(frozen=True)
+class GroupId:
+    value: UUID
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "value", _coerce_uuid(self.value, "GroupId.value"))
+
+    @classmethod
+    def new(cls) -> Self:
+        return cls(uuid4())
+
+    def __str__(self) -> str:
+        return str(self.value)
+
+
+@dataclass(frozen=True)
+class RoleId:
+    value: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "value", _require_text(self.value, "RoleId.value"))
+
+    def __str__(self) -> str:
+        return self.value
+
+
+@dataclass(frozen=True)
+class PermissionName:
+    value: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "value", _require_text(self.value, "PermissionName.value"))
+
+    def __str__(self) -> str:
+        return self.value
+
+
+@dataclass(frozen=True)
+class InvitationId:
+    value: UUID
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "value", _coerce_uuid(self.value, "InvitationId.value"))
+
+    @classmethod
+    def new(cls) -> Self:
+        return cls(uuid4())
+
+    def __str__(self) -> str:
+        return str(self.value)
 
 
 class ChallengeStatus(StrEnum):
@@ -114,15 +190,21 @@ class IssuedToken:
 class User:
     user_id: UserId
     primary_wallet: WalletAddress | str
-    role: UserRole = UserRole.CUSTOMER
     active: bool = True
     last_login_at: datetime | None = None
+    role: InitVar[UserRole | str | None] = None
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, role: UserRole | str | None) -> None:
+        if isinstance(role, property):
+            role = None
         if not isinstance(self.user_id, UserId):
             raise ValueError("User.user_id must be a UserId")
         object.__setattr__(self, "primary_wallet", _coerce_wallet(self.primary_wallet))
-        object.__setattr__(self, "role", _coerce_user_role(self.role))
+        object.__setattr__(
+            self,
+            "_legacy_role",
+            _coerce_user_role(role) if role is not None else UserRole.CUSTOMER,
+        )
         if not isinstance(self.active, bool):
             raise ValueError("User.active must be a bool")
         if self.last_login_at is not None:
@@ -137,24 +219,210 @@ class User:
         cls,
         user_id: UserId,
         wallet: WalletAddress | str,
-        role: UserRole = UserRole.CUSTOMER,
+        role: UserRole | str | None = None,
     ) -> Self:
         return cls(user_id=user_id, primary_wallet=wallet, role=role, active=True)
 
+    @property
+    def role(self) -> UserRole:
+        """Legacy account role view retained for old fixtures and migrations."""
+
+        return getattr(self, "_legacy_role", UserRole.CUSTOMER)
+
     def link_wallet(self, wallet: WalletAddress | str) -> Self:
         self._ensure_active()
-        return replace(self, primary_wallet=_coerce_wallet(wallet))
+        return replace(self, primary_wallet=_coerce_wallet(wallet), role=self.role)
 
     def record_login(self, logged_in_at: datetime | None = None) -> Self:
         self._ensure_active()
-        return replace(self, last_login_at=logged_in_at or datetime.now(UTC))
+        return replace(self, last_login_at=logged_in_at or datetime.now(UTC), role=self.role)
 
     def deactivate(self) -> Self:
-        return replace(self, active=False)
+        return replace(self, active=False, role=self.role)
 
     def _ensure_active(self) -> None:
         if not self.active:
             raise ValueError("inactive users cannot be changed")
+
+
+@dataclass(frozen=True)
+class Group:
+    group_id: GroupId
+    group_type: GroupType | str
+    name: str
+    active: bool = True
+    resource_type: str | None = None
+    resource_id: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.group_id, GroupId):
+            raise ValueError("Group.group_id must be a GroupId")
+        object.__setattr__(self, "group_type", _coerce_group_type(self.group_type))
+        object.__setattr__(self, "name", _require_text(self.name, "Group.name"))
+        if not isinstance(self.active, bool):
+            raise ValueError("Group.active must be a bool")
+        if self.resource_type is not None:
+            object.__setattr__(self, "resource_type", _require_text(self.resource_type, "Group.resource_type"))
+        if self.resource_id is not None:
+            object.__setattr__(self, "resource_id", _require_text(self.resource_id, "Group.resource_id"))
+        if self.group_type is GroupType.MERCHANT and (self.resource_type is None or self.resource_id is None):
+            raise ValueError("MERCHANT groups require resource_type and resource_id")
+
+
+@dataclass(frozen=True)
+class Role:
+    role_id: RoleId | str
+    name: str
+    group_type: GroupType | str
+    active: bool = True
+    merchant_assignable: bool = False
+    owner_role: bool = False
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.role_id, RoleId):
+            object.__setattr__(self, "role_id", RoleId(str(self.role_id)))
+        object.__setattr__(self, "name", _require_text(self.name, "Role.name"))
+        object.__setattr__(self, "group_type", _coerce_group_type(self.group_type))
+        if not isinstance(self.active, bool):
+            raise ValueError("Role.active must be a bool")
+        if not isinstance(self.merchant_assignable, bool):
+            raise ValueError("Role.merchant_assignable must be a bool")
+        if not isinstance(self.owner_role, bool):
+            raise ValueError("Role.owner_role must be a bool")
+        if self.owner_role and self.merchant_assignable:
+            raise ValueError("owner roles are not merchant-facing assignable templates")
+
+
+@dataclass(frozen=True)
+class Permission:
+    name: PermissionName | str
+    description: str = ""
+    active: bool = True
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.name, PermissionName):
+            object.__setattr__(self, "name", PermissionName(str(self.name)))
+        if self.description:
+            object.__setattr__(self, "description", _require_text(self.description, "Permission.description"))
+        if not isinstance(self.active, bool):
+            raise ValueError("Permission.active must be a bool")
+
+
+@dataclass(frozen=True)
+class RolePermission:
+    role_id: RoleId | str
+    permission: PermissionName | str
+    active: bool = True
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.role_id, RoleId):
+            object.__setattr__(self, "role_id", RoleId(str(self.role_id)))
+        if not isinstance(self.permission, PermissionName):
+            object.__setattr__(self, "permission", PermissionName(str(self.permission)))
+        if not isinstance(self.active, bool):
+            raise ValueError("RolePermission.active must be a bool")
+
+
+@dataclass(frozen=True)
+class GroupMembership:
+    user_id: UserId
+    group_id: GroupId
+    role_id: RoleId | str
+    active: bool = True
+    joined_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.user_id, UserId):
+            raise ValueError("GroupMembership.user_id must be a UserId")
+        if not isinstance(self.group_id, GroupId):
+            raise ValueError("GroupMembership.group_id must be a GroupId")
+        if not isinstance(self.role_id, RoleId):
+            object.__setattr__(self, "role_id", RoleId(str(self.role_id)))
+        if not isinstance(self.active, bool):
+            raise ValueError("GroupMembership.active must be a bool")
+        if self.joined_at is not None:
+            object.__setattr__(
+                self,
+                "joined_at",
+                _require_aware_datetime(self.joined_at, "GroupMembership.joined_at"),
+            )
+
+
+@dataclass(frozen=True)
+class GroupInvitation:
+    invitation_id: InvitationId
+    group_id: GroupId
+    invited_role_id: RoleId | str
+    invited_by_user_id: UserId
+    status: InvitationStatus | str
+    created_at: datetime
+    target_user_id: UserId | None = None
+    target_wallet: WalletAddress | str | None = None
+    target_email: str | None = None
+    expires_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.invitation_id, InvitationId):
+            raise ValueError("GroupInvitation.invitation_id must be an InvitationId")
+        if not isinstance(self.group_id, GroupId):
+            raise ValueError("GroupInvitation.group_id must be a GroupId")
+        if not isinstance(self.invited_role_id, RoleId):
+            object.__setattr__(self, "invited_role_id", RoleId(str(self.invited_role_id)))
+        if not isinstance(self.invited_by_user_id, UserId):
+            raise ValueError("GroupInvitation.invited_by_user_id must be a UserId")
+        object.__setattr__(self, "status", _coerce_invitation_status(self.status))
+        object.__setattr__(self, "created_at", _require_aware_datetime(self.created_at, "GroupInvitation.created_at"))
+        if self.target_user_id is not None and not isinstance(self.target_user_id, UserId):
+            raise ValueError("GroupInvitation.target_user_id must be a UserId")
+        if self.target_wallet is not None:
+            object.__setattr__(self, "target_wallet", _coerce_wallet(self.target_wallet))
+        if self.target_email is not None:
+            object.__setattr__(self, "target_email", _require_text(self.target_email, "GroupInvitation.target_email"))
+        if self.expires_at is not None:
+            object.__setattr__(self, "expires_at", _require_aware_datetime(self.expires_at, "GroupInvitation.expires_at"))
+        if self.target_user_id is None and self.target_wallet is None and self.target_email is None:
+            raise ValueError("GroupInvitation requires a user, wallet, or email target")
+
+    def is_open_for(self, user_id: UserId, wallet: WalletAddress | str | None, now: datetime) -> bool:
+        now = _require_aware_datetime(now, "now")
+        if self.status is not InvitationStatus.PENDING:
+            return False
+        if self.expires_at is not None and now >= self.expires_at:
+            return False
+        if self.target_user_id is not None and self.target_user_id != user_id:
+            return False
+        if self.target_wallet is not None and wallet is not None and self.target_wallet != _coerce_wallet(wallet):
+            return False
+        return True
+
+
+@dataclass(frozen=True)
+class SessionMembership:
+    group_id: GroupId
+    group_type: GroupType | str
+    role_id: RoleId | str
+    resource_type: str | None = None
+    resource_id: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.group_id, GroupId):
+            raise ValueError("SessionMembership.group_id must be a GroupId")
+        object.__setattr__(self, "group_type", _coerce_group_type(self.group_type))
+        if not isinstance(self.role_id, RoleId):
+            object.__setattr__(self, "role_id", RoleId(str(self.role_id)))
+        if self.resource_type is not None:
+            object.__setattr__(self, "resource_type", _require_text(self.resource_type, "SessionMembership.resource_type"))
+        if self.resource_id is not None:
+            object.__setattr__(self, "resource_id", _require_text(self.resource_id, "SessionMembership.resource_id"))
+
+    def to_payload(self) -> dict[str, str | None]:
+        return {
+            "groupId": str(self.group_id),
+            "groupType": self.group_type.value,
+            "roleId": str(self.role_id),
+            "resourceType": self.resource_type,
+            "resourceId": self.resource_id,
+        }
 
 
 @dataclass(frozen=True)
@@ -416,6 +684,24 @@ def _coerce_user_role(value: UserRole | str) -> UserRole:
         return UserRole(str(value))
     except ValueError as exc:
         raise ValueError("User.role must be a UserRole") from exc
+
+
+def _coerce_group_type(value: GroupType | str) -> GroupType:
+    if isinstance(value, GroupType):
+        return value
+    try:
+        return GroupType(str(value))
+    except ValueError as exc:
+        raise ValueError("Group.group_type must be PERSONAL, MERCHANT, or PLATFORM") from exc
+
+
+def _coerce_invitation_status(value: InvitationStatus | str) -> InvitationStatus:
+    if isinstance(value, InvitationStatus):
+        return value
+    try:
+        return InvitationStatus(str(value))
+    except ValueError as exc:
+        raise ValueError("GroupInvitation.status is invalid") from exc
 
 
 def _coerce_challenge_status(value: ChallengeStatus | str) -> ChallengeStatus:

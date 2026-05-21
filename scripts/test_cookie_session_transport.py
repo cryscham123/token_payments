@@ -100,12 +100,14 @@ def test_hmac_session_signer_uses_kid_claims_expiry_and_previous_key_verificatio
         "sub",
         "sessionId",
         "walletAddress",
-        "role",
+        "activeGroupId",
+        "groupMemberships",
         "iat",
         "exp",
         "typ",
         "jti",
     } <= set(payload)
+    assert "role" not in payload
     assert payload["typ"] == "access"
     assert payload["jti"] == "jti-new"
     assert new_signer.verify(old_token, expected_type="access", now=NOW).jti == "jti-old"
@@ -138,7 +140,9 @@ def test_cookie_transport_serializes_secure_http_only_cookies_and_extracts_auth_
     assert request_context.user_id == USER_ID
     assert request_context.session_id == SESSION_ID
     assert request_context.wallet_address == WALLET
-    assert request_context.role == UserRole.CUSTOMER.value
+    assert request_context.role is None
+    assert request_context.active_group_id == str(USER_ID)
+    assert request_context.scopes == ("user:self",)
     assert request_context.refresh_token_hash == {
         "hash": _refresh_hash(refresh_token, rotation_version=3).hash,
         "salt": SESSION_ID,
@@ -335,7 +339,17 @@ def _claims(*, token_type: str, expires_at: datetime, rotation_version: int = 0)
         user_id=USER_ID,
         session_id=SESSION_ID,
         wallet_address=WALLET,
-        role=UserRole.CUSTOMER.value,
+        active_group_id=USER_ID,
+        group_memberships=(
+            {
+                "groupId": USER_ID,
+                "groupType": "PERSONAL",
+                "roleId": "PERSONAL_CUSTOMER",
+                "resourceType": "user",
+                "resourceId": USER_ID,
+            },
+        ),
+        scopes=("user:self",),
         issued_at=NOW,
         expires_at=expires_at,
         token_type=token_type,

@@ -22,6 +22,7 @@ from .http import (
     HttpRoute,
     HttpRouteSpec,
     HttpRouter,
+    MERCHANT_MEMBERSHIP_HTTP_ROUTES,
     WsgiApplication,
     WsgiStartResponse,
     build_wsgi_app,
@@ -30,6 +31,7 @@ from .http import (
     list_http_route_specs,
     register_auth_routes,
     register_checkout_routes,
+    register_merchant_membership_routes,
     register_order_routes,
     register_operator_action_routes,
     register_operator_routes,
@@ -70,6 +72,7 @@ from .operator_actions import (
 from .orders import OrdersApi
 from .payments import PaymentsApi
 from .inventory import StoreOwnerInventoryApi
+from .merchant import MerchantMembershipApi
 from .store_catalog import StoreCatalogApi
 
 _FASTAPI_ADAPTER_EXPORTS = frozenset(
@@ -107,6 +110,8 @@ __all__ = [
     "IDEMPOTENCY_KEY_HEADER",
     "IdempotencyKeyConflict",
     "JsonValue",
+    "MERCHANT_MEMBERSHIP_HTTP_ROUTES",
+    "MerchantMembershipApi",
     "ORDER_HTTP_ROUTES",
     "OPERATOR_ACTION_HTTP_ROUTES",
     "OPERATOR_HTTP_ROUTES",
@@ -152,6 +157,7 @@ __all__ = [
     "list_http_route_specs",
     "register_auth_routes",
     "register_checkout_routes",
+    "register_merchant_membership_routes",
     "register_order_routes",
     "register_operator_action_routes",
     "register_operator_routes",

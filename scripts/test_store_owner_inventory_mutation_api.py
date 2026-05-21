@@ -200,6 +200,7 @@ def _router(
         auth_context_factory=lambda _request: ApiAuthContext(
             user_id=str(OWNER_ID),
             role=UserRole.STORE_OWNER.value,
+            scopes=("inventory:write",),
             session_id="session-cookie",
         ),
         allow_dev_auth_headers=False,

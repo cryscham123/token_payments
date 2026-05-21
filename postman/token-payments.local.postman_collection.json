@@ -690,7 +690,7 @@
         {
           "id": "grantStoreMembership",
           "name": "Admin grant store membership",
-          "description": "Admin-only membership grant for store-scoped OWNER or MANAGER permissions.",
+          "description": "Admin-only compatibility membership grant that also links the merchant group role template.",
           "request": {
             "method": "POST",
             "header": [
@@ -721,7 +721,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"userId\": \"{{storeOwnerUserId}}\",\n  \"role\": \"OWNER\",\n  \"active\": true\n}"
+              "raw": "{\n  \"userId\": \"{{storeOwnerUserId}}\",\n  \"roleId\": \"MERCHANT_MANAGER\",\n  \"active\": true\n}"
             }
           }
         },
@@ -766,7 +766,7 @@
         {
           "id": "listStoreOwnerInventory",
           "name": "List store owner inventory",
-          "description": "Lists inventory rows visible to the authenticated STORE_OWNER or ADMIN session.",
+          "description": "Lists inventory rows visible through scoped merchant or platform inventory permissions.",
           "request": {
             "method": "GET",
             "header": [],
@@ -791,7 +791,7 @@
         {
           "id": "increaseStoreOwnerInventoryStock",
           "name": "Increase store owner inventory stock",
-          "description": "Records audited stock intake for a product. Requires STORE_OWNER ownership or ADMIN role.",
+          "description": "Records audited stock intake for a product. Requires scoped merchant or platform inventory permission.",
           "request": {
             "method": "POST",
             "header": [
@@ -945,6 +945,235 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"reason\": \"Postman sale resume smoke\"\n}"
+            }
+          }
+        },
+        {
+          "id": "listMerchantStoreMembers",
+          "name": "List merchant store members",
+          "description": "Lists members in the scoped merchant group for the store.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/merchant/stores/{{storeId}}/members",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "merchant",
+                "stores",
+                "{{storeId}}",
+                "members"
+              ]
+            }
+          }
+        },
+        {
+          "id": "listMerchantStoreInvitations",
+          "name": "List merchant store invitations",
+          "description": "Lists merchant group invitations for the scoped store.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/merchant/stores/{{storeId}}/invitations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "merchant",
+                "stores",
+                "{{storeId}}",
+                "invitations"
+              ]
+            }
+          }
+        },
+        {
+          "id": "createMerchantStoreInvitation",
+          "name": "Create merchant store invitation",
+          "description": "Invites a user to a server-defined non-owner merchant role template.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "postman-merchant-invite-001"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/merchant/stores/{{storeId}}/invitations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "merchant",
+                "stores",
+                "{{storeId}}",
+                "invitations"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetWallet\": \"{{merchantInviteWallet}}\",\n  \"roleId\": \"MERCHANT_STAFF\"\n}"
+            }
+          }
+        },
+        {
+          "id": "acceptMerchantInvitation",
+          "name": "Accept merchant invitation",
+          "description": "Accepts a pending merchant invitation for the authenticated target user.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/merchant/invitations/{{invitationId}}/accept",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "merchant",
+                "invitations",
+                "{{invitationId}}",
+                "accept"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        },
+        {
+          "id": "revokeMerchantInvitation",
+          "name": "Revoke merchant invitation",
+          "description": "Revokes a pending merchant invitation in the scoped merchant group.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/merchant/invitations/{{invitationId}}/revoke",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "merchant",
+                "invitations",
+                "{{invitationId}}",
+                "revoke"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        },
+        {
+          "id": "updateMerchantStoreMemberRole",
+          "name": "Update merchant store member role",
+          "description": "Changes a non-owner merchant member to another server-defined staff role template.",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/merchant/stores/{{storeId}}/members/{{userId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "merchant",
+                "stores",
+                "{{storeId}}",
+                "members",
+                "{{userId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roleId\": \"MERCHANT_MANAGER\"\n}"
+            }
+          }
+        },
+        {
+          "id": "removeMerchantStoreMember",
+          "name": "Remove merchant store member",
+          "description": "Deactivates a non-owner merchant member in the scoped merchant group.",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/merchant/stores/{{storeId}}/members/{{userId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "merchant",
+                "stores",
+                "{{storeId}}",
+                "members",
+                "{{userId}}"
+              ]
+            }
+          }
+        },
+        {
+          "id": "getMerchantRoleCatalog",
+          "name": "Get merchant role catalog",
+          "description": "Returns server-defined merchant staff role templates without raw permission mutation.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/merchant/role-catalog",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "merchant",
+                "role-catalog"
+              ]
             }
           }
         },

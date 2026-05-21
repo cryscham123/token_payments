@@ -89,6 +89,7 @@ def test_inventory_mutation_audit_records_before_after_reason_request_and_idempo
             request_id="req-stock-intake-audit-001",
             idempotency_key="stock-intake-audit-001",
             recorded_at=NOW,
+            actor_store_role="OWNER",
         )
     ]
 
@@ -147,7 +148,12 @@ class ApiFixture:
 
 
 def _auth(user_id: UserId, role: UserRole) -> ApiAuthContext:
-    return ApiAuthContext(user_id=str(user_id), role=role.value, session_id="session-cookie")
+    scopes = {
+        UserRole.ADMIN: ("inventory:read:any", "inventory:write:any"),
+        UserRole.STORE_OWNER: ("inventory:read", "inventory:write"),
+        UserRole.CUSTOMER: (),
+    }[role]
+    return ApiAuthContext(user_id=str(user_id), role=role.value, session_id="session-cookie", scopes=scopes)
 
 
 def _inventory(store_id: StoreId, *, available: int) -> ProductInventory:
@@ -217,3 +223,6 @@ class FakeInventoryQuery:
 
     def owner_for_store(self, store_id: StoreId) -> UserId | None:
         return self.owners.get(store_id)
+
+    def store_role_for_user(self, store_id: StoreId, user_id: UserId) -> str | None:
+        return "OWNER" if self.owners.get(store_id) == user_id else None

@@ -72,8 +72,14 @@ def decode(body: bytes) -> dict[str, Any]:
     return decoded
 
 
-def auth(user_id: UserId, role: UserRole) -> ApiAuthContext:
-    return ApiAuthContext(user_id=str(user_id), role=role.value, session_id="session-cookie")
+def auth(user_id: UserId, role: UserRole, *, scopes: tuple[str, ...] | None = None) -> ApiAuthContext:
+    if scopes is None:
+        scopes = (
+            ("admin:provision", "rbac:manage", "product:write:any")
+            if role is UserRole.ADMIN
+            else ("product:write", "inventory:read", "inventory:write")
+        )
+    return ApiAuthContext(user_id=str(user_id), role=role.value, scopes=scopes, session_id="session-cookie")
 
 
 def catalog_router(repository: "FakeStoreCatalogRepository", auth_context: ApiAuthContext | None) -> HttpRouter:

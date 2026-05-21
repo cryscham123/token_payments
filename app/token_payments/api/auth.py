@@ -154,7 +154,6 @@ def _user_payload(user: User) -> dict[str, Any]:
     return {
         "userId": str(user.user_id),
         "walletAddress": str(user.primary_wallet),
-        "role": user.role.value,
         "active": user.active,
         "lastLoginAt": user.last_login_at.isoformat() if user.last_login_at is not None else None,
     }

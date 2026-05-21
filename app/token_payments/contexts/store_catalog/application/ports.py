@@ -64,6 +64,10 @@ class CatalogAuditRecord:
     before: Mapping[str, Any]
     after: Mapping[str, Any]
     recorded_at: datetime
+    group_id: str | None = None
+    permission: str | None = None
+    resource_type: str | None = None
+    resource_id: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.actor_user_id, UserId):
@@ -81,6 +85,10 @@ class CatalogAuditRecord:
             raise ValueError("CatalogAuditRecord before/after must be mappings")
         if not isinstance(self.recorded_at, datetime) or self.recorded_at.tzinfo is None:
             raise ValueError("CatalogAuditRecord.recorded_at must be timezone-aware")
+        for field_name in ("group_id", "permission", "resource_type", "resource_id"):
+            value = getattr(self, field_name)
+            if value is not None:
+                object.__setattr__(self, field_name, _text(str(value), field_name))
 
 
 class CatalogWriteRepository(Protocol):
@@ -143,4 +151,3 @@ def _text(value: str, field_name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field_name} must be a non-empty string")
     return value.strip()
-

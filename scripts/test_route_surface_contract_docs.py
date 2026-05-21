@@ -14,8 +14,8 @@ def test_api_spec_documents_current_public_http_route_manifest() -> None:
     api_spec = _read("docs/API_SPEC.md")
     manifest = list(http_route_manifest())
 
-    assert len(manifest) == 25
-    assert "Public HTTP route surface is exactly the current 25-route manifest" in api_spec
+    assert len(manifest) == 33
+    assert "Public HTTP route surface is exactly the current 33-route manifest" in api_spec
     for entry in manifest:
         assert f"`{entry['operationId']}`" in api_spec
         assert f"`{entry['path']}`" in api_spec
@@ -30,6 +30,7 @@ def test_api_spec_separates_http_message_and_internal_inputs() -> None:
         "Internal application port surface",
         "Store owner inventory API surface",
         "Admin store catalog provisioning API surface",
+        "Externally exposed RBAC and membership API surface",
     ):
         assert heading in api_spec
 
@@ -38,8 +39,9 @@ def test_api_spec_separates_http_message_and_internal_inputs() -> None:
         "store owner manual order approval HTTP API is not in current scope",
         "`ReserveInventoryCommand`, `ReleaseInventoryCommand`, and `ConfirmInventoryCommand` are checkout saga internal commands",
         "Store owners can query or mutate only own store inventory",
-        "admin can query or mutate any store inventory",
+        "phase 22 replaces that legacy role shortcut with explicit platform policy permission",
         "store ownership/membership, not a global STORE_OWNER account role",
+        "MERCHANT_OWNER assignment or transfer is not merchant-facing",
     ):
         assert phrase in api_spec
 

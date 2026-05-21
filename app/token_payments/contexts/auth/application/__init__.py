@@ -2,6 +2,7 @@
 
 from .ports import (
     AuthEventPublisher,
+    AuthRbacRepository,
     AuthSessionRepository,
     AuthUseCase,
     CurrentUserQuery,
@@ -18,6 +19,15 @@ from .ports import (
     WalletSignatureVerificationResult,
     WalletSignatureVerifier,
 )
+from .authorization import AuthorizationPolicy, AuthorizationRepository, ResourceRef
+from .merchant_membership import (
+    MERCHANT_ASSIGNABLE_ROLE_IDS,
+    OWNER_ROLE_ID,
+    MerchantActor,
+    MerchantMembershipRepository,
+    MerchantMembershipResult,
+    MerchantMembershipService,
+)
 from .service import AuthApplicationError, AuthApplicationService, AuthErrorCode
 from .siwe import SIWE_VERSION, SiweMessage, build_siwe_message, parse_siwe_message
 
@@ -26,16 +36,26 @@ __all__ = [
     "AuthApplicationService",
     "AuthErrorCode",
     "AuthEventPublisher",
+    "AuthRbacRepository",
     "AuthSessionRepository",
     "AuthUseCase",
+    "AuthorizationPolicy",
+    "AuthorizationRepository",
     "CurrentUserQuery",
     "LoginChallengeRepository",
     "LoginChallengeResult",
     "LoginResult",
     "LoginWithMetaMaskCommand",
     "LogoutCommand",
+    "MERCHANT_ASSIGNABLE_ROLE_IDS",
+    "OWNER_ROLE_ID",
+    "MerchantActor",
+    "MerchantMembershipRepository",
+    "MerchantMembershipResult",
+    "MerchantMembershipService",
     "RefreshSessionCommand",
     "RequestLoginChallengeCommand",
+    "ResourceRef",
     "SIWE_VERSION",
     "SiweMessage",
     "TokenIssuer",

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, fields, is_dataclass
+from dataclasses import InitVar, dataclass, field, fields, is_dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import StrEnum
@@ -23,12 +23,16 @@ class ApiAuthContext:
     user_id: str | None = None
     session_id: str | None = None
     wallet_address: str | None = None
-    role: str | None = None
+    active_group_id: str | None = None
+    group_memberships: tuple[Mapping[str, JsonValue], ...] = ()
     scopes: tuple[str, ...] = ()
     token_type: str | None = None
     refresh_token_hash: Mapping[str, JsonValue] | None = None
+    role: InitVar[str | None] = None
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, role: str | None) -> None:
+        if isinstance(role, property):
+            role = None
         if self.user_id is not None:
             object.__setattr__(self, "user_id", _require_text(self.user_id, "ApiAuthContext.user_id"))
         if self.session_id is not None:
@@ -39,8 +43,18 @@ class ApiAuthContext:
                 "wallet_address",
                 _require_text(self.wallet_address, "ApiAuthContext.wallet_address"),
             )
-        if self.role is not None:
-            object.__setattr__(self, "role", _require_text(self.role, "ApiAuthContext.role"))
+        if self.active_group_id is not None:
+            object.__setattr__(self, "active_group_id", _require_text(self.active_group_id, "ApiAuthContext.active_group_id"))
+        if not isinstance(self.group_memberships, tuple):
+            raise ValueError("ApiAuthContext.group_memberships must be a tuple")
+        object.__setattr__(
+            self,
+            "group_memberships",
+            tuple(
+                MappingProxyType(_to_json_safe_mapping(membership, "ApiAuthContext.group_memberships"))
+                for membership in self.group_memberships
+            ),
+        )
         if not isinstance(self.scopes, tuple):
             raise ValueError("ApiAuthContext.scopes must be a tuple")
         object.__setattr__(
@@ -56,6 +70,17 @@ class ApiAuthContext:
                 "refresh_token_hash",
                 MappingProxyType(_to_json_safe_mapping(self.refresh_token_hash, "ApiAuthContext.refresh_token_hash")),
             )
+        object.__setattr__(
+            self,
+            "_legacy_role",
+            _require_text(role, "ApiAuthContext.role") if role is not None else None,
+        )
+
+    @property
+    def role(self) -> str | None:
+        """Legacy role claim view retained while tests and old adapters migrate."""
+
+        return getattr(self, "_legacy_role", None)
 
 
 @dataclass(frozen=True)

@@ -180,8 +180,7 @@ def test_operator_action_http_routes_serialize_forbidden_and_validation_errors()
             "Content-Type": "application/json",
             "X-Request-Id": "req-action-forbidden",
             "X-User-Id": "customer-1",
-            "X-User-Role": UserRole.CUSTOMER.value,
-            "X-User-Scopes": "operator:action",
+            "X-User-Scopes": "operator:read",
         },
         body=_json_body({"reason": "customer attempted manual cancellation"}),
         received_at=NOW,
@@ -203,7 +202,7 @@ def test_operator_action_http_routes_serialize_forbidden_and_validation_errors()
     assert forbidden_payload["commandId"] == str(CommandId.for_order_action(ORDER_ID, "CancelOrderCommand"))
     assert forbidden_payload["messageId"]
     assert forbidden_payload["auditId"] is None
-    assert forbidden_payload["summary"] == "operator ADMIN role is required to execute cancelOrder"
+    assert forbidden_payload["summary"] == "operator:action permission is required to execute cancelOrder"
     assert forbidden_payload["details"] == {
         "errorCode": "OPERATOR_FORBIDDEN",
         "orderId": str(ORDER_ID),
@@ -277,13 +276,12 @@ def _admin_headers(request_id: str) -> dict[str, str]:
         "Content-Type": "application/json",
         "X-Request-Id": request_id,
         "X-User-Id": "operator-1",
-        "X-User-Role": UserRole.ADMIN.value,
-        "X-User-Scopes": "operator:read, operator:action",
+        "X-User-Scopes": "operator:read,operator:action,outbox:retry",
     }
 
 
 def _admin_claims() -> OperatorClaims:
-    return OperatorClaims(user_id="operator-1", role=UserRole.ADMIN, scopes=("operator:read", "operator:action"))
+    return OperatorClaims(user_id="operator-1", role=UserRole.ADMIN, scopes=("operator:read", "operator:action", "outbox:retry"))
 
 
 def _json_body(payload: dict[str, object]) -> bytes:

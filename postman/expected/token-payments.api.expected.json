@@ -28,6 +28,14 @@
     "cancelOperatorOrder",
     "retryOperatorOutboxMessage",
     "replayOperatorMessage",
+    "listMerchantStoreMembers",
+    "listMerchantStoreInvitations",
+    "createMerchantStoreInvitation",
+    "acceptMerchantInvitation",
+    "revokeMerchantInvitation",
+    "updateMerchantStoreMemberRole",
+    "removeMerchantStoreMember",
+    "getMerchantRoleCatalog",
     "expiredAccessTokenRejected",
     "invalidSignatureAccessTokenRejected"
   ],
@@ -176,7 +184,10 @@
       },
       "body": {
         "walletAddress": "0x1111111111111111111111111111111111111111",
-        "role": "CUSTOMER"
+        "activeGroupId": "<personal-group-id>",
+        "scopes": [
+          "user:self"
+        ]
       }
     },
     {
@@ -302,6 +313,12 @@
         "operation": "grantStoreMembership",
         "membership": {
           "role": "MANAGER",
+          "active": true
+        },
+        "merchantGroup": {
+          "groupId": "<merchant-group-id>",
+          "userId": "<user-id>",
+          "roleId": "MERCHANT_MANAGER",
           "active": true
         },
         "ownershipCreated": true
@@ -444,6 +461,148 @@
         "inventory": {
           "saleStatus": "ACTIVE"
         }
+      }
+    },
+    {
+      "operationId": "listMerchantStoreMembers",
+      "requestName": "listMerchantStoreMembers",
+      "method": "GET",
+      "path": "/merchant/stores/{storeId}/members",
+      "status": 200,
+      "headers": {
+        "X-Request-Id": "postman-listMerchantStoreMembers"
+      },
+      "body": {
+        "members": [
+          {
+            "userId": "33333333-3333-4333-8333-333333333333",
+            "groupId": "66666666-6666-4666-8666-666666666666",
+            "roleId": "MERCHANT_OWNER",
+            "active": true
+          }
+        ]
+      }
+    },
+    {
+      "operationId": "listMerchantStoreInvitations",
+      "requestName": "listMerchantStoreInvitations",
+      "method": "GET",
+      "path": "/merchant/stores/{storeId}/invitations",
+      "status": 200,
+      "headers": {
+        "X-Request-Id": "postman-listMerchantStoreInvitations"
+      },
+      "body": {
+        "invitations": []
+      }
+    },
+    {
+      "operationId": "createMerchantStoreInvitation",
+      "requestName": "createMerchantStoreInvitation",
+      "method": "POST",
+      "path": "/merchant/stores/{storeId}/invitations",
+      "status": 201,
+      "headers": {
+        "X-Request-Id": "postman-createMerchantStoreInvitation"
+      },
+      "body": {
+        "invitation": {
+          "invitationId": "<invitation-id>",
+          "roleId": "MERCHANT_STAFF",
+          "status": "PENDING",
+          "targetWallet": "0x5555555555555555555555555555555555555555"
+        }
+      }
+    },
+    {
+      "operationId": "acceptMerchantInvitation",
+      "requestName": "acceptMerchantInvitation",
+      "method": "POST",
+      "path": "/merchant/invitations/{invitationId}/accept",
+      "status": 200,
+      "headers": {
+        "X-Request-Id": "postman-acceptMerchantInvitation"
+      },
+      "body": {
+        "membership": {
+          "userId": "<user-id>",
+          "roleId": "MERCHANT_STAFF",
+          "active": true
+        }
+      }
+    },
+    {
+      "operationId": "revokeMerchantInvitation",
+      "requestName": "revokeMerchantInvitation",
+      "method": "POST",
+      "path": "/merchant/invitations/{invitationId}/revoke",
+      "status": 200,
+      "headers": {
+        "X-Request-Id": "postman-revokeMerchantInvitation"
+      },
+      "body": {
+        "invitation": {
+          "invitationId": "<invitation-id>",
+          "status": "REVOKED"
+        }
+      }
+    },
+    {
+      "operationId": "updateMerchantStoreMemberRole",
+      "requestName": "updateMerchantStoreMemberRole",
+      "method": "PATCH",
+      "path": "/merchant/stores/{storeId}/members/{userId}",
+      "status": 200,
+      "headers": {
+        "X-Request-Id": "postman-updateMerchantStoreMemberRole"
+      },
+      "body": {
+        "membership": {
+          "userId": "<user-id>",
+          "roleId": "MERCHANT_MANAGER",
+          "active": true
+        }
+      }
+    },
+    {
+      "operationId": "removeMerchantStoreMember",
+      "requestName": "removeMerchantStoreMember",
+      "method": "DELETE",
+      "path": "/merchant/stores/{storeId}/members/{userId}",
+      "status": 200,
+      "headers": {
+        "X-Request-Id": "postman-removeMerchantStoreMember"
+      },
+      "body": {
+        "membership": {
+          "userId": "<user-id>",
+          "roleId": "MERCHANT_STAFF",
+          "active": false
+        }
+      }
+    },
+    {
+      "operationId": "getMerchantRoleCatalog",
+      "requestName": "getMerchantRoleCatalog",
+      "method": "GET",
+      "path": "/merchant/role-catalog",
+      "status": 200,
+      "headers": {
+        "X-Request-Id": "postman-getMerchantRoleCatalog"
+      },
+      "body": {
+        "roles": [
+          {
+            "roleId": "MERCHANT_MANAGER",
+            "merchantAssignable": true,
+            "rawPermissionMutationAllowed": false
+          },
+          {
+            "roleId": "MERCHANT_STAFF",
+            "merchantAssignable": true,
+            "rawPermissionMutationAllowed": false
+          }
+        ]
       }
     },
     {

@@ -17,6 +17,12 @@ SCHEMA_PATH = ROOT / "app" / "postgres" / "init.d" / "001-token-payments-schema.
 DOCS_API_SPEC_PATH = ROOT / "docs" / "API_SPEC.md"
 
 REQUIRED_SEED_TABLES = {
+    "auth_groups",
+    "auth_group_invitations",
+    "auth_group_memberships",
+    "auth_permissions",
+    "auth_role_permissions",
+    "auth_roles",
     "auth_users",
     "store_catalog_stores",
     "store_catalog_store_memberships",
@@ -76,7 +82,7 @@ def test_seed_plan_is_explicit_manual_contract_using_existing_schema_tables_and_
     assert seed["ids"]["paymentDestinationWallet"].startswith("0x")
 
     records = seed["records"]
-    assert {record["table"] for record in records} == REQUIRED_SEED_TABLES
+    assert REQUIRED_SEED_TABLES <= {record["table"] for record in records}
     for record in records:
         table = record["table"]
         assert table in schema

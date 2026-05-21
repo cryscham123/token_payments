@@ -221,11 +221,15 @@ class OperatorActionPolicy(Protocol):
 
 
 class AdminRoleOperatorActionPolicy:
-    """Action policy that requires an ADMIN role and is separate from read-only observability policy."""
+    """Compatibility class name for phase-22 operator action permissions."""
 
     def can_execute_action(self, claims: OperatorClaims, action: OperatorActionName | str) -> bool:
-        _coerce_action(action, "action")
-        return claims.role is UserRole.ADMIN
+        action_name = _coerce_action(action, "action")
+        if "operator:action" not in claims.scopes:
+            return False
+        if action_name is OperatorActionName.RETRY_OUTBOX_MESSAGE:
+            return "outbox:retry" in claims.scopes
+        return True
 
 
 class CancelOrderCommandHandler(Protocol):
@@ -509,7 +513,7 @@ class OperatorCancelOrderActionExecutor:
             return self._rejected_result(
                 action_command,
                 cancel_command,
-                summary="operator ADMIN role is required to execute cancelOrder",
+                summary="operator:action permission is required to execute cancelOrder",
                 details={"errorCode": "OPERATOR_FORBIDDEN", "orderId": str(cancel_command.order_id)},
             )
 
@@ -912,15 +916,15 @@ def _claims_from_request(request: ApiRequest) -> OperatorClaims:
     if request.auth_context is not None:
         return OperatorClaims(
             user_id=request.auth_context.user_id,
-            role=_optional_role(request.auth_context.role),
             scopes=request.auth_context.scopes,
+            active_group_id=request.auth_context.active_group_id,
+            role=request.auth_context.role,
         )
     if not request.local_auth_fallback_enabled:
         return OperatorClaims()
     headers = _lower_headers(request.headers)
     return OperatorClaims(
         user_id=_optional_text(headers.get("x-user-id")),
-        role=_optional_role(headers.get("x-user-role")),
         scopes=tuple(_csv_values(headers.get("x-user-scopes"))),
     )
 
@@ -1020,6 +1024,8 @@ def _csv_values(value: object) -> tuple[str, ...]:
 
 
 def _optional_role(value: object) -> UserRole | None:
+    if isinstance(value, property):
+        return None
     text = _optional_text(value)
     if text is None:
         return None
@@ -1154,7 +1160,7 @@ def _validate_outbox_action_input(
 def _operator_actor_payload(actor: OperatorClaims) -> dict[str, JsonValue]:
     return {
         "userId": actor.user_id,
-        "role": actor.role.value if isinstance(actor.role, UserRole) else actor.role,
+        "groupId": actor.active_group_id,
         "scopes": list(actor.scopes),
     }
 

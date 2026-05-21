@@ -1145,6 +1145,7 @@ class LiveApiFacades:
     payments: Any
     catalog: Any
     inventory: Any
+    merchant: Any
     operator: Any
     operator_action: Any
 
@@ -1196,6 +1197,12 @@ def register_store_owner_inventory_routes(router: Any, inventory_api: Any) -> An
     return _register_store_owner_inventory_routes(router, inventory_api)
 
 
+def register_merchant_membership_routes(router: Any, merchant_api: Any) -> Any:
+    from token_payments.api import register_merchant_membership_routes as _register_merchant_membership_routes
+
+    return _register_merchant_membership_routes(router, merchant_api)
+
+
 def register_operator_routes(router: Any, operator_api: Any) -> Any:
     from token_payments.api import register_operator_routes as _register_operator_routes
 
@@ -1206,6 +1213,41 @@ def register_operator_action_routes(router: Any, operator_action_api: Any) -> An
     from token_payments.api import register_operator_action_routes as _register_operator_action_routes
 
     return _register_operator_action_routes(router, operator_action_api)
+
+
+class _LiveMerchantMembershipRepository:
+    """Bounded phase-22 merchant membership repository until PostgreSQL RBAC persistence is wired."""
+
+    def merchant_group_for_store(self, store_id: Any) -> Any | None:
+        return None
+
+    def members_for_group(self, group_id: Any) -> tuple[Any, ...]:
+        return ()
+
+    def get_membership(self, group_id: Any, user_id: Any) -> Any | None:
+        return None
+
+    def save_membership(self, membership: Any) -> None:
+        return None
+
+    def invitations_for_group(self, group_id: Any) -> tuple[Any, ...]:
+        return ()
+
+    def get_invitation(self, invitation_id: Any) -> Any | None:
+        return None
+
+    def save_invitation(self, invitation: Any) -> None:
+        return None
+
+    def role_catalog(self) -> tuple[Any, ...]:
+        from token_payments.contexts.auth.domain import GroupType, Role, RoleId
+
+        return (
+            Role(RoleId("MERCHANT_OWNER"), "Merchant Owner", GroupType.MERCHANT, owner_role=True),
+            Role(RoleId("MERCHANT_MANAGER"), "Merchant Manager", GroupType.MERCHANT, merchant_assignable=True),
+            Role(RoleId("MERCHANT_STAFF"), "Merchant Staff", GroupType.MERCHANT, merchant_assignable=True),
+            Role(RoleId("PLATFORM_ADMIN"), "Platform Admin", GroupType.PLATFORM),
+        )
 
 
 def build_live_api_facades(
@@ -1222,11 +1264,13 @@ def build_live_api_facades(
         OperatorApi,
         OperatorCancelOrderActionExecutor,
         OperatorOutboxActionExecutor,
+        MerchantMembershipApi,
         OrdersApi,
         PaymentsApi,
         StoreCatalogApi,
         StoreOwnerInventoryApi,
     )
+    from token_payments.contexts.auth.application import MerchantMembershipService
 
     live_config = config or LiveRuntimeConfig.from_env()
     live_dependencies = dependencies or LiveRuntimeDependencies()
@@ -1248,6 +1292,12 @@ def build_live_api_facades(
         inventory=StoreOwnerInventoryApi(
             query=_TransactionalInventoryQuery(live_dependencies),
             command_handler=_TransactionalStoreOwnerInventoryCommandHandler(live_dependencies),
+        ),
+        merchant=MerchantMembershipApi(
+            MerchantMembershipService(
+                _LiveMerchantMembershipRepository(),
+                invitation_id_generator=live_dependencies.id_generator,
+            )
         ),
         operator=OperatorApi(_TransactionalOperatorObservabilityQuery(live_dependencies)),
         operator_action=OperatorActionApi(
@@ -1285,6 +1335,7 @@ def build_live_api_router(
     register_payment_routes(router, facades.payments)
     register_store_catalog_routes(router, facades.catalog)
     register_store_owner_inventory_routes(router, facades.inventory)
+    register_merchant_membership_routes(router, facades.merchant)
     register_operator_routes(router, facades.operator)
     register_operator_action_routes(router, facades.operator_action)
     return router
@@ -1796,17 +1847,17 @@ class _RuntimeTokenIssuer:
     def _token(self, *, user: User | None, session: AuthSession, rotation_version: int) -> IssuedToken:
         now = self._clock.now()
         user_id = user.user_id if user is not None else session.user_id
-        role = user.role.value if user is not None else "CUSTOMER"
         access_expires_at = now + self._access_ttl
         refresh_expires_at = now + self._refresh_ttl
         base_claims = {
             "user_id": str(user_id),
             "session_id": str(session.session_id),
             "wallet_address": str(session.wallet),
-            "role": role,
             "issued_at": now,
             "jti": "pending",
             "rotation_version": rotation_version,
+            "scopes": (),
+            "group_memberships": (),
         }
         return IssuedToken(
             access_token=self._signer.sign(

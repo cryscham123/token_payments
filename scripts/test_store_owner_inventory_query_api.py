@@ -123,7 +123,11 @@ def _router(query: "FakeInventoryQuery", auth_context: ApiAuthContext | None) ->
 
 
 def _auth(user_id: UserId, role: UserRole) -> ApiAuthContext:
-    return ApiAuthContext(user_id=str(user_id), role=role.value, session_id="session-cookie")
+    scopes = {
+        UserRole.STORE_OWNER: ("inventory:read",),
+        UserRole.ADMIN: ("inventory:read:any",),
+    }.get(role, ())
+    return ApiAuthContext(user_id=str(user_id), role=role.value, scopes=scopes, session_id="session-cookie")
 
 
 def _snapshot(

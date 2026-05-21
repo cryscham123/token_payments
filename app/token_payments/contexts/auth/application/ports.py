@@ -14,6 +14,7 @@ from token_payments.contexts.auth.domain import (
     IssuedToken,
     LoginChallenge,
     RefreshTokenHash,
+    SessionMembership,
     SessionId,
     User,
 )
@@ -144,6 +145,17 @@ class AuthSessionRepository(Protocol):
         ...
 
     def get_by_refresh_token_hash(self, refresh_token_hash: RefreshTokenHash) -> AuthSession | None:
+        ...
+
+
+class AuthRbacRepository(Protocol):
+    def ensure_personal_membership(self, user: User, joined_at: datetime) -> tuple[SessionMembership, ...]:
+        ...
+
+    def session_memberships_for_user(self, user_id: UserId) -> tuple[SessionMembership, ...]:
+        ...
+
+    def scopes_for_user(self, user_id: UserId) -> tuple[str, ...]:
         ...
 
 

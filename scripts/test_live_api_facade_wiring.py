@@ -76,6 +76,7 @@ def test_build_live_api_router_uses_route_registration_helpers_and_manifest_cont
         "payments": composition.register_payment_routes,
         "catalog": composition.register_store_catalog_routes,
         "inventory": composition.register_store_owner_inventory_routes,
+        "merchant": composition.register_merchant_membership_routes,
         "operator": composition.register_operator_routes,
         "operator_action": composition.register_operator_action_routes,
     }
@@ -93,16 +94,17 @@ def test_build_live_api_router_uses_route_registration_helpers_and_manifest_cont
     monkeypatch.setattr(composition, "register_payment_routes", _wrap("payments"))
     monkeypatch.setattr(composition, "register_store_catalog_routes", _wrap("catalog"))
     monkeypatch.setattr(composition, "register_store_owner_inventory_routes", _wrap("inventory"))
+    monkeypatch.setattr(composition, "register_merchant_membership_routes", _wrap("merchant"))
     monkeypatch.setattr(composition, "register_operator_routes", _wrap("operator"))
     monkeypatch.setattr(composition, "register_operator_action_routes", _wrap("operator_action"))
 
     router = build_live_api_router(config=_config(), dependencies=_dependencies(session))
 
-    assert calls == ["auth", "orders", "checkout", "payments", "catalog", "inventory", "operator", "operator_action"]
+    assert calls == ["auth", "orders", "checkout", "payments", "catalog", "inventory", "merchant", "operator", "operator_action"]
     assert [(route.method, route.path_template, route.operation_id) for route in router.routes] == [
         (entry["method"], entry["path"], entry["operationId"]) for entry in http_route_manifest()
     ]
-    assert len(router.routes) == 25
+    assert len(router.routes) == 33
 
 
 def test_live_api_facade_wiring_dispatches_routes_through_injected_transactional_repositories() -> None:
@@ -118,6 +120,7 @@ def test_live_api_facade_wiring_dispatches_routes_through_injected_transactional
     assert type(facades.payments).__name__ == "PaymentsApi"
     assert type(facades.catalog).__name__ == "StoreCatalogApi"
     assert type(facades.inventory).__name__ == "StoreOwnerInventoryApi"
+    assert type(facades.merchant).__name__ == "MerchantMembershipApi"
     assert type(facades.operator).__name__ == "OperatorApi"
     assert type(facades.operator_action).__name__ == "OperatorActionApi"
 
@@ -280,8 +283,7 @@ def _admin_headers(request_id: str) -> dict[str, str]:
         "Content-Type": "application/json",
         "X-Request-Id": request_id,
         "X-User-Id": "operator-1",
-        "X-User-Role": UserRole.ADMIN.value,
-        "X-User-Scopes": "operator:read,operator:action",
+        "X-User-Scopes": "operator:read,operator:action,outbox:retry",
     }
 
 

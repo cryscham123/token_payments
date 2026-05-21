@@ -34,10 +34,12 @@ class StoreOwnerInventoryApi:
         try:
             claims = _claims_from_request(request)
             store_id = _optional_store_id(request.query.get("storeId"))
-            if claims.role is UserRole.ADMIN:
+            if "inventory:read:any" in claims.scopes:
                 snapshots = self._query.list_inventory(store_id)
-            else:
+            elif "inventory:read" in claims.scopes:
                 snapshots = self._list_inventory_for_member(claims, store_id)
+            else:
+                raise _InventoryForbidden("STORE_OWNER_INVENTORY_FORBIDDEN", "inventory:read permission is required")
             return json_response(
                 {"inventory": [_snapshot_payload(snapshot) for snapshot in snapshots]},
                 request_id=request.request_id,
@@ -114,8 +116,18 @@ class StoreOwnerInventoryApi:
         raise _InventoryForbidden("STORE_OWNER_INVENTORY_FORBIDDEN", "store ownership or membership is required")
 
     def _mutation_permission(self, claims: "_InventoryClaims", store_id: StoreId) -> "_InventoryPermission":
-        if claims.role is UserRole.ADMIN:
+        if "inventory:write:any" in claims.scopes:
             return _InventoryPermission(store_role=None, forbidden=None)
+        if "inventory:write" not in claims.scopes:
+            return _InventoryPermission(
+                store_role=None,
+                forbidden=lambda request_id: _error_response(
+                    "STORE_OWNER_INVENTORY_FORBIDDEN",
+                    "inventory:write permission is required",
+                    403,
+                    request_id,
+                ),
+            )
         store_role_for_user = getattr(self._query, "store_role_for_user", None)
         if callable(store_role_for_user):
             store_role = store_role_for_user(store_id, claims.user_id)
@@ -219,9 +231,10 @@ class _InventoryForbidden(ValueError):
 
 
 class _InventoryClaims:
-    def __init__(self, *, user_id: UserId, role: UserRole) -> None:
+    def __init__(self, *, user_id: UserId, role: UserRole, scopes: tuple[str, ...] = ()) -> None:
         self.user_id = user_id
         self.role = role
+        self.scopes = scopes
 
 
 class _InventoryPermission:
@@ -231,14 +244,18 @@ class _InventoryPermission:
 
 
 def _claims_from_request(request: ApiRequest) -> _InventoryClaims:
-    if request.auth_context is not None and request.auth_context.user_id is not None and request.auth_context.role:
-        return _InventoryClaims(user_id=UserId(request.auth_context.user_id), role=UserRole(request.auth_context.role))
+    if request.auth_context is not None and request.auth_context.user_id is not None:
+        role = UserRole(request.auth_context.role) if request.auth_context.role else UserRole.CUSTOMER
+        return _InventoryClaims(user_id=UserId(request.auth_context.user_id), role=role, scopes=request.auth_context.scopes)
     if request.local_auth_fallback_enabled:
         headers = {key.lower(): value for key, value in request.headers.items()}
         user_id = headers.get("x-user-id")
-        role = headers.get("x-user-role")
-        if user_id and role:
-            return _InventoryClaims(user_id=UserId(user_id), role=UserRole(role))
+        if user_id:
+            return _InventoryClaims(
+                user_id=UserId(user_id),
+                role=UserRole.CUSTOMER,
+                scopes=tuple(part.strip() for part in headers.get("x-user-scopes", "").split(",") if part.strip()),
+            )
     raise _AuthenticationRequired("authenticated session is required")
 
 

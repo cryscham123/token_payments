@@ -4,13 +4,13 @@ This document captures the Live API Runtime Composition boundary for the local T
 
 Default `api`/`serve-api` commands keep the no-server-start preview boundary. Use `PYTHONPATH=app python3 -m token_payments serve-api --live --dry-run` for a bounded live server plan, and `PYTHONPATH=app python3 -m token_payments serve-api --live --confirm-live-api` only when an approved live environment is ready to start the long-running server.
 
-이 문서는 `21-admin-store-catalog-provisioning`이 끝난 뒤의 로컬 backend API를 기준으로 한 최종 명세 초안이다. Route surface는 현재 `app/token_payments/api/http.py`의 route manifest 25개를 기준으로 고정한다.
+이 문서는 `22-resource-scoped-rbac`이 끝난 뒤의 로컬 backend API를 기준으로 한 최종 명세 초안이다. Route surface는 현재 `app/token_payments/api/http.py`의 route manifest 33개를 기준으로 고정한다.
 
 ## Route Surface Contract
 
 ### Public HTTP route surface
 
-Public HTTP route surface is exactly the current 25-route manifest from `app/token_payments/api/http.py`. This manifest contains auth session routes, order creation, checkout tracking, payment txHash submission, admin store catalog provisioning routes, store-owner product registration, store owner inventory query/mutation routes, operator dashboard/detail reads, and cancel/retry/replay operator actions. It does not include store owner manual approval routes or checkout saga command endpoints.
+Public HTTP route surface is exactly the current 33-route manifest from `app/token_payments/api/http.py`. This manifest contains auth session routes, order creation, checkout tracking, payment txHash submission, admin store catalog provisioning routes, store-owner product registration, store owner inventory query/mutation routes, merchant member/invitation routes, operator dashboard/detail reads, and cancel/retry/replay operator actions. It does not include store owner manual approval routes, role/permission full CRUD, platform group CRUD, personal group CRUD, owner transfer, or checkout saga command endpoints.
 
 ### Message listener input surface
 
@@ -75,7 +75,7 @@ Baseline role template catalog:
 | `PERSONAL_CUSTOMER` | personal group | `user:self` |
 | `MERCHANT_OWNER` | merchant group | store/product/inventory permissions plus merchant member read/invite/manage |
 | `MERCHANT_MANAGER` | merchant group | store/product/inventory permissions plus merchant member read/invite within policy |
-| `MERCHANT_STAFF` | merchant group | bounded store/product/inventory read/write permissions defined by seed |
+| `MERCHANT_STAFF` | merchant group | bounded store/product/inventory read permissions defined by seed |
 | `PLATFORM_OPERATOR` | platform group | operator dashboard/detail and bounded recovery permissions |
 | `PLATFORM_ADMIN` | platform group | provisioning, RBAC administration, user management, and sensitive approval permissions |
 
@@ -95,6 +95,8 @@ Externally exposed RBAC and membership API surface for phase 22:
 | `GET /merchant/role-catalog` | authenticated merchant member | Returns server-defined merchant role templates, not raw permission mutation capability |
 
 Platform group creation, platform role assignment, personal group management, permission CRUD, and owner transfer are not merchant/customer APIs. Personal groups are auto-created at signup. Merchant groups are created by store provisioning. Platform groups are seed/manual/admin-provisioned. Owner transfer is a sensitive admin/provisioning flow until a separate audited approval workflow exists.
+
+MERCHANT_OWNER assignment or transfer is not merchant-facing; merchant APIs can invite, update, or remove only non-owner staff templates selected from the server-defined merchant role catalog.
 
 Phase 23 separates user identity from user profile, store business profile from store payment settings, and product catalog from inventory. Store/product slug fields and SKU fields are not required in phase 23; public and merchant lookup starts with stable `storeId` and `productId`. Human-readable URLs and merchant-managed inventory codes are future scope. User display names, store display names, and product titles are display/search fields and may be duplicated. Settlement wallet/supported chain changes are policy-gated payment settings flows, not `updateStoreProfile`. Owner transfer, member invite/remove, and role changes belong to RBAC/membership provisioning, not store profile update.
 
@@ -133,11 +135,11 @@ Current implementation coverage that phase 22/23 must preserve or close:
 - Response body는 JSON object다.
 - 모든 response는 가능하면 `X-Request-Id` header를 포함한다.
 - Client는 `X-Request-Id`를 전달할 수 있다. 없으면 server가 결정적 request id를 생성한다.
-- 운영자 API는 phase 22 이후 server-side policy check의 `operator:read` 또는 `operator:action` permission이 필요하다. Legacy `ADMIN` role checks are compatibility only until that migration lands.
+- 운영자 API는 server-side policy check의 `operator:read` 또는 `operator:action` permission이 필요하다. Recovery outbox retry에는 `outbox:retry`도 필요하다.
 - 브라우저 client의 기본 auth transport는 `HttpOnly; Secure; SameSite=Lax` cookie다.
 - 상태 변경 요청은 cookie auth와 함께 `X-CSRF-Token` double-submit token을 전달해야 한다.
 - `Authorization: Bearer <accessToken>`은 non-browser client 또는 explicit integration fallback으로만 사용한다.
-- `X-User-Id`, `X-User-Role`, `X-User-Scopes` header는 local/dev fallback 전용이며 production/live path에서는 신뢰하지 않는다.
+- `X-User-Id`, `X-User-Scopes` header는 local/dev fallback 전용이며 production/live path에서는 신뢰하지 않는다.
 
 ## Common Headers
 
@@ -150,7 +152,6 @@ Current implementation coverage that phase 22/23 must preserve or close:
 | `X-Request-Id` | optional | idempotency/correlation용 client request id |
 | `Idempotency-Key` | recommended for mutating commands | 주문 생성, txHash 제출, operator action 중복 방지 |
 | `X-User-Id` | local/dev only | production/live path에서는 신뢰하지 않음 |
-| `X-User-Role` | local/dev only | production/live path에서는 신뢰하지 않음 |
 | `X-User-Scopes` | local/dev only | production/live path에서는 신뢰하지 않음 |
 
 ## Cookie And CSRF Policy
@@ -202,7 +203,7 @@ Request body size is bounded by `REQUEST_BODY_MAX_BYTES`. Exceeding it returns `
 
 ## Live System Routes And Observability
 
-`GET /healthz` and `GET /readyz` are live server-only system routes and are not part of the 25-route public facade manifest. `/healthz` reports process/runtime health only and must not open PostgreSQL, Kafka, Blockchain, Docker, or local `.env`. `/readyz` summarizes injected PostgreSQL/Kafka/Blockchain readiness probes; unavailable components return `503` with bounded component details.
+`GET /healthz` and `GET /readyz` are live server-only system routes and are not part of the 33-route public facade manifest. `/healthz` reports process/runtime health only and must not open PostgreSQL, Kafka, Blockchain, Docker, or local `.env`. `/readyz` summarizes injected PostgreSQL/Kafka/Blockchain readiness probes; unavailable components return `503` with bounded component details.
 
 All HTTP responses include `X-Request-Id` when a request id is known, and an incoming `X-Request-Id` is preserved. Live access log events include method, path template or route id, status, request id, duration, actor summary, and error code. Access logs must not record cookie values, signed tokens, authorization headers, private keys, signatures, or full request bodies.
 
@@ -253,6 +254,14 @@ Common status codes:
 | `correctStoreOwnerInventoryStock` | `POST` | `/store-owner/stores/{storeId}/inventory/{productId}/corrections` |
 | `pauseStoreOwnerInventorySales` | `POST` | `/store-owner/stores/{storeId}/inventory/{productId}/pause` |
 | `resumeStoreOwnerInventorySales` | `POST` | `/store-owner/stores/{storeId}/inventory/{productId}/resume` |
+| `listMerchantStoreMembers` | `GET` | `/merchant/stores/{storeId}/members` |
+| `listMerchantStoreInvitations` | `GET` | `/merchant/stores/{storeId}/invitations` |
+| `createMerchantStoreInvitation` | `POST` | `/merchant/stores/{storeId}/invitations` |
+| `acceptMerchantInvitation` | `POST` | `/merchant/invitations/{invitationId}/accept` |
+| `revokeMerchantInvitation` | `POST` | `/merchant/invitations/{invitationId}/revoke` |
+| `updateMerchantStoreMemberRole` | `PATCH` | `/merchant/stores/{storeId}/members/{userId}` |
+| `removeMerchantStoreMember` | `DELETE` | `/merchant/stores/{storeId}/members/{userId}` |
+| `getMerchantRoleCatalog` | `GET` | `/merchant/role-catalog` |
 | `getOperatorDashboard` | `GET` | `/operator/dashboard` |
 | `getOperatorOrderDetail` | `GET` | `/operator/orders/{orderId}` |
 | `getOperatorPaymentDetail` | `GET` | `/operator/payments/{paymentId}` |
@@ -629,13 +638,12 @@ Errors: `400 VALIDATION_ERROR`, `404 PAYMENT_NOT_FOUND`, `404 AUTHORIZATION_NOT_
 
 ## Operator Observability
 
-Operator auth: current compatibility uses admin role checks; phase 22 target uses `operator:read`.
+Operator auth requires `operator:read`.
 
 Local fallback headers:
 
 ```text
 X-User-Id: admin-001
-X-User-Role: ADMIN
 X-User-Scopes: operator:read,operator:action,outbox:retry
 ```
 
@@ -767,7 +775,7 @@ Errors: `400 VALIDATION_ERROR`, `403 OPERATOR_FORBIDDEN`, `404 OPERATOR_RESOURCE
 
 ## Operator Actions
 
-Operator auth: current compatibility uses admin role checks; phase 22 target uses `operator:action`. Outbox retry also requires `outbox:retry`.
+Operator auth requires `operator:action`. Outbox retry also requires `outbox:retry`.
 
 All action responses use:
 

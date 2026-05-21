@@ -5,28 +5,39 @@
     {
       "step": 0,
       "name": "rbac-domain-schema-reset",
-      "status": "pending"
+      "status": "completed",
+      "summary": "RBAC domain/schema contracts were added for group-scoped PERSONAL/MERCHANT/PLATFORM authorization, role-permission lookup, merchant invitations, store-to-group links, and legacy auth_users.role was demoted from User dataclass state to compatibility only.",
+      "completed_at": "2026-05-21T00:00:00+0900"
     },
     {
       "step": 1,
       "name": "auth-session-claims-without-global-role",
-      "status": "pending"
+      "status": "completed",
+      "summary": "Auth session claims now carry bounded activeGroupId/groupMemberships/scopes snapshots instead of a role claim, SIWE signup can seed a PERSONAL_CUSTOMER membership, refresh rebuilds claims from membership state, and cookie auth context preserves RBAC claims while treating role as legacy-only.",
+      "completed_at": "2026-05-21T00:01:00+0900"
     },
     {
       "step": 2,
       "name": "policy-enforcement-migration",
-      "status": "pending"
+      "status": "completed",
+      "summary": "AuthorizationPolicy.can(resource, permission) was added and operator read/actions, outbox retry, store catalog product writes, and inventory read/write paths now use scoped permissions/scopes instead of client role shortcuts; outbox retry requires both operator:action and outbox:retry.",
+      "completed_at": "2026-05-21T00:02:00+0900"
     },
     {
       "step": 3,
       "name": "merchant-group-membership-api",
-      "status": "pending"
+      "status": "completed",
+      "summary": "Merchant group membership APIs were added for member/invitation listing, non-owner staff invitation/accept/revoke, staff role update/removal, and role catalog; store provisioning can link a merchant group with initial MERCHANT_OWNER while merchant-facing APIs reject owner/platform role assignment.",
+      "completed_at": "2026-05-21T00:03:00+0900"
     },
     {
       "step": 4,
       "name": "rbac-seed-audit-public-verification",
-      "status": "pending"
+      "status": "completed",
+      "summary": "RBAC public contracts now cover static seed role/permission catalogs, personal/merchant/platform groups and memberships, merchant group-linked admin membership provisioning, audit dimensions for group/permission/resource fields, 33-route docs, and Postman fixtures without role-header or request-body role escalation.",
+      "completed_at": "2026-05-21T16:09:07+0900"
     }
   ],
-  "created_at": "2026-05-20T02:00:00+0900"
+  "created_at": "2026-05-20T02:00:00+0900",
+  "completed_at": "2026-05-21T16:09:07+0900"
 }

@@ -224,18 +224,22 @@ def test_operator_action_audit_record_preserves_actor_action_target_and_outcome(
     }
 
 
-def test_operator_action_policy_allows_only_admin_role_and_stays_separate_from_read_only_policy() -> None:
+def test_operator_action_policy_requires_action_scopes_and_stays_separate_from_read_only_policy() -> None:
     policy: OperatorActionPolicy = AdminRoleOperatorActionPolicy()
 
-    assert policy.can_execute_action(OperatorClaims(role=UserRole.ADMIN), OperatorActionName.CANCEL_ORDER)
+    assert policy.can_execute_action(OperatorClaims(scopes=("operator:action",)), OperatorActionName.CANCEL_ORDER)
+    assert policy.can_execute_action(
+        OperatorClaims(scopes=("operator:action", "outbox:retry")),
+        OperatorActionName.RETRY_OUTBOX_MESSAGE,
+    )
     assert not policy.can_execute_action(
-        OperatorClaims(role=UserRole.CUSTOMER, scopes=("operator:read", "operator:action")),
+        OperatorClaims(role=UserRole.CUSTOMER, scopes=("operator:read",)),
         OperatorActionName.CANCEL_ORDER,
     )
-    assert not policy.can_execute_action(OperatorClaims(role=None, scopes=("operator:action",)), OperatorActionName.REPLAY_MESSAGE)
+    assert not policy.can_execute_action(OperatorClaims(scopes=("operator:action",)), OperatorActionName.RETRY_OUTBOX_MESSAGE)
 
     read_policy = AdminRoleOperatorPolicy()
-    assert read_policy.can_read_observability(OperatorClaims(role=UserRole.ADMIN))
+    assert read_policy.can_read_observability(OperatorClaims(scopes=("operator:read",)))
     assert not hasattr(read_policy, "can_execute_action")
     assert not hasattr(policy, "can_read_observability")
 

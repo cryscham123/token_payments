@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import InitVar, dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 import base64
 import hashlib
@@ -44,19 +44,22 @@ class SessionClaims:
     user_id: str
     session_id: str
     wallet_address: str
-    role: str
     issued_at: datetime
     expires_at: datetime
     token_type: str
     jti: str
     rotation_version: int = 0
+    active_group_id: str | None = None
+    group_memberships: tuple[Mapping[str, Any], ...] = ()
     scopes: tuple[str, ...] = ()
+    role: InitVar[str | None] = None
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, role: str | None) -> None:
+        if isinstance(role, property):
+            role = None
         object.__setattr__(self, "user_id", _require_text(self.user_id, "SessionClaims.user_id"))
         object.__setattr__(self, "session_id", _require_text(self.session_id, "SessionClaims.session_id"))
         object.__setattr__(self, "wallet_address", _require_text(self.wallet_address, "SessionClaims.wallet_address"))
-        object.__setattr__(self, "role", _require_text(self.role, "SessionClaims.role"))
         object.__setattr__(self, "issued_at", _require_aware_datetime(self.issued_at, "SessionClaims.issued_at"))
         object.__setattr__(self, "expires_at", _require_aware_datetime(self.expires_at, "SessionClaims.expires_at"))
         object.__setattr__(self, "token_type", _require_text(self.token_type, "SessionClaims.token_type"))
@@ -67,6 +70,19 @@ class SessionClaims:
             or self.rotation_version < 0
         ):
             raise ValueError("SessionClaims.rotation_version must be a non-negative integer")
+        if self.active_group_id is not None:
+            object.__setattr__(
+                self,
+                "active_group_id",
+                _require_text(self.active_group_id, "SessionClaims.active_group_id"),
+            )
+        if not isinstance(self.group_memberships, tuple):
+            raise ValueError("SessionClaims.group_memberships must be a tuple")
+        object.__setattr__(
+            self,
+            "group_memberships",
+            tuple(_json_object(membership, "SessionClaims.group_memberships") for membership in self.group_memberships),
+        )
         if not isinstance(self.scopes, tuple):
             raise ValueError("SessionClaims.scopes must be a tuple")
         object.__setattr__(
@@ -74,6 +90,13 @@ class SessionClaims:
             "scopes",
             tuple(_require_text(scope, "SessionClaims.scopes") for scope in self.scopes),
         )
+        object.__setattr__(self, "_legacy_role", _require_text(role, "SessionClaims.role") if role is not None else None)
+
+    @property
+    def role(self) -> str | None:
+        """Legacy role claim view retained for old local tests."""
+
+        return getattr(self, "_legacy_role", None)
 
     def with_jti(self, jti: str) -> Self:
         return replace(self, jti=_require_text(jti, "SessionClaims.jti"))
@@ -83,7 +106,8 @@ class SessionClaims:
             "sub": self.user_id,
             "sessionId": self.session_id,
             "walletAddress": self.wallet_address,
-            "role": self.role,
+            "activeGroupId": self.active_group_id,
+            "groupMemberships": list(self.group_memberships),
             "iat": _epoch_seconds(self.issued_at),
             "exp": _epoch_seconds(self.expires_at),
             "typ": self.token_type,
@@ -98,13 +122,15 @@ class SessionClaims:
             user_id=_payload_text(payload, "sub"),
             session_id=_payload_text(payload, "sessionId"),
             wallet_address=_payload_text(payload, "walletAddress"),
-            role=_payload_text(payload, "role"),
             issued_at=_datetime_from_epoch(_payload_int(payload, "iat")),
             expires_at=_datetime_from_epoch(_payload_int(payload, "exp")),
             token_type=_payload_text(payload, "typ"),
             jti=_payload_text(payload, "jti"),
             rotation_version=_payload_int(payload, "rot", default=0),
+            active_group_id=_payload_optional_text(payload, "activeGroupId"),
+            group_memberships=tuple(_payload_object_list(payload, "groupMemberships")),
             scopes=tuple(_payload_list(payload, "scopes")),
+            role=_payload_optional_text(payload, "role"),
         )
 
 
@@ -425,10 +451,12 @@ class CookieSessionTransport:
             user_id=claims.user_id,
             session_id=claims.session_id,
             wallet_address=claims.wallet_address,
-            role=claims.role,
+            active_group_id=claims.active_group_id,
+            group_memberships=claims.group_memberships,
             scopes=claims.scopes,
             token_type=claims.token_type,
             refresh_token_hash=refresh_hash,
+            role=claims.role,
         )
 
     def _now(self) -> datetime:
@@ -568,6 +596,15 @@ def _payload_text(payload: Mapping[str, Any], key: str) -> str:
     return value.strip()
 
 
+def _payload_optional_text(payload: Mapping[str, Any], key: str) -> str | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"session token claim {key} must be a non-empty string")
+    return value.strip()
+
+
 def _payload_int(payload: Mapping[str, Any], key: str, *, default: int | None = None) -> int:
     value = payload.get(key, default)
     if isinstance(value, bool) or not isinstance(value, int):
@@ -580,6 +617,26 @@ def _payload_list(payload: Mapping[str, Any], key: str) -> tuple[str, ...]:
     if not isinstance(value, list | tuple):
         raise ValueError(f"session token claim {key} must be a list")
     return tuple(_require_text(str(item), key) for item in value)
+
+
+def _payload_object_list(payload: Mapping[str, Any], key: str) -> tuple[dict[str, Any], ...]:
+    value = payload.get(key, ())
+    if not isinstance(value, list | tuple):
+        raise ValueError(f"session token claim {key} must be a list")
+    return tuple(_json_object(item, key) for item in value)
+
+
+def _json_object(value: Any, field_name: str) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{field_name} items must be JSON objects")
+    output: dict[str, Any] = {}
+    for key, item in value.items():
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError(f"{field_name} keys must be non-empty strings")
+        if item is not None and not isinstance(item, (str, int, bool, float)):
+            raise ValueError(f"{field_name} values must be bounded JSON scalars")
+        output[key.strip()] = item
+    return output
 
 
 def _parse_positive_int(env: Mapping[str, str], key: str, default: int) -> int:

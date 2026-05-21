@@ -20,6 +20,8 @@ def test_http_adapter_public_exports_cover_router_routes_wsgi_and_manifest_helpe
         "OPERATOR_ACTION_HTTP_ROUTES",
         "OPERATOR_HTTP_ROUTES",
         "PAYMENT_HTTP_ROUTES",
+        "MERCHANT_MEMBERSHIP_HTTP_ROUTES",
+        "MerchantMembershipApi",
         "STORE_OWNER_CATALOG_HTTP_ROUTES",
         "STORE_OWNER_INVENTORY_HTTP_ROUTES",
         "StoreCatalogApi",
@@ -34,6 +36,7 @@ def test_http_adapter_public_exports_cover_router_routes_wsgi_and_manifest_helpe
         "list_http_route_specs",
         "register_auth_routes",
         "register_checkout_routes",
+        "register_merchant_membership_routes",
         "register_order_routes",
         "register_operator_action_routes",
         "register_operator_routes",
@@ -53,7 +56,7 @@ def test_http_route_manifest_includes_every_phase_7_route_family() -> None:
     described = list(describe_http_routes())
 
     assert described == manifest
-    assert len(manifest) == 25
+    assert len(manifest) == 33
     assert {entry["operationId"] for entry in manifest} == {
         "requestLoginChallenge",
         "loginWithMetaMask",
@@ -73,6 +76,14 @@ def test_http_route_manifest_includes_every_phase_7_route_family() -> None:
         "correctStoreOwnerInventoryStock",
         "pauseStoreOwnerInventorySales",
         "resumeStoreOwnerInventorySales",
+        "listMerchantStoreMembers",
+        "listMerchantStoreInvitations",
+        "createMerchantStoreInvitation",
+        "acceptMerchantInvitation",
+        "revokeMerchantInvitation",
+        "updateMerchantStoreMemberRole",
+        "removeMerchantStoreMember",
+        "getMerchantRoleCatalog",
         "getOperatorDashboard",
         "getOperatorOrderDetail",
         "getOperatorPaymentDetail",
@@ -88,6 +99,7 @@ def test_http_route_manifest_includes_every_phase_7_route_family() -> None:
         "payments",
         "admin",
         "store-owner",
+        "merchant",
         "operator",
     }
 

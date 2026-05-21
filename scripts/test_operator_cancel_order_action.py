@@ -171,7 +171,7 @@ def test_cancel_order_action_rejects_non_admin_without_calling_handler() -> None
     assert handler.calls == []
     assert result.status is OperatorActionResultStatus.REJECTED
     assert result.details["errorCode"] == "OPERATOR_FORBIDDEN"
-    assert result.summary == "operator ADMIN role is required to execute cancelOrder"
+    assert result.summary == "operator:action permission is required to execute cancelOrder"
     assert audit.records[0].outcome is OperatorActionResultStatus.REJECTED
 
 

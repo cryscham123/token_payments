@@ -26,6 +26,7 @@ from token_payments.shared.domain import UserId, WalletAddress
 
 from .ports import (
     AuthEventPublisher,
+    AuthRbacRepository,
     AuthSessionRepository,
     CurrentUserQuery,
     LoginChallengeRepository,
@@ -82,6 +83,7 @@ class AuthApplicationService:
         signature_verifier: WalletSignatureVerifier,
         token_issuer: TokenIssuer,
         event_publisher: AuthEventPublisher,
+        rbac: AuthRbacRepository | None = None,
         challenge_ttl: timedelta = timedelta(minutes=5),
         session_ttl: timedelta = timedelta(days=30),
     ) -> None:
@@ -92,6 +94,7 @@ class AuthApplicationService:
         self._users = users
         self._login_challenges = login_challenges
         self._sessions = sessions
+        self._rbac = rbac
         self._signature_verifier = signature_verifier
         self._token_issuer = token_issuer
         self._event_publisher = event_publisher
@@ -183,6 +186,8 @@ class AuthApplicationService:
             user = User.register_by_wallet(UserId(_new_text_id(self._user_id_generator, "user_id_generator")), verified.wallet)
 
         user = user.record_login(now)
+        if registered:
+            self._ensure_personal_membership(user, now)
         session, issued_token = self._create_session_and_tokens(user, device_id, now)
 
         self._users.save(user)
@@ -207,11 +212,16 @@ class AuthApplicationService:
         if user is None or not user.active:
             raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, "session user is missing or inactive")
 
-        refresh_for_user = getattr(self._token_issuer, "refresh_tokens_for_user", None)
-        if callable(refresh_for_user):
-            issued_token = refresh_for_user(user, session)
+        claims = self._claim_snapshot(user)
+        refresh_with_claims = getattr(self._token_issuer, "refresh_tokens_with_claims", None)
+        if callable(refresh_with_claims):
+            issued_token = refresh_with_claims(user, session, claims)
         else:
-            issued_token = self._token_issuer.refresh_tokens(session)
+            refresh_for_user = getattr(self._token_issuer, "refresh_tokens_for_user", None)
+            if callable(refresh_for_user):
+                issued_token = refresh_for_user(user, session)
+            else:
+                issued_token = self._token_issuer.refresh_tokens(session)
         rotated_hash = _refresh_token_hash(
             issued_token.refresh_token,
             salt=session.refresh_token_hash.salt,
@@ -259,7 +269,12 @@ class AuthApplicationService:
             device_id=device_id,
             expires_at=now + self._session_ttl,
         )
-        issued_token = self._token_issuer.issue_tokens(user, provisional_session)
+        claims = self._claim_snapshot(user)
+        issue_with_claims = getattr(self._token_issuer, "issue_tokens_with_claims", None)
+        if callable(issue_with_claims):
+            issued_token = issue_with_claims(user, provisional_session, claims)
+        else:
+            issued_token = self._token_issuer.issue_tokens(user, provisional_session)
         session = AuthSession(
             session_id=provisional_session.session_id,
             user_id=provisional_session.user_id,
@@ -269,6 +284,22 @@ class AuthApplicationService:
             expires_at=provisional_session.expires_at,
         )
         return session, issued_token
+
+    def _ensure_personal_membership(self, user: User, joined_at: datetime) -> None:
+        if self._rbac is None:
+            return
+        self._rbac.ensure_personal_membership(user, joined_at)
+
+    def _claim_snapshot(self, user: User) -> dict[str, Any]:
+        if self._rbac is None:
+            return {"scopes": (), "groupMemberships": (), "activeGroupId": None}
+        memberships = self._rbac.session_memberships_for_user(user.user_id)
+        scopes = self._rbac.scopes_for_user(user.user_id)
+        return {
+            "scopes": scopes[:32],
+            "groupMemberships": tuple(membership.to_payload() for membership in memberships[:16]),
+            "activeGroupId": str(memberships[0].group_id) if memberships else None,
+        }
 
     def _handle_challenge_rejection(
         self,
@@ -370,7 +401,6 @@ def _ensure_siwe_matches_challenge(
             AuthErrorCode.SIWE_MESSAGE_MISMATCH,
             _message_for_code(AuthErrorCode.SIWE_MESSAGE_MISMATCH),
         )
-
 
 def _code_for_reason(reason: LoginFailureReason) -> AuthErrorCode:
     return AuthErrorCode(reason.value)

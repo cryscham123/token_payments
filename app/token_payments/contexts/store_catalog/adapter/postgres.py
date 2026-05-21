@@ -305,7 +305,11 @@ INSERT INTO store_catalog_audit_log (
     idempotency_key,
     before_state,
     after_state,
-    recorded_at
+    recorded_at,
+    group_id,
+    permission,
+    resource_type,
+    resource_id
 ) VALUES (
     %(actor_user_id)s,
     %(action)s,
@@ -316,7 +320,11 @@ INSERT INTO store_catalog_audit_log (
     %(idempotency_key)s,
     %(before_state)s,
     %(after_state)s,
-    %(recorded_at)s
+    %(recorded_at)s,
+    %(group_id)s,
+    %(permission)s,
+    %(resource_type)s,
+    %(resource_id)s
 )
 ON CONFLICT (idempotency_key, action) DO NOTHING
 RETURNING audit_id
@@ -462,6 +470,10 @@ class PostgresStoreCatalogRepository:
                     "before_state": dict(record.before),
                     "after_state": dict(record.after),
                     "recorded_at": record.recorded_at,
+                    "group_id": record.group_id,
+                    "permission": record.permission,
+                    "resource_type": record.resource_type,
+                    "resource_id": record.resource_id,
                 },
             )
         )
