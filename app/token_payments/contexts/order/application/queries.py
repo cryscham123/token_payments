@@ -15,7 +15,7 @@ from token_payments.contexts.payment.domain import (
     PaymentStatus,
     TransactionSignatureRequest,
 )
-from token_payments.shared.domain import OrderId, OutboxPublishStatus, TransactionHash
+from token_payments.shared.domain import OrderId, OutboxPublishStatus, PaymentId, TransactionHash
 
 
 class CheckoutCurrentStep(StrEnum):
@@ -110,6 +110,12 @@ class CheckoutTrackingSnapshot:
         return self.order_status.value
 
     @property
+    def payment_id(self) -> PaymentId | None:
+        if self.payment is None:
+            return None
+        return self.payment.payment_id
+
+    @property
     def current_step(self) -> CheckoutCurrentStep:
         if self.order_status is OrderStatus.APPROVED:
             return CheckoutCurrentStep.ORDER_APPROVED
@@ -150,9 +156,16 @@ class CheckoutTrackingSnapshot:
 
     @property
     def payment_request(self) -> TransactionSignatureRequest | None:
-        if self.authorization is None:
+        if self.authorization is not None:
+            return self.authorization.signature_request
+        if self.payment is None or self.payment.status is not PaymentStatus.AWAITING_SIGNATURE:
             return None
-        return self.authorization.signature_request
+        return TransactionSignatureRequest(
+            request_id=str(self.payment.payment_id),
+            amount=self.payment.amount,
+            to=self.payment.wallet_to,
+            expires_at=self.payment.expires_at,
+        )
 
     @property
     def gas_estimate(self) -> GasEstimate | None:

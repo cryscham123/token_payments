@@ -554,6 +554,7 @@ Response `200`:
   "checkout": {
     "orderId": "order-001",
     "trackingId": "tracking-001",
+    "paymentId": "payment-001",
     "status": "PENDING",
     "currentStep": "AWAITING_SIGNATURE",
     "pendingAction": "SIGN_PAYMENT",
@@ -595,6 +596,10 @@ Response `200`:
   }
 }
 ```
+
+`paymentId` is present once the payment request has been created. In live API wiring, `POST /orders` creates the initial `AWAITING_SIGNATURE` payment request in the same transaction, so the first successful tracking read for that order can return `pendingAction=SIGN_PAYMENT`, non-null `paymentRequest`, and non-null `gasEstimate`. If `pendingAction=WAIT_FOR_PAYMENT_REQUEST`, the frontend should keep polling and must not open MetaMask yet.
+
+`gasEstimate.estimatedFee` is computed from JSON-RPC `eth_estimateGas * eth_gasPrice`. `gasEstimate.maxFee` is the buffered total fee using `ADAPTER_BLOCKCHAIN_GAS_BUFFER_RATE`; the API does not expose EIP-1559 per-gas fields such as `maxFeePerGas`.
 
 Errors: `400 VALIDATION_ERROR`, `404 CHECKOUT_NOT_FOUND`.
 
@@ -910,7 +915,9 @@ Final local verification should run in this order:
 
 For cookie auth setup, import `postman/token-payments.local.postman_collection.json` and `postman/token-payments.local.postman_environment.json`. The auth folder runs `POST /auth/challenges`, MetaMask signing, `POST /auth/sessions`, `POST /auth/sessions/refresh`, `DELETE /auth/sessions`, and `GET /auth/me` in order. Postman stores `Set-Cookie` responses in its cookie jar; happy-path requests do not use manual `Cookie`, Bearer, localStorage, or sessionStorage auth. `postman/token-payments.cookie-auth.expected.json` records redacted signed token shape, active key id metadata, CSRF header/cookie names, cookie attributes, and expired/invalid-signature negative cases.
 
-Manual seed data for local Postman runs is described by `postman/fixtures/token-payments.local.seed-plan.json`. It references demo customer/store/product/inventory/payment destination/test network ids using committed PostgreSQL schema table and column names, but it is not part of default init and does not run in automated verification. Route-level expected response examples live in `postman/expected/token-payments.api.expected.json`; the fixture covers auth, cookie/CSRF headers, `Idempotency-Key`, `X-Request-Id`, happy-path checkout, compensation cancellation, and operator action recovery while keeping signed token and cookie values redacted.
+Default PostgreSQL bootstrap uses `app/postgres/init.d/002-token-payments-default-seed.sh`. New postgres volumes run it after schema creation, and `docker compose up` also runs the idempotent `postgres_seed` one-shot service after postgres is healthy. The script inserts only the static RBAC catalog plus the local platform admin identity and memberships needed to authenticate as an admin. The admin wallet is controlled by `.env` `BOOTSTRAP_ADMIN_WALLET_ADDRESS` and defaults to `TEST_NETWORK_ACCOUNT` when left empty. User and group UUIDs are generated in PostgreSQL and then reused by lookup on later runs.
+
+Manual seed data for local Postman examples is still described by `postman/fixtures/token-payments.local.seed-plan.json`. It references demo customer/store/product/inventory/payment destination/test network ids using committed PostgreSQL schema table and column names, but it is fixture metadata rather than the default init path. Route-level expected response examples live in `postman/expected/token-payments.api.expected.json`; the fixture covers auth, cookie/CSRF headers, `Idempotency-Key`, `X-Request-Id`, happy-path checkout, compensation cancellation, and operator action recovery while keeping signed token and cookie values redacted.
 
 The Docker Compose API service is `token_payments_api`. After `cp .env.example .env`, `COMPOSE_PROFILES=runtime,smoke,api` makes it part of plain `docker compose up`; automated checks use daemon-less compose config and smoke plans and do not start Docker. Daemon-less compose config validation does not start Docker:
 
@@ -931,7 +938,8 @@ docker compose --env-file .env build token_payments_api
 docker compose up -d
 curl --fail http://localhost:8000/healthz
 curl --fail http://localhost:8000/readyz
-# Apply/review the manual seed plan in postman/fixtures/token-payments.local.seed-plan.json
+# Default DB bootstrap runs idempotently through postgres_seed after postgres is healthy.
+# Optionally apply/review the manual Postman fixture plan in postman/fixtures/token-payments.local.seed-plan.json
 # Import postman/token-payments.local.postman_collection.json and postman/token-payments.local.postman_environment.json
 python3 scripts/docker_live_smoke.py --api-readiness --plan
 python3 scripts/docker_live_smoke.py --api-readiness --execute --confirm-live-docker

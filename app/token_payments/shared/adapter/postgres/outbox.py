@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import json
 from typing import Any, Mapping
 
 from token_payments.shared.adapter.messaging import JsonMessageSerializer
@@ -31,8 +32,8 @@ INSERT INTO outbox_messages (
     %(name)s,
     %(topic)s,
     %(message_key)s,
-    %(payload)s,
-    %(headers)s,
+    %(payload)s::jsonb,
+    %(headers)s::jsonb,
     %(status)s,
     %(created_at)s,
     %(published_at)s,
@@ -120,8 +121,8 @@ class PostgresOutboxMessageRepository:
                 "name": envelope["name"],
                 "topic": envelope["topic"],
                 "message_key": envelope["key"],
-                "payload": envelope["payload"],
-                "headers": envelope["headers"],
+                "payload": json.dumps(envelope["payload"]),
+                "headers": json.dumps(envelope["headers"]),
                 "status": envelope["status"],
                 "created_at": message.created_at,
                 "published_at": message.published_at,
@@ -201,6 +202,11 @@ def _kind_value(kind: OutboxMessageKind | str) -> str:
 
 
 def _mapping_value(value: Any, field_name: str) -> Mapping[str, Any]:
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"outbox row {field_name} is not a valid JSON string") from exc
     if not isinstance(value, Mapping):
         raise ValueError(f"outbox row {field_name} must be a mapping")
     return value

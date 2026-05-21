@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+import json
 from typing import Any, Mapping
 
 from token_payments.contexts.order.domain import (
@@ -236,7 +237,7 @@ INSERT INTO orders (
     %(tracking_id)s,
     %(status)s,
     %(payment_id)s,
-    %(failure_messages)s,
+    %(failure_messages)s::jsonb,
     %(total_amount_numeric)s,
     %(total_amount_symbol)s,
     %(total_amount_chain_id)s,
@@ -401,7 +402,7 @@ class PostgresOrderRepository:
                 "tracking_id": str(order.tracking_id),
                 "status": order.status.value,
                 "payment_id": str(order.payment_id) if order.payment_id is not None else None,
-                "failure_messages": list(order.failure_messages),
+                "failure_messages": json.dumps(list(order.failure_messages)),
                 **_crypto_params("total_amount", _total_amount(order.items)),
             },
         )
@@ -543,6 +544,11 @@ def _supported_chain_ids(value: Any) -> tuple[int, ...]:
 def _failure_messages(value: Any) -> tuple[str, ...]:
     if value is None:
         return ()
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise ValueError("orders.failure_messages is not a valid JSON string") from exc
     if not isinstance(value, list | tuple):
         raise ValueError("orders.failure_messages must be a list")
     return tuple(str(item) for item in value)

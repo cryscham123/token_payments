@@ -2314,7 +2314,10 @@ def _compose_service_contract(block: tuple[str, ...]) -> dict[str, JsonValue]:
         "initDirectoryMounted": any(
             "app/postgres/init.d:/docker-entrypoint-initdb.d" in volume for volume in volumes
         ),
-        "dataVolumeMounted": any("app/test_network/data:${TEST_NETWORK_DB_PATH}" in volume for volume in volumes),
+        "dataVolumeMounted": any(
+            ("app/test_network/data:${TEST_NETWORK_DB_PATH}" in volume or "test_network_data:${TEST_NETWORK_DB_PATH}" in volume)
+            for volume in volumes
+        ),
     }
 
 

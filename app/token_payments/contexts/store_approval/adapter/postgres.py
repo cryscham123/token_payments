@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any, Mapping
 
 from token_payments.contexts.store_approval.domain import ApprovalStatus, OrderDetail, Product, Store
@@ -91,9 +92,9 @@ INSERT INTO store_approval_order_details (
     %(total_amount_chain_id)s,
     %(total_amount_token_address)s,
     %(total_amount_decimals)s,
-    %(product_snapshots)s,
+    %(product_snapshots)s::jsonb,
     %(approval_status)s,
-    %(rejection_reasons)s
+    %(rejection_reasons)s::jsonb
 )
 ON CONFLICT (order_id) DO UPDATE SET
     store_id = EXCLUDED.store_id,
@@ -163,20 +164,32 @@ class PostgresOrderDetailRepository:
             "store_id": str(order_detail.store_id),
             "order_status": order_detail.order_status,
             **_crypto_params("total_amount", order_detail.total_amount),
-            "product_snapshots": [_product_payload(product) for product in order_detail.products],
+            "product_snapshots": json.dumps([_product_payload(product) for product in order_detail.products]),
             "approval_status": order_detail.approval_status.value,
-            "rejection_reasons": list(order_detail.rejection_reasons),
+            "rejection_reasons": json.dumps(list(order_detail.rejection_reasons)),
         }
         self._connection.execute(UPSERT_ORDER_DETAIL_SQL, params)
 
 
 def _order_detail_from_row(row: Mapping[str, Any] | object) -> OrderDetail:
     snapshots = _row_value(row, "product_snapshots")
+    if isinstance(snapshots, str):
+        try:
+            snapshots = json.loads(snapshots)
+        except json.JSONDecodeError as exc:
+            raise ValueError("store approval order detail product_snapshots is not a valid JSON string") from exc
     if not isinstance(snapshots, list):
         raise ValueError("store approval order detail product_snapshots must be a list")
+
     rejection_reasons = _row_value(row, "rejection_reasons")
+    if isinstance(rejection_reasons, str):
+        try:
+            rejection_reasons = json.loads(rejection_reasons)
+        except json.JSONDecodeError as exc:
+            raise ValueError("store approval order detail rejection_reasons is not a valid JSON string") from exc
     if not isinstance(rejection_reasons, list):
         raise ValueError("store approval order detail rejection_reasons must be a list")
+
     return OrderDetail(
         order_id=OrderId(_row_value(row, "order_id")),
         store_id=StoreId(_row_value(row, "store_id")),

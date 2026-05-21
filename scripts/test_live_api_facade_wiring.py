@@ -38,11 +38,12 @@ ORDER_ID = OrderId("018f33aa-9e6d-73d8-9dc3-47d6cdcc7101")
 TRACKING_ID = "018f33aa-9e6d-73d8-9dc3-47d6cdcc7102"
 ORDER_MESSAGE_ID = "018f33aa-9e6d-73d8-9dc3-47d6cdcc7103"
 PAYMENT_ID = PaymentId("018f33aa-9e6d-73d8-9dc3-47d6cdcc7104")
-CUSTOMER_ID = CustomerId("018f33aa-9e6d-73d8-9dc3-47d6cdcc7105")
-USER_ID = UserId("018f33aa-9e6d-73d8-9dc3-47d6cdcc7106")
-OWNER_USER_ID = UserId("018f33aa-9e6d-73d8-9dc3-47d6cdcc7107")
-STORE_ID = StoreId("018f33aa-9e6d-73d8-9dc3-47d6cdcc7108")
-PRODUCT_ID = ProductId("018f33aa-9e6d-73d8-9dc3-47d6cdcc7109")
+PAYMENT_MESSAGE_ID = "018f33aa-9e6d-73d8-9dc3-47d6cdcc7105"
+CUSTOMER_ID = CustomerId("018f33aa-9e6d-73d8-9dc3-47d6cdcc7106")
+USER_ID = UserId("018f33aa-9e6d-73d8-9dc3-47d6cdcc7107")
+OWNER_USER_ID = UserId("018f33aa-9e6d-73d8-9dc3-47d6cdcc7108")
+STORE_ID = StoreId("018f33aa-9e6d-73d8-9dc3-47d6cdcc7109")
+PRODUCT_ID = ProductId("018f33aa-9e6d-73d8-9dc3-47d6cdcc710a")
 CUSTOMER_WALLET = "0x1111111111111111111111111111111111111111"
 STORE_WALLET = "0x2222222222222222222222222222222222222222"
 TOKEN_ADDRESS = "0x3333333333333333333333333333333333333333"
@@ -145,8 +146,9 @@ def test_live_api_facade_wiring_dispatches_routes_through_injected_transactional
     assert create_payload["order"]["totalAmount"]["amount"] == "25.00"
     assert _transaction_sql(session, 1, "insert into orders")
     assert _transaction_sql(session, 1, "insert into outbox_messages")
-
-    session.seed_awaiting_payment()
+    assert _transaction_sql(session, 1, "insert into payments")
+    assert _transaction_sql(session, 1, "insert into payment_authorizations")
+    assert _transaction_sql(session, 1, "insert into processed_commands")
 
     tracking = router.handle(
         "GET",
@@ -157,8 +159,39 @@ def test_live_api_facade_wiring_dispatches_routes_through_injected_transactional
     assert tracking.status_code == 200
     tracking_payload = _json(tracking.body)
     assert tracking_payload["checkout"]["orderId"] == str(ORDER_ID)
+    assert tracking_payload["checkout"]["paymentId"] == str(PAYMENT_ID)
     assert tracking_payload["checkout"]["currentStep"] == "AWAITING_SIGNATURE"
     assert tracking_payload["checkout"]["pendingAction"] == "SIGN_PAYMENT"
+    assert tracking_payload["checkout"]["paymentRequest"] == {
+        "requestId": "payment-request-live-wiring",
+        "amount": {
+            "amount": "25.00",
+            "symbol": "USDC",
+            "chainId": 11155111,
+            "tokenAddress": TOKEN_ADDRESS,
+            "decimals": 6,
+        },
+        "to": STORE_WALLET,
+        "expiresAt": EXPIRES_AT.isoformat(),
+    }
+    assert tracking_payload["checkout"]["gasEstimate"] == {
+        "estimatedFee": {
+            "amount": "0.0100",
+            "symbol": "ETH",
+            "chainId": 11155111,
+            "tokenAddress": None,
+            "decimals": 18,
+        },
+        "gasLimit": 21000,
+        "bufferRate": "0.10",
+        "maxFee": {
+            "amount": "0.011000",
+            "symbol": "ETH",
+            "chainId": 11155111,
+            "tokenAddress": None,
+            "decimals": 18,
+        },
+    }
 
     submit_tx = router.handle(
         "POST",
@@ -266,7 +299,7 @@ def _dependencies(session: "FakePostgresSession") -> LiveRuntimeDependencies:
         wallet_signature_client=FakeWalletSignatureClient(),
         blockchain_client=FakeBlockchainClient(),
         clock=FakeClock(NOW),
-        id_generator=SequenceIdGenerator((str(ORDER_ID), TRACKING_ID, ORDER_MESSAGE_ID)),
+        id_generator=SequenceIdGenerator((str(ORDER_ID), TRACKING_ID, ORDER_MESSAGE_ID, str(PAYMENT_ID), PAYMENT_MESSAGE_ID)),
     )
 
 

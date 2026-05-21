@@ -303,7 +303,15 @@ class FakePostgresConnection:
         key = (str(params["kind"]), str(params["message_identity"]))
         if key in self.outbox:
             return FakeResult(rowcount=0)
-        self.outbox[key] = dict(params) | {"id": len(self.outbox) + 1}
+        stored_params = dict(params)
+        for field in ("payload", "headers"):
+            if field in stored_params and isinstance(stored_params[field], str):
+                import json
+                try:
+                    stored_params[field] = json.loads(stored_params[field])
+                except Exception:
+                    pass
+        self.outbox[key] = stored_params | {"id": len(self.outbox) + 1}
         return FakeResult(rowcount=1)
 
     def _claim_outbox(self, params: Mapping[str, Any]) -> FakeResult:

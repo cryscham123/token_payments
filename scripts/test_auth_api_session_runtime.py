@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT / "app"))
 from token_payments.api import ApiRequest  # noqa: E402
 from token_payments.api.auth import AuthApi  # noqa: E402
 from token_payments.contexts.auth.adapter import (  # noqa: E402
+    PostgresAuthRbacRepository,
     PostgresAuthSessionRepository,
     PostgresLoginChallengeRepository,
     PostgresUserRepository,
@@ -390,6 +391,7 @@ def test_auth_schema_exports_and_import_boundaries() -> None:
         "PostgresUserRepository",
         "PostgresLoginChallengeRepository",
         "PostgresAuthSessionRepository",
+        "PostgresAuthRbacRepository",
     } <= set(auth_adapter.__all__)
     for table in ("auth_users", "auth_login_challenges", "auth_sessions"):
         assert f"create table if not exists {table}" in normalized
@@ -617,6 +619,9 @@ class FakeResult:
     def fetchall(self) -> list[dict[str, Any]]:
         return list(self._rows)
 
+    def __iter__(self) -> iter:
+        return iter(self._rows)
+
 
 class FakePostgresConnection:
     def __init__(self) -> None:
@@ -624,6 +629,11 @@ class FakePostgresConnection:
         self.users: dict[str, dict[str, Any]] = {}
         self.challenges: dict[str, dict[str, Any]] = {}
         self.sessions: dict[str, dict[str, Any]] = {}
+        self.groups: dict[str, dict[str, Any]] = {}
+        self.group_memberships: dict[tuple[str, str], dict[str, Any]] = {}
+        self.roles: dict[str, dict[str, Any]] = {}
+        self.role_permissions: list[dict[str, Any]] = []
+        self.permissions: dict[str, dict[str, Any]] = {}
 
     def execute(self, sql: str, params: Mapping[str, Any] | None = None) -> FakeResult:
         params = dict(params or {})
@@ -681,6 +691,85 @@ class FakePostgresConnection:
             )
             return FakeResult([dict(row)] if row else [], rowcount=1 if row else 0)
 
+        if "insert into auth_groups" in normalized:
+            if str(params["group_id"]) not in self.groups:
+                self.groups[str(params["group_id"])] = {
+                    "group_id": params["group_id"],
+                    "group_type": params.get("group_type", "PERSONAL"),
+                    "name": params.get("name"),
+                    "resource_type": params.get("resource_type", "user"),
+                    "resource_id": params.get("resource_id"),
+                    "active": True,
+                }
+            return FakeResult(rowcount=1)
+
+        if "insert into auth_group_memberships" in normalized:
+            key = (str(params["group_id"]), str(params["user_id"]))
+            self.group_memberships[key] = {
+                "group_id": params["group_id"],
+                "user_id": params["user_id"],
+                "role_id": params.get("role_id", "PERSONAL_CUSTOMER"),
+                "active": True,
+                "joined_at": params.get("joined_at"),
+            }
+            return FakeResult(rowcount=1)
+
+        if "select group_id from auth_groups" in normalized:
+            rows = [
+                {"group_id": g["group_id"]}
+                for g in self.groups.values()
+                if g["group_type"] == "PERSONAL"
+                and g["resource_type"] == "user"
+                and g["resource_id"] == str(params["user_id"])
+                and g.get("active", True)
+            ]
+            return FakeResult(rows[:1], rowcount=1 if rows else 0)
+
+        if "select m.group_id, g.group_type, m.role_id, g.resource_type, g.resource_id from auth_group_memberships m" in normalized:
+            rows = []
+            for m in self.group_memberships.values():
+                if str(m["user_id"]) != str(params["user_id"]):
+                    continue
+                if not m.get("active", True):
+                    continue
+                g = self.groups.get(str(m["group_id"]))
+                if not g or not g.get("active", True):
+                    continue
+                r = self.roles.get(str(m["role_id"]))
+                if not r or not r.get("active", True):
+                    continue
+                rows.append({
+                    "group_id": m["group_id"],
+                    "group_type": g["group_type"],
+                    "role_id": m["role_id"],
+                    "resource_type": g.get("resource_type"),
+                    "resource_id": g.get("resource_id"),
+                })
+            rows.sort(key=lambda x: x["group_id"])
+            rows.sort(key=lambda x: x["group_type"], reverse=True)
+            return FakeResult(rows, rowcount=len(rows))
+
+        if "select distinct rp.permission_name from auth_group_memberships m" in normalized:
+            permission_names = set()
+            for m in self.group_memberships.values():
+                if str(m["user_id"]) != str(params["user_id"]):
+                    continue
+                if not m.get("active", True):
+                    continue
+                g = self.groups.get(str(m["group_id"]))
+                if not g or not g.get("active", True):
+                    continue
+                r = self.roles.get(str(m["role_id"]))
+                if not r or not r.get("active", True):
+                    continue
+                for rp in self.role_permissions:
+                    if rp["role_id"] == m["role_id"] and rp.get("active", True):
+                        p = self.permissions.get(rp["permission_name"])
+                        if p and p.get("active", True):
+                            permission_names.add(rp["permission_name"])
+            sorted_perms = [{"permission_name": name} for name in sorted(permission_names)]
+            return FakeResult(sorted_perms, rowcount=len(sorted_perms))
+
         raise AssertionError(f"unexpected SQL: {sql}")
 
 
@@ -697,3 +786,73 @@ def _imported_modules(path: Path) -> set[str]:
         elif isinstance(node, ast.ImportFrom) and node.module:
             modules.add(node.module)
     return modules
+
+
+def test_auth_postgres_rbac_repository() -> None:
+    from token_payments.contexts.auth.adapter import PostgresAuthRbacRepository
+    from token_payments.contexts.auth.domain import GroupType, RoleId
+    connection = FakePostgresConnection()
+
+    # Seed roles and permissions
+    connection.roles["PERSONAL_CUSTOMER"] = {"role_id": "PERSONAL_CUSTOMER", "active": True}
+    connection.roles["PLATFORM_ADMIN"] = {"role_id": "PLATFORM_ADMIN", "active": True}
+
+    connection.permissions["read:stores"] = {"permission_name": "read:stores", "active": True}
+    connection.permissions["write:stores"] = {"permission_name": "write:stores", "active": True}
+
+    connection.role_permissions.append({"role_id": "PLATFORM_ADMIN", "permission_name": "read:stores", "active": True})
+    connection.role_permissions.append({"role_id": "PLATFORM_ADMIN", "permission_name": "write:stores", "active": True})
+    connection.role_permissions.append({"role_id": "PERSONAL_CUSTOMER", "permission_name": "read:stores", "active": True})
+
+    rbac = PostgresAuthRbacRepository(connection)
+    user = User.register_by_wallet(UserId(USER_ID), WALLET).record_login(NOW)
+
+    # 1. ensure_personal_membership
+    memberships = rbac.ensure_personal_membership(user, NOW)
+    assert len(memberships) == 1
+    personal = memberships[0]
+    assert personal.group_type == GroupType.PERSONAL
+    assert personal.role_id == RoleId("PERSONAL_CUSTOMER")
+    assert personal.resource_type == "user"
+    assert personal.resource_id == USER_ID
+
+    # 2. Add platform group membership
+    platform_group_id = "88888888-8888-4888-8888-888888888888"
+    connection.groups[platform_group_id] = {
+        "group_id": platform_group_id,
+        "group_type": "PLATFORM",
+        "name": "Platform Group",
+        "resource_type": "platform",
+        "resource_id": "platform",
+        "active": True
+    }
+    connection.group_memberships[(platform_group_id, USER_ID)] = {
+        "group_id": platform_group_id,
+        "user_id": USER_ID,
+        "role_id": "PLATFORM_ADMIN",
+        "active": True,
+        "joined_at": NOW
+    }
+
+    # 3. session_memberships_for_user
+    all_memberships = rbac.session_memberships_for_user(UserId(USER_ID))
+    assert len(all_memberships) == 2
+    # Ordered by group_type DESC, group_id ASC
+    # 'PLATFORM' > 'PERSONAL'
+    assert all_memberships[0].group_type == GroupType.PLATFORM
+    assert all_memberships[0].role_id == RoleId("PLATFORM_ADMIN")
+    assert all_memberships[1].group_type == GroupType.PERSONAL
+    assert all_memberships[1].role_id == RoleId("PERSONAL_CUSTOMER")
+
+    # 4. scopes_for_user
+    scopes = rbac.scopes_for_user(UserId(USER_ID))
+    assert scopes == ("read:stores", "write:stores")
+
+    # 5. verify inactive filtering
+    connection.roles["PLATFORM_ADMIN"]["active"] = False
+    all_memberships_inactive = rbac.session_memberships_for_user(UserId(USER_ID))
+    assert len(all_memberships_inactive) == 1
+    assert all_memberships_inactive[0].group_type == GroupType.PERSONAL
+
+    scopes_inactive = rbac.scopes_for_user(UserId(USER_ID))
+    assert scopes_inactive == ("read:stores",)

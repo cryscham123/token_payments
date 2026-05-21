@@ -84,7 +84,7 @@
                   "  pm.expect(body.signatureVerification.erc6492).to.eql(\"future_scope\");",
                   "  pm.expect(body.csrfToken).to.be.a(\"string\").and.not.empty;",
                   "  pm.expect(body.csrf.headerName).to.eql(\"X-CSRF-Token\");",
-                  "  pm.environment.set(\"signingMessage\", body.signingMessage);",
+                  "  pm.environment.set(\"signingMessage\", body.signingMessage.replace(/\n/g, '\\n'));",
                   "  pm.environment.set(\"csrfToken\", body.csrfToken);",
                   "});",
                   "pm.test(\"Postman cookie jar contains CSRF cookie\", function () {",

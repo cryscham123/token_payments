@@ -16,6 +16,7 @@ from uuid import uuid4
 
 from token_payments.contexts.auth.adapter import ClientWalletSignatureVerifier
 from token_payments.contexts.auth.adapter import (
+    PostgresAuthRbacRepository,
     PostgresAuthSessionRepository,
     PostgresLoginChallengeRepository,
     PostgresUserRepository,
@@ -69,12 +70,15 @@ from token_payments.shared.domain import (
     CheckoutEventName,
     CommandId,
     CommandMetadata,
+    ChainNetwork,
     MessageId,
     OrderId,
     OutboxMessage,
     OutboxMessageKind,
     PaymentId,
     ProcessedCommand,
+    UserId,
+    WalletAddress,
 )
 from token_payments.shared.adapter.postgres import (
     PostgresOutboxMessageRepository,
@@ -807,19 +811,25 @@ class JsonRpcBlockchainClient:
         payload = dict(request or kwargs)
         wallet_from = str(payload.get("wallet_from") or payload.get("walletFrom") or "")
         wallet_to = str(payload.get("wallet_to") or payload.get("walletTo") or "")
-        rpc_payload = {key: value for key, value in {"from": wallet_from, "to": wallet_to, "value": "0x0"}.items() if value}
+        amount = _amount_payload(payload.get("amount"))
+        rpc_payload = _gas_transaction_payload(amount=amount, wallet_from=wallet_from, wallet_to=wallet_to)
         raw_gas = self._rpc("eth_estimateGas", (rpc_payload,))
         gas_limit = int(str(raw_gas), 16) if isinstance(raw_gas, str) and raw_gas.startswith("0x") else int(raw_gas)
+        raw_gas_price = self._rpc("eth_gasPrice", ())
+        gas_price = (
+            int(str(raw_gas_price), 16)
+            if isinstance(raw_gas_price, str) and raw_gas_price.startswith("0x")
+            else int(raw_gas_price)
+        )
         return {
             "estimated_fee": {
-                "amount": "0",
+                "amount": _native_fee_amount(gas_limit * gas_price, self.native_decimals),
                 "symbol": self.native_symbol,
                 "chain_id": self.chain_id,
                 "token_address": None,
                 "decimals": self.native_decimals,
             },
             "gas_limit": gas_limit,
-            "buffer_rate": "0",
         }
 
     def get_transaction_receipt(self, request: Mapping[str, object] | None = None, **kwargs: object) -> dict[str, object] | None:
@@ -874,6 +884,88 @@ class JsonRpcBlockchainClient:
         if "error" in decoded:
             raise ValueError(f"JSON-RPC {method} failed: {decoded['error']}")
         return decoded.get("result")
+
+
+def _amount_payload(value: object) -> Mapping[str, object] | None:
+    if value is None:
+        return None
+    if not isinstance(value, Mapping):
+        raise ValueError("blockchain gas estimate amount must be an object")
+    return value
+
+
+def _gas_transaction_payload(
+    *,
+    amount: Mapping[str, object] | None,
+    wallet_from: str,
+    wallet_to: str,
+) -> dict[str, object]:
+    token_address = None if amount is None else _optional_text_value(amount, "token_address", "tokenAddress")
+    if token_address:
+        return {
+            key: value
+            for key, value in {
+                "from": wallet_from,
+                "to": token_address,
+                "value": "0x0",
+                "data": _erc20_transfer_data(wallet_to, _amount_base_units(amount)),
+            }.items()
+            if value
+        }
+    return {
+        key: value
+        for key, value in {
+            "from": wallet_from,
+            "to": wallet_to,
+            "value": hex(_amount_base_units(amount) if amount is not None else 0),
+        }.items()
+        if value
+    }
+
+
+def _erc20_transfer_data(wallet_to: str, amount_base_units: int) -> str:
+    address = _address_hex(wallet_to)
+    return "0xa9059cbb" + address.rjust(64, "0") + hex(amount_base_units)[2:].rjust(64, "0")
+
+
+def _amount_base_units(amount: Mapping[str, object]) -> int:
+    decimals = int(_required_mapping_value(amount, "decimals"))
+    value = Decimal(str(_required_mapping_value(amount, "amount")))
+    scale = Decimal(10) ** decimals
+    scaled = value * scale
+    integral = scaled.to_integral_value()
+    if scaled != integral:
+        raise ValueError("amount has more decimal precision than the token decimals allow")
+    if integral < 0:
+        raise ValueError("amount must be non-negative")
+    return int(integral)
+
+
+def _native_fee_amount(base_units: int, decimals: int) -> str:
+    amount = Decimal(base_units) / (Decimal(10) ** decimals)
+    return format(amount, "f")
+
+
+def _address_hex(value: str) -> str:
+    normalized = _require_text(value, "wallet_to").removeprefix("0x").removeprefix("0X")
+    if len(normalized) != 40 or any(char not in "0123456789abcdefABCDEF" for char in normalized):
+        raise ValueError("wallet_to must be a 20-byte hex address")
+    return normalized.lower()
+
+
+def _optional_text_value(payload: Mapping[str, object], *keys: str) -> str | None:
+    for key in keys:
+        value = payload.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return None
+
+
+def _required_mapping_value(payload: Mapping[str, object], key: str) -> object:
+    value = payload.get(key)
+    if value is None:
+        raise ValueError(f"amount.{key} is required")
+    return value
 
 
 @dataclass(frozen=True)
@@ -1282,7 +1374,7 @@ def build_live_api_facades(
 
     return LiveApiFacades(
         auth=AuthApi(_TransactionalAuthUseCase(live_config, live_dependencies)),
-        orders=OrdersApi(_TransactionalOrderUseCase(live_dependencies)),
+        orders=OrdersApi(_TransactionalOrderUseCase(live_config, live_dependencies)),
         checkout=CheckoutApi(_TransactionalCheckoutTrackingQuery(live_dependencies)),
         payments=PaymentsApi(payment_handler),
         catalog=StoreCatalogApi(
@@ -1404,6 +1496,7 @@ class _TransactionalAuthUseCase:
             users=PostgresUserRepository(connection),
             login_challenges=PostgresLoginChallengeRepository(connection),
             sessions=PostgresAuthSessionRepository(connection),
+            rbac=PostgresAuthRbacRepository(connection),
             signature_verifier=ClientWalletSignatureVerifier(
                 self._dependencies.wallet_signature_client,
                 supported_chain_ids=(self._config.wallet_signature_chain_id,),
@@ -1420,7 +1513,8 @@ class _TransactionalAuthUseCase:
 
 
 class _TransactionalOrderUseCase:
-    def __init__(self, dependencies: LiveRuntimeDependencies) -> None:
+    def __init__(self, config: LiveRuntimeConfig, dependencies: LiveRuntimeDependencies) -> None:
+        self._config = config
         self._dependencies = dependencies
 
     def createOrder(self, command: CreateOrderCommand):
@@ -1437,13 +1531,67 @@ class _TransactionalOrderUseCase:
         )
         return _with_transaction(
             self._dependencies,
-            lambda connection: OrderApplicationService(
-                customers=PostgresCustomerRepository(connection),
-                stores=PostgresStoreRepository(connection),
-                orders=PostgresOrderRepository(connection),
-                outbox_messages=PostgresOutboxMessageRepository(connection),
-            ).createOrder(command),
+            lambda connection: self._create_order_and_payment_request(connection, command),
         )
+
+    def _create_order_and_payment_request(self, connection: Any, command: CreateOrderCommand):
+        outbox = PostgresOutboxMessageRepository(connection)
+        result = OrderApplicationService(
+            customers=PostgresCustomerRepository(connection),
+            stores=PostgresStoreRepository(connection),
+            orders=PostgresOrderRepository(connection),
+            outbox_messages=outbox,
+        ).createOrder(command)
+        self._start_payment_request(connection, command, result)
+        return result
+
+    def _start_payment_request(self, connection: Any, command: CreateOrderCommand, result: Any) -> None:
+        payload = result.outbox_message.payload
+        payment_handler = PaymentCommandHandler(
+            payment_repository=PostgresPaymentRepository(connection),
+            authorization_repository=PostgresPaymentAuthorizationRepository(connection),
+            processed_commands=PostgresProcessedCommandRepository(connection),
+            outbox_messages=PostgresOutboxMessageRepository(connection),
+            blockchain_adapter=ClientBlockchainAdapter(
+                self._dependencies.blockchain_client,
+                default_buffer_rate=self._config.blockchain_gas_buffer_rate,
+            ),
+            timeout_scheduler=_NoopPaymentTimeoutScheduler(),
+            transaction_service=ClientTransactionService(self._dependencies.blockchain_client),
+        )
+        payment_handler.initiate_payment(
+            InitiatePaymentCommand(
+                command_id=CommandId.for_order_action(result.order.order_id, CheckoutCommandName.INITIATE_PAYMENT),
+                payment_id=PaymentId(_new_id(self._dependencies.id_generator, "payment_id")),
+                order_id=result.order.order_id,
+                customer_id=result.order.customer_id,
+                user_id=UserId(_required_payload_text(payload, "userId")),
+                amount=result.total_amount,
+                wallet_from=WalletAddress(_required_payload_text(payload, "walletFrom")),
+                wallet_to=WalletAddress(_required_payload_text(payload, "walletTo")),
+                chain_network=_chain_network_from_checkout_payload(payload, result.total_amount.chain_id),
+                expires_at=command.requested_at + timedelta(minutes=15),
+                requested_at=command.requested_at,
+                causation_id=str(result.outbox_message.identity),
+                event_message_id=MessageId(_new_id(self._dependencies.id_generator, "payment_event_message_id")),
+            )
+        )
+
+
+def _chain_network_from_checkout_payload(payload: Mapping[str, Any], default_chain_id: int) -> ChainNetwork:
+    chain = payload.get("chain")
+    if not isinstance(chain, Mapping):
+        return ChainNetwork(chain_id=default_chain_id, name=f"chain-{default_chain_id}")
+    chain_id = chain.get("chainId") or chain.get("chain_id") or default_chain_id
+    name = chain.get("name") or f"chain-{chain_id}"
+    return ChainNetwork(chain_id=int(chain_id), name=str(name))
+
+
+def _required_payload_text(payload: Mapping[str, Any], key: str) -> str:
+    value = payload.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"checkout payload missing {key}")
+    return value.strip()
 
 
 class _TransactionalCheckoutTrackingQuery:
@@ -1844,11 +1992,31 @@ class _RuntimeTokenIssuer:
     def refresh_tokens_for_user(self, user: User, session: AuthSession) -> IssuedToken:
         return self._token(user=user, session=session, rotation_version=session.refresh_token_hash.rotation_version + 1)
 
-    def _token(self, *, user: User | None, session: AuthSession, rotation_version: int) -> IssuedToken:
+    def issue_tokens_with_claims(self, user: User, session: AuthSession, claims: dict[str, Any]) -> IssuedToken:
+        return self._token(user=user, session=session, rotation_version=0, claims=claims)
+
+    def refresh_tokens_with_claims(self, user: User, session: AuthSession, claims: dict[str, Any]) -> IssuedToken:
+        return self._token(user=user, session=session, rotation_version=session.refresh_token_hash.rotation_version + 1, claims=claims)
+
+    def _token(
+        self,
+        *,
+        user: User | None,
+        session: AuthSession,
+        rotation_version: int,
+        claims: dict[str, Any] | None = None,
+    ) -> IssuedToken:
         now = self._clock.now()
         user_id = user.user_id if user is not None else session.user_id
         access_expires_at = now + self._access_ttl
         refresh_expires_at = now + self._refresh_ttl
+        scopes = ()
+        group_memberships = ()
+        active_group_id = None
+        if claims is not None:
+            scopes = tuple(claims.get("scopes", ()))
+            group_memberships = tuple(claims.get("groupMemberships", ()))
+            active_group_id = claims.get("activeGroupId")
         base_claims = {
             "user_id": str(user_id),
             "session_id": str(session.session_id),
@@ -1856,8 +2024,9 @@ class _RuntimeTokenIssuer:
             "issued_at": now,
             "jti": "pending",
             "rotation_version": rotation_version,
-            "scopes": (),
-            "group_memberships": (),
+            "scopes": scopes,
+            "group_memberships": group_memberships,
+            "active_group_id": active_group_id,
         }
         return IssuedToken(
             access_token=self._signer.sign(

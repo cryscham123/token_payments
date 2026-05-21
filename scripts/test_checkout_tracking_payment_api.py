@@ -87,6 +87,7 @@ def test_tracking_api_returns_awaiting_signature_payment_request_and_gas_estimat
     assert response.body["checkout"] == {
         "orderId": str(ORDER_ID),
         "trackingId": str(TRACKING_ID),
+        "paymentId": str(PAYMENT_ID),
         "status": "AWAITING_SIGNATURE",
         "currentStep": "AWAITING_SIGNATURE",
         "pendingAction": "SIGN_PAYMENT",
@@ -153,9 +154,33 @@ def test_tracking_api_accepts_order_id_and_maps_receipt_pending_state() -> None:
     assert query.order_id_calls == [ORDER_ID]
     assert query.tracking_id_calls == []
     assert response.body["checkout"]["status"] == "SUBMITTED"
+    assert response.body["checkout"]["paymentId"] == str(PAYMENT_ID)
     assert response.body["checkout"]["currentStep"] == "RECEIPT_PENDING"
     assert response.body["checkout"]["pendingAction"] == "WAIT_FOR_RECEIPT"
     assert response.body["checkout"]["txHash"] == str(TX_HASH)
+
+
+def test_tracking_api_derives_signature_request_from_awaiting_payment_when_authorization_is_missing() -> None:
+    api = CheckoutApi(FakeCheckoutTrackingQuery(_snapshot(payment=_awaiting_payment(), authorization=None)))
+
+    response = api.get_tracking(_tracking_request("req-derived-signature-request"))
+
+    assert response.status_code == 200
+    assert response.body["checkout"]["paymentId"] == str(PAYMENT_ID)
+    assert response.body["checkout"]["currentStep"] == "AWAITING_SIGNATURE"
+    assert response.body["checkout"]["pendingAction"] == "SIGN_PAYMENT"
+    assert response.body["checkout"]["paymentRequest"] == {
+        "requestId": str(PAYMENT_ID),
+        "amount": {
+            "amount": "1.25",
+            "symbol": "USDC",
+            "chainId": 11155111,
+            "tokenAddress": str(TOKEN_ADDRESS),
+            "decimals": 6,
+        },
+        "to": str(WALLET_TO),
+        "expiresAt": EXPIRES_AT.isoformat(),
+    }
 
 
 def test_tracking_status_mapping_for_failed_expired_and_approved_states() -> None:

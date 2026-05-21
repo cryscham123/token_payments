@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any, Mapping
 
 from token_payments.contexts.auth.domain import User, UserRole
@@ -58,7 +59,7 @@ INSERT INTO store_catalog_idempotency (
     %(handler)s,
     %(idempotency_key)s,
     %(payload_hash)s,
-    %(response_payload)s,
+    %(response_payload)s::jsonb,
     %(recorded_at)s
 )
 ON CONFLICT (handler, idempotency_key) DO NOTHING
@@ -82,7 +83,7 @@ INSERT INTO store_catalog_stores (
     %(owner_user_id)s,
     %(active)s,
     %(store_wallet_address)s,
-    %(supported_chain_ids)s
+    %(supported_chain_ids)s::jsonb
 )
 ON CONFLICT (store_id) DO UPDATE SET
     owner_user_id = EXCLUDED.owner_user_id,
@@ -104,7 +105,7 @@ INSERT INTO order_stores (
     %(owner_user_id)s,
     %(active)s,
     %(store_wallet_address)s,
-    %(supported_chain_ids)s
+    %(supported_chain_ids)s::jsonb
 )
 ON CONFLICT (store_id) DO UPDATE SET
     owner_user_id = EXCLUDED.owner_user_id,
@@ -318,8 +319,8 @@ INSERT INTO store_catalog_audit_log (
     %(target_user_id)s,
     %(request_id)s,
     %(idempotency_key)s,
-    %(before_state)s,
-    %(after_state)s,
+    %(before_state)s::jsonb,
+    %(after_state)s::jsonb,
     %(recorded_at)s,
     %(group_id)s,
     %(permission)s,
@@ -353,7 +354,7 @@ class PostgresStoreCatalogRepository:
                 "handler": record.handler,
                 "idempotency_key": record.idempotency_key,
                 "payload_hash": record.payload_hash,
-                "response_payload": dict(record.response_payload),
+                "response_payload": json.dumps(dict(record.response_payload)),
                 "recorded_at": record.recorded_at,
             },
         )
@@ -467,8 +468,8 @@ class PostgresStoreCatalogRepository:
                     "target_user_id": str(record.target_user_id) if record.target_user_id is not None else None,
                     "request_id": record.request_id,
                     "idempotency_key": record.idempotency_key,
-                    "before_state": dict(record.before),
-                    "after_state": dict(record.after),
+                    "before_state": json.dumps(dict(record.before)),
+                    "after_state": json.dumps(dict(record.after)),
                     "recorded_at": record.recorded_at,
                     "group_id": record.group_id,
                     "permission": record.permission,
@@ -491,11 +492,17 @@ def _row_to_user(row: Mapping[str, Any] | object) -> User:
 
 
 def _row_to_idempotency(row: Mapping[str, Any] | object) -> CatalogIdempotencyRecord:
+    response_payload = _row_value(row, "response_payload")
+    if isinstance(response_payload, str):
+        try:
+            response_payload = json.loads(response_payload)
+        except json.JSONDecodeError as exc:
+            raise ValueError("store_catalog_idempotency response_payload is not a valid JSON string") from exc
     return CatalogIdempotencyRecord(
         handler=str(_row_value(row, "handler")),
         idempotency_key=str(_row_value(row, "idempotency_key")),
         payload_hash=str(_row_value(row, "payload_hash")),
-        response_payload=dict(_row_value(row, "response_payload")),
+        response_payload=dict(response_payload),
         recorded_at=_row_value(row, "recorded_at"),
     )
 
@@ -541,7 +548,7 @@ def _store_params(store: StoreProfile) -> dict[str, Any]:
         "owner_user_id": str(store.owner_user_id),
         "active": store.active,
         "store_wallet_address": str(store.store_wallet),
-        "supported_chain_ids": list(store.supported_chain_ids),
+        "supported_chain_ids": json.dumps(list(store.supported_chain_ids)),
     }
 
 
@@ -562,6 +569,11 @@ def _product_params(product: StoreProduct) -> dict[str, Any]:
 def _chain_ids(value: Any) -> tuple[int, ...]:
     if value is None:
         return ()
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise ValueError("supported_chain_ids is not a valid JSON string") from exc
     if isinstance(value, list | tuple):
         return tuple(int(item) for item in value)
     raise ValueError("supported_chain_ids must be a sequence")

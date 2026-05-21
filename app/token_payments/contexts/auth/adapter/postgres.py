@@ -2,16 +2,22 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Mapping
+import uuid
 
 from token_payments.contexts.auth.domain import (
     AuthNonce,
     AuthSession,
     ChallengeStatus,
+    GroupId,
+    GroupType,
     LoginChallenge,
     LoginFailureReason,
     RefreshTokenHash,
+    RoleId,
     SessionId,
+    SessionMembership,
     User,
     UserRole,
 )
@@ -334,6 +340,166 @@ class PostgresAuthSessionRepository:
             )
         )
         return _row_to_session(row) if row is not None else None
+
+
+SELECT_PERSONAL_GROUP_SQL = """
+SELECT group_id
+FROM auth_groups
+WHERE group_type = 'PERSONAL'
+  AND resource_type = 'user'
+  AND resource_id = %(user_id)s
+  AND active = true
+LIMIT 1
+"""
+
+INSERT_PERSONAL_GROUP_SQL = """
+INSERT INTO auth_groups (
+    group_id,
+    group_type,
+    name,
+    resource_type,
+    resource_id,
+    active
+) VALUES (
+    %(group_id)s,
+    'PERSONAL',
+    %(name)s,
+    'user',
+    %(resource_id)s,
+    true
+)
+ON CONFLICT (group_id) DO NOTHING
+"""
+
+INSERT_PERSONAL_MEMBERSHIP_SQL = """
+INSERT INTO auth_group_memberships (
+    group_id,
+    user_id,
+    role_id,
+    active,
+    joined_at
+) VALUES (
+    %(group_id)s,
+    %(user_id)s,
+    'PERSONAL_CUSTOMER',
+    true,
+    %(joined_at)s
+)
+ON CONFLICT (group_id, user_id) DO UPDATE SET
+    active = true,
+    updated_at = now()
+"""
+
+SELECT_MEMBERSHIPS_SQL = """
+SELECT
+    m.group_id,
+    g.group_type,
+    m.role_id,
+    g.resource_type,
+    g.resource_id
+FROM auth_group_memberships m
+JOIN auth_groups g ON m.group_id = g.group_id
+JOIN auth_roles r ON m.role_id = r.role_id
+WHERE m.user_id = %(user_id)s
+  AND m.active = true
+  AND g.active = true
+  AND r.active = true
+ORDER BY g.group_type DESC, m.group_id ASC
+"""
+
+SELECT_SCOPES_SQL = """
+SELECT DISTINCT rp.permission_name
+FROM auth_group_memberships m
+JOIN auth_groups g ON m.group_id = g.group_id
+JOIN auth_roles r ON m.role_id = r.role_id
+JOIN auth_role_permissions rp ON r.role_id = rp.role_id
+JOIN auth_permissions p ON rp.permission_name = p.permission_name
+WHERE m.user_id = %(user_id)s
+  AND m.active = true
+  AND g.active = true
+  AND r.active = true
+  AND rp.active = true
+  AND p.active = true
+ORDER BY rp.permission_name ASC
+"""
+
+
+class PostgresAuthRbacRepository:
+    """Persist group memberships and scopes inside an injected transaction."""
+
+    def __init__(self, connection: PostgresConnection) -> None:
+        self._connection = connection
+
+    def ensure_personal_membership(self, user: User, joined_at: datetime) -> tuple[SessionMembership, ...]:
+        if not isinstance(user, User):
+            raise ValueError("PostgresAuthRbacRepository.ensure_personal_membership requires a User")
+        user_id_str = str(user.user_id)
+        
+        row = _fetch_one(
+            self._connection.execute(
+                SELECT_PERSONAL_GROUP_SQL,
+                {"user_id": user_id_str}
+            )
+        )
+        if row is not None:
+            group_id = _row_value(row, "group_id")
+        else:
+            group_id = str(uuid.uuid4())
+            self._connection.execute(
+                INSERT_PERSONAL_GROUP_SQL,
+                {
+                    "group_id": group_id,
+                    "name": f"personal:{user_id_str}",
+                    "resource_id": user_id_str,
+                }
+            )
+        
+        self._connection.execute(
+            INSERT_PERSONAL_MEMBERSHIP_SQL,
+            {
+                "group_id": group_id,
+                "user_id": user_id_str,
+                "joined_at": joined_at,
+            }
+        )
+        
+        return self.session_memberships_for_user(user.user_id)
+
+    def session_memberships_for_user(self, user_id: UserId) -> tuple[SessionMembership, ...]:
+        if not isinstance(user_id, UserId):
+            raise ValueError("PostgresAuthRbacRepository.session_memberships_for_user requires a UserId")
+        
+        result = self._connection.execute(
+            SELECT_MEMBERSHIPS_SQL,
+            {"user_id": str(user_id)}
+        )
+        
+        memberships = []
+        for row in result:
+            memberships.append(
+                SessionMembership(
+                    group_id=GroupId(_row_value(row, "group_id")),
+                    group_type=GroupType(str(_row_value(row, "group_type"))),
+                    role_id=RoleId(str(_row_value(row, "role_id"))),
+                    resource_type=_optional_row_value(row, "resource_type"),
+                    resource_id=_optional_row_value(row, "resource_id"),
+                )
+            )
+        return tuple(memberships)
+
+    def scopes_for_user(self, user_id: UserId) -> tuple[str, ...]:
+        if not isinstance(user_id, UserId):
+            raise ValueError("PostgresAuthRbacRepository.scopes_for_user requires a UserId")
+        
+        result = self._connection.execute(
+            SELECT_SCOPES_SQL,
+            {"user_id": str(user_id)}
+        )
+        
+        scopes = []
+        for row in result:
+            scopes.append(str(_row_value(row, "permission_name")))
+        return tuple(scopes)
 
 
 def _row_to_user(row: Mapping[str, Any] | object) -> User:

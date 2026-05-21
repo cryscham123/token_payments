@@ -95,6 +95,88 @@ def test_driver_factory_summary_redacts_dsn_tokens_rpc_credentials_and_addresses
     assert payload["config"]["adapters"]["blockchain"]["tokenAddress"] == "<redacted>"
 
 
+def test_json_rpc_blockchain_client_estimates_native_fee_from_gas_price() -> None:
+    client = FakeJsonRpcBlockchainClient(
+        rpc_results={
+            "eth_estimateGas": "0x5208",
+            "eth_gasPrice": "0x3b9aca00",
+        }
+    )
+
+    estimate = client.estimate_gas(
+        {
+            "amount": {
+                "amount": "0.5",
+                "symbol": "ETH",
+                "chain_id": 1337,
+                "token_address": None,
+                "decimals": 18,
+            },
+            "wallet_from": "0x1111111111111111111111111111111111111111",
+            "wallet_to": "0x2222222222222222222222222222222222222222",
+        }
+    )
+
+    assert client.calls == [
+        (
+            "eth_estimateGas",
+            (
+                {
+                    "from": "0x1111111111111111111111111111111111111111",
+                    "to": "0x2222222222222222222222222222222222222222",
+                    "value": "0x6f05b59d3b20000",
+                },
+            ),
+        ),
+        ("eth_gasPrice", ()),
+    ]
+    assert estimate == {
+        "estimated_fee": {
+            "amount": "0.000021",
+            "symbol": "ETH",
+            "chain_id": 1337,
+            "token_address": None,
+            "decimals": 18,
+        },
+        "gas_limit": 21000,
+    }
+
+
+def test_json_rpc_blockchain_client_estimates_erc20_transfer_with_encoded_call_data() -> None:
+    client = FakeJsonRpcBlockchainClient(
+        rpc_results={
+            "eth_estimateGas": "0xc350",
+            "eth_gasPrice": "0x77359400",
+        }
+    )
+
+    estimate = client.estimate_gas(
+        {
+            "amount": {
+                "amount": "1.25",
+                "symbol": "USDC",
+                "chain_id": 1337,
+                "token_address": "0x3333333333333333333333333333333333333333",
+                "decimals": 6,
+            },
+            "wallet_from": "0x1111111111111111111111111111111111111111",
+            "wallet_to": "0x2222222222222222222222222222222222222222",
+        }
+    )
+
+    transfer_call = client.calls[0][1][0]
+    assert transfer_call["from"] == "0x1111111111111111111111111111111111111111"
+    assert transfer_call["to"] == "0x3333333333333333333333333333333333333333"
+    assert transfer_call["value"] == "0x0"
+    assert transfer_call["data"] == (
+        "0xa9059cbb"
+        "0000000000000000000000002222222222222222222222222222222222222222"
+        "00000000000000000000000000000000000000000000000000000000001312d0"
+    )
+    assert estimate["estimated_fee"]["amount"] == "0.0001"
+    assert estimate["gas_limit"] == 50000
+
+
 def test_docker_image_contract_installs_live_runtime_dependencies_reproducibly() -> None:
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
     requirements = (ROOT / "requirements-runtime.txt").read_text(encoding="utf-8")
@@ -174,6 +256,35 @@ def _factory_env() -> dict[str, str]:
         "CSRF_ACTIVE_KEY_ID": "local-dev-csrf-2026",
         "CSRF_SIGNING_KEY": "local_dev_only_csrf_signing_key_32_bytes_for_tests",
     }
+
+
+class FakeJsonRpcBlockchainClient:
+    def __init__(self, *, rpc_results: dict[str, object]) -> None:
+        from token_payments.runtime import JsonRpcBlockchainClient
+
+        class _Client(JsonRpcBlockchainClient):
+            calls: list[tuple[str, tuple[object, ...]]]
+            rpc_results: dict[str, object]
+
+            def _rpc(self, method: str, params: tuple[object, ...]) -> object:
+                self.calls.append((method, params))
+                return self.rpc_results[method]
+
+        self._client = _Client(
+            rpc_url="http://rpc.local",
+            chain_id=1337,
+            native_symbol="ETH",
+            native_decimals=18,
+        )
+        self._client.calls = []
+        self._client.rpc_results = rpc_results
+
+    @property
+    def calls(self) -> list[tuple[str, tuple[object, ...]]]:
+        return self._client.calls
+
+    def estimate_gas(self, request: dict[str, object]) -> dict[str, object]:
+        return self._client.estimate_gas(request)
 
 
 def _imported_roots(path: Path) -> set[str]:

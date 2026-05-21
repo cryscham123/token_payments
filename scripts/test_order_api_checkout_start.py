@@ -472,13 +472,28 @@ class FakePostgresConnection:
             rows = [dict(row) for row in self.products.get(str(params["store_id"]), [])]
             return FakeResult(rows, rowcount=len(rows))
         if "insert into orders" in normalized:
-            self.orders[str(params["order_id"])] = params
+            stored_params = dict(params)
+            if "failure_messages" in stored_params and isinstance(stored_params["failure_messages"], str):
+                import json
+                try:
+                    stored_params["failure_messages"] = json.loads(stored_params["failure_messages"])
+                except Exception:
+                    pass
+            self.orders[str(params["order_id"])] = stored_params
             return FakeResult(rowcount=1)
         if "insert into order_items" in normalized:
             self.order_items[str(params["order_item_id"])] = params
             return FakeResult(rowcount=1)
         if "insert into outbox_messages" in normalized:
-            self.outbox_messages[str(params["message_identity"])] = params
+            stored_params = dict(params)
+            for field in ("payload", "headers"):
+                if field in stored_params and isinstance(stored_params[field], str):
+                    import json
+                    try:
+                        stored_params[field] = json.loads(stored_params[field])
+                    except Exception:
+                        pass
+            self.outbox_messages[str(params["message_identity"])] = stored_params
             return FakeResult(rowcount=1)
 
         raise AssertionError(f"unexpected SQL: {sql}")
