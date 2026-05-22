@@ -1925,6 +1925,45 @@ class _TransactionalStoreCatalogUseCase:
     def list_merchant_stores(self, query):
         return self._execute(lambda service: service.list_merchant_stores(query))
 
+    def list_public_stores(self, *, limit: int, offset: int):
+        return self._execute(lambda service: service.list_public_stores(limit=limit, offset=offset))
+
+    def list_public_products(self, *, public_store_id, filters):
+        return self._execute(
+            lambda service: service.list_public_products(
+                public_store_id=public_store_id,
+                filters=filters,
+            )
+        )
+
+    def get_public_product(self, *, public_store_id, public_product_id):
+        return self._execute(
+            lambda service: service.get_public_product(
+                public_store_id=public_store_id,
+                public_product_id=public_product_id,
+            )
+        )
+
+    def list_merchant_products(self, *, actor_user_id, public_store_id, filters, platform_override=False):
+        return self._execute(
+            lambda service: service.list_merchant_products(
+                actor_user_id=actor_user_id,
+                public_store_id=public_store_id,
+                filters=filters,
+                platform_override=platform_override,
+            )
+        )
+
+    def get_merchant_product(self, *, actor_user_id, public_store_id, public_product_id, platform_override=False):
+        return self._execute(
+            lambda service: service.get_merchant_product(
+                actor_user_id=actor_user_id,
+                public_store_id=public_store_id,
+                public_product_id=public_product_id,
+                platform_override=platform_override,
+            )
+        )
+
     def update_store_profile(self, command):
         return self._execute(lambda service: service.update_store_profile(command))
 
@@ -1933,6 +1972,9 @@ class _TransactionalStoreCatalogUseCase:
 
     def register_store_product(self, command):
         return self._execute(lambda service: service.register_store_product(command))
+
+    def update_store_product(self, command):
+        return self._execute(lambda service: service.update_store_product(command))
 
     def _execute(self, callback: Callable[[StoreCatalogApplicationService], Any]) -> Any:
         return _with_transaction(
@@ -1944,6 +1986,7 @@ class _TransactionalStoreCatalogUseCase:
                 )
             ),
         )
+
 
 
 class _TransactionalStoreOwnerInventoryCommandHandler:

@@ -291,7 +291,7 @@ class StoreCatalogApi:
                 actor_user_id=claims.user_id,
                 actor_platform_role=UserRole.ADMIN if "product:write:any" in claims.scopes else UserRole.CUSTOMER,
                 public_store_id=PublicStoreId(_lookup_value(request, "publicStoreId")),
-                product_id=ProductId(_required_text(body, "productId")),
+                product_id=ProductId(_optional_text(body, "productId") or _new_id(self._id_generator)),
                 public_product_id=_optional_public_product_id(body, "publicProductId"),
                 title=_optional_text(body, "title") or _required_text(body, "name"),
                 description=_optional_text(body, "description"),

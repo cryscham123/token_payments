@@ -161,6 +161,31 @@ def test_product_registration_idempotency_does_not_duplicate_projection_or_inven
     assert len(repository.audit_records) == 1
 
 
+def test_product_registration_generates_product_id_when_not_provided() -> None:
+    repository = _seed_owner_store()
+    router = catalog_router(repository, auth(OWNER_ID, UserRole.CUSTOMER))
+
+    response = router.handle(
+        "POST",
+        f"/merchant/stores/{repository.stores[STORE_ID].public_store_id}/products",
+        headers={"Content-Type": "application/json", "Idempotency-Key": "product-register-no-id-001", "X-Request-Id": "req-product-no-id"},
+        body=json_body(
+            {
+                "name": "Auto ID Mug",
+                "price": price_payload(),
+                "initialTotalStock": 5,
+                "active": True,
+            }
+        ),
+    )
+
+    payload = decode(response.body)
+    assert response.status_code == 201
+    assert "productId" in payload
+    assert payload["productId"]  # non-empty server-generated UUID
+    assert len(repository.products) == 1
+
+
 def _seed_owner_store(*, active: bool = True, chains: tuple[int, ...] = (11155111,)) -> FakeStoreCatalogRepository:
     repository = FakeStoreCatalogRepository()
     repository.seed_user(OWNER_ID, OWNER_WALLET, role=UserRole.CUSTOMER)
@@ -172,6 +197,17 @@ def _product_body() -> bytes:
     return json_body(
         {
             "productId": str(PRODUCT_ID),
+            "name": "Ledger Mug",
+            "price": price_payload(),
+            "initialTotalStock": 25,
+            "active": True,
+        }
+    )
+
+
+def _product_body_no_id() -> bytes:
+    return json_body(
+        {
             "name": "Ledger Mug",
             "price": price_payload(),
             "initialTotalStock": 25,
