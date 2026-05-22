@@ -4,13 +4,13 @@ This document captures the Live API Runtime Composition boundary for the local T
 
 Default `api`/`serve-api` commands keep the no-server-start preview boundary. Use `PYTHONPATH=app python3 -m token_payments serve-api --live --dry-run` for a bounded live server plan, and `PYTHONPATH=app python3 -m token_payments serve-api --live --confirm-live-api` only when an approved live environment is ready to start the long-running server.
 
-이 문서는 `23-user-store-product-profile-catalog` 진행 중인 로컬 backend API를 기준으로 한 최종 명세 초안이다. Route surface는 현재 `app/token_payments/api/http.py`의 route manifest 36개를 기준으로 고정한다.
+이 문서는 `23-user-store-product-profile-catalog` 진행 중인 로컬 backend API를 기준으로 한 최종 명세 초안이다. Route surface는 현재 `app/token_payments/api/http.py`의 route manifest 42개를 기준으로 고정한다.
 
 ## Route Surface Contract
 
 ### Public HTTP route surface
 
-Public HTTP route surface is exactly the current 36-route manifest from `app/token_payments/api/http.py`. This manifest contains auth session routes, order creation, checkout tracking, payment txHash submission, public store profile reads, merchant store profile listing/update routes, admin store catalog provisioning routes, store-owner product registration, store owner inventory query/mutation routes, merchant member/invitation routes, operator dashboard/detail reads, and cancel/retry/replay operator actions. It does not include store owner manual approval routes, role/permission full CRUD, platform group CRUD, personal group CRUD, owner transfer, settlement wallet mutation, or checkout saga command endpoints.
+Public HTTP route surface is exactly the current 42-route manifest from `app/token_payments/api/http.py`. This manifest contains auth session routes, order creation, checkout tracking, payment txHash submission, public store profile reads, merchant store profile listing/update routes, admin store catalog provisioning routes, store-owner product registration, store owner inventory query/mutation routes, merchant member/invitation routes, operator dashboard/detail reads, and cancel/retry/replay operator actions. It does not include store owner manual approval routes, role/permission full CRUD, platform group CRUD, personal group CRUD, owner transfer, settlement wallet mutation, or checkout saga command endpoints.
 
 ### Message listener input surface
 
@@ -28,7 +28,19 @@ Operator action APIs are platform recovery endpoints. Current compatibility path
 
 Store ownership is represented by canonical store records plus merchant group membership. Canonical store records use internal `store_id` only for persistence and service boundaries, and expose stable external `public_store_id`/`publicStoreId` for public and merchant profile lookup. `public_store_id` is unique/indexed and is not the internal UUID primary key or a sequential id. Compatibility tables such as `store_catalog_store_memberships` may remain during migration, but new authorization paths use group membership and permission lookup. A wallet that already has a customer identity can become a store owner by adding merchant membership to the existing user id; the same wallet must not create a second `auth_users` row, and customer checkout history/profile rows are preserved. Platform operations authority is represented by platform group membership, not a global account role.
 
-`POST /store-owner/stores/{storeId}/products` registers a minimal checkoutable product for an active store. The caller must have `product:write` for that store scope; platform override requires explicit policy permission. The command writes through canonical `store_catalog_products`, checkout `order_store_products`, approval `store_approval_products`, and `product_inventory` in one transaction. Product description, category, tags, images, and search index metadata are phase 23 catalog fields; search engine integration remains future scope.
+Store wallet and supported chains live on the store profile compatibility payload while phase 23 keeps public business profile fields and payment settings as separate policy-gated concerns.
+
+`POST /merchant/stores/{publicStoreId}/products` registers a checkoutable catalog product for an active store using the public store identifier, not internal `store_id`. The request accepts internal `productId` only as a merchant write concern and exposes stable `publicProductId`/`public_product_id` for customer and merchant read paths. The caller must have `product:write` for that store scope; platform override requires explicit policy permission. The command writes through canonical `store_catalog_products`, checkout `order_store_products`, approval `store_approval_products`, and `product_inventory` in one transaction.
+
+`PATCH /merchant/stores/{publicStoreId}/products/{publicProductId}` updates product catalog detail fields without mutating inventory sale status or stock. Product catalog records carry internal `product_id`, external `public_product_id`, internal `store_id`, external `public_store_id`, `title`, optional `description`, `category`, `tags`, `media`, JSON `attributes`, `status`, `visibility`, and timestamps. `public_product_id` is stable and unique inside the public store scope; it must not expose the internal UUID primary key or a sequential id. Search engine integration remains future scope.
+
+`GET /stores`, `GET /stores/{publicStoreId}/products`, and `GET /stores/{publicStoreId}/products/{publicProductId}` are public read APIs keyed only by public store/product ids. Store responses expose business profile and bounded payment capability summaries, not internal settlement wallet values or internal UUID keys. Product responses expose `publicProductId`, display price, availability, and payment capability summaries while omitting internal `store_id`, `product_id`, and customer ids. `GET /merchant/stores/{publicStoreId}/products` and `GET /merchant/stores/{publicStoreId}/products/{publicProductId}` are permission-protected merchant reads that can include private/inactive catalog records and bounded filters for status, visibility, category, tag, query text, sort, limit, and offset.
+
+Catalog query filtering is the PostgreSQL baseline for phase 23. Query text, category, tag, status, visibility, sort, and pagination values are bounded before persistence access; SQL values use parameter binding; `ILIKE` wildcard input is escaped; and ORDER BY columns/directions are allowlisted. Elasticsearch/OpenSearch search projection is future scope and should attach through outbox/projection without changing the public query contract.
+
+Order creation and checkout start must revalidate server-side current store/product/price/inventory/payment capability state. Client-provided product detail, price, stock, chain, asset, or settlement capability values from public catalog reads are hints only and must not be trusted as authorization or pricing inputs.
+
+Elasticsearch, DID-based account identity, and email account recovery are future scope. Phase 23 documents their boundaries but does not add search engine services, DID flows, or email recovery implementations.
 
 ### Store profile API surface
 
@@ -50,7 +62,7 @@ Product sale availability is stored canonically in the inventory context as `Pro
 
 ### Planned phase 22/23 RBAC and profile/catalog alignment
 
-Phase 22 removes global account-role authorization from new execution paths. `User` remains the authenticated identity and audit actor. `Group` is a permission scope/resource boundary, not a user-like actor, and nested groups are not part of the model. `GroupMembership` connects a user to a `PERSONAL`, `MERCHANT`, or `PLATFORM` group with a role. Roles are permission bundles; API authorization checks permission plus resource scope through `AuthorizationPolicy.can(...)`.
+Phase 22 removes global account-role authorization from new execution paths. User remains the authenticated identity and audit actor. `UserProfile` is bounded display/contact profile data and is not an authorization source. `Group` is a permission scope/resource boundary, not a user-like actor, and nested groups are not part of the model. GroupMembership connects a user to a group with a role. `GroupMembership` connects a user to a `PERSONAL`, `MERCHANT`, or `PLATFORM` group with a role. Roles are permission bundles; API authorization checks permission plus resource scope through `AuthorizationPolicy.can(...)`.
 
 `PERSONAL` groups are retained as the customer self-scope. They support self operations without granting merchant or platform authority. `MERCHANT` groups scope store owner/manager permissions to a store or merchant resource. `PLATFORM` groups scope operator/admin permissions.
 
@@ -108,7 +120,9 @@ Platform group creation, platform role assignment, personal group management, pe
 
 MERCHANT_OWNER assignment or transfer is not merchant-facing; merchant APIs can invite, update, or remove only non-owner staff templates selected from the server-defined merchant role catalog.
 
-Phase 23 separates user identity from user profile, store business profile from store payment settings, and product catalog from inventory. Store/product slug fields and SKU fields are not required in phase 23; public and merchant store profile lookup starts with stable `publicStoreId`, while internal service/projection boundaries continue using `storeId` and products continue with stable `productId`. Human-readable URLs and merchant-managed inventory codes are future scope. User display names, store display names, and product titles are display/search fields and may be duplicated. Settlement wallet/supported chain changes are policy-gated payment settings flows, not `updateStoreProfile`. Owner transfer, member invite/remove, and role changes belong to RBAC/membership provisioning, not store profile update.
+Phase 23 separates user identity from user profile, store business profile from store payment settings, and product catalog from inventory. Store/product slug fields and SKU fields are not required in phase 23; public and merchant store/profile/product lookup starts with stable `publicStoreId` and `publicProductId`, while internal service/projection boundaries continue using `storeId` and `productId`. Human-readable URLs and merchant-managed inventory codes are future scope. User display names, store display names, and product titles are display/search fields and may be duplicated. Settlement wallet/supported chain changes are policy-gated payment settings flows, not `updateStoreProfile`. Owner transfer, member invite/remove, and role changes belong to RBAC/membership provisioning, not store profile update.
+
+Historical phase 21 note: description/category/search metadata is future scope; phase 23 has since implemented product description/category fields while search metadata remains future scope.
 
 All user-provided profile/catalog text fields are data, not executable fragments. APIs must validate bounded length, required/optional emptiness, control characters, null bytes, and normalization policy before persistence. SQL adapters must use parameter binding for values and whitelist any dynamic identifiers such as sort columns or directions. UI/rendering layers must HTML-escape display names, store descriptions, product titles, tags, and media labels before output. Query text and filter values must be parameterized; wildcard behavior for `ILIKE`/text search must be explicit and tested.
 
@@ -126,17 +140,17 @@ User-facing capability summary:
 
 Current implementation coverage that phase 22/23 must preserve or close:
 
-| Area | Current coverage | Phase 22/23 requirement |
-| --- | --- | --- |
-| UUID identifiers | Existing value objects validate UUID-like ids for users, stores, products, orders, payments, messages | Reuse value objects at new API boundaries |
-| Wallet and transaction hashes | Existing value objects validate EVM wallet address and tx hash shape | Reuse for profile/payment settings flows; do not accept raw unchecked strings |
-| Crypto values | Existing value objects validate non-negative finite amounts, positive chain ids, decimals, and token address shape | Keep checkout/payment validation separate from product profile display fields |
-| SQL injection baseline | Current PostgreSQL adapters mostly use parameter binding; operator dynamic sort is allowlisted | New profile/catalog query adapters must parameterize values and whitelist dynamic identifiers |
-| Request body and browser mutation guards | Current HTTP/runtime contracts include body size, malformed JSON, CSRF, and idempotency handling for important mutations | New mutating APIs must use the same bounded body, CSRF, and idempotency policies where applicable |
-| Text fields | Current domain text checks are mostly non-empty/strip only | Add length, control character, null byte, normalization, log/CSV injection, and output escaping tests |
-| Email/URL/media/tag/category/JSON attributes | Not implemented as profile/catalog validation | Add explicit shape, length, count, depth, and serialization validation |
-| Merchant invitation/member role changes | Not implemented as public merchant APIs | Add merchant-scoped invitation/member APIs with role-template allowlists and last-owner protections |
-| Role/permission CRUD | Not exposed | Keep seed/static in phase 22; expose only safe merchant role catalog and membership actions |
+| Area | Status | Current coverage | Phase 22/23 requirement |
+| --- | --- | --- | --- |
+| UUID identifiers | Implemented | Existing value objects validate UUID-like ids for users, stores, products, orders, payments, messages | Reuse value objects at new API boundaries |
+| Wallet and transaction hashes | Implemented | Existing value objects validate EVM wallet address and tx hash shape | Reuse for profile/payment settings flows; do not accept raw unchecked strings |
+| Crypto values | Implemented | Existing value objects validate non-negative finite amounts, positive chain ids, decimals, and token address shape | Keep checkout/payment validation separate from product profile display fields |
+| SQL injection baseline | Partially implemented | Current PostgreSQL adapters use parameter binding; operator/catalog dynamic sort is allowlisted | New profile/catalog query adapters must parameterize values and whitelist dynamic identifiers |
+| Request body and browser mutation guards | Implemented | Current HTTP/runtime contracts include body size, malformed JSON, CSRF, and idempotency handling for important mutations | New mutating APIs must use the same bounded body, CSRF, and idempotency policies where applicable |
+| Text fields | Implemented | Profile/catalog text checks include bounded length, normalization, control/null rejection, log/CSV prefix guards, and escaped response fields | Preserve those checks at new profile/catalog boundaries |
+| Email/URL/media/tag/category/JSON attributes | Implemented | Profile/catalog validation covers email shape, media URL/object-key shape, tag/category shape, JSON depth/count/size, and JSON-safe serialization | Keep search/index projection from weakening those data contracts |
+| Merchant invitation/member role changes | Implemented | Merchant-scoped invitation/member APIs use role-template allowlists and last-owner protections | Keep owner transfer out of merchant self-service |
+| Role/permission CRUD | Future scope | Not exposed | Keep seed/static in phase 22; expose only safe merchant role catalog and membership actions |
 
 ## Runtime Assumptions
 
@@ -213,7 +227,7 @@ Request body size is bounded by `REQUEST_BODY_MAX_BYTES`. Exceeding it returns `
 
 ## Live System Routes And Observability
 
-`GET /healthz` and `GET /readyz` are live server-only system routes and are not part of the 36-route public facade manifest. `/healthz` reports process/runtime health only and must not open PostgreSQL, Kafka, Blockchain, Docker, or local `.env`. `/readyz` summarizes injected PostgreSQL/Kafka/Blockchain readiness probes; unavailable components return `503` with bounded component details.
+`GET /healthz` and `GET /readyz` are live server-only system routes and are not part of the 42-route public facade manifest. `/healthz` reports process/runtime health only and must not open PostgreSQL, Kafka, Blockchain, Docker, or local `.env`. `/readyz` summarizes injected PostgreSQL/Kafka/Blockchain readiness probes; unavailable components return `503` with bounded component details.
 
 All HTTP responses include `X-Request-Id` when a request id is known, and an incoming `X-Request-Id` is preserved. Live access log events include method, path template or route id, status, request id, duration, actor summary, and error code. Access logs must not record cookie values, signed tokens, authorization headers, private keys, signatures, or full request bodies.
 
@@ -256,12 +270,18 @@ Common status codes:
 | `getCheckoutTrackingByOrderId` | `GET` | `/checkouts/orders/{orderId}` |
 | `submitTransactionHash` | `POST` | `/payments/transaction-hashes` |
 | `getStoreProfile` | `GET` | `/stores/{publicStoreId}` |
+| `listPublicStores` | `GET` | `/stores` |
+| `listPublicProducts` | `GET` | `/stores/{publicStoreId}/products` |
+| `getPublicProduct` | `GET` | `/stores/{publicStoreId}/products/{publicProductId}` |
 | `listMerchantStores` | `GET` | `/merchant/stores` |
 | `updateStoreProfile` | `PATCH` | `/merchant/stores/{publicStoreId}/profile` |
 | `createOrReuseStoreUser` | `POST` | `/admin/store-users` |
 | `createStore` | `POST` | `/admin/stores` |
 | `grantStoreMembership` | `POST` | `/admin/stores/{storeId}/memberships` |
-| `registerStoreProduct` | `POST` | `/store-owner/stores/{storeId}/products` |
+| `listMerchantProducts` | `GET` | `/merchant/stores/{publicStoreId}/products` |
+| `getMerchantProduct` | `GET` | `/merchant/stores/{publicStoreId}/products/{publicProductId}` |
+| `registerStoreProduct` | `POST` | `/merchant/stores/{publicStoreId}/products` |
+| `updateStoreProduct` | `PATCH` | `/merchant/stores/{publicStoreId}/products/{publicProductId}` |
 | `listStoreOwnerInventory` | `GET` | `/store-owner/inventory` |
 | `increaseStoreOwnerInventoryStock` | `POST` | `/store-owner/stores/{storeId}/inventory/{productId}/intake` |
 | `correctStoreOwnerInventoryStock` | `POST` | `/store-owner/stores/{storeId}/inventory/{productId}/corrections` |

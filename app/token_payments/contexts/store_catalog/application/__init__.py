@@ -8,6 +8,7 @@ from .commands import (
     ListMerchantStoresQuery,
     RegisterStoreProductCommand,
     UpdateStoreProfileCommand,
+    UpdateStoreProductCommand,
 )
 from .ports import (
     CatalogAuditRecord,
@@ -29,6 +30,7 @@ __all__ = [
     "ListMerchantStoresQuery",
     "RegisterStoreProductCommand",
     "UpdateStoreProfileCommand",
+    "UpdateStoreProductCommand",
     "StoreCatalogApplicationService",
     "StoreCatalogCommandResult",
     "StoreCatalogCommandStatus",

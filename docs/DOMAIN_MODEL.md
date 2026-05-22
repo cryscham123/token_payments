@@ -43,7 +43,7 @@
 
 ### RBAC Authorization Model
 
-`User` is the authenticated identity and audit actor. `auth_users.role` column is legacy compatibility only; auth_users.role column is legacy compatibility only and is not the permission source for new execution paths. `Group` is not a user-like actor; it is a permission scope/resource boundary. `GroupMembership` connects a user to a group with a role, and `RolePermission` defines the permissions granted by that role. Nested groups are not part of the model.
+User remains the authenticated identity and audit actor. `UserProfile` stores bounded display/contact profile data and is separate from authentication, authorization, and group membership. `auth_users.role` column is legacy compatibility only; auth_users.role column is legacy compatibility only and is not the permission source for new execution paths. `Group` is not a user-like actor; it is a permission scope/resource boundary. GroupMembership connects a user to a group with a role, and `RolePermission` defines the permissions granted by that role. Nested groups are not part of the model.
 
 `PERSONAL` groups are retained as a thin customer self-scope so customer behavior can be represented without a global `CUSTOMER` role. `MERCHANT` groups scope store owner/manager permissions to one store or merchant resource. `PLATFORM` groups scope operator/admin permissions.
 
@@ -133,16 +133,16 @@ Merchant groups are created by store provisioning and linked to one store or mer
 | `StoreProfile` | internal `StoreId`, external `PublicStoreId`, `GroupId`, `displayName`, `description`, `status`, `supportEmail`, `supportEmailPublic`, `businessRegistrationLabel`, `createdAt`, `updatedAt` | public/private business profile 보존 |
 | `StorePaymentSettings` | `StoreId`, `storeWallet`, `supportedChainIds`, `active` | payment destination/chain 설정 보존 |
 | `StoreMembership` | `StoreId`, `UserId`, store-scoped `role`, `active` | compatibility path; new authorization uses merchant group membership |
-| `StoreProduct` | `StoreId`, `ProductId`, `title`, `description`, `category`, `tags`, `media`, `attributes`, `status`, `visibility`, `Crypto price` | canonical product catalog item |
+| `StoreProduct` | `StoreId`, `ProductId`, `PublicStoreId`, `PublicProductId`, `title`, `description`, `category`, `tags`, `media`, `attributes`, `status`, `visibility`, `Crypto price` | canonical product catalog item |
 
 ### Value Objects
 
 - `StoreMembershipRole`: `OWNER`, `MANAGER` compatibility only while merchant group RBAC migrates.
-- `StoreId`, `PublicStoreId`, `ProductId`, `UserId`, `GroupId`, `WalletAddress`, `Crypto`
+- `StoreId`, `PublicStoreId`, `ProductId`, `PublicProductId`, `UserId`, `GroupId`, `WalletAddress`, `Crypto`
 
 ### Ports and Adapters
 
-- Input: `getStoreProfile`, `listMerchantStores`, `updateStoreProfile`, `createOrReuseStoreUser`, `createStore`, `grantStoreMembership`, `registerStoreProduct` (Adapter type: HTTP)
+- Input: `getStoreProfile`, `listMerchantStores`, `updateStoreProfile`, `createOrReuseStoreUser`, `createStore`, `grantStoreMembership`, `registerStoreProduct`, `updateStoreProduct` (Adapter type: HTTP)
 - Output: `CatalogWriteRepository`, catalog idempotency/audit persistence, checkout catalog projection writers, store approval projection writers, inventory projection writer
 - Adapters: PostgreSQL canonical `store_catalog_stores`, `store_catalog_store_memberships`, `store_catalog_products`, write-through projection tables
 
@@ -150,7 +150,7 @@ Merchant groups are created by store provisioning and linked to one store or mer
 
 Store business profile and payment settings are separate. `store:write` updates business profile fields such as display name, description, and support contact. Settlement wallet and supported chain changes are policy-gated payment settings flows, not public profile edits. Owner transfer, member invite/remove, and role/permission changes belong to RBAC/membership provisioning, not `updateStoreProfile`.
 
-Store/product slug fields and SKU fields are not part of phase 23. Public and merchant lookup starts with stable `storeId` and `productId`; human-readable URLs and merchant-managed inventory codes are future scope. User display names, store display names, and product titles are display/search fields and may be duplicated.
+Store/product slug fields and SKU fields are not part of phase 23. Public and merchant lookup starts with stable `publicStoreId` and `publicProductId`; internal `store_id`/`product_id` remain service and persistence details. Human-readable URLs and merchant-managed inventory codes are future scope. User display names, store display names, and product titles are display/search fields and may be duplicated.
 
 Profile/catalog text is persisted as bounded data. Domain validation must reject or normalize empty required values, excessive length, control characters, null bytes, and log/CSV injection-prone prefixes where applicable. Persistence adapters must use parameter binding/JSON-safe serialization rather than string-built SQL values, and presentation adapters must escape text before HTML output.
 

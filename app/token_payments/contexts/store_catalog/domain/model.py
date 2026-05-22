@@ -6,9 +6,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 import hashlib
+import json
+import math
 import re
+from types import MappingProxyType
 import unicodedata
-from typing import Self
+from typing import Any, Mapping, Self
 from uuid import UUID
 
 from token_payments.contexts.auth.domain import GroupId
@@ -16,7 +19,10 @@ from token_payments.shared.domain import Crypto, ProductId, StoreId, UserId, Wal
 
 
 _PUBLIC_STORE_ID_RE = re.compile(r"^[a-z][a-z0-9_-]{7,63}$")
+_PUBLIC_PRODUCT_ID_RE = re.compile(r"^[a-z][a-z0-9_-]{7,63}$")
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_TAG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
+_OBJECT_KEY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$")
 _LOG_CSV_INJECTION_PREFIXES = ("=", "+", "-", "@")
 
 
@@ -28,6 +34,17 @@ class StoreMembershipRole(StrEnum):
 class StoreStatus(StrEnum):
     ACTIVE = "ACTIVE"
     SUSPENDED = "SUSPENDED"
+
+
+class ProductStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    INACTIVE = "INACTIVE"
+    ARCHIVED = "ARCHIVED"
+
+
+class ProductVisibility(StrEnum):
+    PUBLIC = "PUBLIC"
+    PRIVATE = "PRIVATE"
 
 
 @dataclass(frozen=True)
@@ -44,6 +61,25 @@ class PublicStoreId:
             raise ValueError("PublicStoreId.for_store_id store_id must be a StoreId")
         digest = hashlib.blake2s(str(store_id).encode("ascii"), digest_size=10).hexdigest()
         return cls(f"st_{digest}")
+
+    def __str__(self) -> str:
+        return self.value
+
+
+@dataclass(frozen=True)
+class PublicProductId:
+    value: str
+
+    def __post_init__(self) -> None:
+        value = _public_product_id(self.value, "PublicProductId.value")
+        object.__setattr__(self, "value", value)
+
+    @classmethod
+    def for_product_id(cls, product_id: ProductId) -> Self:
+        if not isinstance(product_id, ProductId):
+            raise ValueError("PublicProductId.for_product_id product_id must be a ProductId")
+        digest = hashlib.blake2s(str(product_id).encode("ascii"), digest_size=10).hexdigest()
+        return cls(f"prd_{digest}")
 
     def __str__(self) -> str:
         return self.value
@@ -230,24 +266,129 @@ class StoreMembership:
         return cls(store_id=store_id, user_id=user_id, role=StoreMembershipRole.OWNER, active=active)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class StoreProduct:
     store_id: StoreId
     product_id: ProductId
-    name: str
+    public_product_id: PublicProductId
+    public_store_id: PublicStoreId
+    title: str
+    description: str | None
+    category: str | None
+    tags: tuple[str, ...]
+    media: tuple[str, ...]
+    attributes: Mapping[str, Any]
+    status: ProductStatus
+    visibility: ProductVisibility
     price: Crypto
-    active: bool = True
+    created_at: datetime
+    updated_at: datetime
 
-    def __post_init__(self) -> None:
-        if not isinstance(self.store_id, StoreId):
+    def __init__(
+        self,
+        *,
+        store_id: StoreId,
+        product_id: ProductId,
+        price: Crypto,
+        public_product_id: PublicProductId | str | None = None,
+        public_store_id: PublicStoreId | str | None = None,
+        title: str | None = None,
+        name: str | None = None,
+        description: str | None = None,
+        category: str | None = None,
+        tags: tuple[str, ...] | list[str] | None = None,
+        media: tuple[str, ...] | list[str] | None = None,
+        attributes: Mapping[str, Any] | None = None,
+        status: ProductStatus | str | None = None,
+        visibility: ProductVisibility | str = ProductVisibility.PUBLIC,
+        active: bool = True,
+        created_at: datetime | None = None,
+        updated_at: datetime | None = None,
+    ) -> None:
+        if not isinstance(store_id, StoreId):
             raise ValueError("StoreProduct.store_id must be a StoreId")
-        if not isinstance(self.product_id, ProductId):
+        if not isinstance(product_id, ProductId):
             raise ValueError("StoreProduct.product_id must be a ProductId")
-        object.__setattr__(self, "name", _text(self.name, "StoreProduct.name"))
-        if not isinstance(self.price, Crypto):
+        if not isinstance(price, Crypto):
             raise ValueError("StoreProduct.price must be a Crypto")
-        if not isinstance(self.active, bool):
+        if not isinstance(active, bool):
             raise ValueError("StoreProduct.active must be a bool")
+        if public_product_id is None:
+            public_product_id = PublicProductId.for_product_id(product_id)
+        elif not isinstance(public_product_id, PublicProductId):
+            public_product_id = PublicProductId(public_product_id)
+        if public_store_id is None:
+            public_store_id = PublicStoreId.for_store_id(store_id)
+        elif not isinstance(public_store_id, PublicStoreId):
+            public_store_id = PublicStoreId(public_store_id)
+        if title is None:
+            title = name
+        if status is None:
+            status = ProductStatus.ACTIVE if active else ProductStatus.INACTIVE
+        if created_at is None:
+            created_at = datetime.now(UTC)
+        if updated_at is None:
+            updated_at = created_at
+
+        object.__setattr__(self, "store_id", store_id)
+        object.__setattr__(self, "product_id", product_id)
+        object.__setattr__(self, "public_product_id", public_product_id)
+        object.__setattr__(self, "public_store_id", public_store_id)
+        object.__setattr__(self, "title", _bounded_text(title or "", "StoreProduct.title", max_length=160))
+        object.__setattr__(
+            self,
+            "description",
+            _optional_bounded_text(description, "StoreProduct.description", max_length=4000),
+        )
+        object.__setattr__(self, "category", _optional_category(category))
+        object.__setattr__(self, "tags", _tags(tags or ()))
+        object.__setattr__(self, "media", _media_refs(media or ()))
+        object.__setattr__(self, "attributes", MappingProxyType(_attributes(attributes or {})))
+        object.__setattr__(self, "status", _product_status(status))
+        object.__setattr__(self, "visibility", _product_visibility(visibility))
+        object.__setattr__(self, "price", price)
+        object.__setattr__(self, "created_at", _aware_datetime(created_at, "StoreProduct.created_at"))
+        object.__setattr__(self, "updated_at", _aware_datetime(updated_at, "StoreProduct.updated_at"))
+
+    @property
+    def name(self) -> str:
+        return self.title
+
+    @property
+    def active(self) -> bool:
+        return self.status is ProductStatus.ACTIVE
+
+    def update_detail(
+        self,
+        *,
+        title: str | None = None,
+        description: str | None = None,
+        category: str | None = None,
+        tags: tuple[str, ...] | list[str] | None = None,
+        media: tuple[str, ...] | list[str] | None = None,
+        attributes: Mapping[str, Any] | None = None,
+        status: ProductStatus | str | None = None,
+        visibility: ProductVisibility | str | None = None,
+        price: Crypto | None = None,
+        updated_at: datetime,
+    ) -> Self:
+        return type(self)(
+            store_id=self.store_id,
+            product_id=self.product_id,
+            public_product_id=self.public_product_id,
+            public_store_id=self.public_store_id,
+            title=self.title if title is None else title,
+            description=self.description if description is None else description,
+            category=self.category if category is None else category,
+            tags=self.tags if tags is None else tags,
+            media=self.media if media is None else media,
+            attributes=dict(self.attributes) if attributes is None else attributes,
+            status=self.status if status is None else status,
+            visibility=self.visibility if visibility is None else visibility,
+            price=self.price if price is None else price,
+            created_at=self.created_at,
+            updated_at=updated_at,
+        )
 
 
 @dataclass(frozen=True)
@@ -320,6 +461,23 @@ def _public_store_id(value: str, field_name: str) -> str:
     return value
 
 
+def _public_product_id(value: str, field_name: str) -> str:
+    value = _text(value, field_name).lower()
+    try:
+        UUID(value)
+    except ValueError:
+        pass
+    else:
+        raise ValueError(f"{field_name} must not be an internal UUID")
+    if value.isdigit():
+        raise ValueError(f"{field_name} must not be a sequential numeric id")
+    if not _PUBLIC_PRODUCT_ID_RE.fullmatch(value):
+        raise ValueError(f"{field_name} must be 8-64 lowercase letters, numbers, underscores, or hyphens")
+    if _has_unsafe_text(value):
+        raise ValueError(f"{field_name} contains unsafe characters")
+    return value
+
+
 def _bounded_text(value: str, field_name: str, *, max_length: int) -> str:
     value = unicodedata.normalize("NFC", _text(value, field_name))
     if len(value) > max_length:
@@ -335,6 +493,94 @@ def _optional_bounded_text(value: str | None, field_name: str, *, max_length: in
     if value is None:
         return None
     return _bounded_text(value, field_name, max_length=max_length)
+
+
+def _optional_category(value: str | None) -> str | None:
+    category = _optional_bounded_text(value, "StoreProduct.category", max_length=80)
+    if category is None:
+        return None
+    return category.lower()
+
+
+def _tags(values: tuple[str, ...] | list[str]) -> tuple[str, ...]:
+    tags = tuple(_tag(value) for value in values)
+    if len(tags) > 20:
+        raise ValueError("StoreProduct.tags must contain at most 20 tags")
+    if len(set(tags)) != len(tags):
+        raise ValueError("StoreProduct.tags cannot contain duplicates")
+    return tags
+
+
+def _tag(value: str) -> str:
+    tag = unicodedata.normalize("NFC", _text(value, "StoreProduct.tag")).lower()
+    if _has_unsafe_text(tag):
+        raise ValueError("StoreProduct.tag contains unsafe characters")
+    if not _TAG_RE.fullmatch(tag):
+        raise ValueError("StoreProduct.tag must be lowercase letters, numbers, underscores, or hyphens")
+    return tag
+
+
+def _media_refs(values: tuple[str, ...] | list[str]) -> tuple[str, ...]:
+    refs = tuple(_media_ref(value) for value in values)
+    if len(refs) > 12:
+        raise ValueError("StoreProduct.media must contain at most 12 refs")
+    return refs
+
+
+def _media_ref(value: str) -> str:
+    ref = _bounded_text(value, "StoreProduct.media", max_length=2048)
+    from urllib.parse import urlsplit
+
+    parsed = urlsplit(ref)
+    if parsed.scheme:
+        if parsed.scheme not in {"https", "ipfs"} or not parsed.netloc:
+            raise ValueError("StoreProduct.media URL scheme must be https or ipfs")
+        return ref
+    if ref.startswith("/") or ".." in ref.split("/") or not _OBJECT_KEY_RE.fullmatch(ref):
+        raise ValueError("StoreProduct.media object key has an invalid shape")
+    return ref
+
+
+def _attributes(value: Mapping[str, Any]) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ValueError("StoreProduct.attributes must be a JSON object")
+    attributes = _json_object(value, "StoreProduct.attributes", depth=0)
+    encoded = json.dumps(attributes, ensure_ascii=False, sort_keys=True, allow_nan=False)
+    if len(encoded.encode("utf-8")) > 8192:
+        raise ValueError("StoreProduct.attributes serialized size must be at most 8192 bytes")
+    return attributes
+
+
+def _json_object(value: Mapping[str, Any], field_name: str, *, depth: int) -> dict[str, Any]:
+    if depth > 4:
+        raise ValueError(f"{field_name} is nested too deeply")
+    if len(value) > 50:
+        raise ValueError(f"{field_name} contains too many keys")
+    result: dict[str, Any] = {}
+    for raw_key, raw_value in value.items():
+        key = _bounded_text(str(raw_key), f"{field_name}.key", max_length=60)
+        result[key] = _json_value(raw_value, f"{field_name}.{key}", depth=depth + 1)
+    return result
+
+
+def _json_value(value: Any, field_name: str, *, depth: int) -> Any:
+    if depth > 4:
+        raise ValueError(f"{field_name} is nested too deeply")
+    if value is None or isinstance(value, bool | int):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError(f"{field_name} must be finite")
+        return value
+    if isinstance(value, str):
+        return _bounded_text(value, field_name, max_length=200)
+    if isinstance(value, list | tuple):
+        if len(value) > 25:
+            raise ValueError(f"{field_name} contains too many values")
+        return [_json_value(item, field_name, depth=depth + 1) for item in value]
+    if isinstance(value, Mapping):
+        return _json_object(value, field_name, depth=depth)
+    raise ValueError(f"{field_name} contains unsupported JSON value type")
 
 
 def _optional_email(value: str | None, field_name: str) -> str | None:
@@ -361,6 +607,24 @@ def _store_status(value: StoreStatus | str) -> StoreStatus:
         return StoreStatus(_text(str(value), "status"))
     except ValueError as exc:
         raise ValueError("StoreProfile.status must be ACTIVE or SUSPENDED") from exc
+
+
+def _product_status(value: ProductStatus | str) -> ProductStatus:
+    if isinstance(value, ProductStatus):
+        return value
+    try:
+        return ProductStatus(_text(str(value), "StoreProduct.status"))
+    except ValueError as exc:
+        raise ValueError("StoreProduct.status must be ACTIVE, INACTIVE, or ARCHIVED") from exc
+
+
+def _product_visibility(value: ProductVisibility | str) -> ProductVisibility:
+    if isinstance(value, ProductVisibility):
+        return value
+    try:
+        return ProductVisibility(_text(str(value), "StoreProduct.visibility"))
+    except ValueError as exc:
+        raise ValueError("StoreProduct.visibility must be PUBLIC or PRIVATE") from exc
 
 
 def _optional_group_id(value: GroupId | str | None) -> GroupId | None:

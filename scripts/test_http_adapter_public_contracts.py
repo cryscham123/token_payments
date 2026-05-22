@@ -56,7 +56,7 @@ def test_http_route_manifest_includes_every_phase_7_route_family() -> None:
     described = list(describe_http_routes())
 
     assert described == manifest
-    assert len(manifest) == 36
+    assert len(manifest) == 42
     assert {entry["operationId"] for entry in manifest} == {
         "requestLoginChallenge",
         "loginWithMetaMask",
@@ -67,13 +67,19 @@ def test_http_route_manifest_includes_every_phase_7_route_family() -> None:
         "getCheckoutTrackingByTrackingId",
         "getCheckoutTrackingByOrderId",
         "submitTransactionHash",
+        "listPublicStores",
         "getStoreProfile",
+        "listPublicProducts",
+        "getPublicProduct",
         "listMerchantStores",
         "updateStoreProfile",
         "createOrReuseStoreUser",
         "createStore",
         "grantStoreMembership",
+        "listMerchantProducts",
+        "getMerchantProduct",
         "registerStoreProduct",
+        "updateStoreProduct",
         "listStoreOwnerInventory",
         "increaseStoreOwnerInventoryStock",
         "correctStoreOwnerInventoryStock",

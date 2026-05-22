@@ -39,7 +39,9 @@
     "demoStoreOwnerUserId": "33333333-3333-4333-8333-333333333333",
     "demoStoreOwnerWallet": "0x2222222222222222222222222222222222222222",
     "demoStoreId": "44444444-4444-4444-8444-444444444444",
+    "demoPublicStoreId": "st_demo_store_001",
     "demoProductId": "55555555-5555-4555-8555-555555555555",
+    "demoPublicProductId": "prd_local_hoodie_001",
     "demoInventoryAvailableStock": 25,
     "paymentDestinationWallet": "0x2222222222222222222222222222222222222222",
     "paymentTokenAddress": "0x3333333333333333333333333333333333333333",
@@ -163,7 +165,17 @@
       "columns": [
         "store_id",
         "product_id",
+        "public_product_id",
+        "public_store_id",
+        "title",
         "name",
+        "description",
+        "category",
+        "tags",
+        "media",
+        "attributes",
+        "status",
+        "visibility",
         "price_numeric",
         "price_symbol",
         "price_chain_id",
@@ -174,7 +186,24 @@
       "values": {
         "store_id": "44444444-4444-4444-8444-444444444444",
         "product_id": "55555555-5555-4555-8555-555555555555",
+        "public_product_id": "prd_local_hoodie_001",
+        "public_store_id": "st_demo_store_001",
+        "title": "Local Hoodie",
         "name": "Local Hoodie",
+        "description": "Local checkout test hoodie",
+        "category": "apparel",
+        "tags": [
+          "demo",
+          "hoodie"
+        ],
+        "media": [
+          "products/local-hoodie.png"
+        ],
+        "attributes": {
+          "size": "M"
+        },
+        "status": "ACTIVE",
+        "visibility": "PUBLIC",
         "price_numeric": "10.000000000000000000",
         "price_symbol": "TPAY",
         "price_chain_id": 1337,
