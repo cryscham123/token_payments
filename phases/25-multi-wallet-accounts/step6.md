@@ -10,6 +10,8 @@
 - `/app/token_payments/contexts/payment/adapter/transaction_service.py`
 - `/app/token_payments/contexts/payment/adapter/postgres.py`
 - `/app/token_payments/runtime/composition.py`
+- `/app/test_network/deployed_contracts.json` (있는 경우)
+- `/.env.example`
 - `/scripts/test_wallet_blockchain_boundaries.py`
 - `/scripts/test_payment_application_contracts.py`
 - `/phases/25-multi-wallet-accounts/index.json`
@@ -31,6 +33,13 @@
    - ERC-20 transfer calldata 생성 또는 transaction request factory를 추가한다.
    - receipt log decoder는 표준 library/structured parsing을 사용하고 ad hoc string parsing을 피한다.
    - bounded timeout/error handling을 유지한다.
+   - `refund_payment`를 실제 on-chain 환불 트랜잭션을 전송하도록 구현한다.
+     - native coin 환불: 평타 환불 지갑(`ADAPTER_BLOCKCHAIN_REFUND_PRIVATE_KEY` 환경 변수)으로 원래 `wallet_from`에게 `eth_sendRawTransaction`으로 ETH를 전송한다.
+     - ERC-20 환불: 동일 환불 지갑이 token contract의 `transfer(wallet_from, amount)` calldata를 포함한 트랜잭션을 `eth_sendRawTransaction`으로 전송한다.
+     - 환불 트랜잭션이 마이닝되면 `eth_getTransactionReceipt`로 영수증을 확인하고 `refund_receipt`로 반환한다.
+     - `ADAPTER_BLOCKCHAIN_REFUND_PRIVATE_KEY`가 설정되지 않으면 `refund_payment`는 `ValueError`를 발생시켜 시스템 설정 문제로 노출한다.
+     - 로쫀 테스트는 `TEST_NETWORK_PRIVATE_KEY`와 동일한 계정을 `ADAPTER_BLOCKCHAIN_REFUND_PRIVATE_KEY`로 사용한다.
+   - `.env.example`에 `ADAPTER_BLOCKCHAIN_REFUND_PRIVATE_KEY`를 추가하고 로쫀 테스트에서 `TEST_NETWORK_PRIVATE_KEY`와 동일한 계정을 사용한다는 주석을 단다.
 3. payment application을 갱신한다.
    - payment status transition은 asset type에 따라 verification strategy를 선택한다.
    - outbox event payload는 expected authorization terms와 observed receipt verification result를 분리해서 포함한다.
@@ -48,6 +57,8 @@ python3 -m pytest scripts/test_erc20_payment_authorization_receipts.py scripts/t
 python3 scripts/validate_phases.py
 ```
 
+> **refund 수동 검증**: `ADAPTER_BLOCKCHAIN_REFUND_PRIVATE_KEY`를 설정한 상태에서 Refund flow를 실행하면 Ganache에 실제 refund tx가 마이닝되고 block_number > 0인 영수증이 반환되어야 한다.
+
 ## 검증 절차
 
 1. ERC-20 authorization/receipt 테스트를 먼저 추가하고 실패를 확인한다.
@@ -61,6 +72,9 @@ python3 scripts/validate_phases.py
 - authorization과 payment row에 같은 의미의 expected asset/amount/chain field를 중복 저장하지 마라.
 - `chain_name`을 chain id의 종속 데이터로 payment tables에 다시 저장하지 마라.
 - permit, gas sponsorship, swap, exchange-rate conversion을 이 step에 넣지 마라.
+- `refund_payment`를 여전히 더미 응답(`block_number: 0`)으로 남겨두지 마라.
+- 환불 트랜잭션을 마이닝하지 않고 영수증 없이 환불 완료로 인정하지 마라.
+- `ADAPTER_BLOCKCHAIN_REFUND_PRIVATE_KEY`를 hardcode하거나 코드에 직접 저장하지 마라.
 - Claude 전용 파일이나 명령을 추가하지 마라.
 - `scripts/execute.py`에 프로젝트별 구현 로직을 넣지 마라.
 - `step*-output.json`을 추적 대상으로 만들지 마라.
