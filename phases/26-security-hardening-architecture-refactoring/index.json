@@ -5,7 +5,8 @@
     {
       "step": 0,
       "name": "security-refactor-audit-invariants",
-      "status": "pending"
+      "status": "completed",
+      "summary": "Completed Step 0 security refactor audit invariants. Added scripts/test_security_refactor_audit.py to audit API and domain security requirements. Rejected client-supplied storeId, publicStoreId, productId, and publicProductId on POST requests with a 400 Bad Request. Removed upsert behavior in store product registration. Seeded PLATFORM_ADMIN with store/product/inventory :any override permission scopes. Corrected existing tests to verify server-side generation of IDs and ensure that all unit, audit, and baseline tests pass."
     },
     {
       "step": 1,

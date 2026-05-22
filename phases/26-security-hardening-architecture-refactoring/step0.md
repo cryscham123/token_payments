@@ -35,13 +35,16 @@ API 보안 계약, write authorization, bounded context boundary, runtime compos
    - inventory mutation에서 `inventory:write` scope 없이 role/ownership fallback으로 통과하는 경로를 확인해야 한다.
    - product registration은 API layer scope check와 service layer store ownership/membership check가 분리되어 있는지 확인해야 한다.
    - `inventory/application/commands.py`, `store_catalog/application/service.py`, `order/adapter/postgres.py`의 cross-context domain import를 확인해야 한다.
-   - `runtime/composition.py`의 단일 파일 조립 책임과 크기를 확인해야 한다.
+   - `runtime/composition.py`의 단일 파일 조립 책임และ 크기를 확인해야 한다.
    - `store_catalog_store_memberships`와 `auth_group_memberships`의 source-of-truth/projection 역할과 직접 write API를 확인해야 한다.
+   - **(추가)** `POST /merchant/stores` 및 `POST /merchant/stores/{publicStoreId}/products` 요청 본문에 클라이언트가 식별자(`storeId`, `publicStoreId`, `productId`, `publicProductId`)를 제공할 시 `400 Bad Request`로 거부하는지 확인해야 한다.
+   - **(추가)** `POST /merchant/stores/{publicStoreId}/products` 요청이 기존 제품 데이터에 대해 덮어쓰기(upsert) 동작을 유발하지 않고 신규 등록 역할만 수행하는지 확인해야 한다.
 2. architecture invariant를 문서화한다.
    - 외부 API request/response는 internal `orderId`, `customerId`, `sessionId`, `refreshTokenHash`를 노출하지 않는다.
    - payment submit의 외부 식별자는 `trackingId`이고, server 내부에서만 order/payment id로 resolve한다.
    - idempotency fallback key는 raw internal id가 아니라 `trackingId` 기반 namespace 또는 hash를 사용한다.
    - write authorization은 scope + canonical store membership을 fail-closed로 검증한다.
+   - **(추가)** 리소스 생성 POST API는 클라이언트 측 식별자 지정을 허용하지 않으며, POST는 중복 업데이트(Upsert) 동작을 지원하지 않는다.
    - read projection lag는 read model에만 허용된다. inventory/product write 같은 보안 쓰기 작업은 auth RBAC projection만으로 권한을 확정하지 않는다.
    - bounded context 간에는 domain object 직접 import 대신 port, DTO, ACL, snapshot/query model을 사용한다.
    - auth RBAC membership projection은 write authority가 아니다.

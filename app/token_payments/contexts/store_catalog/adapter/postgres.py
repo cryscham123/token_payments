@@ -432,6 +432,7 @@ INSERT INTO store_catalog_products (
     public_product_id,
     public_store_id,
     title,
+    name,
     description,
     category,
     tags,
@@ -812,7 +813,7 @@ class PostgresStoreCatalogRepository:
             filters.append("tags ? %(tag)s")
             params["tag"] = tag
         if query is not None:
-            filters.append("(title ILIKE %(query)s ESCAPE '\\\\' OR description ILIKE %(query)s ESCAPE '\\\\')")
+            filters.append("(title ILIKE %(query)s ESCAPE '\\' OR description ILIKE %(query)s ESCAPE '\\')")
             params["query"] = _search_pattern(query)
         order_column = order_columns[sort_by]
         order_direction = sort_direction.upper()

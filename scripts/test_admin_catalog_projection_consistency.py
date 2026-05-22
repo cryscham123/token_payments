@@ -29,6 +29,7 @@ from _store_catalog_test_support import (  # noqa: E402
     decode,
     json_body,
     price_payload,
+    FixedIdGenerator,
 )
 
 
@@ -70,10 +71,9 @@ def test_same_idempotency_key_does_not_duplicate_user_store_product_projection_o
     repository = FakeStoreCatalogRepository()
     repository.seed_user(OWNER_ID, OWNER_WALLET, role=UserRole.CUSTOMER)
     repository.seed_store(owner_id=OWNER_ID)
-    router = catalog_router(repository, auth(OWNER_ID, UserRole.CUSTOMER))
+    router = catalog_router(repository, auth(OWNER_ID, UserRole.CUSTOMER), id_generator=FixedIdGenerator(str(PRODUCT_ID)))
     body = json_body(
         {
-            "productId": str(PRODUCT_ID),
             "name": "Ledger Mug",
             "price": price_payload(),
             "initialTotalStock": 25,
@@ -101,7 +101,6 @@ def test_same_idempotency_key_does_not_duplicate_user_store_product_projection_o
         headers={"Content-Type": "application/json", "Idempotency-Key": "projection-idem-001", "X-Request-Id": "req-projection-conflict"},
         body=json_body(
             {
-                "productId": str(PRODUCT_ID),
                 "name": "Changed Mug",
                 "price": price_payload(),
                 "initialTotalStock": 25,
@@ -189,7 +188,6 @@ def test_projection_validation_happens_before_partial_writes_for_missing_or_inva
         headers={"Content-Type": "application/json", "Idempotency-Key": "missing-store-product-001"},
         body=json_body(
             {
-                "productId": str(PRODUCT_ID),
                 "name": "Ledger Mug",
                 "price": price_payload(),
                 "initialTotalStock": 25,

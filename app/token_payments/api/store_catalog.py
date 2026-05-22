@@ -59,13 +59,29 @@ class StoreCatalogApi:
         try:
             claims = _require_admin(request)
             body = _body(request)
+            _reject_unknown_fields(
+                body,
+                {
+                    "ownerUserId",
+                    "storeWalletAddress",
+                    "supportedChainIds",
+                    "active",
+                    "displayName",
+                    "description",
+                    "supportEmail",
+                    "supportEmailPublic",
+                    "businessRegistrationLabel",
+                    "idempotencyKey",
+                    "commandId",
+                },
+            )
             idempotency_key = _required_idempotency_key(request, body)
-            store_id = _optional_text(body, "storeId") or _new_id(self._id_generator)
+            store_id = _new_id(self._id_generator)
             command = CreateStoreCommand(
                 command_id=CommandId(idempotency_key),
                 actor_user_id=claims.user_id,
                 store_id=StoreId(store_id),
-                public_store_id=_optional_public_store_id(body, "publicStoreId"),
+                public_store_id=None,
                 owner_user_id=UserId(_required_text(body, "ownerUserId")),
                 store_wallet=WalletAddress(_required_text(body, "storeWalletAddress")),
                 supported_chain_ids=_required_int_tuple(body, "supportedChainIds"),
@@ -265,8 +281,6 @@ class StoreCatalogApi:
             _reject_unknown_fields(
                 body,
                 {
-                    "productId",
-                    "publicProductId",
                     "title",
                     "name",
                     "description",
@@ -291,8 +305,8 @@ class StoreCatalogApi:
                 actor_user_id=claims.user_id,
                 actor_platform_role=UserRole.ADMIN if "product:write:any" in claims.scopes else UserRole.CUSTOMER,
                 public_store_id=PublicStoreId(_lookup_value(request, "publicStoreId")),
-                product_id=ProductId(_optional_text(body, "productId") or _new_id(self._id_generator)),
-                public_product_id=_optional_public_product_id(body, "publicProductId"),
+                product_id=ProductId(_new_id(self._id_generator)),
+                public_product_id=None,
                 title=_optional_text(body, "title") or _required_text(body, "name"),
                 description=_optional_text(body, "description"),
                 category=_optional_text(body, "category"),

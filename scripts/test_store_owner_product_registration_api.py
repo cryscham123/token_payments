@@ -3,7 +3,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "app"))
 
@@ -20,6 +19,7 @@ from _store_catalog_test_support import (  # noqa: E402
     PRODUCT_ID,
     STORE_ID,
     FakeStoreCatalogRepository,
+    FixedIdGenerator,
     auth,
     catalog_router,
     decode,
@@ -31,13 +31,17 @@ from _store_catalog_test_support import (  # noqa: E402
 
 def test_customer_role_store_member_can_register_checkoutable_product_without_global_store_owner_role() -> None:
     repository = _seed_owner_store()
-    router = catalog_router(repository, auth(OWNER_ID, UserRole.CUSTOMER))
+    router = catalog_router(
+        repository,
+        auth(OWNER_ID, UserRole.CUSTOMER),
+        id_generator=FixedIdGenerator(str(PRODUCT_ID)),
+    )
 
     response = router.handle(
         "POST",
         f"/merchant/stores/{repository.stores[STORE_ID].public_store_id}/products",
         headers={"Content-Type": "application/json", "Idempotency-Key": "product-register-owner-001", "X-Request-Id": "req-product-register"},
-        body=_product_body(),
+        body=_product_body_no_id(),
     )
 
     payload = decode(response.body)
@@ -56,13 +60,17 @@ def test_customer_role_store_member_can_register_checkoutable_product_without_gl
 
 def test_admin_override_can_register_product_for_any_active_store() -> None:
     repository = _seed_owner_store()
-    router = catalog_router(repository, auth(ADMIN_ID, UserRole.ADMIN))
+    router = catalog_router(
+        repository,
+        auth(ADMIN_ID, UserRole.ADMIN),
+        id_generator=FixedIdGenerator(str(PRODUCT_ID)),
+    )
 
     response = router.handle(
         "POST",
         f"/merchant/stores/{repository.stores[STORE_ID].public_store_id}/products",
         headers={"Content-Type": "application/json", "Idempotency-Key": "product-register-admin-001", "X-Request-Id": "req-admin-product"},
-        body=_product_body(),
+        body=_product_body_no_id(),
     )
 
     assert response.status_code == 201
@@ -73,17 +81,25 @@ def test_unrelated_customer_and_unauthenticated_product_registration_are_denied(
     repository = _seed_owner_store()
     repository.seed_user(OTHER_ID, OTHER_WALLET, role=UserRole.CUSTOMER)
 
-    unrelated = catalog_router(repository, auth(OTHER_ID, UserRole.CUSTOMER)).handle(
+    unrelated = catalog_router(
+        repository,
+        auth(OTHER_ID, UserRole.CUSTOMER),
+        id_generator=FixedIdGenerator(str(PRODUCT_ID)),
+    ).handle(
         "POST",
         f"/merchant/stores/{repository.stores[STORE_ID].public_store_id}/products",
         headers={"Content-Type": "application/json", "Idempotency-Key": "product-register-denied-001"},
-        body=_product_body(),
+        body=_product_body_no_id(),
     )
-    unauthenticated = catalog_router(repository, None).handle(
+    unauthenticated = catalog_router(
+        repository,
+        None,
+        id_generator=FixedIdGenerator(str(PRODUCT_ID)),
+    ).handle(
         "POST",
         f"/merchant/stores/{repository.stores[STORE_ID].public_store_id}/products",
         headers={"Content-Type": "application/json", "Idempotency-Key": "product-register-denied-002"},
-        body=_product_body(),
+        body=_product_body_no_id(),
     )
 
     assert unrelated.status_code == 403
@@ -95,29 +111,40 @@ def test_unrelated_customer_and_unauthenticated_product_registration_are_denied(
 
 def test_product_registration_requires_active_store_supported_chain_and_non_negative_stock() -> None:
     inactive_repository = _seed_owner_store(active=False)
-    inactive = catalog_router(inactive_repository, auth(OWNER_ID, UserRole.CUSTOMER)).handle(
+    inactive = catalog_router(
+        inactive_repository,
+        auth(OWNER_ID, UserRole.CUSTOMER),
+        id_generator=FixedIdGenerator(str(PRODUCT_ID)),
+    ).handle(
         "POST",
         f"/merchant/stores/{inactive_repository.stores[STORE_ID].public_store_id}/products",
         headers={"Content-Type": "application/json", "Idempotency-Key": "product-inactive-store-001"},
-        body=_product_body(),
+        body=_product_body_no_id(),
     )
 
     wrong_chain_repository = _seed_owner_store(chains=(84532,))
-    wrong_chain = catalog_router(wrong_chain_repository, auth(OWNER_ID, UserRole.CUSTOMER)).handle(
+    wrong_chain = catalog_router(
+        wrong_chain_repository,
+        auth(OWNER_ID, UserRole.CUSTOMER),
+        id_generator=FixedIdGenerator(str(PRODUCT_ID)),
+    ).handle(
         "POST",
         f"/merchant/stores/{wrong_chain_repository.stores[STORE_ID].public_store_id}/products",
         headers={"Content-Type": "application/json", "Idempotency-Key": "product-wrong-chain-001"},
-        body=_product_body(),
+        body=_product_body_no_id(),
     )
 
     bad_stock_repository = _seed_owner_store()
-    bad_stock = catalog_router(bad_stock_repository, auth(OWNER_ID, UserRole.CUSTOMER)).handle(
+    bad_stock = catalog_router(
+        bad_stock_repository,
+        auth(OWNER_ID, UserRole.CUSTOMER),
+        id_generator=FixedIdGenerator(str(PRODUCT_ID)),
+    ).handle(
         "POST",
         f"/merchant/stores/{bad_stock_repository.stores[STORE_ID].public_store_id}/products",
         headers={"Content-Type": "application/json", "Idempotency-Key": "product-bad-stock-001"},
         body=json_body(
             {
-                "productId": str(PRODUCT_ID),
                 "name": "Ledger Mug",
                 "price": price_payload(),
                 "initialTotalStock": -1,
@@ -136,19 +163,23 @@ def test_product_registration_requires_active_store_supported_chain_and_non_nega
 
 def test_product_registration_idempotency_does_not_duplicate_projection_or_inventory_rows() -> None:
     repository = _seed_owner_store()
-    router = catalog_router(repository, auth(OWNER_ID, UserRole.CUSTOMER))
+    router = catalog_router(
+        repository,
+        auth(OWNER_ID, UserRole.CUSTOMER),
+        id_generator=FixedIdGenerator(str(PRODUCT_ID)),
+    )
 
     first = router.handle(
         "POST",
         f"/merchant/stores/{repository.stores[STORE_ID].public_store_id}/products",
         headers={"Content-Type": "application/json", "Idempotency-Key": "product-register-idem-001", "X-Request-Id": "req-product-1"},
-        body=_product_body(),
+        body=_product_body_no_id(),
     )
     duplicate = router.handle(
         "POST",
         f"/merchant/stores/{repository.stores[STORE_ID].public_store_id}/products",
         headers={"Content-Type": "application/json", "Idempotency-Key": "product-register-idem-001", "X-Request-Id": "req-product-1"},
-        body=_product_body(),
+        body=_product_body_no_id(),
     )
 
     assert first.status_code == 201
@@ -163,7 +194,11 @@ def test_product_registration_idempotency_does_not_duplicate_projection_or_inven
 
 def test_product_registration_generates_product_id_when_not_provided() -> None:
     repository = _seed_owner_store()
-    router = catalog_router(repository, auth(OWNER_ID, UserRole.CUSTOMER))
+    router = catalog_router(
+        repository,
+        auth(OWNER_ID, UserRole.CUSTOMER),
+        id_generator=FixedIdGenerator("018f33aa-9e6d-73d8-9dc3-47d6cdcc9009"),
+    )
 
     response = router.handle(
         "POST",
@@ -182,8 +217,51 @@ def test_product_registration_generates_product_id_when_not_provided() -> None:
     payload = decode(response.body)
     assert response.status_code == 201
     assert "productId" in payload
-    assert payload["productId"]  # non-empty server-generated UUID
+    assert payload["productId"] == "018f33aa-9e6d-73d8-9dc3-47d6cdcc9009"
     assert len(repository.products) == 1
+
+
+def test_product_registration_rejects_client_provided_ids() -> None:
+    repository = _seed_owner_store()
+    router = catalog_router(repository, auth(OWNER_ID, UserRole.CUSTOMER))
+
+    # Reject productId
+    response_with_product_id = router.handle(
+        "POST",
+        f"/merchant/stores/{repository.stores[STORE_ID].public_store_id}/products",
+        headers={"Content-Type": "application/json", "Idempotency-Key": "product-register-reject-001"},
+        body=json_body(
+            {
+                "productId": str(PRODUCT_ID),
+                "name": "Ledger Mug",
+                "price": price_payload(),
+                "initialTotalStock": 25,
+                "active": True,
+            }
+        ),
+    )
+    assert response_with_product_id.status_code == 400
+    assert decode(response_with_product_id.body)["error"]["code"] == "VALIDATION_ERROR"
+    assert "unknown store profile field(s): productId" in decode(response_with_product_id.body)["error"]["message"]
+
+    # Reject publicProductId
+    response_with_public_id = router.handle(
+        "POST",
+        f"/merchant/stores/{repository.stores[STORE_ID].public_store_id}/products",
+        headers={"Content-Type": "application/json", "Idempotency-Key": "product-register-reject-002"},
+        body=json_body(
+            {
+                "publicProductId": "prd_some_id",
+                "name": "Ledger Mug",
+                "price": price_payload(),
+                "initialTotalStock": 25,
+                "active": True,
+            }
+        ),
+    )
+    assert response_with_public_id.status_code == 400
+    assert decode(response_with_public_id.body)["error"]["code"] == "VALIDATION_ERROR"
+    assert "unknown store profile field(s): publicProductId" in decode(response_with_public_id.body)["error"]["message"]
 
 
 def _seed_owner_store(*, active: bool = True, chains: tuple[int, ...] = (11155111,)) -> FakeStoreCatalogRepository:
@@ -191,18 +269,6 @@ def _seed_owner_store(*, active: bool = True, chains: tuple[int, ...] = (1115511
     repository.seed_user(OWNER_ID, OWNER_WALLET, role=UserRole.CUSTOMER)
     repository.seed_store(owner_id=OWNER_ID, active=active, chains=chains)
     return repository
-
-
-def _product_body() -> bytes:
-    return json_body(
-        {
-            "productId": str(PRODUCT_ID),
-            "name": "Ledger Mug",
-            "price": price_payload(),
-            "initialTotalStock": 25,
-            "active": True,
-        }
-    )
 
 
 def _product_body_no_id() -> bytes:

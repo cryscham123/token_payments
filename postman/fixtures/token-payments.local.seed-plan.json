@@ -794,6 +794,84 @@
       }
     },
     {
+      "table": "auth_permissions",
+      "columns": [
+        "permission_name",
+        "description",
+        "active"
+      ],
+      "values": {
+        "permission_name": "store:read:any",
+        "description": "store:read:any permission",
+        "active": true
+      }
+    },
+    {
+      "table": "auth_permissions",
+      "columns": [
+        "permission_name",
+        "description",
+        "active"
+      ],
+      "values": {
+        "permission_name": "store:write:any",
+        "description": "store:write:any permission",
+        "active": true
+      }
+    },
+    {
+      "table": "auth_permissions",
+      "columns": [
+        "permission_name",
+        "description",
+        "active"
+      ],
+      "values": {
+        "permission_name": "product:read:any",
+        "description": "product:read:any permission",
+        "active": true
+      }
+    },
+    {
+      "table": "auth_permissions",
+      "columns": [
+        "permission_name",
+        "description",
+        "active"
+      ],
+      "values": {
+        "permission_name": "product:write:any",
+        "description": "product:write:any permission",
+        "active": true
+      }
+    },
+    {
+      "table": "auth_permissions",
+      "columns": [
+        "permission_name",
+        "description",
+        "active"
+      ],
+      "values": {
+        "permission_name": "inventory:read:any",
+        "description": "inventory:read:any permission",
+        "active": true
+      }
+    },
+    {
+      "table": "auth_permissions",
+      "columns": [
+        "permission_name",
+        "description",
+        "active"
+      ],
+      "values": {
+        "permission_name": "inventory:write:any",
+        "description": "inventory:write:any permission",
+        "active": true
+      }
+    },
+    {
       "table": "auth_role_permissions",
       "columns": [
         "role_id",
@@ -1180,6 +1258,84 @@
       "values": {
         "role_id": "PLATFORM_ADMIN",
         "permission_name": "admin:provision",
+        "active": true
+      }
+    },
+    {
+      "table": "auth_role_permissions",
+      "columns": [
+        "role_id",
+        "permission_name",
+        "active"
+      ],
+      "values": {
+        "role_id": "PLATFORM_ADMIN",
+        "permission_name": "store:read:any",
+        "active": true
+      }
+    },
+    {
+      "table": "auth_role_permissions",
+      "columns": [
+        "role_id",
+        "permission_name",
+        "active"
+      ],
+      "values": {
+        "role_id": "PLATFORM_ADMIN",
+        "permission_name": "store:write:any",
+        "active": true
+      }
+    },
+    {
+      "table": "auth_role_permissions",
+      "columns": [
+        "role_id",
+        "permission_name",
+        "active"
+      ],
+      "values": {
+        "role_id": "PLATFORM_ADMIN",
+        "permission_name": "product:read:any",
+        "active": true
+      }
+    },
+    {
+      "table": "auth_role_permissions",
+      "columns": [
+        "role_id",
+        "permission_name",
+        "active"
+      ],
+      "values": {
+        "role_id": "PLATFORM_ADMIN",
+        "permission_name": "product:write:any",
+        "active": true
+      }
+    },
+    {
+      "table": "auth_role_permissions",
+      "columns": [
+        "role_id",
+        "permission_name",
+        "active"
+      ],
+      "values": {
+        "role_id": "PLATFORM_ADMIN",
+        "permission_name": "inventory:read:any",
+        "active": true
+      }
+    },
+    {
+      "table": "auth_role_permissions",
+      "columns": [
+        "role_id",
+        "permission_name",
+        "active"
+      ],
+      "values": {
+        "role_id": "PLATFORM_ADMIN",
+        "permission_name": "inventory:write:any",
         "active": true
       }
     },

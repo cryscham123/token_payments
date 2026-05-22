@@ -87,10 +87,16 @@ def auth(user_id: UserId, role: UserRole, *, scopes: tuple[str, ...] | None = No
     return ApiAuthContext(user_id=str(user_id), role=role.value, scopes=scopes, session_id="session-cookie")
 
 
-def catalog_router(repository: "FakeStoreCatalogRepository", auth_context: ApiAuthContext | None) -> HttpRouter:
+def catalog_router(
+    repository: "FakeStoreCatalogRepository",
+    auth_context: ApiAuthContext | None,
+    id_generator: Any | None = None,
+) -> HttpRouter:
+    if id_generator is None:
+        id_generator = FixedIdGenerator(str(STORE_ID))
     service = StoreCatalogApplicationService(repository=repository, user_id_generator=FixedIdGenerator(str(OWNER_ID)))
     router = HttpRouter(auth_context_factory=lambda _request: auth_context, allow_dev_auth_headers=False)
-    register_store_catalog_routes(router, StoreCatalogApi(service, id_generator=FixedIdGenerator(str(STORE_ID))))
+    register_store_catalog_routes(router, StoreCatalogApi(service, id_generator=id_generator))
     return router
 
 

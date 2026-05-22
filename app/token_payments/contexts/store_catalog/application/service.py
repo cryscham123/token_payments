@@ -396,11 +396,10 @@ class StoreCatalogApplicationService:
         if command.actor_platform_role is not UserRole.ADMIN and store_role is None:
             return _rejected("STORE_OWNER_STORE_FORBIDDEN", "store ownership or membership is required")
 
-        previous = self._repository.get_product(store.store_id, command.product_id)
         product = StoreProduct(
             store_id=store.store_id,
             product_id=command.product_id,
-            public_product_id=previous.public_product_id if previous is not None else command.public_product_id,
+            public_product_id=command.public_product_id,
             public_store_id=store.public_store_id,
             title=command.title,
             description=command.description,
@@ -412,7 +411,7 @@ class StoreCatalogApplicationService:
             visibility=command.visibility,
             price=command.price,
             active=command.active,
-            created_at=previous.created_at if previous is not None else command.requested_at,
+            created_at=command.requested_at,
             updated_at=command.requested_at,
         )
         self._repository.save_product(product)
@@ -428,7 +427,7 @@ class StoreCatalogApplicationService:
                 target_user_id=store.owner_user_id,
                 request_id=command.request_id,
                 idempotency_key=str(command.command_id),
-                before={"product": _product_payload(previous), "storeRole": store_role.value if store_role else None},
+                before={"product": None, "storeRole": store_role.value if store_role else None},
                 after={"product": _product_payload(product), "initialTotalStock": command.initial_total_stock},
                 recorded_at=command.requested_at,
                 permission="product:write:any" if command.actor_platform_role is UserRole.ADMIN else "product:write",
@@ -439,7 +438,7 @@ class StoreCatalogApplicationService:
         product_payload = _owner_product_payload(product)
         return {
             "operation": self.REGISTER_PRODUCT_HANDLER,
-            "status": "created" if previous is None else "updated",
+            "status": "created",
             "product": product_payload,
             "storeId": str(product.store_id),
             "productId": str(product.product_id),

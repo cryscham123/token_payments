@@ -37,11 +37,12 @@ from _store_catalog_test_support import (  # noqa: E402
     json_body,
     price,
     price_payload,
+    FixedIdGenerator,
 )
 
 
 NOW = datetime(2026, 5, 22, 4, 0, tzinfo=UTC)
-PUBLIC_PRODUCT_ID = PublicProductId("prd_ledger_mug_001")
+PUBLIC_PRODUCT_ID = PublicProductId.for_product_id(PRODUCT_ID)
 
 
 def test_product_catalog_detail_identity_separates_public_and_internal_ids() -> None:
@@ -106,7 +107,11 @@ def test_product_catalog_fields_are_bounded_untrusted_data(kwargs: dict[str, Any
 
 def test_product_write_uses_public_ids_detail_metadata_and_payload_sensitive_idempotency() -> None:
     repository = _seed_owner_store()
-    router = _router(repository, auth(OWNER_ID, UserRole.CUSTOMER, scopes=("product:write",)))
+    router = _router(
+        repository,
+        auth(OWNER_ID, UserRole.CUSTOMER, scopes=("product:write",)),
+        id_generator=FixedIdGenerator(str(PRODUCT_ID)),
+    )
     body = _product_body()
 
     response = router.handle(
@@ -212,10 +217,10 @@ def _seed_owner_store() -> FakeStoreCatalogRepository:
     return repository
 
 
-def _router(repository: FakeStoreCatalogRepository, auth_context) -> HttpRouter:
+def _router(repository: FakeStoreCatalogRepository, auth_context, id_generator: Any | None = None) -> HttpRouter:
     service = StoreCatalogApplicationService(repository=repository)
     router = HttpRouter(auth_context_factory=lambda _request: auth_context, allow_dev_auth_headers=False)
-    register_store_catalog_routes(router, StoreCatalogApi(service))
+    register_store_catalog_routes(router, StoreCatalogApi(service, id_generator=id_generator))
     return router
 
 
@@ -243,8 +248,6 @@ def _product(**overrides: Any) -> StoreProduct:
 
 def _product_payload(**overrides: Any) -> dict[str, Any]:
     payload = {
-        "productId": str(PRODUCT_ID),
-        "publicProductId": str(PUBLIC_PRODUCT_ID),
         "title": "Ledger Mug",
         "description": "Ceramic mug for hardware wallet desks",
         "category": "accessories",

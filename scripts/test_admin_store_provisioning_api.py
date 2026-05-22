@@ -3,7 +3,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "app"))
 
@@ -77,7 +76,6 @@ def test_admin_create_store_writes_canonical_store_membership_and_runtime_projec
         headers={"Content-Type": "application/json", "Idempotency-Key": "admin-create-store-001", "X-Request-Id": "req-create-store"},
         body=json_body(
             {
-                "storeId": str(STORE_ID),
                 "ownerUserId": str(OWNER_ID),
                 "storeWalletAddress": str(STORE_WALLET),
                 "supportedChainIds": [11155111, 84532],
@@ -107,7 +105,6 @@ def test_admin_create_store_is_idempotent_for_same_key_and_rejects_payload_confl
     repository.seed_user(OWNER_ID, OWNER_WALLET, role=UserRole.CUSTOMER)
     router = catalog_router(repository, auth(ADMIN_ID, UserRole.ADMIN))
     body = {
-        "storeId": str(STORE_ID),
         "ownerUserId": str(OWNER_ID),
         "storeWalletAddress": str(STORE_WALLET),
         "supportedChainIds": [11155111],
@@ -160,3 +157,47 @@ def test_non_admin_and_unauthenticated_requests_are_denied_for_admin_provisionin
     assert decode(customer.body)["error"]["code"] == "ADMIN_REQUIRED"
     assert unauthenticated.status_code == 401
     assert decode(unauthenticated.body)["error"]["code"] == "AUTHENTICATION_REQUIRED"
+
+
+def test_admin_create_store_rejects_client_provided_ids() -> None:
+    repository = FakeStoreCatalogRepository()
+    repository.seed_user(OWNER_ID, OWNER_WALLET, role=UserRole.CUSTOMER)
+    router = catalog_router(repository, auth(ADMIN_ID, UserRole.ADMIN))
+
+    # Reject storeId
+    response_with_store_id = router.handle(
+        "POST",
+        "/admin/stores",
+        headers={"Content-Type": "application/json", "Idempotency-Key": "admin-create-store-reject-001"},
+        body=json_body(
+            {
+                "storeId": str(STORE_ID),
+                "ownerUserId": str(OWNER_ID),
+                "storeWalletAddress": str(STORE_WALLET),
+                "supportedChainIds": [11155111],
+                "active": True,
+            }
+        ),
+    )
+    assert response_with_store_id.status_code == 400
+    assert decode(response_with_store_id.body)["error"]["code"] == "VALIDATION_ERROR"
+    assert "unknown store profile field(s): storeId" in decode(response_with_store_id.body)["error"]["message"]
+
+    # Reject publicStoreId
+    response_with_public_id = router.handle(
+        "POST",
+        "/admin/stores",
+        headers={"Content-Type": "application/json", "Idempotency-Key": "admin-create-store-reject-002"},
+        body=json_body(
+            {
+                "publicStoreId": "sto_some_id",
+                "ownerUserId": str(OWNER_ID),
+                "storeWalletAddress": str(STORE_WALLET),
+                "supportedChainIds": [11155111],
+                "active": True,
+            }
+        ),
+    )
+    assert response_with_public_id.status_code == 400
+    assert decode(response_with_public_id.body)["error"]["code"] == "VALIDATION_ERROR"
+    assert "unknown store profile field(s): publicStoreId" in decode(response_with_public_id.body)["error"]["message"]

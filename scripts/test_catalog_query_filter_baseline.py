@@ -159,7 +159,7 @@ def test_postgres_catalog_query_uses_parameter_binding_escape_policy_and_sort_al
     statement = connection.statements[-1]
     sql = statement.sql
 
-    assert "ILIKE %(query)s ESCAPE '\\\\'" in sql
+    assert "ILIKE %(query)s ESCAPE '\\'" in sql
     assert "ORDER BY updated_at DESC" in sql
     assert "LIMIT %(limit)s OFFSET %(offset)s" in sql
     assert "Ledger%_Mug" not in sql
