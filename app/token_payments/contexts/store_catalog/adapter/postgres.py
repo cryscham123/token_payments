@@ -8,6 +8,9 @@ from typing import Any, Mapping
 from token_payments.contexts.auth.domain import Group, GroupId, GroupType, User, UserRole
 from token_payments.contexts.store_catalog.application import CatalogAuditRecord, CatalogIdempotencyRecord
 from token_payments.contexts.store_catalog.domain import (
+    ProductStatus,
+    ProductVisibility,
+    PublicProductId,
     PublicStoreId,
     StoreMembership,
     StoreMembershipRole,
@@ -134,6 +137,29 @@ JOIN store_catalog_store_memberships m ON m.store_id = s.store_id
 WHERE m.user_id = %(user_id)s
   AND m.active = true
 ORDER BY s.display_name ASC, s.public_store_id ASC
+"""
+
+SELECT_PUBLIC_STORES_SQL = """
+SELECT
+    store_id,
+    public_store_id,
+    owner_user_id,
+    group_id,
+    display_name,
+    description,
+    status,
+    support_email,
+    support_email_public,
+    business_registration_label,
+    store_wallet_address,
+    supported_chain_ids,
+    created_at,
+    updated_at
+FROM store_catalog_stores
+WHERE status = 'ACTIVE'
+  AND active = true
+ORDER BY public_store_id ASC
+LIMIT %(limit)s OFFSET %(offset)s
 """
 
 SELECT_MERCHANT_GROUP_FOR_STORE_SQL = """
@@ -309,23 +335,103 @@ SELECT_PRODUCT_SQL = """
 SELECT
     store_id,
     product_id,
+    public_product_id,
+    public_store_id,
+    title,
     name,
+    description,
+    category,
+    tags,
+    media,
+    attributes,
+    status,
+    visibility,
     price_numeric,
     price_symbol,
     price_chain_id,
     price_token_address,
     price_decimals,
-    active
+    active,
+    created_at,
+    updated_at
 FROM store_catalog_products
 WHERE store_id = %(store_id)s
   AND product_id = %(product_id)s
+"""
+
+SELECT_PRODUCT_BY_PUBLIC_ID_SQL = """
+SELECT
+    store_id,
+    product_id,
+    public_product_id,
+    public_store_id,
+    title,
+    description,
+    category,
+    tags,
+    media,
+    attributes,
+    status,
+    visibility,
+    price_numeric,
+    price_symbol,
+    price_chain_id,
+    price_token_address,
+    price_decimals,
+    active,
+    created_at,
+    updated_at
+FROM store_catalog_products
+WHERE store_id = %(store_id)s
+  AND public_product_id = %(public_product_id)s
+"""
+
+SELECT_PRODUCT_AVAILABILITY_SQL = """
+SELECT available_stock, total_stock, sale_status
+FROM product_inventory
+WHERE store_id = %(store_id)s
+  AND product_id = %(product_id)s
+"""
+
+PRODUCT_LIST_SELECT_SQL = """
+SELECT
+    store_id,
+    product_id,
+    public_product_id,
+    public_store_id,
+    title,
+    description,
+    category,
+    tags,
+    media,
+    attributes,
+    status,
+    visibility,
+    price_numeric,
+    price_symbol,
+    price_chain_id,
+    price_token_address,
+    price_decimals,
+    active,
+    created_at,
+    updated_at
+FROM store_catalog_products
 """
 
 UPSERT_PRODUCT_SQL = """
 INSERT INTO store_catalog_products (
     store_id,
     product_id,
-    name,
+    public_product_id,
+    public_store_id,
+    title,
+    description,
+    category,
+    tags,
+    media,
+    attributes,
+    status,
+    visibility,
     price_numeric,
     price_symbol,
     price_chain_id,
@@ -335,7 +441,17 @@ INSERT INTO store_catalog_products (
 ) VALUES (
     %(store_id)s,
     %(product_id)s,
+    %(public_product_id)s,
+    %(public_store_id)s,
+    %(title)s,
     %(name)s,
+    %(description)s,
+    %(category)s,
+    %(tags)s::jsonb,
+    %(media)s::jsonb,
+    %(attributes)s::jsonb,
+    %(status)s,
+    %(visibility)s,
     %(price_numeric)s,
     %(price_symbol)s,
     %(price_chain_id)s,
@@ -344,7 +460,17 @@ INSERT INTO store_catalog_products (
     %(active)s
 )
 ON CONFLICT (store_id, product_id) DO UPDATE SET
+    public_product_id = store_catalog_products.public_product_id,
+    public_store_id = EXCLUDED.public_store_id,
+    title = EXCLUDED.title,
     name = EXCLUDED.name,
+    description = EXCLUDED.description,
+    category = EXCLUDED.category,
+    tags = EXCLUDED.tags,
+    media = EXCLUDED.media,
+    attributes = EXCLUDED.attributes,
+    status = EXCLUDED.status,
+    visibility = EXCLUDED.visibility,
     price_numeric = EXCLUDED.price_numeric,
     price_symbol = EXCLUDED.price_symbol,
     price_chain_id = EXCLUDED.price_chain_id,
@@ -539,6 +665,10 @@ class PostgresStoreCatalogRepository:
         result = self._connection.execute(SELECT_STORES_FOR_MEMBER_SQL, {"user_id": str(user_id)})
         return tuple(_row_to_store(row) for row in result)
 
+    def list_public_stores(self, *, limit: int, offset: int) -> tuple[StoreProfile, ...]:
+        result = self._connection.execute(SELECT_PUBLIC_STORES_SQL, {"limit": int(limit), "offset": int(offset)})
+        return tuple(_row_to_store(row) for row in result)
+
     def merchant_group_for_store(self, store_id: StoreId) -> Group | None:
         row = _fetch_one(
             self._connection.execute(
@@ -622,6 +752,86 @@ class PostgresStoreCatalogRepository:
             )
         )
         return _row_to_product(row) if row is not None else None
+
+    def get_product_by_public_id(self, store_id: StoreId, public_product_id: PublicProductId) -> StoreProduct | None:
+        row = _fetch_one(
+            self._connection.execute(
+                SELECT_PRODUCT_BY_PUBLIC_ID_SQL,
+                {"store_id": str(store_id), "public_product_id": str(public_product_id)},
+            )
+        )
+        return _row_to_product(row) if row is not None else None
+
+    def list_products_for_store(
+        self,
+        store_id: StoreId,
+        *,
+        status: ProductStatus | None,
+        visibility: ProductVisibility | None,
+        category: str | None,
+        tag: str | None,
+        query: str | None,
+        sort_by: str,
+        sort_direction: str,
+        limit: int,
+        offset: int,
+    ) -> tuple[StoreProduct, ...]:
+        order_columns = {
+            "title": "title",
+            "createdAt": "created_at",
+            "updatedAt": "updated_at",
+            "price": "price_numeric",
+        }
+        if sort_by not in order_columns:
+            raise ValueError("sort_by is not allowed")
+        if sort_direction not in {"asc", "desc"}:
+            raise ValueError("sort_direction is not allowed")
+        params: dict[str, Any] = {
+            "store_id": str(store_id),
+            "limit": int(limit),
+            "offset": int(offset),
+        }
+        filters = ["store_id = %(store_id)s"]
+        if status is not None:
+            filters.append("status = %(status)s")
+            params["status"] = status.value
+        if visibility is not None:
+            filters.append("visibility = %(visibility)s")
+            params["visibility"] = visibility.value
+        if category is not None:
+            filters.append("category = %(category)s")
+            params["category"] = category
+        if tag is not None:
+            filters.append("tags ? %(tag)s")
+            params["tag"] = tag
+        if query is not None:
+            filters.append("(title ILIKE %(query)s ESCAPE '\\\\' OR description ILIKE %(query)s ESCAPE '\\\\')")
+            params["query"] = _search_pattern(query)
+        order_column = order_columns[sort_by]
+        order_direction = sort_direction.upper()
+        sql = (
+            PRODUCT_LIST_SELECT_SQL
+            + "WHERE "
+            + " AND ".join(filters)
+            + f"\nORDER BY {order_column} {order_direction}, public_product_id ASC\nLIMIT %(limit)s OFFSET %(offset)s"
+        )
+        result = self._connection.execute(sql, params)
+        return tuple(_row_to_product(row) for row in result)
+
+    def get_product_availability(self, store_id: StoreId, product_id: ProductId) -> Mapping[str, Any] | None:
+        row = _fetch_one(
+            self._connection.execute(
+                SELECT_PRODUCT_AVAILABILITY_SQL,
+                {"store_id": str(store_id), "product_id": str(product_id)},
+            )
+        )
+        if row is None:
+            return None
+        return {
+            "availableStock": int(_row_value(row, "available_stock")),
+            "totalStock": int(_row_value(row, "total_stock")),
+            "saleStatus": str(_row_value(row, "sale_status")),
+        }
 
     def save_product(self, product: StoreProduct) -> None:
         self._connection.execute(UPSERT_PRODUCT_SQL, _product_params(product))
@@ -744,7 +954,16 @@ def _row_to_product(row: Mapping[str, Any] | object) -> StoreProduct:
     return StoreProduct(
         store_id=StoreId(_row_value(row, "store_id")),
         product_id=ProductId(_row_value(row, "product_id")),
-        name=str(_row_value(row, "name")),
+        public_product_id=_optional_row_value(row, "public_product_id"),
+        public_store_id=_optional_row_value(row, "public_store_id"),
+        title=str(_optional_row_value(row, "title") or _optional_row_value(row, "name")),
+        description=_optional_row_value(row, "description"),
+        category=_optional_row_value(row, "category"),
+        tags=tuple(_json_sequence(_optional_row_value(row, "tags"))),
+        media=tuple(_json_sequence(_optional_row_value(row, "media"))),
+        attributes=dict(_json_mapping(_optional_row_value(row, "attributes"))),
+        status=ProductStatus(str(_optional_row_value(row, "status") or ("ACTIVE" if _row_value(row, "active") else "INACTIVE"))),
+        visibility=ProductVisibility(str(_optional_row_value(row, "visibility") or "PUBLIC")),
         price=Crypto(
             amount=_row_value(row, "price_numeric"),
             symbol=str(_row_value(row, "price_symbol")),
@@ -753,6 +972,8 @@ def _row_to_product(row: Mapping[str, Any] | object) -> StoreProduct:
             decimals=int(_row_value(row, "price_decimals")),
         ),
         active=bool(_row_value(row, "active")),
+        created_at=_optional_row_value(row, "created_at"),
+        updated_at=_optional_row_value(row, "updated_at"),
     )
 
 
@@ -778,7 +999,17 @@ def _product_params(product: StoreProduct) -> dict[str, Any]:
     return {
         "store_id": str(product.store_id),
         "product_id": str(product.product_id),
+        "public_product_id": str(product.public_product_id),
+        "public_store_id": str(product.public_store_id),
+        "title": product.title,
         "name": product.name,
+        "description": product.description,
+        "category": product.category,
+        "tags": json.dumps(list(product.tags)),
+        "media": json.dumps(list(product.media)),
+        "attributes": json.dumps(dict(product.attributes)),
+        "status": product.status.value,
+        "visibility": product.visibility.value,
         "price_numeric": product.price.amount,
         "price_symbol": product.price.symbol,
         "price_chain_id": product.price.chain_id,
@@ -799,6 +1030,37 @@ def _chain_ids(value: Any) -> tuple[int, ...]:
     if isinstance(value, list | tuple):
         return tuple(int(item) for item in value)
     raise ValueError("supported_chain_ids must be a sequence")
+
+
+def _json_sequence(value: Any) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise ValueError("JSON sequence column is not a valid JSON string") from exc
+    if isinstance(value, list | tuple):
+        return tuple(str(item) for item in value)
+    raise ValueError("JSON sequence column must be a sequence")
+
+
+def _json_mapping(value: Any) -> Mapping[str, Any]:
+    if value is None:
+        return {}
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise ValueError("JSON object column is not a valid JSON string") from exc
+    if isinstance(value, Mapping):
+        return value
+    raise ValueError("JSON object column must be a mapping")
+
+
+def _search_pattern(value: str) -> str:
+    escaped = value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
 
 
 def _fetch_one(result: Any) -> Any:

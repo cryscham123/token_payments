@@ -83,21 +83,21 @@ def test_same_idempotency_key_does_not_duplicate_user_store_product_projection_o
 
     first = router.handle(
         "POST",
-        f"/store-owner/stores/{STORE_ID}/products",
+        f"/merchant/stores/{repository.stores[STORE_ID].public_store_id}/products",
         headers={"Content-Type": "application/json", "Idempotency-Key": "projection-idem-001", "X-Request-Id": "req-projection-1"},
         body=body,
         received_at=NOW,
     )
     duplicate = router.handle(
         "POST",
-        f"/store-owner/stores/{STORE_ID}/products",
+        f"/merchant/stores/{repository.stores[STORE_ID].public_store_id}/products",
         headers={"Content-Type": "application/json", "Idempotency-Key": "projection-idem-001", "X-Request-Id": "req-projection-1"},
         body=body,
         received_at=NOW,
     )
     conflict = router.handle(
         "POST",
-        f"/store-owner/stores/{STORE_ID}/products",
+        f"/merchant/stores/{repository.stores[STORE_ID].public_store_id}/products",
         headers={"Content-Type": "application/json", "Idempotency-Key": "projection-idem-001", "X-Request-Id": "req-projection-conflict"},
         body=json_body(
             {
@@ -185,7 +185,7 @@ def test_projection_validation_happens_before_partial_writes_for_missing_or_inva
 
     response = router.handle(
         "POST",
-        f"/store-owner/stores/{STORE_ID}/products",
+        "/merchant/stores/st_missing_store/products",
         headers={"Content-Type": "application/json", "Idempotency-Key": "missing-store-product-001"},
         body=json_body(
             {

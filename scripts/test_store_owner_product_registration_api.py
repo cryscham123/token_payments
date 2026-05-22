@@ -35,7 +35,7 @@ def test_customer_role_store_member_can_register_checkoutable_product_without_gl
 
     response = router.handle(
         "POST",
-        f"/store-owner/stores/{STORE_ID}/products",
+        f"/merchant/stores/{repository.stores[STORE_ID].public_store_id}/products",
         headers={"Content-Type": "application/json", "Idempotency-Key": "product-register-owner-001", "X-Request-Id": "req-product-register"},
         body=_product_body(),
     )
@@ -60,7 +60,7 @@ def test_admin_override_can_register_product_for_any_active_store() -> None:
 
     response = router.handle(
         "POST",
-        f"/store-owner/stores/{STORE_ID}/products",
+        f"/merchant/stores/{repository.stores[STORE_ID].public_store_id}/products",
         headers={"Content-Type": "application/json", "Idempotency-Key": "product-register-admin-001", "X-Request-Id": "req-admin-product"},
         body=_product_body(),
     )
@@ -75,13 +75,13 @@ def test_unrelated_customer_and_unauthenticated_product_registration_are_denied(
 
     unrelated = catalog_router(repository, auth(OTHER_ID, UserRole.CUSTOMER)).handle(
         "POST",
-        f"/store-owner/stores/{STORE_ID}/products",
+        f"/merchant/stores/{repository.stores[STORE_ID].public_store_id}/products",
         headers={"Content-Type": "application/json", "Idempotency-Key": "product-register-denied-001"},
         body=_product_body(),
     )
     unauthenticated = catalog_router(repository, None).handle(
         "POST",
-        f"/store-owner/stores/{STORE_ID}/products",
+        f"/merchant/stores/{repository.stores[STORE_ID].public_store_id}/products",
         headers={"Content-Type": "application/json", "Idempotency-Key": "product-register-denied-002"},
         body=_product_body(),
     )
@@ -97,7 +97,7 @@ def test_product_registration_requires_active_store_supported_chain_and_non_nega
     inactive_repository = _seed_owner_store(active=False)
     inactive = catalog_router(inactive_repository, auth(OWNER_ID, UserRole.CUSTOMER)).handle(
         "POST",
-        f"/store-owner/stores/{STORE_ID}/products",
+        f"/merchant/stores/{inactive_repository.stores[STORE_ID].public_store_id}/products",
         headers={"Content-Type": "application/json", "Idempotency-Key": "product-inactive-store-001"},
         body=_product_body(),
     )
@@ -105,7 +105,7 @@ def test_product_registration_requires_active_store_supported_chain_and_non_nega
     wrong_chain_repository = _seed_owner_store(chains=(84532,))
     wrong_chain = catalog_router(wrong_chain_repository, auth(OWNER_ID, UserRole.CUSTOMER)).handle(
         "POST",
-        f"/store-owner/stores/{STORE_ID}/products",
+        f"/merchant/stores/{wrong_chain_repository.stores[STORE_ID].public_store_id}/products",
         headers={"Content-Type": "application/json", "Idempotency-Key": "product-wrong-chain-001"},
         body=_product_body(),
     )
@@ -113,7 +113,7 @@ def test_product_registration_requires_active_store_supported_chain_and_non_nega
     bad_stock_repository = _seed_owner_store()
     bad_stock = catalog_router(bad_stock_repository, auth(OWNER_ID, UserRole.CUSTOMER)).handle(
         "POST",
-        f"/store-owner/stores/{STORE_ID}/products",
+        f"/merchant/stores/{bad_stock_repository.stores[STORE_ID].public_store_id}/products",
         headers={"Content-Type": "application/json", "Idempotency-Key": "product-bad-stock-001"},
         body=json_body(
             {
@@ -140,13 +140,13 @@ def test_product_registration_idempotency_does_not_duplicate_projection_or_inven
 
     first = router.handle(
         "POST",
-        f"/store-owner/stores/{STORE_ID}/products",
+        f"/merchant/stores/{repository.stores[STORE_ID].public_store_id}/products",
         headers={"Content-Type": "application/json", "Idempotency-Key": "product-register-idem-001", "X-Request-Id": "req-product-1"},
         body=_product_body(),
     )
     duplicate = router.handle(
         "POST",
-        f"/store-owner/stores/{STORE_ID}/products",
+        f"/merchant/stores/{repository.stores[STORE_ID].public_store_id}/products",
         headers={"Content-Type": "application/json", "Idempotency-Key": "product-register-idem-001", "X-Request-Id": "req-product-1"},
         body=_product_body(),
     )

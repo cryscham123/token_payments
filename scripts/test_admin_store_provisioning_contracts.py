@@ -9,6 +9,8 @@ sys.path.insert(0, str(ROOT / "app"))
 
 from token_payments.contexts.auth.domain import User, UserRole  # noqa: E402
 from token_payments.contexts.store_catalog.domain import (  # noqa: E402
+    ProductStatus,
+    ProductVisibility,
     StoreCatalog,
     StoreMembership,
     StoreMembershipRole,
@@ -67,20 +69,32 @@ def test_store_settings_live_on_store_profile_not_owner_account() -> None:
     assert profile.supports_chain(84532)
 
 
-def test_minimal_product_contract_excludes_future_catalog_metadata() -> None:
+def test_product_contract_includes_phase_23_catalog_metadata() -> None:
     product = StoreProduct(
         store_id=STORE_ID,
         product_id=PRODUCT_ID,
-        name="Ledger Mug",
+        title="Ledger Mug",
+        description="Ceramic mug for checkout demos",
+        category="accessories",
+        tags=("drinkware",),
+        media=("products/ledger-mug.png",),
+        attributes={"capacityMl": 350},
+        status=ProductStatus.ACTIVE,
+        visibility=ProductVisibility.PUBLIC,
         price=price(),
         active=True,
     )
 
     assert product.name == "Ledger Mug"
+    assert product.title == "Ledger Mug"
+    assert product.description == "Ceramic mug for checkout demos"
+    assert product.category == "accessories"
+    assert product.tags == ("drinkware",)
+    assert product.media == ("products/ledger-mug.png",)
+    assert product.attributes["capacityMl"] == 350
+    assert product.status is ProductStatus.ACTIVE
+    assert product.visibility is ProductVisibility.PUBLIC
     assert product.active is True
-    assert not hasattr(product, "description")
-    assert not hasattr(product, "category")
-    assert not hasattr(product, "tags")
     assert not hasattr(product, "search_metadata")
 
 

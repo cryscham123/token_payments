@@ -1,6 +1,9 @@
 """Store catalog domain model."""
 
 from .model import (
+    ProductStatus,
+    ProductVisibility,
+    PublicProductId,
     PublicStoreId,
     StoreCatalog,
     StoreMembership,
@@ -12,6 +15,9 @@ from .model import (
 )
 
 __all__ = [
+    "ProductStatus",
+    "ProductVisibility",
+    "PublicProductId",
     "PublicStoreId",
     "StoreCatalog",
     "StoreMembership",

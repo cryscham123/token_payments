@@ -297,7 +297,17 @@ POSTGRES_SCHEMA_COMPATIBILITY_SQL: tuple[str, ...] = (
     CREATE TABLE IF NOT EXISTS store_catalog_products (
         store_id UUID NOT NULL,
         product_id UUID NOT NULL,
+        public_product_id TEXT NOT NULL,
+        public_store_id TEXT NOT NULL,
+        title TEXT NOT NULL,
         name TEXT NOT NULL,
+        description TEXT,
+        category TEXT,
+        tags JSONB NOT NULL DEFAULT '[]'::jsonb,
+        media JSONB NOT NULL DEFAULT '[]'::jsonb,
+        attributes JSONB NOT NULL DEFAULT '{}'::jsonb,
+        status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'INACTIVE', 'ARCHIVED')),
+        visibility TEXT NOT NULL DEFAULT 'PUBLIC' CHECK (visibility IN ('PUBLIC', 'PRIVATE')),
         price_numeric NUMERIC(38, 18) NOT NULL CHECK (price_numeric >= 0),
         price_symbol TEXT NOT NULL,
         price_chain_id INTEGER NOT NULL CHECK (price_chain_id > 0),
@@ -308,6 +318,14 @@ POSTGRES_SCHEMA_COMPATIBILITY_SQL: tuple[str, ...] = (
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         PRIMARY KEY (store_id, product_id)
     )
+    """,
+    """
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_store_catalog_products_public_store_product
+        ON store_catalog_products (public_store_id, public_product_id)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_store_catalog_products_store_status_visibility
+        ON store_catalog_products (store_id, status, visibility)
     """,
     """
     CREATE TABLE IF NOT EXISTS store_catalog_idempotency (

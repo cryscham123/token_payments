@@ -7,7 +7,13 @@ from datetime import datetime
 from typing import Mapping
 
 from token_payments.contexts.auth.domain import UserRole
-from token_payments.contexts.store_catalog.domain import PublicStoreId, StoreMembershipRole
+from token_payments.contexts.store_catalog.domain import (
+    ProductStatus,
+    ProductVisibility,
+    PublicProductId,
+    PublicStoreId,
+    StoreMembershipRole,
+)
 from token_payments.shared.domain import CommandId, Crypto, ProductId, StoreId, UserId, WalletAddress
 
 
@@ -158,15 +164,23 @@ class RegisterStoreProductCommand:
     command_id: CommandId
     actor_user_id: UserId
     actor_platform_role: UserRole
-    store_id: StoreId
+    public_store_id: PublicStoreId
     product_id: ProductId
-    name: str
+    title: str
     price: Crypto
     initial_total_stock: int
-    active: bool
     requested_at: datetime
     request_id: str
     payload_hash: str
+    public_product_id: PublicProductId | None = None
+    description: str | None = None
+    category: str | None = None
+    tags: tuple[str, ...] = ()
+    media: tuple[str, ...] = ()
+    attributes: Mapping[str, object] | None = None
+    status: ProductStatus | str = ProductStatus.ACTIVE
+    visibility: ProductVisibility | str = ProductVisibility.PUBLIC
+    active: bool = True
 
     def __post_init__(self) -> None:
         _validate_common(self)
@@ -178,17 +192,79 @@ class RegisterStoreProductCommand:
                 "actor_platform_role",
                 UserRole(_text(str(self.actor_platform_role), "actor_platform_role")),
             )
-        if not isinstance(self.store_id, StoreId):
-            raise ValueError("RegisterStoreProductCommand.store_id must be a StoreId")
+        if not isinstance(self.public_store_id, PublicStoreId):
+            object.__setattr__(self, "public_store_id", PublicStoreId(str(self.public_store_id)))
         if not isinstance(self.product_id, ProductId):
             raise ValueError("RegisterStoreProductCommand.product_id must be a ProductId")
-        object.__setattr__(self, "name", _text(self.name, "RegisterStoreProductCommand.name"))
+        if self.public_product_id is not None and not isinstance(self.public_product_id, PublicProductId):
+            object.__setattr__(self, "public_product_id", PublicProductId(str(self.public_product_id)))
+        object.__setattr__(self, "title", _text(self.title, "RegisterStoreProductCommand.title"))
         if not isinstance(self.price, Crypto):
             raise ValueError("RegisterStoreProductCommand.price must be a Crypto")
         if isinstance(self.initial_total_stock, bool) or not isinstance(self.initial_total_stock, int) or self.initial_total_stock < 0:
             raise ValueError("RegisterStoreProductCommand.initial_total_stock must be a non-negative integer")
         if not isinstance(self.active, bool):
             raise ValueError("RegisterStoreProductCommand.active must be a bool")
+        for field_name in ("description", "category"):
+            value = getattr(self, field_name)
+            if value is not None:
+                object.__setattr__(self, field_name, _text(value, field_name))
+        object.__setattr__(self, "tags", _text_tuple(self.tags, "tags"))
+        object.__setattr__(self, "media", _text_tuple(self.media, "media"))
+        if self.attributes is not None and not isinstance(self.attributes, Mapping):
+            raise ValueError("RegisterStoreProductCommand.attributes must be an object")
+        if not isinstance(self.status, ProductStatus):
+            object.__setattr__(self, "status", ProductStatus(_text(str(self.status), "status")))
+        if not isinstance(self.visibility, ProductVisibility):
+            object.__setattr__(self, "visibility", ProductVisibility(_text(str(self.visibility), "visibility")))
+
+
+@dataclass(frozen=True)
+class UpdateStoreProductCommand:
+    command_id: CommandId
+    actor_user_id: UserId
+    public_store_id: PublicStoreId
+    public_product_id: PublicProductId
+    title: str | None
+    description: str | None
+    category: str | None
+    tags: tuple[str, ...] | None
+    media: tuple[str, ...] | None
+    attributes: Mapping[str, object] | None
+    status: ProductStatus | str | None
+    visibility: ProductVisibility | str | None
+    requested_at: datetime
+    request_id: str
+    payload_hash: str
+    price: Crypto | None = None
+    platform_override: bool = False
+
+    def __post_init__(self) -> None:
+        _validate_common(self)
+        if not isinstance(self.actor_user_id, UserId):
+            raise ValueError("UpdateStoreProductCommand.actor_user_id must be a UserId")
+        if not isinstance(self.public_store_id, PublicStoreId):
+            object.__setattr__(self, "public_store_id", PublicStoreId(str(self.public_store_id)))
+        if not isinstance(self.public_product_id, PublicProductId):
+            object.__setattr__(self, "public_product_id", PublicProductId(str(self.public_product_id)))
+        for field_name in ("title", "description", "category"):
+            value = getattr(self, field_name)
+            if value is not None:
+                object.__setattr__(self, field_name, _text(value, field_name))
+        if self.tags is not None:
+            object.__setattr__(self, "tags", _text_tuple(self.tags, "tags"))
+        if self.media is not None:
+            object.__setattr__(self, "media", _text_tuple(self.media, "media"))
+        if self.attributes is not None and not isinstance(self.attributes, Mapping):
+            raise ValueError("UpdateStoreProductCommand.attributes must be an object")
+        if self.status is not None and not isinstance(self.status, ProductStatus):
+            object.__setattr__(self, "status", ProductStatus(_text(str(self.status), "status")))
+        if self.visibility is not None and not isinstance(self.visibility, ProductVisibility):
+            object.__setattr__(self, "visibility", ProductVisibility(_text(str(self.visibility), "visibility")))
+        if self.price is not None and not isinstance(self.price, Crypto):
+            raise ValueError("UpdateStoreProductCommand.price must be a Crypto")
+        if not isinstance(self.platform_override, bool):
+            raise ValueError("UpdateStoreProductCommand.platform_override must be a bool")
 
 
 def _validate_common(command: object) -> None:
@@ -218,3 +294,9 @@ def _text(value: str, field_name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field_name} must be a non-empty string")
     return value.strip()
+
+
+def _text_tuple(values: tuple[str, ...] | list[str], field_name: str) -> tuple[str, ...]:
+    if not isinstance(values, tuple | list):
+        raise ValueError(f"{field_name} must be an array")
+    return tuple(_text(value, field_name) for value in values)

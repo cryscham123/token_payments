@@ -616,6 +616,226 @@
           }
         },
         {
+          "id": "listPublicStores",
+          "name": "List public stores",
+          "description": "Lists active public stores with public profile and payment capability summaries.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/stores",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "stores"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "getStoreProfile",
+          "name": "Get public store profile",
+          "description": "Reads the public store profile by stable publicStoreId without exposing internal store ids or payment settings.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/stores/{{publicStoreId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "stores",
+                "{{publicStoreId}}"
+              ]
+            }
+          }
+        },
+        {
+          "id": "listPublicProducts",
+          "name": "List public store products",
+          "description": "Lists active public products by publicStoreId with price, availability, and payment capability summaries.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/stores/{{publicStoreId}}/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "stores",
+                "{{publicStoreId}}",
+                "products"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                },
+                {
+                  "key": "q",
+                  "value": "Local"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "getPublicProduct",
+          "name": "Get public product",
+          "description": "Reads a public product detail by publicStoreId and publicProductId.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/stores/{{publicStoreId}}/products/{{publicProductId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "stores",
+                "{{publicStoreId}}",
+                "products",
+                "{{publicProductId}}"
+              ]
+            }
+          }
+        },
+        {
+          "id": "listMerchantStores",
+          "name": "List merchant stores",
+          "description": "Lists stores visible to the authenticated merchant session through scoped membership.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/merchant/stores",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "merchant",
+                "stores"
+              ]
+            }
+          }
+        },
+        {
+          "id": "updateStoreProfile",
+          "name": "Update store profile",
+          "description": "Updates merchant business profile fields by publicStoreId using scoped store:write authority.",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "postman-update-store-profile-001"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/merchant/stores/{{publicStoreId}}/profile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "merchant",
+                "stores",
+                "{{publicStoreId}}",
+                "profile"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"displayName\": \"Demo Store\",\n  \"description\": \"Local token payments demo store\",\n  \"supportEmailPublic\": false\n}"
+            }
+          }
+        },
+        {
+          "id": "listMerchantProducts",
+          "name": "List merchant products",
+          "description": "Lists merchant products by publicStoreId with bounded status, visibility, category, tag, query, sort, limit, and offset filters.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/merchant/stores/{{publicStoreId}}/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "merchant",
+                "stores",
+                "{{publicStoreId}}",
+                "products"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "ACTIVE"
+                },
+                {
+                  "key": "visibility",
+                  "value": "PUBLIC"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "getMerchantProduct",
+          "name": "Get merchant product",
+          "description": "Reads merchant product detail by publicStoreId and publicProductId with product:read authority.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/merchant/stores/{{publicStoreId}}/products/{{publicProductId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "merchant",
+                "stores",
+                "{{publicStoreId}}",
+                "products",
+                "{{publicProductId}}"
+              ]
+            }
+          }
+        },
+        {
           "id": "createOrReuseStoreUser",
           "name": "Admin create or reuse store user",
           "description": "Admin-only provisioning that creates or reuses a normal CUSTOMER auth identity for store ownership.",
@@ -728,7 +948,7 @@
         {
           "id": "registerStoreProduct",
           "name": "Store owner register product",
-          "description": "Registers a minimal checkoutable product and writes canonical catalog, checkout, approval, and inventory projections.",
+          "description": "Registers a checkoutable catalog product by publicStoreId and writes canonical catalog, checkout, approval, and inventory projections.",
           "request": {
             "method": "POST",
             "header": [
@@ -746,20 +966,59 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/store-owner/stores/{{storeId}}/products",
+              "raw": "{{baseUrl}}/merchant/stores/{{publicStoreId}}/products",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "store-owner",
+                "merchant",
                 "stores",
-                "{{storeId}}",
+                "{{publicStoreId}}",
                 "products"
               ]
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"productId\": \"{{productId}}\",\n  \"name\": \"Local Hoodie\",\n  \"price\": {\n    \"amount\": \"10.000000000000000000\",\n    \"symbol\": \"TPAY\",\n    \"chainId\": {{chainId}},\n    \"tokenAddress\": \"{{paymentTokenAddress}}\",\n    \"decimals\": 18\n  },\n  \"initialTotalStock\": 25,\n  \"active\": true\n}"
+              "raw": "{\n  \"productId\": \"{{productId}}\",\n  \"publicProductId\": \"{{publicProductId}}\",\n  \"title\": \"Local Hoodie\",\n  \"description\": \"Local checkout test hoodie\",\n  \"category\": \"apparel\",\n  \"tags\": [\"demo\", \"hoodie\"],\n  \"media\": [\"products/local-hoodie.png\"],\n  \"attributes\": {\"size\": \"M\"},\n  \"status\": \"ACTIVE\",\n  \"visibility\": \"PUBLIC\",\n  \"price\": {\n    \"amount\": \"10.000000000000000000\",\n    \"symbol\": \"TPAY\",\n    \"chainId\": {{chainId}},\n    \"tokenAddress\": \"{{paymentTokenAddress}}\",\n    \"decimals\": 18\n  },\n  \"initialTotalStock\": 25,\n  \"active\": true\n}"
+            }
+          }
+        },
+        {
+          "id": "updateStoreProduct",
+          "name": "Update store product",
+          "description": "Updates product catalog detail by publicStoreId and publicProductId without mutating inventory status.",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "postman-store-owner-update-product-001"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/merchant/stores/{{publicStoreId}}/products/{{publicProductId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "merchant",
+                "stores",
+                "{{publicStoreId}}",
+                "products",
+                "{{publicProductId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Local Hoodie v2\",\n  \"description\": \"Updated local checkout test hoodie\",\n  \"category\": \"apparel\",\n  \"tags\": [\"demo\"],\n  \"media\": [\"products/local-hoodie-v2.png\"],\n  \"attributes\": {\"size\": \"L\"},\n  \"status\": \"ACTIVE\",\n  \"visibility\": \"PUBLIC\"\n}"
             }
           }
         },

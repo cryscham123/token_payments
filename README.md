@@ -501,12 +501,11 @@ python3 -m pip install fastapi uvicorn
 PYTHONPATH=app uvicorn production_api:app --host 0.0.0.0 --port 8000
 ```
 
-Next phase order:
+Next phase candidates:
 
-- Docker compose live server
-- SIWE/ERC-1271 auth
-- inventory saga finalization
-- store owner inventory API
+- Kafka live worker runtime
+- multi-wallet accounts
+- stablecoin payment support
 
 ## Live API Runtime Composition Contract
 
@@ -524,11 +523,10 @@ Checkout Process is a separate saga/process context, not an order context submod
 
 PostgreSQL is the source of truth for auth users, login challenges, and sessions. Refresh reuse detection uses the PostgreSQL session repository hash/salt/rotation model. Redis is optional cache-aside/TTL optimization, not a live required dependency. Local runs must copy `.env.example` to `.env`; live/prod startup rejects committed local dev signing values, so replace session and CSRF signing material for non-local environments.
 
-Public HTTP route surface stays bound to the current 36-route manifest, including public/merchant store profile APIs, admin store catalog provisioning, merchant member/invitation APIs, and the store owner inventory API. Initial `ADMIN` bootstrap is local/manual seed only, implemented as a local DB init seed controlled by `.env` `BOOTSTRAP_ADMIN_WALLET_ADDRESS`; public customer login never grants a global `STORE_OWNER` role. Store management authorization uses merchant group membership and permission scopes, not a global STORE_OWNER account role, so an existing customer wallet is reused as the same `auth_users.user_id` and checkout history is preserved. Store business profile uses stable `publicStoreId`; store wallet and supported chains remain separate payment settings. Product registration is allowed for scoped merchant membership or explicit platform permission and writes canonical `store_catalog_products` plus checkout, inventory, and store approval projections together. Product description/category/search metadata is future scope. Stock intake, target stock correction, sale pause, and sale resume are audited, idempotent inventory commands. `approveOrder`/`request_store_approval` are Kafka/message listener inputs, and store owner manual order approval HTTP API is not in current scope. manual order approval HTTP API is not an active roadmap item. UI implementation remains a separate phase. ERC-20/USDC/USDT payment support is not an immediate roadmap phase.
+Public HTTP route surface stays bound to the current 42-route manifest, including public/merchant store profile APIs, public/merchant product catalog reads, admin store catalog provisioning, merchant member/invitation APIs, merchant product catalog writes, and the store owner inventory API. Initial `ADMIN` bootstrap is local/manual seed only, implemented as a local DB init seed controlled by `.env` `BOOTSTRAP_ADMIN_WALLET_ADDRESS`; public customer login never grants a global `STORE_OWNER` role. Store management authorization uses merchant group membership and permission scopes, not a global STORE_OWNER account role, so an existing customer wallet is reused as the same `auth_users.user_id` and checkout history is preserved. Store business profile uses stable `publicStoreId`; store wallet and supported chains remain separate payment settings. Product reads, registration, and detail updates use `publicStoreId`/`publicProductId`, are allowed according to public/merchant scope, and keep product catalog status separate from inventory sale status. Product search engine integration, DID, and email account recovery are future scope. Stock intake, target stock correction, sale pause, and sale resume are audited, idempotent inventory commands. `approveOrder`/`request_store_approval` are Kafka/message listener inputs, and store owner manual order approval HTTP API is not in current scope. manual order approval HTTP API is not an active roadmap item. UI implementation remains a separate phase. ERC-20/USDC/USDT payment support is not an immediate roadmap phase. Kafka live worker, multi-wallet, and stablecoin support are next phase candidates.
 
-Next phase order:
+Next phase candidates:
 
-- Docker compose live server
-- SIWE/ERC-1271 auth
-- inventory saga finalization
-- store owner inventory API
+- Kafka live worker runtime
+- multi-wallet accounts
+- stablecoin payment support

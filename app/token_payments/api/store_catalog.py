@@ -13,10 +13,11 @@ from token_payments.contexts.store_catalog.application.commands import (
     ListMerchantStoresQuery,
     RegisterStoreProductCommand,
     UpdateStoreProfileCommand,
+    UpdateStoreProductCommand,
     payload_hash,
 )
 from token_payments.contexts.store_catalog.application.ports import StoreCatalogCommandStatus
-from token_payments.contexts.store_catalog.domain import PublicStoreId, StoreMembershipRole
+from token_payments.contexts.store_catalog.domain import ProductStatus, ProductVisibility, PublicProductId, PublicStoreId, StoreMembershipRole
 from token_payments.shared.domain import CommandId, Crypto, ProductId, StoreId, UserId, WalletAddress
 
 from .contracts import ApiRequest, ApiResponse, json_response
@@ -108,6 +109,80 @@ class StoreCatalogApi:
         except ValueError as exc:
             return _error_response("VALIDATION_ERROR", str(exc), 400, request.request_id)
 
+    def list_public_stores(self, request: ApiRequest) -> ApiResponse:
+        try:
+            _reject_unknown_query(request.query, {"limit", "offset"})
+            page = _page_query(request.query)
+            return json_response(
+                self._use_case.list_public_stores(limit=page["limit"], offset=page["offset"]),
+                request_id=request.request_id,
+            )
+        except ValueError as exc:
+            return _error_response("VALIDATION_ERROR", str(exc), 400, request.request_id)
+
+    def list_public_products(self, request: ApiRequest) -> ApiResponse:
+        try:
+            _reject_unknown_query(request.query, {"q", "category", "tag", "sort", "limit", "offset", "publicStoreId"})
+            result = self._use_case.list_public_products(
+                public_store_id=PublicStoreId(_lookup_value(request, "publicStoreId")),
+                filters=_catalog_filters(request.query, merchant=False),
+            )
+            if result is None:
+                return _error_response("STORE_NOT_FOUND", "store was not found", 404, request.request_id)
+            return json_response(result, request_id=request.request_id)
+        except ValueError as exc:
+            return _error_response("VALIDATION_ERROR", str(exc), 400, request.request_id)
+
+    def get_public_product(self, request: ApiRequest) -> ApiResponse:
+        try:
+            result = self._use_case.get_public_product(
+                public_store_id=PublicStoreId(_lookup_value(request, "publicStoreId")),
+                public_product_id=PublicProductId(_lookup_value(request, "publicProductId")),
+            )
+            if result is None:
+                return _error_response("PRODUCT_NOT_FOUND", "product was not found", 404, request.request_id)
+            return json_response(result, request_id=request.request_id)
+        except ValueError as exc:
+            return _error_response("VALIDATION_ERROR", str(exc), 400, request.request_id)
+
+    def list_merchant_products(self, request: ApiRequest) -> ApiResponse:
+        try:
+            claims = _require_authenticated(request)
+            if "product:read" not in claims.scopes and "product:read:any" not in claims.scopes:
+                raise _ApiError("STORE_OWNER_STORE_FORBIDDEN", "product:read permission is required", 403)
+            _reject_unknown_query(
+                request.query,
+                {"q", "category", "tag", "status", "visibility", "sort", "limit", "offset", "publicStoreId"},
+            )
+            result = self._use_case.list_merchant_products(
+                actor_user_id=claims.user_id,
+                public_store_id=PublicStoreId(_lookup_value(request, "publicStoreId")),
+                filters=_catalog_filters(request.query, merchant=True),
+                platform_override="product:read:any" in claims.scopes,
+            )
+            return _read_result_response(result, request.request_id)
+        except _ApiError as exc:
+            return exc.response(request.request_id)
+        except ValueError as exc:
+            return _error_response("VALIDATION_ERROR", str(exc), 400, request.request_id)
+
+    def get_merchant_product(self, request: ApiRequest) -> ApiResponse:
+        try:
+            claims = _require_authenticated(request)
+            if "product:read" not in claims.scopes and "product:read:any" not in claims.scopes:
+                raise _ApiError("STORE_OWNER_STORE_FORBIDDEN", "product:read permission is required", 403)
+            result = self._use_case.get_merchant_product(
+                actor_user_id=claims.user_id,
+                public_store_id=PublicStoreId(_lookup_value(request, "publicStoreId")),
+                public_product_id=PublicProductId(_lookup_value(request, "publicProductId")),
+                platform_override="product:read:any" in claims.scopes,
+            )
+            return _read_result_response(result, request.request_id)
+        except _ApiError as exc:
+            return exc.response(request.request_id)
+        except ValueError as exc:
+            return _error_response("VALIDATION_ERROR", str(exc), 400, request.request_id)
+
     def update_store_profile(self, request: ApiRequest) -> ApiResponse:
         try:
             claims = _require_authenticated(request)
@@ -187,17 +262,48 @@ class StoreCatalogApi:
             if "product:write" not in claims.scopes and "product:write:any" not in claims.scopes:
                 raise _ApiError("STORE_OWNER_STORE_FORBIDDEN", "product:write permission is required", 403)
             body = _body(request)
+            _reject_unknown_fields(
+                body,
+                {
+                    "productId",
+                    "publicProductId",
+                    "title",
+                    "name",
+                    "description",
+                    "category",
+                    "tags",
+                    "media",
+                    "attributes",
+                    "status",
+                    "visibility",
+                    "price",
+                    "initialTotalStock",
+                    "active",
+                    "available",
+                    "idempotencyKey",
+                    "commandId",
+                },
+            )
             idempotency_key = _required_idempotency_key(request, body)
+            active = _optional_bool(body, "active", _optional_bool(body, "available", True))
             command = RegisterStoreProductCommand(
                 command_id=CommandId(idempotency_key),
                 actor_user_id=claims.user_id,
                 actor_platform_role=UserRole.ADMIN if "product:write:any" in claims.scopes else UserRole.CUSTOMER,
-                store_id=StoreId(_lookup_value(request, "storeId")),
+                public_store_id=PublicStoreId(_lookup_value(request, "publicStoreId")),
                 product_id=ProductId(_required_text(body, "productId")),
-                name=_required_text(body, "name"),
+                public_product_id=_optional_public_product_id(body, "publicProductId"),
+                title=_optional_text(body, "title") or _required_text(body, "name"),
+                description=_optional_text(body, "description"),
+                category=_optional_text(body, "category"),
+                tags=_optional_text_tuple(body, "tags"),
+                media=_optional_text_tuple(body, "media"),
+                attributes=_optional_mapping(body, "attributes"),
+                status=_optional_product_status(body, "status", ProductStatus.ACTIVE if active else ProductStatus.INACTIVE),
+                visibility=_optional_product_visibility(body, "visibility", ProductVisibility.PUBLIC),
                 price=_price(body),
                 initial_total_stock=_required_int(body, "initialTotalStock"),
-                active=_optional_bool(body, "active", _optional_bool(body, "available", True)),
+                active=active,
                 requested_at=request.received_at,
                 request_id=request.request_id,
                 payload_hash=payload_hash(_idempotency_payload(request, body, claims.user_id)),
@@ -206,6 +312,60 @@ class StoreCatalogApi:
                 self._use_case.register_store_product(command),
                 request.request_id,
                 created_status=201,
+            )
+        except _ApiError as exc:
+            return exc.response(request.request_id)
+        except IdempotencyKeyConflict as exc:
+            return idempotency_conflict_response(exc, request.request_id)
+        except ValueError as exc:
+            return _error_response("VALIDATION_ERROR", str(exc), 400, request.request_id)
+
+    def update_store_product(self, request: ApiRequest) -> ApiResponse:
+        try:
+            claims = _require_authenticated(request)
+            if "product:write" not in claims.scopes and "product:write:any" not in claims.scopes:
+                raise _ApiError("STORE_OWNER_STORE_FORBIDDEN", "product:write permission is required", 403)
+            body = _body(request)
+            _reject_unknown_fields(
+                body,
+                {
+                    "title",
+                    "description",
+                    "category",
+                    "tags",
+                    "media",
+                    "attributes",
+                    "status",
+                    "visibility",
+                    "price",
+                    "idempotencyKey",
+                    "commandId",
+                },
+            )
+            idempotency_key = _required_idempotency_key(request, body)
+            command = UpdateStoreProductCommand(
+                command_id=CommandId(idempotency_key),
+                actor_user_id=claims.user_id,
+                public_store_id=PublicStoreId(_lookup_value(request, "publicStoreId")),
+                public_product_id=PublicProductId(_lookup_value(request, "publicProductId")),
+                title=_optional_text(body, "title"),
+                description=_optional_text(body, "description"),
+                category=_optional_text(body, "category"),
+                tags=_optional_text_tuple_or_none(body, "tags"),
+                media=_optional_text_tuple_or_none(body, "media"),
+                attributes=_optional_mapping(body, "attributes"),
+                status=_optional_product_status_or_none(body, "status"),
+                visibility=_optional_product_visibility_or_none(body, "visibility"),
+                price=_optional_price(body),
+                platform_override="product:write:any" in claims.scopes,
+                requested_at=request.received_at,
+                request_id=request.request_id,
+                payload_hash=payload_hash(_idempotency_payload(request, body, claims.user_id)),
+            )
+            return _result_response(
+                self._use_case.update_store_product(command),
+                request.request_id,
+                created_status=200,
             )
         except _ApiError as exc:
             return exc.response(request.request_id)
@@ -267,6 +427,13 @@ def _result_response(result: Any, request_id: str, *, created_status: int) -> Ap
     return json_response(result.payload, status_code=status_code, request_id=request_id)
 
 
+def _read_result_response(result: Mapping[str, Any], request_id: str) -> ApiResponse:
+    if "error" in result:
+        code = str(result["error"].get("code", "CATALOG_QUERY_REJECTED"))
+        return json_response(result, status_code=_status_for_rejection(code), request_id=request_id)
+    return json_response(result, request_id=request_id)
+
+
 def _status_for_rejection(code: str) -> int:
     if code.endswith("_FORBIDDEN"):
         return 403
@@ -308,6 +475,12 @@ def _price(body: Mapping[str, Any]) -> Crypto:
     )
 
 
+def _optional_price(body: Mapping[str, Any]) -> Crypto | None:
+    if "price" not in body:
+        return None
+    return _price(body)
+
+
 def _store_membership_role(body: Mapping[str, Any]) -> StoreMembershipRole:
     role_id = _optional_text(body, "roleId")
     if role_id is not None:
@@ -326,6 +499,86 @@ def _lookup_value(request: ApiRequest, key: str) -> str:
     if isinstance(value, str) and value.strip():
         return value.strip()
     raise ValueError(f"{key} is required")
+
+
+def _reject_unknown_query(query: Mapping[str, Any], allowed: set[str]) -> None:
+    unknown = sorted(str(key) for key in query if key not in allowed)
+    if unknown:
+        raise ValueError(f"unknown catalog query field(s): {', '.join(unknown)}")
+
+
+def _catalog_filters(query: Mapping[str, Any], *, merchant: bool) -> dict[str, Any]:
+    page = _page_query(query)
+    sort_by, sort_direction = _sort_query(query.get("sort"))
+    filters: dict[str, Any] = {
+        "query": _optional_query_text(query.get("q"), "q"),
+        "category": _optional_catalog_token(query.get("category"), "category"),
+        "tag": _optional_catalog_token(query.get("tag"), "tag"),
+        "sort_by": sort_by,
+        "sort_direction": sort_direction,
+        "limit": page["limit"],
+        "offset": page["offset"],
+    }
+    if merchant:
+        status = _optional_query_text(query.get("status"), "status")
+        visibility = _optional_query_text(query.get("visibility"), "visibility")
+        filters["status"] = ProductStatus(status) if status is not None else None
+        filters["visibility"] = ProductVisibility(visibility) if visibility is not None else None
+    return filters
+
+
+def _page_query(query: Mapping[str, Any]) -> dict[str, int]:
+    return {
+        "limit": _bounded_int(query.get("limit", "20"), "limit", minimum=1, maximum=50),
+        "offset": _bounded_int(query.get("offset", "0"), "offset", minimum=0, maximum=10000),
+    }
+
+
+def _bounded_int(value: Any, field_name: str, *, minimum: int, maximum: int) -> int:
+    if isinstance(value, bool):
+        raise ValueError(f"{field_name} must be an integer")
+    try:
+        parsed = int(str(value))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field_name} must be an integer") from exc
+    if parsed < minimum or parsed > maximum:
+        raise ValueError(f"{field_name} must be between {minimum} and {maximum}")
+    return parsed
+
+
+def _sort_query(value: Any) -> tuple[str, str]:
+    raw = _optional_query_text(value, "sort") or "title"
+    direction = "desc" if raw.startswith("-") else "asc"
+    sort_by = raw[1:] if raw.startswith("-") else raw
+    if sort_by not in {"title", "createdAt", "updatedAt", "price"}:
+        raise ValueError("sort must be one of title, createdAt, updatedAt, price with optional '-' prefix")
+    return sort_by, direction
+
+
+def _optional_catalog_token(value: Any, field_name: str) -> str | None:
+    text = _optional_query_text(value, field_name)
+    if text is None:
+        return None
+    if len(text) > 80:
+        raise ValueError(f"{field_name} must be at most 80 characters")
+    if any(char in text for char in "\x00\r\n\t"):
+        raise ValueError(f"{field_name} contains unsafe characters")
+    return text.lower()
+
+
+def _optional_query_text(value: Any, field_name: str) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, tuple | list):
+        raise ValueError(f"{field_name} must be a single value")
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field_name} must be a non-empty string")
+    text = value.strip()
+    if len(text) > 120:
+        raise ValueError(f"{field_name} must be at most 120 characters")
+    if any(char in text for char in "\x00\r\n\t"):
+        raise ValueError(f"{field_name} contains unsafe characters")
+    return text
 
 
 def _required_text(body: Mapping[str, Any], key: str) -> str:
@@ -347,6 +600,11 @@ def _optional_text(body: Mapping[str, Any], key: str) -> str | None:
 def _optional_public_store_id(body: Mapping[str, Any], key: str) -> PublicStoreId | None:
     value = _optional_text(body, key)
     return PublicStoreId(value) if value is not None else None
+
+
+def _optional_public_product_id(body: Mapping[str, Any], key: str) -> PublicProductId | None:
+    value = _optional_text(body, key)
+    return PublicProductId(value) if value is not None else None
 
 
 def _required_int(body: Mapping[str, Any], key: str) -> int:
@@ -383,6 +641,60 @@ def _optional_bool_or_none(body: Mapping[str, Any], key: str) -> bool | None:
     if not isinstance(value, bool):
         raise ValueError(f"{key} must be a boolean")
     return value
+
+
+def _optional_text_tuple(body: Mapping[str, Any], key: str) -> tuple[str, ...]:
+    if key not in body:
+        return ()
+    values = body.get(key)
+    if not isinstance(values, list):
+        raise ValueError(f"{key} must be an array")
+    return tuple(_text_value(value, key) for value in values)
+
+
+def _optional_text_tuple_or_none(body: Mapping[str, Any], key: str) -> tuple[str, ...] | None:
+    if key not in body:
+        return None
+    return _optional_text_tuple(body, key)
+
+
+def _optional_mapping(body: Mapping[str, Any], key: str) -> Mapping[str, Any] | None:
+    if key not in body:
+        return None
+    value = body.get(key)
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{key} must be an object")
+    return value
+
+
+def _optional_product_status(body: Mapping[str, Any], key: str, default: ProductStatus) -> ProductStatus:
+    value = _optional_text(body, key)
+    return default if value is None else ProductStatus(value)
+
+
+def _optional_product_status_or_none(body: Mapping[str, Any], key: str) -> ProductStatus | None:
+    value = _optional_text(body, key)
+    return None if value is None else ProductStatus(value)
+
+
+def _optional_product_visibility(
+    body: Mapping[str, Any],
+    key: str,
+    default: ProductVisibility,
+) -> ProductVisibility:
+    value = _optional_text(body, key)
+    return default if value is None else ProductVisibility(value)
+
+
+def _optional_product_visibility_or_none(body: Mapping[str, Any], key: str) -> ProductVisibility | None:
+    value = _optional_text(body, key)
+    return None if value is None else ProductVisibility(value)
+
+
+def _text_value(value: Any, field_name: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field_name} must contain non-empty strings")
+    return value.strip()
 
 
 def _reject_unknown_fields(body: Mapping[str, Any], allowed: set[str]) -> None:

@@ -309,7 +309,17 @@ CREATE INDEX IF NOT EXISTS idx_store_catalog_memberships_user_active
 CREATE TABLE IF NOT EXISTS store_catalog_products (
     store_id UUID NOT NULL REFERENCES store_catalog_stores (store_id),
     product_id UUID NOT NULL,
+    public_product_id TEXT NOT NULL,
+    public_store_id TEXT NOT NULL,
+    title TEXT NOT NULL,
     name TEXT NOT NULL,
+    description TEXT,
+    category TEXT,
+    tags JSONB NOT NULL DEFAULT '[]'::jsonb,
+    media JSONB NOT NULL DEFAULT '[]'::jsonb,
+    attributes JSONB NOT NULL DEFAULT '{}'::jsonb,
+    status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'INACTIVE', 'ARCHIVED')),
+    visibility TEXT NOT NULL DEFAULT 'PUBLIC' CHECK (visibility IN ('PUBLIC', 'PRIVATE')),
     price_numeric NUMERIC(38, 18) NOT NULL CHECK (price_numeric >= 0),
     price_symbol TEXT NOT NULL,
     price_chain_id INTEGER NOT NULL CHECK (price_chain_id > 0),
@@ -321,8 +331,64 @@ CREATE TABLE IF NOT EXISTS store_catalog_products (
     PRIMARY KEY (store_id, product_id)
 );
 
+ALTER TABLE IF EXISTS store_catalog_products
+    ADD COLUMN IF NOT EXISTS public_product_id TEXT;
+
+ALTER TABLE IF EXISTS store_catalog_products
+    ADD COLUMN IF NOT EXISTS public_store_id TEXT;
+
+ALTER TABLE IF EXISTS store_catalog_products
+    ADD COLUMN IF NOT EXISTS title TEXT;
+
+ALTER TABLE IF EXISTS store_catalog_products
+    ADD COLUMN IF NOT EXISTS description TEXT;
+
+ALTER TABLE IF EXISTS store_catalog_products
+    ADD COLUMN IF NOT EXISTS category TEXT;
+
+ALTER TABLE IF EXISTS store_catalog_products
+    ADD COLUMN IF NOT EXISTS tags JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+ALTER TABLE IF EXISTS store_catalog_products
+    ADD COLUMN IF NOT EXISTS media JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+ALTER TABLE IF EXISTS store_catalog_products
+    ADD COLUMN IF NOT EXISTS attributes JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+ALTER TABLE IF EXISTS store_catalog_products
+    ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'ACTIVE';
+
+ALTER TABLE IF EXISTS store_catalog_products
+    ADD COLUMN IF NOT EXISTS visibility TEXT NOT NULL DEFAULT 'PUBLIC';
+
+UPDATE store_catalog_products
+SET public_product_id = COALESCE(public_product_id, 'prd_' || substr(md5(product_id::text), 1, 20));
+
+UPDATE store_catalog_products p
+SET public_store_id = COALESCE(p.public_store_id, s.public_store_id)
+FROM store_catalog_stores s
+WHERE p.store_id = s.store_id;
+
+UPDATE store_catalog_products
+SET title = COALESCE(title, name);
+
+ALTER TABLE IF EXISTS store_catalog_products
+    ALTER COLUMN public_product_id SET NOT NULL;
+
+ALTER TABLE IF EXISTS store_catalog_products
+    ALTER COLUMN public_store_id SET NOT NULL;
+
+ALTER TABLE IF EXISTS store_catalog_products
+    ALTER COLUMN title SET NOT NULL;
+
 CREATE INDEX IF NOT EXISTS idx_store_catalog_products_store_active
     ON store_catalog_products (store_id, active);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_store_catalog_products_public_store_product
+    ON store_catalog_products (public_store_id, public_product_id);
+
+CREATE INDEX IF NOT EXISTS idx_store_catalog_products_store_status_visibility
+    ON store_catalog_products (store_id, status, visibility);
 
 CREATE TABLE IF NOT EXISTS store_catalog_idempotency (
     handler TEXT NOT NULL,

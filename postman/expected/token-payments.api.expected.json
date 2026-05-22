@@ -12,13 +12,19 @@
     "getCheckoutTrackingByTrackingId",
     "getCheckoutTrackingByOrderId",
     "submitTransactionHash",
+    "listPublicStores",
     "getStoreProfile",
+    "listPublicProducts",
+    "getPublicProduct",
     "listMerchantStores",
     "updateStoreProfile",
     "createOrReuseStoreUser",
     "createStore",
     "grantStoreMembership",
+    "listMerchantProducts",
+    "getMerchantProduct",
     "registerStoreProduct",
+    "updateStoreProduct",
     "listStoreOwnerInventory",
     "increaseStoreOwnerInventoryStock",
     "correctStoreOwnerInventoryStock",
@@ -261,6 +267,38 @@
       }
     },
     {
+      "operationId": "listPublicStores",
+      "requestName": "List public stores",
+      "method": "GET",
+      "path": "/stores",
+      "status": 200,
+      "headers": {
+        "X-Request-Id": "postman-public-stores-list-001"
+      },
+      "body": {
+        "stores": [
+          {
+            "publicStoreId": "st_demo_store_001",
+            "displayName": "Demo Store",
+            "status": "ACTIVE",
+            "paymentCapability": {
+              "supportedChainIds": [
+                1337
+              ],
+              "settlement": {
+                "available": true
+              }
+            }
+          }
+        ],
+        "pagination": {
+          "limit": 20,
+          "offset": 0,
+          "nextOffset": null
+        }
+      }
+    },
+    {
       "operationId": "getStoreProfile",
       "requestName": "Get public store profile",
       "method": "GET",
@@ -277,6 +315,57 @@
           "description": "Local token payments demo store",
           "descriptionHtml": "Local token payments demo store",
           "status": "ACTIVE"
+        }
+      }
+    },
+    {
+      "operationId": "listPublicProducts",
+      "requestName": "List public store products",
+      "method": "GET",
+      "path": "/stores/{publicStoreId}/products",
+      "status": 200,
+      "headers": {
+        "X-Request-Id": "postman-public-products-list-001"
+      },
+      "body": {
+        "products": [
+          {
+            "publicStoreId": "st_demo_store_001",
+            "publicProductId": "prd_local_hoodie_001",
+            "title": "Local Hoodie",
+            "displayPrice": {
+              "symbol": "TPAY",
+              "chainId": 1337
+            },
+            "availability": {
+              "saleStatus": "ACTIVE"
+            }
+          }
+        ],
+        "pagination": {
+          "limit": 20,
+          "offset": 0,
+          "nextOffset": null
+        }
+      }
+    },
+    {
+      "operationId": "getPublicProduct",
+      "requestName": "Get public product",
+      "method": "GET",
+      "path": "/stores/{publicStoreId}/products/{publicProductId}",
+      "status": 200,
+      "headers": {
+        "X-Request-Id": "postman-public-product-detail-001"
+      },
+      "body": {
+        "product": {
+          "publicStoreId": "st_demo_store_001",
+          "publicProductId": "prd_local_hoodie_001",
+          "title": "Local Hoodie",
+          "availability": {
+            "saleStatus": "ACTIVE"
+          }
         }
       }
     },
@@ -324,6 +413,51 @@
           "descriptionHtml": "Local token payments demo store",
           "status": "ACTIVE",
           "supportEmailPublic": false
+        }
+      }
+    },
+    {
+      "operationId": "listMerchantProducts",
+      "requestName": "List merchant products",
+      "method": "GET",
+      "path": "/merchant/stores/{publicStoreId}/products",
+      "status": 200,
+      "headers": {
+        "X-Request-Id": "postman-merchant-products-list-001"
+      },
+      "body": {
+        "products": [
+          {
+            "publicStoreId": "st_demo_store_001",
+            "publicProductId": "prd_local_hoodie_001",
+            "title": "Local Hoodie",
+            "status": "ACTIVE",
+            "visibility": "PUBLIC"
+          }
+        ],
+        "pagination": {
+          "limit": 20,
+          "offset": 0,
+          "nextOffset": null
+        }
+      }
+    },
+    {
+      "operationId": "getMerchantProduct",
+      "requestName": "Get merchant product",
+      "method": "GET",
+      "path": "/merchant/stores/{publicStoreId}/products/{publicProductId}",
+      "status": 200,
+      "headers": {
+        "X-Request-Id": "postman-merchant-product-detail-001"
+      },
+      "body": {
+        "product": {
+          "publicStoreId": "st_demo_store_001",
+          "publicProductId": "prd_local_hoodie_001",
+          "title": "Local Hoodie",
+          "status": "ACTIVE",
+          "visibility": "PUBLIC"
         }
       }
     },
@@ -398,7 +532,7 @@
       "operationId": "registerStoreProduct",
       "requestName": "Store owner register product",
       "method": "POST",
-      "path": "/store-owner/stores/{storeId}/products",
+      "path": "/merchant/stores/{publicStoreId}/products",
       "status": 201,
       "headers": {
         "X-CSRF-Token": "{{csrfToken}}",
@@ -407,14 +541,38 @@
       },
       "body": {
         "operation": "registerStoreProduct",
-        "storeId": "{{storeId}}",
-        "productId": "{{productId}}",
+        "publicStoreId": "{{publicStoreId}}",
+        "publicProductId": "{{publicProductId}}",
+        "title": "Local Hoodie",
         "initialTotalStock": 25,
         "projections": {
           "canonical": "store_catalog_products",
           "order": "order_store_products",
           "storeApproval": "store_approval_products",
           "inventory": "product_inventory"
+        }
+      }
+    },
+    {
+      "operationId": "updateStoreProduct",
+      "requestName": "Update store product",
+      "method": "PATCH",
+      "path": "/merchant/stores/{publicStoreId}/products/{publicProductId}",
+      "status": 200,
+      "headers": {
+        "X-CSRF-Token": "{{csrfToken}}",
+        "Idempotency-Key": "postman-store-owner-update-product-001",
+        "X-Request-Id": "postman-store-owner-update-product-001"
+      },
+      "body": {
+        "operation": "updateStoreProduct",
+        "status": "updated",
+        "product": {
+          "publicStoreId": "{{publicStoreId}}",
+          "publicProductId": "{{publicProductId}}",
+          "title": "Local Hoodie v2",
+          "status": "ACTIVE",
+          "visibility": "PUBLIC"
         }
       }
     },

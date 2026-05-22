@@ -19,6 +19,10 @@ from token_payments.contexts.store_catalog.application import (  # noqa: E402
     StoreCatalogApplicationService,
 )
 from token_payments.contexts.store_catalog.domain import (  # noqa: E402
+    ProductStatus,
+    ProductVisibility,
+    PublicProductId,
+    PublicStoreId,
     StoreMembership,
     StoreMembershipRole,
     StoreProduct,
@@ -34,6 +38,7 @@ CUSTOMER_ID = UserId("018f33aa-9e6d-73d8-9dc3-47d6cdcc9003")
 OTHER_ID = UserId("018f33aa-9e6d-73d8-9dc3-47d6cdcc9004")
 STORE_ID = StoreId("018f33aa-9e6d-73d8-9dc3-47d6cdcc9005")
 PRODUCT_ID = ProductId("018f33aa-9e6d-73d8-9dc3-47d6cdcc9006")
+PUBLIC_PRODUCT_ID = PublicProductId("prd_ledger_mug_001")
 OWNER_WALLET = WalletAddress("0x1111111111111111111111111111111111111111")
 CUSTOMER_WALLET = WalletAddress("0x2222222222222222222222222222222222222222")
 OTHER_WALLET = WalletAddress("0x3333333333333333333333333333333333333333")
@@ -173,6 +178,10 @@ class FakeStoreCatalogRepository:
         }
         return tuple(store for store_id, store in self.stores.items() if store_id in store_ids)
 
+    def list_public_stores(self, *, limit: int, offset: int) -> tuple[StoreProfile, ...]:
+        stores = tuple(store for store in self.stores.values() if store.active)
+        return tuple(sorted(stores, key=lambda store: str(store.public_store_id))[offset : offset + limit])
+
     def save_store(self, store: StoreProfile) -> None:
         self.stores[store.store_id] = store
 
@@ -196,6 +205,68 @@ class FakeStoreCatalogRepository:
 
     def get_product(self, store_id: StoreId, product_id: ProductId) -> StoreProduct | None:
         return self.products.get((store_id, product_id))
+
+    def get_product_by_public_id(self, store_id: StoreId, public_product_id) -> StoreProduct | None:
+        return next(
+            (
+                product
+                for (stored_store_id, _product_id), product in self.products.items()
+                if stored_store_id == store_id and str(product.public_product_id) == str(public_product_id)
+            ),
+            None,
+        )
+
+    def list_products_for_store(
+        self,
+        store_id: StoreId,
+        *,
+        status: ProductStatus | None,
+        visibility: ProductVisibility | None,
+        category: str | None,
+        tag: str | None,
+        query: str | None,
+        sort_by: str,
+        sort_direction: str,
+        limit: int,
+        offset: int,
+    ) -> tuple[StoreProduct, ...]:
+        products = tuple(
+            product for (stored_store_id, _product_id), product in self.products.items() if stored_store_id == store_id
+        )
+        if status is not None:
+            products = tuple(product for product in products if product.status is status)
+        if visibility is not None:
+            products = tuple(product for product in products if product.visibility is visibility)
+        if category is not None:
+            products = tuple(product for product in products if product.category == category)
+        if tag is not None:
+            products = tuple(product for product in products if tag in product.tags)
+        if query is not None:
+            lowered = query.lower()
+            products = tuple(
+                product
+                for product in products
+                if lowered in product.title.lower()
+                or (product.description is not None and lowered in product.description.lower())
+            )
+        reverse = sort_direction == "desc"
+        key_map = {
+            "title": lambda product: product.title.lower(),
+            "createdAt": lambda product: product.created_at,
+            "updatedAt": lambda product: product.updated_at,
+            "price": lambda product: product.price.amount,
+        }
+        products = tuple(sorted(products, key=key_map[sort_by], reverse=reverse))
+        return products[offset : offset + limit]
+
+    def get_product_availability(self, store_id: StoreId, product_id: ProductId) -> Mapping[str, Any] | None:
+        available_stock = self.inventory.get((store_id, product_id))
+        if available_stock is None:
+            return None
+        return {
+            "availableStock": available_stock,
+            "saleStatus": "ACTIVE" if available_stock > 0 else "UNAVAILABLE",
+        }
 
     def save_product(self, product: StoreProduct) -> None:
         self.products[(product.store_id, product.product_id)] = product
