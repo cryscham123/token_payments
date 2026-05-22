@@ -125,3 +125,13 @@ Codex hook은 다음을 수행한다.
 - 위험한 shell 명령 차단
 - 위험한 승인 요청 차단
 - Codex 종료 시 lightweight Python/JSON 검증
+
+## Live Kafka Worker 실행 가이드
+
+Token Payments 라이브 워커(Outbox Relay 및 4개의 Kafka Consumers)는 `worker` 명령어 아래 `--live` 플래그를 제공하여 실행합니다.
+
+- Bounded plan (dry-run): `PYTHONPATH=app python3 -m token_payments worker --live --dry-run`
+- Run once (single batch): `PYTHONPATH=app python3 -m token_payments worker --live --once`
+- Run loop (long-running daemon): `PYTHONPATH=app python3 -m token_payments worker --live --loop --confirm-live-worker`
+
+또한, `docker-compose.yml` 내 `token_payments_live_worker` 서비스가 구성되어 있어 컨테이너 형태로 실행할 수도 있습니다.

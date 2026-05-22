@@ -1,5 +1,6 @@
 """Kafka publisher/listener boundaries for adapter implementations."""
 
+from .consumer import LazyKafkaConsumerClient
 from .listener import (
     KafkaConsumerLoop,
     KafkaConsumerLoopResult,
@@ -17,5 +18,6 @@ __all__ = [
     "KafkaProducerPublisher",
     "KafkaPublisher",
     "KafkaRecordListener",
+    "LazyKafkaConsumerClient",
     "MalformedKafkaMessage",
 ]

@@ -43,6 +43,60 @@ class ContractRuntimeContainer:
                 details={"health": self.health()},
             )
         if command_name in {"worker", "run-worker"}:
+            args = command_parts[1:]
+            if "--live" in args:
+                if "--dry-run" in args:
+                    plan = {
+                        "config": {
+                            "workerBatchSize": self.config.worker_loop_options().batch_size,
+                        },
+                        "workers": [
+                            {"name": "outbox-relay", "type": "outbox-relay-publisher"},
+                            {"name": "checkout-process-manager", "type": "kafka-consumer"},
+                            {"name": "inventory-command-listener", "type": "kafka-consumer"},
+                            {"name": "payment-command-listener", "type": "kafka-consumer"},
+                            {"name": "store-approval-command-listener", "type": "kafka-consumer"},
+                        ]
+                    }
+                    return CommandDispatchResult.succeeded(
+                        command=command_name,
+                        summary=f"{command_name} live worker dry run planned; workers were not started",
+                        details={"liveWorkerPlan": plan},
+                    )
+
+                if "--once" not in args and "--loop" not in args:
+                    return CommandDispatchResult.failed(
+                        command=command_name,
+                        summary=f"{command_name} live mode specified but either --once or --loop must be specified",
+                        exit_code=64,
+                    )
+
+                if "--loop" in args and "--confirm-live-worker" not in args:
+                    return CommandDispatchResult.failed(
+                        command=command_name,
+                        summary=f"{command_name} live worker loop confirmation required; workers were not started",
+                        exit_code=0,
+                        details={"liveWorker": {"status": "refused", "server_started": False}},
+                    )
+
+                from token_payments.runtime.composition import build_live_worker_runtime_from_env
+                runtime = build_live_worker_runtime_from_env()
+
+                if "--once" in args:
+                    summary = runtime.run_once()
+                    return CommandDispatchResult.succeeded(
+                        command=command_name,
+                        summary=f"{command_name} ran live worker runtime once and processed {summary.processed} item(s)",
+                        details={"config": self.config.to_dict(), "worker": summary.to_dict()},
+                    )
+                else:
+                    summary = runtime.run_until_idle(max_batches=999999)
+                    return CommandDispatchResult.succeeded(
+                        command=command_name,
+                        summary=f"{command_name} live worker loop execution completed: processed {summary.processed} item(s)",
+                        details={"config": self.config.to_dict(), "worker": summary.to_dict()},
+                    )
+
             runtime = self._build_worker_runtime()
             summary = runtime.run_until_idle(max_batches=1)
             return CommandDispatchResult.succeeded(
@@ -196,7 +250,7 @@ def _command_from_args(args: Sequence[str]) -> str:
     if not args:
         return "health"
     command = _normalize_command(args[0])
-    if command in {"api", "serve-api"} and len(args) > 1:
+    if command in {"api", "serve-api", "worker", "run-worker"} and len(args) > 1:
         return " ".join([command, *(str(arg).strip() for arg in args[1:] if str(arg).strip())])
     if command in {"ui", "smoke"} and len(args) > 1:
         selector = args[1].strip() if isinstance(args[1], str) else ""
