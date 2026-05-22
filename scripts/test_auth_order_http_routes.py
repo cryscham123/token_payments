@@ -40,6 +40,7 @@ from token_payments.contexts.auth.domain import (  # noqa: E402
     SessionId,
     User,
 )
+from token_payments.contexts.auth.domain.wallet import WalletId
 from token_payments.contexts.order.application import CreateOrderCommand, OrderCreationResult  # noqa: E402
 from token_payments.contexts.order.domain import Address, Customer, Order, Product, Store, TrackingId  # noqa: E402
 from token_payments.shared.domain import (  # noqa: E402
@@ -322,7 +323,6 @@ class FakeOrderUseCase:
         customer = Customer(
             customer_id=CUSTOMER_ID,
             user_id=command.authenticated_user_id,
-            customer_wallet=WALLET,
         )
         store = Store(
             store_id=STORE_ID,
@@ -390,7 +390,7 @@ def _session(
     return AuthSession(
         session_id=session_id or SessionId(SESSION_ID),
         user_id=UserId(USER_ID),
-        wallet=WALLET,
+        login_wallet_id=WalletId.new(),
         refresh_token_hash=refresh_token_hash or RefreshTokenHash("hash-route", "salt-route", 0),
         device_id=device_id,
         expires_at=NOW + timedelta(days=30),

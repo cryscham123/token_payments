@@ -324,8 +324,8 @@ class CapturingOrderUseCase:
         customer = Customer(
             customer_id=CUSTOMER_ID,
             user_id=command.authenticated_user_id,
-            customer_wallet="0x1111111111111111111111111111111111111111",
         )
+        object.__setattr__(customer, "_customer_wallet", WalletAddress("0x1111111111111111111111111111111111111111"))
         store = Store(
             store_id=STORE_ID,
             owner_user_id=OWNER_USER_ID,

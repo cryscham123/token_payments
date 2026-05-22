@@ -9,6 +9,7 @@ from typing import Self, TypeAlias
 from uuid import UUID, uuid4
 
 from token_payments.shared.domain import UserId, WalletAddress
+from .wallet import WalletId
 
 
 class UserRole(StrEnum):
@@ -539,18 +540,20 @@ class LoginChallenge:
 class AuthSession:
     session_id: SessionId
     user_id: UserId
-    wallet: WalletAddress | str
+    login_wallet_id: WalletId
     refresh_token_hash: RefreshTokenHash
     device_id: str
     expires_at: datetime
     revoked_at: datetime | None = None
+    wallet: WalletAddress | str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.session_id, SessionId):
             raise ValueError("AuthSession.session_id must be a SessionId")
         if not isinstance(self.user_id, UserId):
             raise ValueError("AuthSession.user_id must be a UserId")
-        object.__setattr__(self, "wallet", _coerce_wallet(self.wallet))
+        if not isinstance(self.login_wallet_id, WalletId):
+            raise TypeError("AuthSession.login_wallet_id must be a WalletId")
         if not isinstance(self.refresh_token_hash, RefreshTokenHash):
             raise ValueError("AuthSession.refresh_token_hash must be a RefreshTokenHash")
         object.__setattr__(self, "device_id", _require_text(self.device_id, "AuthSession.device_id"))
@@ -565,24 +568,28 @@ class AuthSession:
                 "revoked_at",
                 _require_aware_datetime(self.revoked_at, "AuthSession.revoked_at"),
             )
+        if self.wallet is not None:
+            object.__setattr__(self, "wallet", _coerce_wallet(self.wallet))
 
     @classmethod
     def create(
         cls,
         user_id: UserId,
-        wallet: WalletAddress | str,
+        login_wallet_id: WalletId,
         refresh_token_hash: RefreshTokenHash,
         device_id: str,
         expires_at: datetime,
         session_id: SessionId | None = None,
+        wallet: WalletAddress | str | None = None,
     ) -> Self:
         return cls(
             session_id=session_id or SessionId.new(),
             user_id=user_id,
-            wallet=wallet,
+            login_wallet_id=login_wallet_id,
             refresh_token_hash=refresh_token_hash,
             device_id=device_id,
             expires_at=expires_at,
+            wallet=wallet,
         )
 
     def rotate_refresh_token(self, refresh_token_hash: RefreshTokenHash) -> Self:

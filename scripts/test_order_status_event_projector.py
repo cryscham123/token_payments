@@ -228,8 +228,8 @@ def _order(status: OrderStatus) -> Order:
     customer = Customer(
         customer_id=CUSTOMER_ID,
         user_id=USER_ID,
-        customer_wallet=WalletAddress("0x1234567890abcdef1234567890abcdef12345678"),
     )
+    object.__setattr__(customer, "_customer_wallet", WalletAddress("0x1234567890abcdef1234567890abcdef12345678"))
     store = Store(
         store_id=STORE_ID,
         owner_user_id=USER_ID,

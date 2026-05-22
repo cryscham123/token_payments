@@ -40,6 +40,7 @@ from token_payments.runtime.session_transport import (  # noqa: E402
     SessionKeyRing,
     SessionTokenSigner,
 )
+from token_payments.contexts.auth.domain.wallet import WalletId  # noqa: E402
 from token_payments.shared.domain import UserId, WalletAddress  # noqa: E402
 
 
@@ -287,6 +288,7 @@ class UserRepository:
     def __init__(self) -> None:
         self.by_id: dict[UserId, User] = {}
         self.by_wallet: dict[WalletAddress, User] = {}
+        self.wallets: dict[tuple[str, str], WalletId] = {}
 
     def save(self, user: User) -> None:
         self.by_id[user.user_id] = user
@@ -297,6 +299,12 @@ class UserRepository:
 
     def get_by_wallet(self, wallet: WalletAddress) -> User | None:
         return self.by_wallet.get(wallet)
+
+    def get_wallet_id_for_address(self, user_id: UserId, wallet: WalletAddress) -> WalletId:
+        key = (str(user_id), str(wallet))
+        if key not in self.wallets:
+            self.wallets[key] = WalletId.new()
+        return self.wallets[key]
 
 
 class ChallengeRepository:

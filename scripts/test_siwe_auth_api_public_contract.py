@@ -260,11 +260,13 @@ class StaticSiweAuthUseCase:
         return LoginChallengeResult(challenge=challenge, signing_message="\n".join(_siwe_message_lines()))
 
     def loginWithMetaMask(self, command: LoginWithMetaMaskCommand) -> LoginResult:
+        from token_payments.contexts.auth.domain.wallet import WalletId
         return LoginResult(
             user=User.register_by_wallet(USER_ID, command.wallet_address),
             session=AuthSession.create(
                 session_id=SESSION_ID,
                 user_id=USER_ID,
+                login_wallet_id=WalletId.new(),
                 wallet=command.wallet_address,
                 refresh_token_hash=RefreshTokenHash(
                     hash="redacted-refresh-token-hash",

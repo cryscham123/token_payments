@@ -24,6 +24,7 @@ from token_payments.contexts.auth.domain import (
     WalletVerifiedEvent,
 )
 from token_payments.shared.domain import UserId, WalletAddress
+from token_payments.contexts.auth.domain.wallet import WalletId
 
 from .ports import (
     AuthEventPublisher,
@@ -196,11 +197,11 @@ class AuthApplicationService:
             user = User.register_by_wallet(UserId(_new_text_id(self._user_id_generator, "user_id_generator")), verified.wallet)
 
         user = user.record_login(now)
+        self._users.save(user)
         if registered:
             self._ensure_personal_membership(user, now)
-        session, issued_token = self._create_session_and_tokens(user, device_id, now)
+        session, issued_token = self._create_session_and_tokens(user, verified.wallet, device_id, now)
 
-        self._users.save(user)
         self._sessions.save(session)
         if registered:
             self._event_publisher.publish(UserRegisteredEvent(user.user_id, user.primary_wallet, now))
@@ -240,11 +241,12 @@ class AuthApplicationService:
         refreshed_session = AuthSession(
             session_id=session.session_id,
             user_id=session.user_id,
-            wallet=session.wallet,
+            login_wallet_id=session.login_wallet_id,
             refresh_token_hash=rotated_hash,
             device_id=session.device_id,
             expires_at=session.expires_at,
             revoked_at=session.revoked_at,
+            wallet=session.wallet,
         )
         self._sessions.save(refreshed_session)
         return LoginResult(user=user, session=refreshed_session, issued_token=issued_token)
@@ -325,16 +327,18 @@ class AuthApplicationService:
             )
         return self._profiles
 
-    def _create_session_and_tokens(self, user: User, device_id: str, now: datetime) -> tuple[AuthSession, IssuedToken]:
+    def _create_session_and_tokens(self, user: User, wallet_address: WalletAddress, device_id: str, now: datetime) -> tuple[AuthSession, IssuedToken]:
         session_id = SessionId(_new_text_id(self._session_id_generator, "session_id_generator"))
         salt = str(session_id)
+        login_wallet_id = self._users.get_wallet_id_for_address(user.user_id, wallet_address)
         provisional_session = AuthSession.create(
             session_id=session_id,
             user_id=user.user_id,
-            wallet=user.primary_wallet,
+            login_wallet_id=login_wallet_id,
             refresh_token_hash=_refresh_token_hash(f"initial:{session_id}", salt=salt, rotation_version=0),
             device_id=device_id,
             expires_at=now + self._session_ttl,
+            wallet=wallet_address,
         )
         claims = self._claim_snapshot(user)
         issue_with_claims = getattr(self._token_issuer, "issue_tokens_with_claims", None)
@@ -345,10 +349,11 @@ class AuthApplicationService:
         session = AuthSession(
             session_id=provisional_session.session_id,
             user_id=provisional_session.user_id,
-            wallet=provisional_session.wallet,
+            login_wallet_id=provisional_session.login_wallet_id,
             refresh_token_hash=_refresh_token_hash(issued_token.refresh_token, salt=salt, rotation_version=0),
             device_id=provisional_session.device_id,
             expires_at=provisional_session.expires_at,
+            wallet=wallet_address,
         )
         return session, issued_token
 

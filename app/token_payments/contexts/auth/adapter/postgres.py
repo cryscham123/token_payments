@@ -23,6 +23,7 @@ from token_payments.contexts.auth.domain import (
     UserProfileStatus,
     UserRole,
 )
+from token_payments.contexts.auth.domain.wallet import WalletId
 from token_payments.shared.adapter.postgres import PostgresConnection
 from token_payments.shared.domain import UserId, WalletAddress
 
@@ -192,41 +193,45 @@ ON CONFLICT (nonce_value) DO UPDATE SET
 
 SELECT_SESSION_BY_ID_SQL = """
 SELECT
-    session_id,
-    user_id,
-    wallet_address,
-    refresh_token_hash,
-    refresh_token_salt,
-    refresh_token_rotation_version,
-    device_id,
-    expires_at,
-    revoked_at
-FROM auth_sessions
-WHERE session_id = %(session_id)s
+    s.session_id,
+    s.user_id,
+    s.login_wallet_id,
+    s.refresh_token_hash,
+    s.refresh_token_salt,
+    s.refresh_token_rotation_version,
+    s.device_id,
+    s.expires_at,
+    s.revoked_at,
+    w.wallet_address
+FROM auth_sessions s
+JOIN auth_user_wallets w ON s.login_wallet_id = w.wallet_id
+WHERE s.session_id = %(session_id)s
 """
 
 SELECT_SESSION_BY_REFRESH_TOKEN_HASH_SQL = """
 SELECT
-    session_id,
-    user_id,
-    wallet_address,
-    refresh_token_hash,
-    refresh_token_salt,
-    refresh_token_rotation_version,
-    device_id,
-    expires_at,
-    revoked_at
-FROM auth_sessions
-WHERE refresh_token_hash = %(refresh_token_hash)s
-  AND refresh_token_salt = %(refresh_token_salt)s
-  AND refresh_token_rotation_version = %(refresh_token_rotation_version)s
+    s.session_id,
+    s.user_id,
+    s.login_wallet_id,
+    s.refresh_token_hash,
+    s.refresh_token_salt,
+    s.refresh_token_rotation_version,
+    s.device_id,
+    s.expires_at,
+    s.revoked_at,
+    w.wallet_address
+FROM auth_sessions s
+JOIN auth_user_wallets w ON s.login_wallet_id = w.wallet_id
+WHERE s.refresh_token_hash = %(refresh_token_hash)s
+  AND s.refresh_token_salt = %(refresh_token_salt)s
+  AND s.refresh_token_rotation_version = %(refresh_token_rotation_version)s
 """
 
 UPSERT_SESSION_SQL = """
 INSERT INTO auth_sessions (
     session_id,
     user_id,
-    wallet_address,
+    login_wallet_id,
     refresh_token_hash,
     refresh_token_salt,
     refresh_token_rotation_version,
@@ -236,7 +241,7 @@ INSERT INTO auth_sessions (
 ) VALUES (
     %(session_id)s,
     %(user_id)s,
-    %(wallet_address)s,
+    %(login_wallet_id)s,
     %(refresh_token_hash)s,
     %(refresh_token_salt)s,
     %(refresh_token_rotation_version)s,
@@ -246,7 +251,7 @@ INSERT INTO auth_sessions (
 )
 ON CONFLICT (session_id) DO UPDATE SET
     user_id = EXCLUDED.user_id,
-    wallet_address = EXCLUDED.wallet_address,
+    login_wallet_id = EXCLUDED.login_wallet_id,
     refresh_token_hash = EXCLUDED.refresh_token_hash,
     refresh_token_salt = EXCLUDED.refresh_token_salt,
     refresh_token_rotation_version = EXCLUDED.refresh_token_rotation_version,
@@ -255,6 +260,7 @@ ON CONFLICT (session_id) DO UPDATE SET
     revoked_at = EXCLUDED.revoked_at,
     updated_at = now()
 """
+
 
 
 class PostgresUserRepository:
@@ -293,6 +299,33 @@ class PostgresUserRepository:
             )
         )
         return _row_to_user(row) if row is not None else None
+
+    def get_wallet_id_for_address(self, user_id: UserId, wallet: WalletAddress) -> WalletId:
+        if not isinstance(user_id, UserId):
+            raise ValueError("PostgresUserRepository.get_wallet_id_for_address requires a UserId")
+        if not isinstance(wallet, WalletAddress):
+            raise ValueError("PostgresUserRepository.get_wallet_id_for_address requires a WalletAddress")
+
+        row = _fetch_one(
+            self._connection.execute(
+                "SELECT wallet_id FROM auth_user_wallets WHERE user_id = %(user_id)s AND wallet_address = %(wallet_address)s",
+                {"user_id": str(user_id), "wallet_address": str(wallet)},
+            )
+        )
+        if row is not None:
+            return WalletId(uuid.UUID(str(_row_value(row, "wallet_id"))))
+
+        wallet_id = WalletId.new()
+        self._connection.execute(
+            'INSERT INTO auth_user_wallets (wallet_id, user_id, wallet_address, chain_id, wallet_type, verification_status, "primary", linked_at) '
+            "VALUES (%(wallet_id)s, %(user_id)s, %(wallet_address)s, 1, 'EOA', 'VERIFIED', true, now())",
+            {
+                "wallet_id": str(wallet_id),
+                "user_id": str(user_id),
+                "wallet_address": str(wallet),
+            }
+        )
+        return wallet_id
 
 
 class PostgresUserProfileRepository:
@@ -390,7 +423,7 @@ class PostgresAuthSessionRepository:
             {
                 "session_id": str(session.session_id),
                 "user_id": str(session.user_id),
-                "wallet_address": str(session.wallet),
+                "login_wallet_id": str(session.login_wallet_id),
                 "refresh_token_hash": session.refresh_token_hash.hash,
                 "refresh_token_salt": session.refresh_token_hash.salt,
                 "refresh_token_rotation_version": session.refresh_token_hash.rotation_version,
@@ -625,10 +658,11 @@ def _row_to_challenge(row: Mapping[str, Any] | object) -> LoginChallenge:
 
 
 def _row_to_session(row: Mapping[str, Any] | object) -> AuthSession:
+    wallet_address = _optional_row_value(row, "wallet_address")
     return AuthSession(
         session_id=SessionId(_row_value(row, "session_id")),
         user_id=UserId(_row_value(row, "user_id")),
-        wallet=WalletAddress(str(_row_value(row, "wallet_address"))),
+        login_wallet_id=WalletId(uuid.UUID(str(_row_value(row, "login_wallet_id")))),
         refresh_token_hash=RefreshTokenHash(
             hash=str(_row_value(row, "refresh_token_hash")),
             salt=str(_row_value(row, "refresh_token_salt")),
@@ -637,6 +671,7 @@ def _row_to_session(row: Mapping[str, Any] | object) -> AuthSession:
         device_id=str(_row_value(row, "device_id")),
         expires_at=_row_value(row, "expires_at"),
         revoked_at=_row_value(row, "revoked_at"),
+        wallet=WalletAddress(wallet_address) if wallet_address is not None else None,
     )
 
 

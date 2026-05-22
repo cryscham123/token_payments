@@ -374,7 +374,9 @@ def _service() -> tuple[OrderApplicationService, FakeRepositories]:
 
 
 def _customer() -> Customer:
-    return Customer(customer_id=CUSTOMER_ID, user_id=USER_ID, customer_wallet=CUSTOMER_WALLET)
+    customer = Customer(customer_id=CUSTOMER_ID, user_id=USER_ID)
+    object.__setattr__(customer, "_customer_wallet", CUSTOMER_WALLET)
+    return customer
 
 
 def _store() -> Store:
