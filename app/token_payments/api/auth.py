@@ -11,16 +11,25 @@ from token_payments.contexts.auth.application import (
     CurrentUserQuery,
     GetCurrentUserProfileQuery,
     GetUserProfileQuery,
+    LinkWalletCommand,
+    ListWalletsQuery,
     LoginChallengeResult,
     LoginResult,
     LoginWithMetaMaskCommand,
     LogoutCommand,
     RefreshSessionCommand,
     RequestLoginChallengeCommand,
+    RequestWalletLinkChallengeCommand,
+    RevokeWalletCommand,
+    SetPrimaryWalletCommand,
     UpdateUserProfileCommand,
+    WalletLinkChallengeResult,
+    WalletResult,
+    WalletsResult,
 )
 from token_payments.contexts.auth.application.siwe import SIWE_VERSION
 from token_payments.contexts.auth.domain import AuthSession, RefreshTokenHash, SessionId, User, UserProfile
+from token_payments.contexts.auth.domain.wallet import WalletId
 from token_payments.shared.domain import UserId
 
 from .contracts import ApiRequest, ApiResponse, json_response
@@ -59,6 +68,24 @@ class AuthApi:
         except AuthApplicationError as exc:
             return _error_response(exc, request.request_id)
 
+    def request_wallet_link_challenge(self, request: ApiRequest) -> ApiResponse:
+        try:
+            actor_user_id = _authenticated_user_id(request)
+            body = _request_body(request)
+            result = self._use_case.requestWalletLinkChallenge(
+                RequestWalletLinkChallengeCommand(
+                    actor_user_id=UserId(actor_user_id),
+                    wallet_address=_required_text(body, "walletAddress"),
+                    domain=_required_text(body, "domain"),
+                    chain_id=_required_int(body, "chainId"),
+                    uri=_optional_text(body, "uri"),
+                    issued_at=None,
+                )
+            )
+            return json_response(_wallet_link_challenge_payload(result), status_code=201, request_id=request.request_id)
+        except (AuthApplicationError, ValueError) as exc:
+            return _error_response(_coerce_auth_error(exc), request.request_id)
+
     def login_with_metamask(self, request: ApiRequest) -> ApiResponse:
         try:
             body = _request_body(request)
@@ -73,6 +100,58 @@ class AuthApi:
             return json_response(_login_payload(result), status_code=200, request_id=request.request_id)
         except AuthApplicationError as exc:
             return _error_response(exc, request.request_id)
+
+    def link_wallet(self, request: ApiRequest) -> ApiResponse:
+        try:
+            actor_user_id = _authenticated_user_id(request)
+            body = _request_body(request)
+            result = self._use_case.linkWallet(
+                LinkWalletCommand(
+                    actor_user_id=UserId(actor_user_id),
+                    wallet_address=_required_text(body, "walletAddress"),
+                    message=_required_text(body, "message"),
+                    signature=_required_text(body, "signature"),
+                    wallet_type=_optional_text(body, "walletType") or "EOA",
+                )
+            )
+            return json_response(_wallet_result_payload(result), status_code=201, request_id=request.request_id)
+        except (AuthApplicationError, ValueError) as exc:
+            return _error_response(_coerce_auth_error(exc), request.request_id)
+
+    def list_wallets(self, request: ApiRequest) -> ApiResponse:
+        try:
+            actor_user_id = _authenticated_user_id(request)
+            result = self._use_case.listWallets(ListWalletsQuery(actor_user_id=UserId(actor_user_id)))
+            return json_response(_wallets_payload(result), status_code=200, request_id=request.request_id)
+        except (AuthApplicationError, ValueError) as exc:
+            return _error_response(_coerce_auth_error(exc), request.request_id)
+
+    def set_primary_wallet(self, request: ApiRequest) -> ApiResponse:
+        try:
+            actor_user_id = _authenticated_user_id(request)
+            result = self._use_case.setPrimaryWallet(
+                SetPrimaryWalletCommand(
+                    actor_user_id=UserId(actor_user_id),
+                    wallet_id=WalletId(_required_query_text(request, "walletId")),
+                )
+            )
+            return json_response(_wallet_result_payload(result), status_code=200, request_id=request.request_id)
+        except (AuthApplicationError, ValueError) as exc:
+            return _error_response(_coerce_auth_error(exc), request.request_id)
+
+    def revoke_wallet(self, request: ApiRequest) -> ApiResponse:
+        try:
+            actor_user_id = _authenticated_user_id(request)
+            result = self._use_case.revokeWallet(
+                RevokeWalletCommand(
+                    actor_user_id=UserId(actor_user_id),
+                    wallet_id=WalletId(_required_query_text(request, "walletId")),
+                    revoked_at=request.received_at,
+                )
+            )
+            return json_response(_wallet_result_payload(result), status_code=200, request_id=request.request_id)
+        except (AuthApplicationError, ValueError) as exc:
+            return _error_response(_coerce_auth_error(exc), request.request_id)
 
     def refresh_session(self, request: ApiRequest) -> ApiResponse:
         try:
@@ -216,6 +295,35 @@ def _challenge_payload(result: LoginChallengeResult) -> dict[str, Any]:
     return payload
 
 
+def _wallet_link_challenge_payload(result: WalletLinkChallengeResult) -> dict[str, Any]:
+    payload = _challenge_payload(LoginChallengeResult(result.challenge, result.signing_message))
+    payload["purpose"] = result.challenge.purpose.value
+    payload["targetUserId"] = str(result.challenge.target_user_id)
+    return payload
+
+
+def _wallet_result_payload(result: WalletResult) -> dict[str, Any]:
+    return {"wallet": _wallet_payload(result.wallet)}
+
+
+def _wallets_payload(result: WalletsResult) -> dict[str, Any]:
+    return {"wallets": [_wallet_payload(wallet) for wallet in result.wallets]}
+
+
+def _wallet_payload(wallet: Any) -> dict[str, Any]:
+    return {
+        "walletId": str(wallet.wallet_id),
+        "userId": str(wallet.user_id),
+        "walletAddress": str(wallet.address),
+        "chainId": wallet.chain_id,
+        "walletType": wallet.wallet_type.value,
+        "verificationStatus": wallet.verification_status.value,
+        "primary": wallet.primary,
+        "linkedAt": wallet.linked_at.isoformat(),
+        "revokedAt": wallet.revoked_at.isoformat() if wallet.revoked_at is not None else None,
+    }
+
+
 def _login_payload(result: LoginResult) -> dict[str, Any]:
     return {
         "user": _user_payload(result.user),
@@ -341,6 +449,13 @@ def _required_mapping(body: Mapping[str, Any], key: str) -> Mapping[str, Any]:
     return value
 
 
+def _required_query_text(request: ApiRequest, key: str) -> str:
+    value = request.query.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, f"{key} is required")
+    return value.strip()
+
+
 def _session_id_from_request(request: ApiRequest, body: Mapping[str, Any]) -> str:
     value = body.get("sessionId")
     if isinstance(value, str) and value.strip():
@@ -411,6 +526,11 @@ def _status_for_error(code: AuthErrorCode) -> int:
         AuthErrorCode.AUTHENTICATION_REQUIRED: 401,
         AuthErrorCode.USER_PROFILE_FORBIDDEN: 403,
         AuthErrorCode.USER_PROFILE_NOT_FOUND: 404,
+        AuthErrorCode.WALLET_ALREADY_LINKED: 409,
+        AuthErrorCode.WALLET_LINK_CHALLENGE_MISMATCH: 409,
+        AuthErrorCode.WALLET_NOT_FOUND: 404,
+        AuthErrorCode.WALLET_NOT_ACTIVE: 409,
+        AuthErrorCode.LAST_WALLET_REVOKE_DENIED: 409,
     }[code]
 
 

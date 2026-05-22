@@ -312,7 +312,7 @@ Credentialed CORS uses `CORS_ALLOWED_ORIGINS` and `CORS_ALLOW_CREDENTIALS=true`;
 
 Phase 15 commits `postman/token-payments.local.postman_collection.json`, `postman/token-payments.local.postman_environment.json`, and `postman/token-payments.cookie-auth.expected.json`. The auth collection order is: `POST /auth/challenges`, sign `signingMessage` in MetaMask, `POST /auth/sessions`, `POST /auth/sessions/refresh`, `DELETE /auth/sessions`, then `GET /auth/me`. Postman must use its cookie jar for `access_token`, `refresh_token`, and `csrf_token`; the happy-path requests intentionally omit manual `Cookie` and Bearer headers. Mutating cookie-auth calls echo the latest `csrfToken` in `X-CSRF-Token`.
 
-Auth login uses a SIWE v1 message for both EOA wallets and deployed ERC-1271 smart wallet contracts. The live verifier checks deployed smart wallets with `isValidSignature(bytes32,bytes)` on the configured auth chain RPC, while browser session transport stays cookie-first through HttpOnly cookies plus CSRF double-submit. Unsupported ERC-6492/counterfactual accounts are future scope; linked wallets are not implemented and do not add routes in this phase. `ADAPTER_AUTH_WALLET_SIGNATURE_TIMEOUT_SECONDS` bounds ERC-1271 RPC calls, `ADAPTER_AUTH_WALLET_SIGNATURE_CHAIN_ID` mismatch rejects before signature recovery or contract lookup, and `walletSignature.rpcUrl is redacted in runtime/debug output`.
+Auth login uses a SIWE v1 message for both EOA wallets and deployed ERC-1271 smart wallet contracts. The live verifier checks deployed smart wallets with `isValidSignature(bytes32,bytes)` on the configured auth chain RPC, while browser session transport stays cookie-first through HttpOnly cookies plus CSRF double-submit. Unsupported ERC-6492/counterfactual accounts are future scope; linked wallets are verified wallet records used for payment wallet selection and chain-scoped primary fallback. `ADAPTER_AUTH_WALLET_SIGNATURE_TIMEOUT_SECONDS` bounds ERC-1271 RPC calls, `ADAPTER_AUTH_WALLET_SIGNATURE_CHAIN_ID` mismatch rejects before signature recovery or contract lookup, and `walletSignature.rpcUrl is redacted in runtime/debug output`.
 
 Default PostgreSQL bootstrap uses `app/postgres/init.d/002-token-payments-default-seed.sh`. New postgres volumes run it after schema creation, and `docker compose up` also runs the idempotent `postgres_seed` one-shot service after postgres is healthy. It inserts only the static RBAC catalog plus the local platform admin identity and memberships needed to authenticate as an admin. The admin wallet is controlled by `.env` `BOOTSTRAP_ADMIN_WALLET_ADDRESS` and defaults to `TEST_NETWORK_ACCOUNT` when empty. User and group UUIDs are generated in PostgreSQL and then reused by lookup on later runs.
 
@@ -378,9 +378,9 @@ PYTHONPATH=app uvicorn production_api:app --host 0.0.0.0 --port 8000
 
 Next phase candidates:
 
-- Kafka live worker runtime
-- multi-wallet accounts
-- stablecoin payment support
+- catalog search projection
+- DID and email account recovery
+- permit, gas sponsorship, and swap flows
 
 ## Live API Runtime Composition Contract
 
@@ -398,13 +398,13 @@ Checkout Process is a separate saga/process context, not an order context submod
 
 PostgreSQL is the source of truth for auth users, login challenges, and sessions. Refresh reuse detection uses the PostgreSQL session repository hash/salt/rotation model. Redis is optional cache-aside/TTL optimization, not a live required dependency. Local runs must copy `.env.example` to `.env`; live/prod startup rejects committed local dev signing values, so replace session and CSRF signing material for non-local environments.
 
-Public HTTP route surface stays bound to the current 42-route manifest, including public/merchant store profile APIs, public/merchant product catalog reads, admin store catalog provisioning, merchant member/invitation APIs, merchant product catalog writes, and the store owner inventory API. Initial `ADMIN` bootstrap is local/manual seed only, implemented as a local DB init seed controlled by `.env` `BOOTSTRAP_ADMIN_WALLET_ADDRESS`; public customer login never grants a global `STORE_OWNER` role. Store management authorization uses merchant group membership and permission scopes, not a global STORE_OWNER account role, so an existing customer wallet is reused as the same `auth_users.user_id` and checkout history is preserved. Store business profile uses stable `publicStoreId`; store wallet and supported chains remain separate payment settings. Product reads, registration, and detail updates use `publicStoreId`/`publicProductId`, are allowed according to public/merchant scope, and keep product catalog status separate from inventory sale status. Product search engine integration, DID, and email account recovery are future scope. Stock intake, target stock correction, sale pause, and sale resume are audited, idempotent inventory commands. `approveOrder`/`request_store_approval` are Kafka/message listener inputs, and store owner manual order approval HTTP API is not in current scope. manual order approval HTTP API is not an active roadmap item. UI implementation remains a separate phase. ERC-20/USDC/USDT payment support is not an immediate roadmap phase. Kafka live worker, multi-wallet, and stablecoin support are next phase candidates.
+Public HTTP route surface stays bound to the current 47-route manifest, including auth wallet link/list/primary/revoke APIs, public/merchant store profile APIs, public/merchant product catalog reads, admin store catalog provisioning, merchant member/invitation APIs, merchant product catalog writes, and the store owner inventory API. Initial `ADMIN` bootstrap is local/manual seed only, implemented as a local DB init seed controlled by `.env` `BOOTSTRAP_ADMIN_WALLET_ADDRESS`; public customer login never grants a global `STORE_OWNER` role. Store management authorization uses merchant group membership and permission scopes, not a global STORE_OWNER account role, so an existing customer wallet is reused as the same `auth_users.user_id` and checkout history is preserved. Store business profile uses stable `publicStoreId`; store wallet, supported chains, and accepted payment assets remain separate payment settings. Product reads, registration, and detail updates use `publicStoreId`/`publicProductId`, are allowed according to public/merchant scope, and keep product catalog status separate from inventory sale status. Product search engine integration, DID, email account recovery, permit, gas sponsorship, and swap are future scope. Stock intake, target stock correction, sale pause, and sale resume are audited, idempotent inventory commands. `approveOrder`/`request_store_approval` are Kafka/message listener inputs, and store owner manual order approval HTTP API is not in current scope. manual order approval HTTP API is not an active roadmap item. UI implementation remains a separate phase. Multi-wallet accounts and registry-driven native/USDC/USDT stablecoin payments are implemented for local runtime contracts.
 
 Next phase candidates:
 
-- Kafka live worker runtime
-- multi-wallet accounts
-- stablecoin payment support
+- catalog search projection
+- DID and email account recovery
+- permit, gas sponsorship, and swap flows
 
 ## API / Worker Runtime Contracts
 

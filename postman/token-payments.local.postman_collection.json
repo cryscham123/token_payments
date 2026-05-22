@@ -249,6 +249,162 @@
           ]
         },
         {
+          "id": "requestWalletLinkChallenge",
+          "name": "Request wallet link challenge",
+          "description": "Issues an authenticated SIWE challenge with WALLET_LINK purpose for an additional wallet.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "postman-wallet-link-challenge-001"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"walletAddress\": \"{{secondaryWalletAddress}}\",\n  \"domain\": \"{{loginDomain}}\",\n  \"uri\": \"{{loginUri}}\",\n  \"chainId\": {{chainId}}\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/wallets/challenges",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "wallets",
+                "challenges"
+              ]
+            }
+          }
+        },
+        {
+          "id": "linkWallet",
+          "name": "Link wallet",
+          "description": "Verifies a WALLET_LINK SIWE message and links the wallet to the authenticated user.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "postman-link-wallet-001"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"walletAddress\": \"{{secondaryWalletAddress}}\",\n  \"message\": \"{{walletLinkSigningMessage}}\",\n  \"signature\": \"{{walletLinkSignature}}\",\n  \"walletType\": \"EOA\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/wallets",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "wallets"
+              ]
+            }
+          }
+        },
+        {
+          "id": "listWallets",
+          "name": "List wallets",
+          "description": "Lists wallets linked to the authenticated user.",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Request-Id",
+                "value": "postman-list-wallets-001"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/wallets",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "wallets"
+              ]
+            }
+          }
+        },
+        {
+          "id": "setPrimaryWallet",
+          "name": "Set primary wallet",
+          "description": "Marks one verified active wallet as primary for its chain.",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "postman-set-primary-wallet-001"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/wallets/{{walletId}}/primary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "wallets",
+                "{{walletId}}",
+                "primary"
+              ]
+            }
+          }
+        },
+        {
+          "id": "revokeWallet",
+          "name": "Revoke wallet",
+          "description": "Revokes a linked wallet while keeping at least one verified active wallet.",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "postman-revoke-wallet-001"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/wallets/{{walletId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "wallets",
+                "{{walletId}}"
+              ]
+            }
+          }
+        },
+        {
           "id": "refreshSession",
           "name": "3. Refresh session with cookie jar",
           "description": "Postman sends the refresh_token from the cookie jar. Do not add a manual Cookie header; only echo the latest csrfToken in X-CSRF-Token.",
@@ -535,7 +691,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"storeId\": \"{{storeId}}\",\n  \"deliveryAddress\": {\n    \"id\": \"postman-address-1\",\n    \"street\": \"7 Checkout Avenue\"\n  },\n  \"items\": [\n    {\n      \"productId\": \"{{productId}}\",\n      \"quantity\": 1\n    }\n  ],\n  \"trackingId\": \"{{trackingId}}\"\n}"
+              "raw": "{\n  \"storeId\": \"{{storeId}}\",\n  \"deliveryAddress\": {\n    \"id\": \"postman-address-1\",\n    \"street\": \"7 Checkout Avenue\"\n  },\n  \"items\": [\n    {\n      \"productId\": \"{{productId}}\",\n      \"quantity\": 1\n    }\n  ],\n  \"paymentAssetId\": \"local-usdc\",\n  \"walletId\": \"{{walletId}}\",\n  \"trackingId\": \"{{trackingId}}\"\n}"
             }
           }
         },

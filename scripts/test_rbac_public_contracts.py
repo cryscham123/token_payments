@@ -146,7 +146,7 @@ def test_docs_and_schema_define_rbac_public_boundary_and_audit_fields() -> None:
     assert "platform group CRUD" in api_spec
     assert "personal group CRUD" in api_spec
     assert "owner transfer" in api_spec
-    assert "not part of the 42-route public facade manifest" in api_spec
+    assert "not part of the 47-route public facade manifest" in api_spec
 
     for table in (
         "auth_groups",

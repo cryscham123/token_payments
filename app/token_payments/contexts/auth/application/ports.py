@@ -21,11 +21,22 @@ from token_payments.contexts.auth.domain import (
 )
 from token_payments.shared.domain import UserId, WalletAddress
 from token_payments.contexts.auth.domain.wallet import WalletId
+from token_payments.contexts.auth.domain.wallet import UserWallet, WalletType
 
 
 
 @dataclass(frozen=True)
 class RequestLoginChallengeCommand:
+    wallet_address: WalletAddress | str
+    domain: str
+    chain_id: int
+    uri: str | None = None
+    issued_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class RequestWalletLinkChallengeCommand:
+    actor_user_id: UserId
     wallet_address: WalletAddress | str
     domain: str
     chain_id: int
@@ -40,6 +51,12 @@ class LoginChallengeResult:
 
 
 @dataclass(frozen=True)
+class WalletLinkChallengeResult:
+    challenge: LoginChallenge
+    signing_message: str
+
+
+@dataclass(frozen=True)
 class LoginWithMetaMaskCommand:
     wallet_address: WalletAddress | str
     message: str
@@ -48,10 +65,47 @@ class LoginWithMetaMaskCommand:
 
 
 @dataclass(frozen=True)
+class LinkWalletCommand:
+    actor_user_id: UserId
+    wallet_address: WalletAddress | str
+    message: str
+    signature: str
+    wallet_type: WalletType | str = WalletType.EOA
+
+
+@dataclass(frozen=True)
+class ListWalletsQuery:
+    actor_user_id: UserId
+
+
+@dataclass(frozen=True)
+class SetPrimaryWalletCommand:
+    actor_user_id: UserId
+    wallet_id: WalletId
+
+
+@dataclass(frozen=True)
+class RevokeWalletCommand:
+    actor_user_id: UserId
+    wallet_id: WalletId
+    revoked_at: datetime | None = None
+
+
+@dataclass(frozen=True)
 class LoginResult:
     user: User
     session: AuthSession
     issued_token: IssuedToken
+
+
+@dataclass(frozen=True)
+class WalletResult:
+    wallet: UserWallet
+
+
+@dataclass(frozen=True)
+class WalletsResult:
+    wallets: tuple[UserWallet, ...]
 
 
 class WalletSignatureVerificationFailure(StrEnum):
@@ -128,7 +182,22 @@ class AuthUseCase(Protocol):
     def requestLoginChallenge(self, command: RequestLoginChallengeCommand) -> LoginChallengeResult:
         ...
 
+    def requestWalletLinkChallenge(self, command: RequestWalletLinkChallengeCommand) -> WalletLinkChallengeResult:
+        ...
+
     def loginWithMetaMask(self, command: LoginWithMetaMaskCommand) -> LoginResult:
+        ...
+
+    def linkWallet(self, command: LinkWalletCommand) -> WalletResult:
+        ...
+
+    def listWallets(self, query: ListWalletsQuery) -> WalletsResult:
+        ...
+
+    def setPrimaryWallet(self, command: SetPrimaryWalletCommand) -> WalletResult:
+        ...
+
+    def revokeWallet(self, command: RevokeWalletCommand) -> WalletResult:
         ...
 
     def refreshSession(self, command: RefreshSessionCommand) -> LoginResult:
@@ -161,6 +230,26 @@ class UserRepository(Protocol):
         ...
 
     def get_wallet_id_for_address(self, user_id: UserId, wallet: WalletAddress) -> WalletId:
+        ...
+
+
+class UserWalletRepository(Protocol):
+    def save(self, wallet: UserWallet) -> None:
+        ...
+
+    def get_by_id(self, wallet_id: WalletId) -> UserWallet | None:
+        ...
+
+    def get_active_by_address(self, chain_id: int, wallet: WalletAddress) -> UserWallet | None:
+        ...
+
+    def list_for_user(self, user_id: UserId) -> tuple[UserWallet, ...]:
+        ...
+
+    def get_primary_for_user_chain(self, user_id: UserId, chain_id: int) -> UserWallet | None:
+        ...
+
+    def unset_primary_for_chain(self, user_id: UserId, chain_id: int, except_wallet_id: WalletId) -> None:
         ...
 
 

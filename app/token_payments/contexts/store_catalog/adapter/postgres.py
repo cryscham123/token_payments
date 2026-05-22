@@ -90,6 +90,7 @@ SELECT
     business_registration_label,
     store_wallet_address,
     supported_chain_ids,
+    supported_payment_asset_ids,
     created_at,
     updated_at
 FROM store_catalog_stores
@@ -110,6 +111,7 @@ SELECT
     business_registration_label,
     store_wallet_address,
     supported_chain_ids,
+    supported_payment_asset_ids,
     created_at,
     updated_at
 FROM store_catalog_stores
@@ -130,6 +132,7 @@ SELECT
     s.business_registration_label,
     s.store_wallet_address,
     s.supported_chain_ids,
+    s.supported_payment_asset_ids,
     s.created_at,
     s.updated_at
 FROM store_catalog_stores s
@@ -153,6 +156,7 @@ SELECT
     business_registration_label,
     store_wallet_address,
     supported_chain_ids,
+    supported_payment_asset_ids,
     created_at,
     updated_at
 FROM store_catalog_stores
@@ -228,7 +232,8 @@ INSERT INTO store_catalog_stores (
     business_registration_label,
     active,
     store_wallet_address,
-    supported_chain_ids
+    supported_chain_ids,
+    supported_payment_asset_ids
 ) VALUES (
     %(store_id)s,
     %(public_store_id)s,
@@ -242,7 +247,8 @@ INSERT INTO store_catalog_stores (
     %(business_registration_label)s,
     %(active)s,
     %(store_wallet_address)s,
-    %(supported_chain_ids)s::jsonb
+    %(supported_chain_ids)s::jsonb,
+    %(supported_payment_asset_ids)s::jsonb
 )
 ON CONFLICT (store_id) DO UPDATE SET
     public_store_id = store_catalog_stores.public_store_id,
@@ -257,6 +263,7 @@ ON CONFLICT (store_id) DO UPDATE SET
     active = EXCLUDED.active,
     store_wallet_address = EXCLUDED.store_wallet_address,
     supported_chain_ids = EXCLUDED.supported_chain_ids,
+    supported_payment_asset_ids = EXCLUDED.supported_payment_asset_ids,
     updated_at = now()
 """
 
@@ -936,6 +943,7 @@ def _row_to_store(row: Mapping[str, Any] | object) -> StoreProfile:
             store_id=store_id,
             store_wallet=WalletAddress(str(_row_value(row, "store_wallet_address"))),
             supported_chain_ids=_chain_ids(_row_value(row, "supported_chain_ids")),
+            supported_payment_asset_ids=_json_sequence(_optional_row_value(row, "supported_payment_asset_ids")),
             active=bool(_optional_row_value(row, "active") if _optional_row_value(row, "active") is not None else True),
         ),
     )
@@ -992,6 +1000,7 @@ def _store_params(store: StoreProfile) -> dict[str, Any]:
         "active": store.active,
         "store_wallet_address": str(store.store_wallet) if store.store_wallet is not None else None,
         "supported_chain_ids": json.dumps(list(store.supported_chain_ids)),
+        "supported_payment_asset_ids": json.dumps(list(store.supported_payment_asset_ids)),
     }
 
 

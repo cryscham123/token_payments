@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from enum import StrEnum
 from typing import Any, Mapping
 
@@ -143,6 +144,8 @@ class PaymentCommandHandler:
             gas_estimate=gas_estimate,
             expires_at=command.expires_at,
             status=PaymentStatus.AWAITING_SIGNATURE,
+            payer_wallet_id=command.payer_wallet_id,
+            payment_asset_id=command.payment_asset_id,
         )
         payment_request = self._transaction_service.create_signature_request(
             command.payment_id,
@@ -150,12 +153,18 @@ class PaymentCommandHandler:
             command.wallet_to,
             command.expires_at,
         )
+        payment_request = _signature_request_with_terms(payment_request, command)
         authorization = PaymentAuthorization.request_transaction_signature(
             payment_id=command.payment_id,
             user_id=command.user_id,
             wallet=command.wallet_from,
             chain_network=command.chain_network,
             signature_request=payment_request,
+            payer_wallet_id=command.payer_wallet_id,
+            payment_asset_id=command.payment_asset_id,
+            expected_amount_minor_units=(
+                _crypto_minor_units(command.amount) if command.payment_asset_id is not None else None
+            ),
         )
         event = payment.record_processing_started(created_at=command.requested_at)
         outbox_message = _record_event(
@@ -213,9 +222,9 @@ class PaymentCommandHandler:
         if payment.tx_hash is None:
             raise self._invalid_state(command, ValueError("submitted payment requires tx_hash before receipt check"))
 
-        receipt = self._blockchain_adapter.get_transaction_receipt(payment.tx_hash)
+        receipt_payload = self._blockchain_adapter.get_transaction_receipt(payment.tx_hash)
         try:
-            if receipt is None:
+            if receipt_payload is None:
                 updated_payment = payment.fail_payment(command.failure_reason)
                 event = updated_payment.record_failed(created_at=command.checked_at)
                 outbox_message = _record_event(
@@ -227,17 +236,31 @@ class PaymentCommandHandler:
                 )
                 status = PaymentCommandStatus.FAILED
             else:
-                updated_payment = payment.confirm_payment(receipt)
-                event = updated_payment.record_confirmed(created_at=command.checked_at)
-                outbox_message = _record_event(
-                    command=command,
-                    event_name=CheckoutEventName.PAYMENT_CONFIRMED,
-                    aggregate_id=str(updated_payment.payment_id),
-                    occurred_at=event.created_at,
-                    payload=_confirmed_payload(event),
-                )
-                self._timeout_scheduler.cancel_expiration(updated_payment.payment_id)
-                status = PaymentCommandStatus.CONFIRMED
+                authorization = self._authorization_repository.get(command.payment_id)
+                receipt, mismatch_reason = _verified_receipt_or_mismatch(payment, authorization, receipt_payload)
+                if mismatch_reason is not None:
+                    updated_payment = payment.fail_payment(f"ERC20_TRANSFER_MISMATCH: {mismatch_reason}")
+                    event = updated_payment.record_failed(created_at=command.checked_at)
+                    outbox_message = _record_event(
+                        command=command,
+                        event_name=CheckoutEventName.PAYMENT_FAILED,
+                        aggregate_id=str(updated_payment.payment_id),
+                        occurred_at=event.created_at,
+                        payload=_failed_payload(event),
+                    )
+                    status = PaymentCommandStatus.FAILED
+                else:
+                    updated_payment = payment.confirm_payment(receipt)
+                    event = updated_payment.record_confirmed(created_at=command.checked_at)
+                    outbox_message = _record_event(
+                        command=command,
+                        event_name=CheckoutEventName.PAYMENT_CONFIRMED,
+                        aggregate_id=str(updated_payment.payment_id),
+                        occurred_at=event.created_at,
+                        payload=_confirmed_payload(event),
+                    )
+                    self._timeout_scheduler.cancel_expiration(updated_payment.payment_id)
+                    status = PaymentCommandStatus.CONFIRMED
         except ValueError as exc:
             raise self._invalid_state(command, exc) from exc
 
@@ -443,6 +466,8 @@ def _processing_started_payload(
         "userId": str(authorization.user_id),
         "status": payment.status.value,
         "amount": _crypto_payload(payment.amount),
+        "paymentAssetId": payment.payment_asset_id,
+        "payerWalletId": str(payment.payer_wallet_id) if payment.payer_wallet_id is not None else None,
         "walletFrom": str(payment.wallet_from),
         "walletTo": str(payment.wallet_to),
         "chain": _chain_payload(payment),
@@ -509,12 +534,23 @@ def _gas_estimate_payload(gas_estimate: GasEstimate | None) -> dict[str, Any] | 
 
 
 def _signature_request_payload(signature_request: TransactionSignatureRequest) -> dict[str, Any]:
-    return {
+    payload = {
         "requestId": signature_request.request_id,
         "amount": _crypto_payload(signature_request.amount),
         "to": str(signature_request.to),
         "expiresAt": signature_request.expires_at.isoformat(),
     }
+    if signature_request.payment_asset_id is not None:
+        payload["paymentAssetId"] = signature_request.payment_asset_id
+    if signature_request.transfer_type is not None:
+        payload["transferType"] = signature_request.transfer_type
+    if signature_request.token_address is not None:
+        payload["tokenAddress"] = str(signature_request.token_address)
+    if signature_request.amount_minor_units is not None:
+        payload["amountMinorUnits"] = str(signature_request.amount_minor_units)
+    if signature_request.chain_id is not None:
+        payload["chainId"] = signature_request.chain_id
+    return payload
 
 
 def _receipt_payload(receipt: TransactionReceipt) -> dict[str, Any]:
@@ -533,3 +569,143 @@ def _crypto_payload(value: Crypto) -> dict[str, Any]:
         "tokenAddress": str(value.token_address) if value.token_address is not None else None,
         "decimals": value.decimals,
     }
+
+
+def _signature_request_with_terms(
+    request: TransactionSignatureRequest,
+    command: InitiatePaymentCommand,
+) -> TransactionSignatureRequest:
+    if command.payment_asset_id is None:
+        return request
+    return TransactionSignatureRequest.for_payment_terms(
+        request_id=request.request_id,
+        amount=request.amount,
+        to=request.to,
+        expires_at=request.expires_at,
+        payment_asset_id=command.payment_asset_id,
+    )
+
+
+def _crypto_minor_units(value: Crypto) -> int:
+    scale = Decimal("10") ** value.decimals
+    scaled = value.amount * scale
+    integral = scaled.to_integral_value()
+    if scaled != integral:
+        raise ValueError("payment amount precision exceeds asset decimals")
+    return int(integral)
+
+
+def _verified_receipt_or_mismatch(
+    payment: Payment,
+    authorization: PaymentAuthorization | None,
+    receipt_payload: TransactionReceipt | Mapping[str, Any] | object,
+) -> tuple[TransactionReceipt, str | None]:
+    receipt = _receipt_from_payload(receipt_payload, payment.tx_hash)
+    if payment.amount.token_address is None:
+        return receipt, None
+    if payment.payment_asset_id is None and (authorization is None or authorization.payment_asset_id is None):
+        return receipt, None
+    if authorization is None:
+        return receipt, "AUTHORIZATION_NOT_FOUND"
+    status = _receipt_status(receipt_payload)
+    if status is False:
+        return receipt, "REVERTED"
+    verification = _verify_erc20_transfer(
+        receipt_payload,
+        token_address=payment.amount.token_address,
+        wallet_from=payment.wallet_from,
+        wallet_to=payment.wallet_to,
+        amount_minor_units=authorization.expected_amount_minor_units or _crypto_minor_units(payment.amount),
+    )
+    if verification is None:
+        return receipt, None
+    return receipt, verification
+
+
+def _receipt_from_payload(
+    payload: TransactionReceipt | Mapping[str, Any] | object,
+    default_hash: object,
+) -> TransactionReceipt:
+    if isinstance(payload, TransactionReceipt):
+        return payload
+    return TransactionReceipt(
+        hash=str(_payload_field(payload, "hash", "tx_hash", "txHash", "transactionHash", default=default_hash)),
+        block_number=_int_field(_payload_field(payload, "block_number", "blockNumber", default=0), "block_number"),
+        gas_used=_int_field(_payload_field(payload, "gas_used", "gasUsed", default=1), "gas_used"),
+    )
+
+
+def _receipt_status(payload: TransactionReceipt | Mapping[str, Any] | object) -> bool | None:
+    value = _payload_field(payload, "status", default=None)
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return int(value, 16) != 0 if value.startswith("0x") else value not in {"0", "false", "False"}
+    return bool(value)
+
+
+def _verify_erc20_transfer(
+    payload: TransactionReceipt | Mapping[str, Any] | object,
+    *,
+    token_address: WalletAddress,
+    wallet_from: WalletAddress,
+    wallet_to: WalletAddress,
+    amount_minor_units: int,
+) -> str | None:
+    logs = _payload_field(payload, "logs", default=())
+    if not isinstance(logs, list | tuple):
+        return "TRANSFER_LOG_MISSING"
+    for log in logs:
+        if not isinstance(log, Mapping):
+            continue
+        token = str(log.get("address") or "").lower()
+        if token != str(token_address):
+            continue
+        topics = log.get("topics")
+        if not isinstance(topics, list | tuple) or len(topics) < 3:
+            continue
+        if str(topics[0]).lower() != "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef":
+            continue
+        observed_from = _topic_address(str(topics[1]))
+        observed_to = _topic_address(str(topics[2]))
+        observed_amount = _hex_int(log.get("data"))
+        if observed_from != str(wallet_from):
+            return "WRONG_PAYER"
+        if observed_to != str(wallet_to):
+            return "WRONG_RECIPIENT"
+        if observed_amount < amount_minor_units:
+            return "INSUFFICIENT_AMOUNT"
+        return None
+    if any(isinstance(log, Mapping) and str(log.get("address") or "").lower() != str(token_address) for log in logs):
+        return "WRONG_TOKEN"
+    return "TRANSFER_LOG_MISSING"
+
+
+def _topic_address(topic: str) -> str:
+    value = topic.removeprefix("0x").removeprefix("0X")
+    return "0x" + value[-40:].lower()
+
+
+def _hex_int(value: object) -> int:
+    if isinstance(value, str):
+        return int(value, 16) if value.startswith("0x") else int(value)
+    return int(value)
+
+
+def _payload_field(payload: Mapping[str, Any] | object, *names: str, default: Any = None) -> Any:
+    for name in names:
+        if isinstance(payload, Mapping) and name in payload:
+            return payload[name]
+        if not isinstance(payload, Mapping) and hasattr(payload, name):
+            return getattr(payload, name)
+    return default
+
+
+def _int_field(value: object, field_name: str) -> int:
+    if isinstance(value, str):
+        return int(value, 16) if value.startswith("0x") else int(value)
+    if isinstance(value, bool):
+        raise ValueError(f"{field_name} must be an integer")
+    return int(value)

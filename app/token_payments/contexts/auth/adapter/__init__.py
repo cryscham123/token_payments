@@ -6,6 +6,7 @@ from .postgres import (
     PostgresLoginChallengeRepository,
     PostgresUserProfileRepository,
     PostgresUserRepository,
+    PostgresUserWalletRepository,
 )
 from .wallet_signature import ClientWalletSignatureVerifier, WalletSignatureVerifier
 
@@ -16,5 +17,6 @@ __all__ = [
     "PostgresLoginChallengeRepository",
     "PostgresUserProfileRepository",
     "PostgresUserRepository",
+    "PostgresUserWalletRepository",
     "WalletSignatureVerifier",
 ]

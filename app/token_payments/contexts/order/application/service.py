@@ -7,7 +7,9 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Any
 
+from token_payments.contexts.auth.domain.wallet import UserWallet, WalletId
 from token_payments.contexts.order.domain import Customer, Order, OrderCancelledEvent, OrderItem, OrderStatus, Store
+from token_payments.contexts.payment.domain import PaymentAsset, PaymentAssetRegistry
 from token_payments.shared.domain import (
     CheckoutEventName,
     CommandId,
@@ -158,11 +160,15 @@ class OrderApplicationService:
         stores: StoreRepository,
         orders: OrderRepository,
         outbox_messages: OutboxMessageRepository,
+        wallets: Any | None = None,
+        payment_assets: PaymentAssetRegistry | None = None,
     ) -> None:
         self._customers = customers
         self._stores = stores
         self._orders = orders
         self._outbox_messages = outbox_messages
+        self._wallets = wallets
+        self._payment_assets = payment_assets
 
     def createOrder(self, command: CreateOrderCommand) -> OrderCreationResult:
         customer = self._customers.get_by_user_id(command.authenticated_user_id)
@@ -180,6 +186,8 @@ class OrderApplicationService:
             )
 
         try:
+            selected_asset = _selected_asset(self._payment_assets, command.payment_asset_id)
+            selected_wallet = self._resolve_wallet(command, selected_asset)
             order = Order.initialize_order(
                 order_id=command.order_id,
                 customer=customer,
@@ -188,15 +196,69 @@ class OrderApplicationService:
                 product_quantities=_product_quantities(command),
                 created_at=command.requested_at,
                 tracking_id=command.tracking_id,
+                payment_asset_id=command.payment_asset_id,
             )
             total_amount = _total_amount(order.items)
-            outbox_message = _record_order_created(command, customer, store, order, total_amount)
+            if selected_asset is not None:
+                _require_asset_matches_amount(selected_asset, total_amount)
+            if selected_wallet is None:
+                selected_wallet = self._resolve_wallet_for_amount(command, total_amount)
+            _require_wallet_matches_amount(selected_wallet, total_amount)
+            outbox_message = _record_order_created(command, customer, store, order, total_amount, selected_wallet)
         except ValueError as exc:
             raise OrderApplicationError(OrderErrorCode.VALIDATION_ERROR, str(exc)) from exc
 
         self._orders.save(order)
         self._outbox_messages.save(outbox_message)
         return OrderCreationResult(order=order, total_amount=total_amount, outbox_message=outbox_message)
+
+    def _resolve_wallet(self, command: CreateOrderCommand, selected_asset: PaymentAsset | None) -> UserWallet | None:
+        if command.wallet_id is None and selected_asset is None:
+            return None
+        if self._wallets is None:
+            raise ValueError("wallet repository is required for walletId/paymentAssetId checkout")
+        chain_id = selected_asset.chain_id if selected_asset is not None else None
+        if command.wallet_id is not None:
+            wallet = self._wallets.get_by_id(command.wallet_id)
+            if wallet is None:
+                raise ValueError("selected wallet was not found")
+            _require_owned_active_wallet(command.authenticated_user_id, wallet)
+            if chain_id is not None and wallet.chain_id != chain_id:
+                raise ValueError("selected wallet chain must match selected payment asset chain")
+            return wallet
+        if chain_id is None:
+            return None
+        wallet = self._primary_wallet(command.authenticated_user_id, chain_id)
+        if wallet is None:
+            raise ValueError(f"no primary wallet found for chain {chain_id}")
+        return wallet
+
+    def _resolve_wallet_for_amount(self, command: CreateOrderCommand, amount: Crypto) -> UserWallet | None:
+        if self._wallets is None:
+            return None
+        if command.wallet_id is not None:
+            wallet = self._wallets.get_by_id(command.wallet_id)
+            if wallet is None:
+                raise ValueError("selected wallet was not found")
+            _require_owned_active_wallet(command.authenticated_user_id, wallet)
+            return wallet
+        wallet = self._primary_wallet(command.authenticated_user_id, amount.chain_id)
+        if wallet is None:
+            if command.payment_asset_id is None:
+                return None
+            raise ValueError(f"no primary wallet found for chain {amount.chain_id}")
+        return wallet
+
+    def _primary_wallet(self, user_id: Any, chain_id: int) -> UserWallet | None:
+        get_primary = getattr(self._wallets, "get_primary_for_user_chain", None)
+        if callable(get_primary):
+            return get_primary(user_id, chain_id)
+        list_for_user = getattr(self._wallets, "list_for_user", None)
+        if callable(list_for_user):
+            for wallet in list_for_user(user_id):
+                if getattr(wallet, "chain_id", None) == chain_id and getattr(wallet, "primary", False) and wallet.is_active():
+                    return wallet
+        return None
 
 
 class OrderCommandHandler:
@@ -417,6 +479,7 @@ def _record_order_created(
     store: Store,
     order: Order,
     total_amount: Crypto,
+    payer_wallet: UserWallet | None = None,
 ) -> OutboxMessage:
     metadata = EventMetadata(
         message_id=command.event_message_id,
@@ -437,7 +500,7 @@ def _record_order_created(
         metadata=metadata,
         topic=ORDER_EVENT_TOPIC,
         key=str(order.order_id),
-        payload=_order_created_payload(command, customer, store, order, total_amount),
+        payload=_order_created_payload(command, customer, store, order, total_amount, payer_wallet),
         headers=headers,
     )
 
@@ -474,12 +537,16 @@ def _order_created_payload(
     store: Store,
     order: Order,
     total_amount: Crypto,
+    payer_wallet: UserWallet | None = None,
 ) -> dict[str, Any]:
     if store.store_wallet is None:
         raise ValueError("store wallet is required to start checkout")
+    wallet_from = payer_wallet.address if payer_wallet is not None else customer.customer_wallet
+    if wallet_from is None:
+        raise ValueError("payer wallet is required to start checkout")
 
     primary_item = order.items[0]
-    return {
+    payload = {
         "eventName": CheckoutEventName.ORDER_CREATED.value,
         "orderId": str(order.order_id),
         "customerId": str(order.customer_id),
@@ -491,17 +558,22 @@ def _order_created_payload(
             "id": order.delivery_address.id,
             "street": order.delivery_address.street,
         },
-        "items": [_item_payload(item) for item in order.items],
+        "items": [_item_payload(item, command.payment_asset_id) for item in order.items],
         "productId": str(primary_item.product_snapshot.product_id),
         "quantity": primary_item.quantity,
-        "amount": _crypto_payload(total_amount),
-        "walletFrom": str(customer.customer_wallet),
+        "amount": _crypto_payload(total_amount, asset_id=command.payment_asset_id),
+        "paymentAssetId": command.payment_asset_id,
+        "payerWalletId": str(payer_wallet.wallet_id) if payer_wallet is not None else None,
+        "walletFrom": str(wallet_from),
         "walletTo": str(store.store_wallet),
         "chain": _chain_payload(total_amount),
         "occurredAt": command.requested_at.isoformat(),
         "correlationId": str(order.order_id),
         "causationId": command.causation_id,
     }
+    if payer_wallet is not None:
+        payload["payerWallet"] = _payer_wallet_payload(payer_wallet)
+    return payload
 
 
 def _order_cancelled_payload(command: CancelOrderCommand, event: OrderCancelledEvent) -> dict[str, Any]:
@@ -518,15 +590,15 @@ def _order_cancelled_payload(command: CancelOrderCommand, event: OrderCancelledE
     }
 
 
-def _item_payload(item: OrderItem) -> dict[str, Any]:
+def _item_payload(item: OrderItem, asset_id: str | None = None) -> dict[str, Any]:
     snapshot = item.product_snapshot
     return {
         "orderItemId": str(item.order_item_id),
         "productId": str(snapshot.product_id),
         "name": snapshot.name,
         "quantity": item.quantity,
-        "unitPrice": _crypto_payload(snapshot.price),
-        "subTotal": _crypto_payload(item.sub_total),
+        "unitPrice": _crypto_payload(snapshot.price, asset_id=asset_id),
+        "subTotal": _crypto_payload(item.sub_total, asset_id=asset_id),
     }
 
 
@@ -553,18 +625,69 @@ def _total_amount(items: tuple[OrderItem, ...]) -> Crypto:
     )
 
 
-def _crypto_payload(value: Crypto) -> dict[str, Any]:
-    return {
+def _crypto_payload(value: Crypto, *, asset_id: str | None = None) -> dict[str, Any]:
+    payload = {
         "amount": format(value.amount, "f"),
         "symbol": value.symbol,
         "chainId": value.chain_id,
         "tokenAddress": str(value.token_address) if value.token_address is not None else None,
         "decimals": value.decimals,
     }
+    if asset_id is not None:
+        payload["assetId"] = asset_id
+        payload["amountMinorUnits"] = str(_crypto_minor_units(value))
+    return payload
 
 
 def _chain_payload(value: Crypto) -> dict[str, Any]:
     return {"chainId": value.chain_id, "name": f"chain-{value.chain_id}"}
+
+
+def _selected_asset(registry: PaymentAssetRegistry | None, payment_asset_id: str | None) -> PaymentAsset | None:
+    if payment_asset_id is None:
+        return None
+    if registry is None:
+        raise ValueError("payment asset registry is required for paymentAssetId checkout")
+    return registry.require_enabled_asset(payment_asset_id)
+
+
+def _require_asset_matches_amount(asset: PaymentAsset, amount: Crypto) -> None:
+    if asset.chain_id != amount.chain_id:
+        raise ValueError("selected payment asset chain must match order amount chain")
+    if asset.symbol != amount.symbol or asset.decimals != amount.decimals or asset.contract_address != amount.token_address:
+        raise ValueError("selected payment asset metadata must match product price")
+
+
+def _require_owned_active_wallet(user_id: Any, wallet: UserWallet) -> None:
+    if wallet.user_id != user_id:
+        raise ValueError("selected wallet does not belong to authenticated user")
+    if not wallet.is_active():
+        raise ValueError("selected wallet must be a verified active wallet")
+
+
+def _require_wallet_matches_amount(wallet: UserWallet | None, amount: Crypto) -> None:
+    if wallet is None:
+        return
+    if wallet.chain_id != amount.chain_id:
+        raise ValueError("selected wallet chain must match payment asset chain")
+
+
+def _payer_wallet_payload(wallet: UserWallet) -> dict[str, Any]:
+    address = str(wallet.address)
+    return {
+        "walletId": str(wallet.wallet_id),
+        "chainId": wallet.chain_id,
+        "addressPreview": f"{address[:6]}...{address[-4:]}",
+    }
+
+
+def _crypto_minor_units(value: Crypto) -> int:
+    scale = Decimal(10) ** value.decimals
+    scaled = value.amount * scale
+    integral = scaled.to_integral_value()
+    if scaled != integral:
+        raise ValueError("amount precision exceeds asset decimals")
+    return int(integral)
 
 
 def _require_text(value: str, field_name: str) -> str:

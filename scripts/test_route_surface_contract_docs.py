@@ -14,8 +14,8 @@ def test_api_spec_documents_current_public_http_route_manifest() -> None:
     api_spec = _read("docs/API_SPEC.md")
     manifest = list(http_route_manifest())
 
-    assert len(manifest) == 42
-    assert "Public HTTP route surface is exactly the current 42-route manifest" in api_spec
+    assert len(manifest) == 47
+    assert "Public HTTP route surface is exactly the current 47-route manifest" in api_spec
     for entry in manifest:
         assert f"`{entry['operationId']}`" in api_spec
         assert f"`{entry['path']}`" in api_spec

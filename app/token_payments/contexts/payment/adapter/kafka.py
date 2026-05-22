@@ -100,6 +100,8 @@ class PaymentKafkaCommandListener:
                 requested_at=_command_time(payload),
                 causation_id=_causation_id(message, payload),
                 event_message_id=_event_message_id(payload),
+                payer_wallet_id=_optional_payload_text(payload, "payerWalletId", "payer_wallet_id"),
+                payment_asset_id=_optional_payload_text(payload, "paymentAssetId", "payment_asset_id"),
             )
             handler_result = self._command_handler.initiate_payment(command)
         elif command_name is CheckoutCommandName.REFUND_PAYMENT:

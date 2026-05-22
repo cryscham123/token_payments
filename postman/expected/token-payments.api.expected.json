@@ -5,6 +5,11 @@
   "collectionRequestIds": [
     "requestLoginChallenge",
     "loginWithMetaMask",
+    "requestWalletLinkChallenge",
+    "linkWallet",
+    "listWallets",
+    "setPrimaryWallet",
+    "revokeWallet",
     "refreshSession",
     "logout",
     "getCurrentUser",
@@ -134,6 +139,124 @@
         },
         "session": {
           "sessionId": "<session-id>"
+        }
+      }
+    },
+    {
+      "operationId": "requestWalletLinkChallenge",
+      "requestName": "Request wallet link challenge",
+      "method": "POST",
+      "path": "/auth/wallets/challenges",
+      "status": 201,
+      "headers": {
+        "X-CSRF-Token": "{{csrfToken}}",
+        "X-Request-Id": "postman-wallet-link-challenge-001"
+      },
+      "body": {
+        "walletAddress": "0x2222222222222222222222222222222222222222",
+        "domain": "token-payments.local",
+        "address": "0x2222222222222222222222222222222222222222",
+        "uri": "https://token-payments.local",
+        "version": "1",
+        "chainId": 1337,
+        "nonce": "L1NKN0NC3",
+        "purpose": "WALLET_LINK",
+        "targetUserId": "<user-id>",
+        "signingMessage": "<redacted-siwe-wallet-link-message>",
+        "signatureVerification": {
+          "messageFormat": "SIWE_V1",
+          "signatureVerificationMethod": "SIWE_PERSONAL_SIGN_EOA_OR_ERC1271",
+          "supportedWalletTypes": [
+            "EOA",
+            "DEPLOYED_SMART_WALLET"
+          ],
+          "smartWalletStandard": "ERC-1271",
+          "erc1271MagicValue": "0x1626ba7e",
+          "requiresDeployedCode": true,
+          "erc6492": "future_scope"
+        }
+      }
+    },
+    {
+      "operationId": "linkWallet",
+      "requestName": "Link wallet",
+      "method": "POST",
+      "path": "/auth/wallets",
+      "status": 201,
+      "headers": {
+        "X-CSRF-Token": "{{csrfToken}}",
+        "X-Request-Id": "postman-link-wallet-001"
+      },
+      "body": {
+        "wallet": {
+          "walletId": "<wallet-id>",
+          "userId": "<user-id>",
+          "walletAddress": "0x2222222222222222222222222222222222222222",
+          "chainId": 1337,
+          "walletType": "EOA",
+          "verificationStatus": "VERIFIED",
+          "primary": false,
+          "linkedAt": "2026-05-22T01:00:00+00:00",
+          "revokedAt": null
+        }
+      }
+    },
+    {
+      "operationId": "listWallets",
+      "requestName": "List wallets",
+      "method": "GET",
+      "path": "/auth/wallets",
+      "status": 200,
+      "headers": {
+        "X-Request-Id": "postman-list-wallets-001"
+      },
+      "body": {
+        "wallets": [
+          {
+            "walletId": "<wallet-id>",
+            "walletAddress": "0x1111111111111111111111111111111111111111",
+            "chainId": 1337,
+            "verificationStatus": "VERIFIED",
+            "primary": true
+          }
+        ]
+      }
+    },
+    {
+      "operationId": "setPrimaryWallet",
+      "requestName": "Set primary wallet",
+      "method": "PATCH",
+      "path": "/auth/wallets/{walletId}/primary",
+      "status": 200,
+      "headers": {
+        "X-CSRF-Token": "{{csrfToken}}",
+        "X-Request-Id": "postman-set-primary-wallet-001"
+      },
+      "body": {
+        "wallet": {
+          "walletId": "<wallet-id>",
+          "chainId": 1337,
+          "verificationStatus": "VERIFIED",
+          "primary": true
+        }
+      }
+    },
+    {
+      "operationId": "revokeWallet",
+      "requestName": "Revoke wallet",
+      "method": "DELETE",
+      "path": "/auth/wallets/{walletId}",
+      "status": 200,
+      "headers": {
+        "X-CSRF-Token": "{{csrfToken}}",
+        "X-Request-Id": "postman-revoke-wallet-001"
+      },
+      "body": {
+        "wallet": {
+          "walletId": "<wallet-id>",
+          "chainId": 1337,
+          "verificationStatus": "REVOKED",
+          "revokedAt": "2026-05-22T01:05:00+00:00"
         }
       }
     },

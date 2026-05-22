@@ -131,7 +131,7 @@ Merchant groups are created by store provisioning and linked to one store or mer
 | Aggregate | 주요 필드 | 주요 행위 |
 | --- | --- | --- |
 | `StoreProfile` | internal `StoreId`, external `PublicStoreId`, `GroupId`, `displayName`, `description`, `status`, `supportEmail`, `supportEmailPublic`, `businessRegistrationLabel`, `createdAt`, `updatedAt` | public/private business profile 보존 |
-| `StorePaymentSettings` | `StoreId`, `storeWallet`, `supportedChainIds`, `active` | payment destination/chain 설정 보존 |
+| `StorePaymentSettings` | `StoreId`, `storeWallet`, `supportedChainIds`, `supportedPaymentAssetIds`, `active` | settlement wallet과 accepted payment asset 설정 보존 |
 | `StoreMembership` | `StoreId`, `UserId`, store-scoped `role`, `active` | compatibility path; new authorization uses merchant group membership |
 | `StoreProduct` | `StoreId`, `ProductId`, `PublicStoreId`, `PublicProductId`, `title`, `description`, `category`, `tags`, `media`, `attributes`, `status`, `visibility`, `Crypto price` | canonical product catalog item |
 
@@ -219,7 +219,8 @@ Profile/catalog text is persisted as bounded data. Domain validation must reject
 | Aggregate | 주요 필드 | 주요 행위 |
 | --- | --- | --- |
 | `Payment` | `PaymentId`, `OrderId`, `CustomerId`, `Crypto amount`, `PaymentStatus`, `walletFrom`, `walletTo`, `ChainNetwork`, `TransactionHash`, `GasEstimate`, `expiresAt` | `initializePayment`, `markAwaitingSignature`, `submitTxHash`, `confirmPayment`, `failPayment`, `expireAwaitingSignature`, `refundPayment` |
-| `PaymentAuthorization` | `PaymentId`, `UserId`, `WalletAddress`, `ChainNetwork`, `TransactionSignatureRequest`, `AuthorizationStatus`, `authorizedAt` | `requestTransactionSignature`, `authorizeTxHash`, `expire` |
+| `PaymentAuthorization` | `PaymentId`, `UserId`, `payerWalletId`, `paymentAssetId`, expected amount minor units, `WalletAddress`, `ChainNetwork`, `TransactionSignatureRequest`, `AuthorizationStatus`, `authorizedAt` | `requestTransactionSignature`, `authorizeTxHash`, `expire` |
+| `PaymentChain` / `PaymentAsset` | `chainId`, display metadata, `assetId`, `assetType`, `symbol`, `decimals`, optional token contract, `enabled` | registry-driven native coin and stablecoin support |
 | `TransactionRecord` | `TransactionHash`, `Crypto amount`, `Crypto gasFee` | `toReceipt` |
 
 ### Value Objects
@@ -232,6 +233,8 @@ Profile/catalog text is persisted as bounded data. Domain validation must reject
 - `GasPrice(gasPricePerUnit, gasLimit)`
 - `GasEstimate(estimatedFee, gasLimit, bufferRate, maxFee, applyBuffer)`
 - `TransactionSignatureRequest(requestId, amount, to, expiresAt)`
+
+`chain_id` is the canonical network key. Chain display names and native symbols come from the chain registry; payment write tables do not keep `chain_name` as canonical data. `payment_authorizations` owns expected payer wallet, asset, recipient, chain, and amount terms, while `payments` owns observed transaction hash/status/receipt verification results.
 - `WalletSignature(message, signature, signer)`
 - `BlockNumber(number)`
 - `Crypto(amount, symbol, chainId, tokenAddress, decimals)`

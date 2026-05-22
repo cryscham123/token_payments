@@ -157,7 +157,8 @@ SELECT
     wallet_from,
     wallet_to,
     chain_id,
-    chain_name,
+    payer_wallet_id,
+    payment_asset_id,
     tx_hash,
     gas_estimated_fee,
     gas_fee_symbol,
@@ -183,9 +184,11 @@ SELECT_TRACKING_AUTHORIZATION_BY_PAYMENT_ID_SQL = """
 SELECT
     payment_id,
     user_id,
+    payer_wallet_id,
     wallet_address,
     chain_id,
-    chain_name,
+    payment_asset_id,
+    expected_amount_minor_units,
     request_id,
     amount_numeric,
     amount_symbol,
@@ -608,7 +611,7 @@ def _tracking_payment_from_row(row: Mapping[str, Any] | object) -> Payment:
         amount=_crypto_from_row(row, "amount"),
         wallet_from=WalletAddress(_row_value(row, "wallet_from")),
         wallet_to=WalletAddress(_row_value(row, "wallet_to")),
-        chain_network=ChainNetwork(chain_id=int(_row_value(row, "chain_id")), name=str(_row_value(row, "chain_name"))),
+        chain_network=_chain_network_from_row(row),
         gas_estimate=_tracking_gas_estimate_from_row(row),
         expires_at=_row_value(row, "expires_at"),
         status=PaymentStatus(_row_value(row, "status")),
@@ -616,25 +619,42 @@ def _tracking_payment_from_row(row: Mapping[str, Any] | object) -> Payment:
         receipt=_tracking_receipt_from_row(row, "tx_hash", "receipt_block_number", "receipt_gas_used"),
         failure_reason=_row_value(row, "failure_reason"),
         refund_receipt=_tracking_receipt_from_row(row, "refund_tx_hash", "refund_block_number", "refund_gas_used"),
+        payer_wallet_id=_optional_row_value(row, "payer_wallet_id"),
+        payment_asset_id=_optional_row_value(row, "payment_asset_id"),
     )
 
 
 def _tracking_authorization_from_row(row: Mapping[str, Any] | object) -> PaymentAuthorization:
+    payment_asset_id = _optional_row_value(row, "payment_asset_id")
+    expected_amount_minor_units = _optional_int_row_value(row, "expected_amount_minor_units")
+    include_transfer_terms = payment_asset_id is not None or expected_amount_minor_units is not None
     signature_request = TransactionSignatureRequest(
         request_id=str(_row_value(row, "request_id")),
         amount=_crypto_from_row(row, "amount"),
         to=WalletAddress(_row_value(row, "to_wallet_address")),
         expires_at=_row_value(row, "expires_at"),
+        payment_asset_id=payment_asset_id,
+        transfer_type=(
+            "ERC20_TRANSFER" if _row_value(row, "amount_token_address") is not None else "NATIVE_TRANSFER"
+        )
+        if include_transfer_terms
+        else None,
+        token_address=_row_value(row, "amount_token_address") if include_transfer_terms else None,
+        amount_minor_units=expected_amount_minor_units,
+        chain_id=int(_row_value(row, "chain_id")) if include_transfer_terms else None,
     )
     return PaymentAuthorization(
         payment_id=PaymentId(_row_value(row, "payment_id")),
         user_id=UserId(_row_value(row, "user_id")),
         wallet=WalletAddress(_row_value(row, "wallet_address")),
-        chain_network=ChainNetwork(chain_id=int(_row_value(row, "chain_id")), name=str(_row_value(row, "chain_name"))),
+        chain_network=_chain_network_from_row(row),
         signature_request=signature_request,
         status=AuthorizationStatus(_row_value(row, "status")),
         tx_hash=_optional_tx_hash(_row_value(row, "tx_hash")),
         authorized_at=_row_value(row, "authorized_at"),
+        payer_wallet_id=_optional_row_value(row, "payer_wallet_id"),
+        payment_asset_id=payment_asset_id,
+        expected_amount_minor_units=expected_amount_minor_units,
     )
 
 
@@ -710,6 +730,25 @@ def _optional_tx_hash(value: Any) -> TransactionHash | None:
     if value is None:
         return None
     return TransactionHash(value)
+
+
+def _chain_network_from_row(row: Mapping[str, Any] | object) -> ChainNetwork:
+    chain_id = int(_row_value(row, "chain_id"))
+    name = _optional_row_value(row, "chain_name") or f"chain-{chain_id}"
+    return ChainNetwork(chain_id=chain_id, name=name)
+
+
+def _optional_int_row_value(row: Mapping[str, Any] | object, key: str) -> int | None:
+    value = _optional_row_value(row, key)
+    return int(value) if value is not None else None
+
+
+def _optional_row_value(row: Mapping[str, Any] | object, key: str) -> str | None:
+    if isinstance(row, Mapping):
+        value = row.get(key)
+    else:
+        value = getattr(row, key, None)
+    return str(value) if value is not None else None
 
 
 def _fetch_one(result: Any) -> Any:

@@ -6,7 +6,7 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import StrEnum
-from typing import Self, TypeAlias
+from typing import Mapping, Self, TypeAlias
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from token_payments.shared.domain import (
@@ -102,6 +102,7 @@ class Product:
     product_id: ProductId
     name: str
     price: Crypto
+    asset_prices: Mapping[str, Crypto] | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.product_id, ProductId):
@@ -109,6 +110,17 @@ class Product:
         object.__setattr__(self, "name", _require_text(self.name, "Product.name"))
         if not isinstance(self.price, Crypto):
             raise ValueError("Product.price must be a Crypto value")
+        if self.asset_prices is not None:
+            if not isinstance(self.asset_prices, Mapping):
+                raise ValueError("Product.asset_prices must be a mapping")
+            object.__setattr__(
+                self,
+                "asset_prices",
+                {
+                    _require_text(str(asset_id), "Product.asset_prices key"): _require_crypto(price)
+                    for asset_id, price in self.asset_prices.items()
+                },
+            )
 
     def snapshot(self, created_date: datetime | None = None) -> ProductSnapshot:
         return ProductSnapshot(
@@ -117,6 +129,23 @@ class Product:
             name=self.name,
             price=self.price,
         )
+
+    def snapshot_for_asset(self, payment_asset_id: str | None, created_date: datetime | None = None) -> ProductSnapshot:
+        return ProductSnapshot(
+            product_id=self.product_id,
+            created_date=created_date or datetime.now(UTC),
+            name=self.name,
+            price=self.price_for_asset(payment_asset_id),
+        )
+
+    def price_for_asset(self, payment_asset_id: str | None) -> Crypto:
+        if payment_asset_id is None:
+            return self.price
+        payment_asset_id = _require_text(payment_asset_id, "payment_asset_id")
+        prices = self.asset_prices if self.asset_prices is not None else getattr(self, "_asset_prices", None)
+        if not isinstance(prices, Mapping) or payment_asset_id not in prices:
+            raise ValueError(f"payment asset {payment_asset_id} is not supported by product {self.product_id}")
+        return _require_crypto(prices[payment_asset_id])
 
 
 @dataclass(frozen=True)
@@ -203,13 +232,14 @@ class OrderItem:
         quantity: int,
         snapshotted_at: datetime | None = None,
         order_item_id: OrderItemId | None = None,
+        payment_asset_id: str | None = None,
     ) -> Self:
         if not isinstance(order_id, OrderId):
             raise ValueError("OrderItem.from_product requires an OrderId")
         if not isinstance(product, Product):
             raise ValueError("OrderItem.from_product requires a Product")
         quantity = _coerce_positive_int(quantity, "quantity")
-        snapshot = product.snapshot(snapshotted_at)
+        snapshot = product.snapshot_for_asset(payment_asset_id, snapshotted_at)
         return cls(
             order_item_id=order_item_id or OrderItemId.for_order_product(order_id, product.product_id),
             order_id=order_id,
@@ -267,6 +297,7 @@ class Order:
         product_quantities: dict[ProductId, int],
         created_at: datetime | None = None,
         tracking_id: TrackingId | None = None,
+        payment_asset_id: str | None = None,
     ) -> Self:
         if not isinstance(customer, Customer):
             raise ValueError("Order.initialize_order requires a Customer")
@@ -284,9 +315,10 @@ class Order:
         items: list[OrderItem] = []
         for product_id, quantity in product_quantities.items():
             product = store.require_product(product_id)
-            if not store.supports_chain(product.price.chain_id):
-                raise ValueError(f"store {store.store_id} does not support chain {product.price.chain_id}")
-            items.append(OrderItem.from_product(order_id, product, quantity, snapshotted_at))
+            price = product.price_for_asset(payment_asset_id)
+            if not store.supports_chain(price.chain_id):
+                raise ValueError(f"store {store.store_id} does not support chain {price.chain_id}")
+            items.append(OrderItem.from_product(order_id, product, quantity, snapshotted_at, payment_asset_id=payment_asset_id))
 
         return cls(
             order_id=order_id,
@@ -451,6 +483,12 @@ def _require_text(value: str, field_name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field_name} must be a non-empty string")
     return value.strip()
+
+
+def _require_crypto(value: object) -> Crypto:
+    if not isinstance(value, Crypto):
+        raise ValueError("asset price must be a Crypto value")
+    return value
 
 
 def _require_aware_datetime(value: datetime, field_name: str) -> datetime:

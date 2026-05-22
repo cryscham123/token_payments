@@ -8,6 +8,7 @@ from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from typing import Self, TypeAlias
 
+from token_payments.contexts.auth.domain.wallet import WalletId
 from token_payments.shared.domain import (
     ChainNetwork,
     Crypto,
@@ -36,6 +37,173 @@ class AuthorizationStatus(StrEnum):
     AUTHORIZED = "AUTHORIZED"
     EXPIRED = "EXPIRED"
     REJECTED = "REJECTED"
+
+
+class PaymentAssetType(StrEnum):
+    NATIVE = "NATIVE"
+    ERC20 = "ERC20"
+
+
+@dataclass(frozen=True)
+class PaymentChain:
+    chain_id: int
+    display_name: str
+    native_symbol: str
+    enabled: bool = True
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "chain_id", _coerce_positive_int(self.chain_id, "PaymentChain.chain_id"))
+        object.__setattr__(self, "display_name", _require_text(self.display_name, "PaymentChain.display_name"))
+        object.__setattr__(self, "native_symbol", _require_text(self.native_symbol, "PaymentChain.native_symbol").upper())
+        if not isinstance(self.enabled, bool):
+            raise ValueError("PaymentChain.enabled must be a bool")
+
+
+@dataclass(frozen=True)
+class PaymentAsset:
+    asset_id: str
+    asset_type: PaymentAssetType | str
+    chain_id: int
+    symbol: str
+    decimals: int
+    contract_address: WalletAddress | str | None = None
+    enabled: bool = True
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "asset_id", _require_text(self.asset_id, "PaymentAsset.asset_id"))
+        object.__setattr__(self, "asset_type", _coerce_asset_type(self.asset_type))
+        object.__setattr__(self, "chain_id", _coerce_positive_int(self.chain_id, "PaymentAsset.chain_id"))
+        object.__setattr__(self, "symbol", _require_text(self.symbol, "PaymentAsset.symbol").upper())
+        object.__setattr__(self, "decimals", _coerce_non_negative_int(self.decimals, "PaymentAsset.decimals"))
+        if not isinstance(self.enabled, bool):
+            raise ValueError("PaymentAsset.enabled must be a bool")
+        if self.contract_address is not None:
+            object.__setattr__(self, "contract_address", _coerce_wallet(self.contract_address))
+        if self.asset_type is PaymentAssetType.NATIVE and self.contract_address is not None:
+            raise ValueError("native PaymentAsset must not have contract_address")
+        if self.asset_type is PaymentAssetType.ERC20 and self.contract_address is None:
+            raise ValueError("ERC20 PaymentAsset requires contract_address")
+
+    @classmethod
+    def native(
+        cls,
+        asset_id: str,
+        chain_id: int,
+        symbol: str,
+        decimals: int,
+        contract_address: WalletAddress | str | None = None,
+        *,
+        enabled: bool = True,
+    ) -> Self:
+        return cls(
+            asset_id=asset_id,
+            asset_type=PaymentAssetType.NATIVE,
+            chain_id=chain_id,
+            symbol=symbol,
+            decimals=decimals,
+            contract_address=contract_address,
+            enabled=enabled,
+        )
+
+    @classmethod
+    def erc20(
+        cls,
+        asset_id: str,
+        chain_id: int,
+        symbol: str,
+        decimals: int,
+        contract_address: WalletAddress | str | None,
+        *,
+        enabled: bool = True,
+    ) -> Self:
+        return cls(
+            asset_id=asset_id,
+            asset_type=PaymentAssetType.ERC20,
+            chain_id=chain_id,
+            symbol=symbol,
+            decimals=decimals,
+            contract_address=contract_address,
+            enabled=enabled,
+        )
+
+    def crypto(self, amount: Decimal | str | int) -> Crypto:
+        return Crypto(
+            amount=amount,
+            symbol=self.symbol,
+            chain_id=self.chain_id,
+            token_address=self.contract_address,
+            decimals=self.decimals,
+        )
+
+    def minor_units(self, amount: Decimal | str | int) -> int:
+        amount_decimal = _coerce_decimal(amount, "amount")
+        scale = Decimal(10) ** self.decimals
+        scaled = amount_decimal * scale
+        integral = scaled.to_integral_value()
+        if scaled != integral:
+            raise ValueError("amount precision exceeds asset decimals")
+        if integral < 0:
+            raise ValueError("amount must be non-negative")
+        return int(integral)
+
+
+@dataclass(frozen=True)
+class PaymentAssetRegistry:
+    chains: tuple[PaymentChain, ...]
+    assets: tuple[PaymentAsset, ...]
+
+    def __post_init__(self) -> None:
+        chains = tuple(self.chains)
+        assets = tuple(self.assets)
+        if not all(isinstance(chain, PaymentChain) for chain in chains):
+            raise ValueError("PaymentAssetRegistry.chains must contain PaymentChain values")
+        if not all(isinstance(asset, PaymentAsset) for asset in assets):
+            raise ValueError("PaymentAssetRegistry.assets must contain PaymentAsset values")
+        chain_ids = [chain.chain_id for chain in chains]
+        if len(set(chain_ids)) != len(chain_ids):
+            raise ValueError("PaymentAssetRegistry.chains cannot contain duplicate chain_id")
+        asset_ids = [asset.asset_id for asset in assets]
+        if len(set(asset_ids)) != len(asset_ids):
+            raise ValueError("PaymentAssetRegistry.assets cannot contain duplicate asset_id")
+        known_chains = set(chain_ids)
+        for asset in assets:
+            if asset.chain_id not in known_chains:
+                raise ValueError(f"asset {asset.asset_id} references unknown chain {asset.chain_id}")
+        object.__setattr__(self, "chains", chains)
+        object.__setattr__(self, "assets", assets)
+
+    def require_chain(self, chain_id: int) -> PaymentChain:
+        chain_id = _coerce_positive_int(chain_id, "chain_id")
+        for chain in self.chains:
+            if chain.chain_id == chain_id:
+                return chain
+        raise ValueError(f"chain {chain_id} is not registered")
+
+    def require_asset(self, asset_id: str) -> PaymentAsset:
+        asset_id = _require_text(asset_id, "asset_id")
+        for asset in self.assets:
+            if asset.asset_id == asset_id:
+                return asset
+        raise ValueError(f"payment asset {asset_id} is not registered")
+
+    def require_enabled_asset(self, asset_id: str) -> PaymentAsset:
+        asset = self.require_asset(asset_id)
+        if not asset.enabled:
+            raise ValueError(f"payment asset {asset_id} is disabled")
+        chain = self.require_chain(asset.chain_id)
+        if not chain.enabled:
+            raise ValueError(f"payment asset {asset_id} chain is disabled")
+        return asset
+
+    def crypto_for_asset(self, asset_id: str, amount: Decimal | str | int) -> Crypto:
+        return self.require_enabled_asset(asset_id).crypto(amount)
+
+    def minor_units_for_asset(self, asset_id: str, amount: Decimal | str | int) -> int:
+        return self.require_asset(asset_id).minor_units(amount)
+
+    def assets_for_chain(self, chain_id: int) -> tuple[PaymentAsset, ...]:
+        chain_id = _coerce_positive_int(chain_id, "chain_id")
+        return tuple(asset for asset in self.assets if asset.chain_id == chain_id and asset.enabled)
 
 
 @dataclass(frozen=True)
@@ -92,6 +260,11 @@ class TransactionSignatureRequest:
     amount: Crypto
     to: WalletAddress | str
     expires_at: datetime
+    payment_asset_id: str | None = None
+    transfer_type: str | None = None
+    token_address: WalletAddress | str | None = None
+    amount_minor_units: int | None = None
+    chain_id: int | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "request_id", _require_text(self.request_id, "TransactionSignatureRequest.request_id"))
@@ -102,6 +275,55 @@ class TransactionSignatureRequest:
             self,
             "expires_at",
             _require_aware_datetime(self.expires_at, "TransactionSignatureRequest.expires_at"),
+        )
+        if self.payment_asset_id is not None:
+            object.__setattr__(
+                self,
+                "payment_asset_id",
+                _require_text(self.payment_asset_id, "TransactionSignatureRequest.payment_asset_id"),
+            )
+        if self.transfer_type is not None:
+            object.__setattr__(
+                self,
+                "transfer_type",
+                _require_text(self.transfer_type, "TransactionSignatureRequest.transfer_type"),
+            )
+        if self.token_address is not None:
+            object.__setattr__(self, "token_address", _coerce_wallet(self.token_address))
+        if self.amount_minor_units is not None:
+            object.__setattr__(
+                self,
+                "amount_minor_units",
+                _coerce_non_negative_int(self.amount_minor_units, "TransactionSignatureRequest.amount_minor_units"),
+            )
+        if self.chain_id is not None:
+            object.__setattr__(
+                self,
+                "chain_id",
+                _coerce_positive_int(self.chain_id, "TransactionSignatureRequest.chain_id"),
+            )
+
+    @classmethod
+    def for_payment_terms(
+        cls,
+        *,
+        request_id: str,
+        amount: Crypto,
+        to: WalletAddress | str,
+        expires_at: datetime,
+        payment_asset_id: str | None = None,
+    ) -> Self:
+        token_address = amount.token_address
+        return cls(
+            request_id=request_id,
+            amount=amount,
+            to=to,
+            expires_at=expires_at,
+            payment_asset_id=payment_asset_id,
+            transfer_type="ERC20_TRANSFER" if token_address is not None else "NATIVE_TRANSFER",
+            token_address=token_address,
+            amount_minor_units=_crypto_minor_units(amount),
+            chain_id=amount.chain_id,
         )
 
 
@@ -121,6 +343,8 @@ class Payment:
     receipt: TransactionReceipt | None = None
     failure_reason: str | None = None
     refund_receipt: TransactionReceipt | None = None
+    payer_wallet_id: WalletId | str | None = None
+    payment_asset_id: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.payment_id, PaymentId):
@@ -152,6 +376,10 @@ class Payment:
             raise ValueError("Payment.refund_receipt must be a TransactionReceipt or None")
         if self.failure_reason is not None:
             object.__setattr__(self, "failure_reason", _require_text(self.failure_reason, "Payment.failure_reason"))
+        if self.payer_wallet_id is not None and not isinstance(self.payer_wallet_id, WalletId):
+            object.__setattr__(self, "payer_wallet_id", WalletId(str(self.payer_wallet_id)))
+        if self.payment_asset_id is not None:
+            object.__setattr__(self, "payment_asset_id", _require_text(self.payment_asset_id, "Payment.payment_asset_id"))
         self._validate_status_shape()
 
     @classmethod
@@ -167,6 +395,8 @@ class Payment:
         gas_estimate: GasEstimate | None,
         expires_at: datetime,
         status: PaymentStatus | str = PaymentStatus.INITIATED,
+        payer_wallet_id: WalletId | str | None = None,
+        payment_asset_id: str | None = None,
     ) -> Self:
         status = _coerce_payment_status(status)
         if status not in {PaymentStatus.INITIATED, PaymentStatus.AWAITING_SIGNATURE}:
@@ -182,6 +412,8 @@ class Payment:
             gas_estimate=gas_estimate,
             expires_at=expires_at,
             status=status,
+            payer_wallet_id=payer_wallet_id,
+            payment_asset_id=payment_asset_id,
         )
 
     def mark_awaiting_signature(self) -> Self:
@@ -304,6 +536,9 @@ class PaymentAuthorization:
     status: AuthorizationStatus = AuthorizationStatus.REQUESTED
     tx_hash: TransactionHash | str | None = None
     authorized_at: datetime | None = None
+    payer_wallet_id: WalletId | str | None = None
+    payment_asset_id: str | None = None
+    expected_amount_minor_units: int | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.payment_id, PaymentId):
@@ -329,6 +564,23 @@ class PaymentAuthorization:
                 "authorized_at",
                 _require_aware_datetime(self.authorized_at, "PaymentAuthorization.authorized_at"),
             )
+        if self.payer_wallet_id is not None and not isinstance(self.payer_wallet_id, WalletId):
+            object.__setattr__(self, "payer_wallet_id", WalletId(str(self.payer_wallet_id)))
+        if self.payment_asset_id is not None:
+            object.__setattr__(
+                self,
+                "payment_asset_id",
+                _require_text(self.payment_asset_id, "PaymentAuthorization.payment_asset_id"),
+            )
+        if self.expected_amount_minor_units is not None:
+            object.__setattr__(
+                self,
+                "expected_amount_minor_units",
+                _coerce_non_negative_int(
+                    self.expected_amount_minor_units,
+                    "PaymentAuthorization.expected_amount_minor_units",
+                ),
+            )
         self._validate_status_shape()
 
     @classmethod
@@ -339,6 +591,9 @@ class PaymentAuthorization:
         wallet: WalletAddress | str,
         chain_network: ChainNetwork,
         signature_request: TransactionSignatureRequest,
+        payer_wallet_id: WalletId | str | None = None,
+        payment_asset_id: str | None = None,
+        expected_amount_minor_units: int | None = None,
     ) -> Self:
         return cls(
             payment_id=payment_id,
@@ -347,6 +602,9 @@ class PaymentAuthorization:
             chain_network=chain_network,
             signature_request=signature_request,
             status=AuthorizationStatus.REQUESTED,
+            payer_wallet_id=payer_wallet_id,
+            payment_asset_id=payment_asset_id,
+            expected_amount_minor_units=expected_amount_minor_units,
         )
 
     def authorize_tx_hash(
@@ -590,6 +848,15 @@ def _coerce_authorization_status(value: AuthorizationStatus | str) -> Authorizat
         raise ValueError("PaymentAuthorization.status must be an AuthorizationStatus") from exc
 
 
+def _coerce_asset_type(value: PaymentAssetType | str) -> PaymentAssetType:
+    if isinstance(value, PaymentAssetType):
+        return value
+    try:
+        return PaymentAssetType(str(value))
+    except ValueError as exc:
+        raise ValueError("PaymentAsset.asset_type must be a PaymentAssetType") from exc
+
+
 def _is_final_payment_status(status: PaymentStatus) -> bool:
     return status in {
         PaymentStatus.CONFIRMED,
@@ -620,10 +887,16 @@ def _coerce_positive_int(value: int, field_name: str) -> int:
     return value
 
 
-def _coerce_non_negative_int(value: int, field_name: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+def _coerce_non_negative_int(value: object, field_name: str) -> int:
+    if isinstance(value, bool):
         raise ValueError(f"{field_name} must be a non-negative integer")
-    return value
+    try:
+        parsed = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field_name} must be a non-negative integer") from exc
+    if parsed < 0:
+        raise ValueError(f"{field_name} must be a non-negative integer")
+    return parsed
 
 
 def _require_crypto_on_chain(value: Crypto, chain_network: ChainNetwork, field_name: str) -> None:
@@ -645,6 +918,15 @@ def _require_text(value: str, field_name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field_name} must be a non-empty string")
     return value.strip()
+
+
+def _crypto_minor_units(value: Crypto) -> int:
+    scale = Decimal(10) ** value.decimals
+    scaled = value.amount * scale
+    integral = scaled.to_integral_value()
+    if scaled != integral:
+        raise ValueError("Crypto.amount has more precision than decimals allow")
+    return int(integral)
 
 
 def _require_aware_datetime(value: datetime, field_name: str) -> datetime:

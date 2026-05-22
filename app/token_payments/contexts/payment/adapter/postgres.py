@@ -41,7 +41,8 @@ SELECT
     wallet_from,
     wallet_to,
     chain_id,
-    chain_name,
+    payer_wallet_id,
+    payment_asset_id,
     tx_hash,
     gas_estimated_fee,
     gas_fee_symbol,
@@ -76,7 +77,8 @@ INSERT INTO payments (
     wallet_from,
     wallet_to,
     chain_id,
-    chain_name,
+    payer_wallet_id,
+    payment_asset_id,
     tx_hash,
     gas_estimated_fee,
     gas_fee_symbol,
@@ -106,7 +108,8 @@ INSERT INTO payments (
     %(wallet_from)s,
     %(wallet_to)s,
     %(chain_id)s,
-    %(chain_name)s,
+    %(payer_wallet_id)s,
+    %(payment_asset_id)s,
     %(tx_hash)s,
     %(gas_estimated_fee)s,
     %(gas_fee_symbol)s,
@@ -136,7 +139,8 @@ ON CONFLICT (payment_id) DO UPDATE SET
     wallet_from = EXCLUDED.wallet_from,
     wallet_to = EXCLUDED.wallet_to,
     chain_id = EXCLUDED.chain_id,
-    chain_name = EXCLUDED.chain_name,
+    payer_wallet_id = EXCLUDED.payer_wallet_id,
+    payment_asset_id = EXCLUDED.payment_asset_id,
     tx_hash = EXCLUDED.tx_hash,
     gas_estimated_fee = EXCLUDED.gas_estimated_fee,
     gas_fee_symbol = EXCLUDED.gas_fee_symbol,
@@ -160,9 +164,11 @@ SELECT_AUTHORIZATION_SQL = """
 SELECT
     payment_id,
     user_id,
+    payer_wallet_id,
     wallet_address,
     chain_id,
-    chain_name,
+    payment_asset_id,
+    expected_amount_minor_units,
     request_id,
     amount_numeric,
     amount_symbol,
@@ -182,9 +188,11 @@ UPSERT_AUTHORIZATION_SQL = """
 INSERT INTO payment_authorizations (
     payment_id,
     user_id,
+    payer_wallet_id,
     wallet_address,
     chain_id,
-    chain_name,
+    payment_asset_id,
+    expected_amount_minor_units,
     request_id,
     amount_numeric,
     amount_symbol,
@@ -199,9 +207,11 @@ INSERT INTO payment_authorizations (
 ) VALUES (
     %(payment_id)s,
     %(user_id)s,
+    %(payer_wallet_id)s,
     %(wallet_address)s,
     %(chain_id)s,
-    %(chain_name)s,
+    %(payment_asset_id)s,
+    %(expected_amount_minor_units)s,
     %(request_id)s,
     %(amount_numeric)s,
     %(amount_symbol)s,
@@ -216,9 +226,11 @@ INSERT INTO payment_authorizations (
 )
 ON CONFLICT (payment_id) DO UPDATE SET
     user_id = EXCLUDED.user_id,
+    payer_wallet_id = EXCLUDED.payer_wallet_id,
     wallet_address = EXCLUDED.wallet_address,
     chain_id = EXCLUDED.chain_id,
-    chain_name = EXCLUDED.chain_name,
+    payment_asset_id = EXCLUDED.payment_asset_id,
+    expected_amount_minor_units = EXCLUDED.expected_amount_minor_units,
     request_id = EXCLUDED.request_id,
     amount_numeric = EXCLUDED.amount_numeric,
     amount_symbol = EXCLUDED.amount_symbol,
@@ -253,10 +265,7 @@ class PostgresPaymentRepository:
             amount=_crypto_from_row(row, "amount"),
             wallet_from=WalletAddress(_row_value(row, "wallet_from")),
             wallet_to=WalletAddress(_row_value(row, "wallet_to")),
-            chain_network=ChainNetwork(
-                chain_id=int(_row_value(row, "chain_id")),
-                name=str(_row_value(row, "chain_name")),
-            ),
+            chain_network=_chain_network_from_row(row),
             gas_estimate=_gas_estimate_from_row(row),
             expires_at=_row_value(row, "expires_at"),
             status=PaymentStatus(_row_value(row, "status")),
@@ -264,6 +273,8 @@ class PostgresPaymentRepository:
             receipt=_receipt_from_row(row, "tx_hash", "receipt_block_number", "receipt_gas_used"),
             failure_reason=_row_value(row, "failure_reason"),
             refund_receipt=_receipt_from_row(row, "refund_tx_hash", "refund_block_number", "refund_gas_used"),
+            payer_wallet_id=_optional_row_value(row, "payer_wallet_id"),
+            payment_asset_id=_optional_row_value(row, "payment_asset_id"),
         )
 
     def save(self, payment: Payment) -> None:
@@ -280,6 +291,8 @@ class PostgresPaymentRepository:
             "wallet_to": str(payment.wallet_to),
             "chain_id": payment.chain_network.chain_id,
             "chain_name": payment.chain_network.name,
+            "payer_wallet_id": str(payment.payer_wallet_id) if payment.payer_wallet_id is not None else None,
+            "payment_asset_id": payment.payment_asset_id,
             "tx_hash": str(payment.tx_hash) if payment.tx_hash is not None else None,
             **_gas_params(payment.gas_estimate),
             "receipt_block_number": payment.receipt.block_number if payment.receipt is not None else None,
@@ -307,24 +320,36 @@ class PostgresPaymentAuthorizationRepository:
         row = _fetch_one(self._connection.execute(SELECT_AUTHORIZATION_SQL, {"payment_id": str(payment_id)}))
         if row is None:
             return None
+        payment_asset_id = _optional_row_value(row, "payment_asset_id")
+        expected_amount_minor_units = _optional_int_row_value(row, "expected_amount_minor_units")
+        include_transfer_terms = payment_asset_id is not None or expected_amount_minor_units is not None
         signature_request = TransactionSignatureRequest(
             request_id=str(_row_value(row, "request_id")),
             amount=_crypto_from_row(row, "amount"),
             to=WalletAddress(_row_value(row, "to_wallet_address")),
             expires_at=_row_value(row, "expires_at"),
+            payment_asset_id=payment_asset_id,
+            transfer_type=(
+                "ERC20_TRANSFER" if _row_value(row, "amount_token_address") is not None else "NATIVE_TRANSFER"
+            )
+            if include_transfer_terms
+            else None,
+            token_address=_row_value(row, "amount_token_address") if include_transfer_terms else None,
+            amount_minor_units=expected_amount_minor_units,
+            chain_id=int(_row_value(row, "chain_id")) if include_transfer_terms else None,
         )
         return PaymentAuthorization(
             payment_id=PaymentId(_row_value(row, "payment_id")),
             user_id=UserId(_row_value(row, "user_id")),
             wallet=WalletAddress(_row_value(row, "wallet_address")),
-            chain_network=ChainNetwork(
-                chain_id=int(_row_value(row, "chain_id")),
-                name=str(_row_value(row, "chain_name")),
-            ),
+            chain_network=_chain_network_from_row(row),
             signature_request=signature_request,
             status=AuthorizationStatus(_row_value(row, "status")),
             tx_hash=_optional_tx_hash(_row_value(row, "tx_hash")),
             authorized_at=_row_value(row, "authorized_at"),
+            payer_wallet_id=_optional_row_value(row, "payer_wallet_id"),
+            payment_asset_id=payment_asset_id,
+            expected_amount_minor_units=expected_amount_minor_units,
         )
 
     def save(self, authorization: PaymentAuthorization) -> None:
@@ -335,9 +360,12 @@ class PostgresPaymentAuthorizationRepository:
         params = {
             "payment_id": str(authorization.payment_id),
             "user_id": str(authorization.user_id),
+            "payer_wallet_id": str(authorization.payer_wallet_id) if authorization.payer_wallet_id is not None else None,
             "wallet_address": str(authorization.wallet),
             "chain_id": authorization.chain_network.chain_id,
             "chain_name": authorization.chain_network.name,
+            "payment_asset_id": authorization.payment_asset_id,
+            "expected_amount_minor_units": authorization.expected_amount_minor_units,
             "request_id": signature_request.request_id,
             **_crypto_params("amount", signature_request.amount),
             "to_wallet_address": str(signature_request.to),
@@ -443,6 +471,28 @@ def _optional_tx_hash(value: Any) -> TransactionHash | None:
     if value is None:
         return None
     return TransactionHash(value)
+
+
+def _chain_network_from_row(row: Mapping[str, Any] | object) -> ChainNetwork:
+    chain_id = int(_row_value(row, "chain_id"))
+    name = _optional_row_value(row, "chain_name") or f"chain-{chain_id}"
+    return ChainNetwork(chain_id=chain_id, name=name)
+
+
+def _optional_row_value(row: Mapping[str, Any] | object, key: str) -> str | None:
+    if isinstance(row, Mapping):
+        value = row.get(key)
+    else:
+        value = getattr(row, key, None)
+    return str(value) if value is not None else None
+
+
+def _optional_int_row_value(row: Mapping[str, Any] | object, key: str) -> int | None:
+    if isinstance(row, Mapping):
+        value = row.get(key)
+    else:
+        value = getattr(row, key, None)
+    return int(value) if value is not None else None
 
 
 def _fetch_one(result: Any) -> Any:

@@ -101,6 +101,11 @@ class ChallengeStatus(StrEnum):
     REJECTED = "REJECTED"
 
 
+class ChallengePurpose(StrEnum):
+    LOGIN = "LOGIN"
+    WALLET_LINK = "WALLET_LINK"
+
+
 class LoginFailureReason(StrEnum):
     INVALID_SIGNATURE = "INVALID_SIGNATURE"
     EXPIRED_CHALLENGE = "EXPIRED_CHALLENGE"
@@ -437,12 +442,15 @@ class LoginChallenge:
     chain_id: int | None = None
     verified_at: datetime | None = None
     rejected_reason: LoginFailureReason | None = None
+    purpose: ChallengePurpose | str = ChallengePurpose.LOGIN
+    target_user_id: UserId | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "wallet", _coerce_wallet(self.wallet))
         if not isinstance(self.nonce, AuthNonce):
             raise ValueError("LoginChallenge.nonce must be an AuthNonce")
         object.__setattr__(self, "status", _coerce_challenge_status(self.status))
+        object.__setattr__(self, "purpose", _coerce_challenge_purpose(self.purpose))
         object.__setattr__(
             self,
             "issued_at",
@@ -463,6 +471,10 @@ class LoginChallenge:
             )
         if self.rejected_reason is not None:
             object.__setattr__(self, "rejected_reason", _coerce_login_failure_reason(self.rejected_reason))
+        if self.target_user_id is not None and not isinstance(self.target_user_id, UserId):
+            raise ValueError("LoginChallenge.target_user_id must be a UserId")
+        if self.purpose is ChallengePurpose.WALLET_LINK and self.target_user_id is None:
+            raise ValueError("wallet link challenges require target_user_id")
         if self.status is ChallengeStatus.VERIFIED and self.verified_at is None:
             raise ValueError("verified challenges require verified_at")
         if self.status is ChallengeStatus.REJECTED and self.rejected_reason is None:
@@ -478,6 +490,8 @@ class LoginChallenge:
         domain: str | None = None,
         uri: str | None = None,
         chain_id: int | None = None,
+        purpose: ChallengePurpose | str = ChallengePurpose.LOGIN,
+        target_user_id: UserId | None = None,
     ) -> Self:
         issued_at = issued_at or datetime.now(UTC)
         issued_at = _require_aware_datetime(issued_at, "issued_at")
@@ -491,6 +505,8 @@ class LoginChallenge:
             domain=domain,
             uri=uri,
             chain_id=chain_id,
+            purpose=purpose,
+            target_user_id=target_user_id,
         )
 
     @property
@@ -644,6 +660,73 @@ class WalletVerifiedEvent:
 
 
 @dataclass(frozen=True)
+class WalletLinkedEvent:
+    user_id: UserId
+    wallet_id: WalletId
+    wallet: WalletAddress | str
+    chain_id: int
+    linked_at: datetime
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.user_id, UserId):
+            raise ValueError("WalletLinkedEvent.user_id must be a UserId")
+        if not isinstance(self.wallet_id, WalletId):
+            raise TypeError("WalletLinkedEvent.wallet_id must be a WalletId")
+        object.__setattr__(self, "wallet", _coerce_wallet(self.wallet))
+        if isinstance(self.chain_id, bool) or not isinstance(self.chain_id, int) or self.chain_id <= 0:
+            raise ValueError("WalletLinkedEvent.chain_id must be a positive integer")
+        object.__setattr__(
+            self,
+            "linked_at",
+            _require_aware_datetime(self.linked_at, "WalletLinkedEvent.linked_at"),
+        )
+
+
+@dataclass(frozen=True)
+class WalletPrimaryChangedEvent:
+    user_id: UserId
+    wallet_id: WalletId
+    chain_id: int
+    changed_at: datetime
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.user_id, UserId):
+            raise ValueError("WalletPrimaryChangedEvent.user_id must be a UserId")
+        if not isinstance(self.wallet_id, WalletId):
+            raise TypeError("WalletPrimaryChangedEvent.wallet_id must be a WalletId")
+        if isinstance(self.chain_id, bool) or not isinstance(self.chain_id, int) or self.chain_id <= 0:
+            raise ValueError("WalletPrimaryChangedEvent.chain_id must be a positive integer")
+        object.__setattr__(
+            self,
+            "changed_at",
+            _require_aware_datetime(self.changed_at, "WalletPrimaryChangedEvent.changed_at"),
+        )
+
+
+@dataclass(frozen=True)
+class WalletRevokedEvent:
+    user_id: UserId
+    wallet_id: WalletId
+    wallet: WalletAddress | str
+    chain_id: int
+    revoked_at: datetime
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.user_id, UserId):
+            raise ValueError("WalletRevokedEvent.user_id must be a UserId")
+        if not isinstance(self.wallet_id, WalletId):
+            raise TypeError("WalletRevokedEvent.wallet_id must be a WalletId")
+        object.__setattr__(self, "wallet", _coerce_wallet(self.wallet))
+        if isinstance(self.chain_id, bool) or not isinstance(self.chain_id, int) or self.chain_id <= 0:
+            raise ValueError("WalletRevokedEvent.chain_id must be a positive integer")
+        object.__setattr__(
+            self,
+            "revoked_at",
+            _require_aware_datetime(self.revoked_at, "WalletRevokedEvent.revoked_at"),
+        )
+
+
+@dataclass(frozen=True)
 class UserLoggedInEvent:
     user_id: UserId
     session_id: SessionId
@@ -677,7 +760,15 @@ class LoginRejectedEvent:
         )
 
 
-AuthEvent: TypeAlias = UserRegisteredEvent | WalletVerifiedEvent | UserLoggedInEvent | LoginRejectedEvent
+AuthEvent: TypeAlias = (
+    UserRegisteredEvent
+    | WalletVerifiedEvent
+    | WalletLinkedEvent
+    | WalletPrimaryChangedEvent
+    | WalletRevokedEvent
+    | UserLoggedInEvent
+    | LoginRejectedEvent
+)
 
 
 def _coerce_wallet(value: WalletAddress | str) -> WalletAddress:
@@ -718,6 +809,15 @@ def _coerce_challenge_status(value: ChallengeStatus | str) -> ChallengeStatus:
         return ChallengeStatus(str(value))
     except ValueError as exc:
         raise ValueError("LoginChallenge.status must be a ChallengeStatus") from exc
+
+
+def _coerce_challenge_purpose(value: ChallengePurpose | str) -> ChallengePurpose:
+    if isinstance(value, ChallengePurpose):
+        return value
+    try:
+        return ChallengePurpose(str(value))
+    except ValueError as exc:
+        raise ValueError("LoginChallenge.purpose must be a ChallengePurpose") from exc
 
 
 def _coerce_login_failure_reason(value: LoginFailureReason | str) -> LoginFailureReason:

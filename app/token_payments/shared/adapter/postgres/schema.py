@@ -165,6 +165,14 @@ POSTGRES_SCHEMA_COMPATIBILITY_SQL: tuple[str, ...] = (
         ADD COLUMN IF NOT EXISTS rejected_reason TEXT
     """,
     """
+    ALTER TABLE IF EXISTS auth_login_challenges
+        ADD COLUMN IF NOT EXISTS purpose TEXT NOT NULL DEFAULT 'LOGIN'
+    """,
+    """
+    ALTER TABLE IF EXISTS auth_login_challenges
+        ADD COLUMN IF NOT EXISTS target_user_id UUID
+    """,
+    """
     ALTER TABLE IF EXISTS auth_sessions
         ADD COLUMN IF NOT EXISTS session_id UUID
     """,
@@ -215,9 +223,14 @@ POSTGRES_SCHEMA_COMPATIBILITY_SQL: tuple[str, ...] = (
         active BOOLEAN NOT NULL DEFAULT true,
         store_wallet_address TEXT NOT NULL,
         supported_chain_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+        supported_payment_asset_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
+    """,
+    """
+    ALTER TABLE IF EXISTS store_catalog_stores
+        ADD COLUMN IF NOT EXISTS supported_payment_asset_ids JSONB NOT NULL DEFAULT '[]'::jsonb
     """,
     """
     ALTER TABLE IF EXISTS store_catalog_stores
@@ -389,6 +402,49 @@ POSTGRES_SCHEMA_COMPATIBILITY_SQL: tuple[str, ...] = (
         CHECK (actor_role IN ('CUSTOMER', 'STORE_OWNER', 'ADMIN'))
     """,
     """
+    CREATE TABLE IF NOT EXISTS chains (
+        chain_id INTEGER PRIMARY KEY,
+        display_name TEXT NOT NULL,
+        native_symbol TEXT NOT NULL,
+        explorer_url_template TEXT,
+        enabled BOOLEAN NOT NULL DEFAULT true,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS payment_assets (
+        asset_id TEXT PRIMARY KEY,
+        asset_type TEXT NOT NULL CHECK (asset_type IN ('NATIVE', 'ERC20')),
+        chain_id INTEGER NOT NULL REFERENCES chains (chain_id),
+        symbol TEXT NOT NULL,
+        decimals INTEGER NOT NULL CHECK (decimals >= 0),
+        contract_address TEXT,
+        enabled BOOLEAN NOT NULL DEFAULT true,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        CHECK (
+            (asset_type = 'NATIVE' AND contract_address IS NULL)
+            OR (asset_type = 'ERC20' AND contract_address IS NOT NULL)
+        )
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_payment_assets_chain_enabled
+        ON payment_assets (chain_id, enabled)
+    """,
+    """
+    INSERT INTO chains (chain_id, display_name, native_symbol, enabled)
+    VALUES (1337, 'Local', 'ETH', true), (11155111, 'Sepolia', 'ETH', true)
+    ON CONFLICT (chain_id) DO NOTHING
+    """,
+    """
+    INSERT INTO payment_assets (asset_id, asset_type, chain_id, symbol, decimals, contract_address, enabled)
+    VALUES ('local-native-eth', 'NATIVE', 1337, 'ETH', 18, NULL, true),
+           ('sepolia-native-eth', 'NATIVE', 11155111, 'ETH', 18, NULL, true)
+    ON CONFLICT (asset_id) DO NOTHING
+    """,
+    """
     CREATE TABLE IF NOT EXISTS auth_user_wallets (
         wallet_id UUID PRIMARY KEY,
         user_id UUID NOT NULL REFERENCES auth_users (user_id),
@@ -408,8 +464,40 @@ POSTGRES_SCHEMA_COMPATIBILITY_SQL: tuple[str, ...] = (
         ON auth_user_wallets (user_id, chain_id, wallet_address) WHERE (verification_status <> 'REVOKED')
     """,
     """
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_user_wallets_active_chain_address
+        ON auth_user_wallets (chain_id, wallet_address) WHERE (verification_status = 'VERIFIED' AND revoked_at IS NULL)
+    """,
+    """
     CREATE INDEX IF NOT EXISTS idx_auth_user_wallets_user_id
         ON auth_user_wallets (user_id)
+    """,
+    """
+    ALTER TABLE IF EXISTS payments
+        ADD COLUMN IF NOT EXISTS payer_wallet_id UUID REFERENCES auth_user_wallets (wallet_id)
+    """,
+    """
+    ALTER TABLE IF EXISTS payments
+        ADD COLUMN IF NOT EXISTS payment_asset_id TEXT REFERENCES payment_assets (asset_id)
+    """,
+    """
+    ALTER TABLE IF EXISTS payment_authorizations
+        ADD COLUMN IF NOT EXISTS payer_wallet_id UUID REFERENCES auth_user_wallets (wallet_id)
+    """,
+    """
+    ALTER TABLE IF EXISTS payment_authorizations
+        ADD COLUMN IF NOT EXISTS payment_asset_id TEXT REFERENCES payment_assets (asset_id)
+    """,
+    """
+    ALTER TABLE IF EXISTS payment_authorizations
+        ADD COLUMN IF NOT EXISTS expected_amount_minor_units NUMERIC(78, 0)
+    """,
+    """
+    ALTER TABLE IF EXISTS payments
+        DROP COLUMN IF EXISTS chain_name
+    """,
+    """
+    ALTER TABLE IF EXISTS payment_authorizations
+        DROP COLUMN IF EXISTS chain_name
     """,
     """
     INSERT INTO auth_user_wallets (

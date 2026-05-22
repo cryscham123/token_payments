@@ -21,16 +21,22 @@ from token_payments.contexts.auth.adapter import (
     PostgresLoginChallengeRepository,
     PostgresUserProfileRepository,
     PostgresUserRepository,
+    PostgresUserWalletRepository,
 )
 from token_payments.contexts.auth.application import (
     AuthApplicationService,
     CurrentUserQuery,
     GetCurrentUserProfileQuery,
     GetUserProfileQuery,
+    LinkWalletCommand,
+    ListWalletsQuery,
     LoginWithMetaMaskCommand,
     LogoutCommand,
     RefreshSessionCommand,
     RequestLoginChallengeCommand,
+    RequestWalletLinkChallengeCommand,
+    RevokeWalletCommand,
+    SetPrimaryWalletCommand,
     UpdateUserProfileCommand,
 )
 from token_payments.contexts.auth.domain import AuthEvent, AuthSession, IssuedToken, User
@@ -67,6 +73,7 @@ from token_payments.contexts.payment.application import (
     RefundPaymentCommand,
     SubmitTransactionHashCommand,
 )
+from token_payments.contexts.payment.domain import PaymentAsset, PaymentAssetRegistry, PaymentChain
 from token_payments.contexts.store_catalog.adapter import PostgresStoreCatalogRepository
 from token_payments.contexts.store_catalog.application import StoreCatalogApplicationService
 from token_payments.shared.domain import (
@@ -912,10 +919,31 @@ class JsonRpcBlockchainClient:
 
     def refund_payment(self, request: Mapping[str, object] | None = None, **kwargs: object) -> dict[str, object]:
         payload = dict(request or kwargs)
-        tx_hash = str(payload.get("tx_hash") or payload.get("txHash") or "")
-        if not tx_hash:
-            raise ValueError("refund_payment requires a tx_hash")
-        return {"hash": tx_hash, "block_number": 0, "gas_used": 0}
+        refund_private_key = (os.environ.get("ADAPTER_BLOCKCHAIN_REFUND_PRIVATE_KEY") or "").strip()
+        if not refund_private_key:
+            raise ValueError("ADAPTER_BLOCKCHAIN_REFUND_PRIVATE_KEY is required for refund_payment")
+        refund_account = (
+            os.environ.get("ADAPTER_BLOCKCHAIN_REFUND_ACCOUNT")
+            or os.environ.get("TEST_NETWORK_ACCOUNT")
+            or ""
+        ).strip()
+        if not refund_account:
+            raise ValueError("ADAPTER_BLOCKCHAIN_REFUND_ACCOUNT or TEST_NETWORK_ACCOUNT is required for refund_payment")
+        wallet_to = str(payload.get("wallet_to") or payload.get("walletTo") or "")
+        if not wallet_to:
+            raise ValueError("refund_payment requires wallet_to")
+        amount = _amount_payload(payload.get("amount"))
+        tx_hash = self._rpc("eth_sendTransaction", (_refund_transaction_payload(amount, refund_account, wallet_to),))
+        receipt = self._rpc("eth_getTransactionReceipt", (tx_hash,))
+        if not isinstance(receipt, Mapping):
+            raise ValueError("refund transaction receipt was not available")
+        block_number = receipt.get("blockNumber", 0)
+        gas_used = receipt.get("gasUsed", 0)
+        return {
+            "hash": str(receipt.get("transactionHash") or tx_hash),
+            "block_number": int(str(block_number), 16) if isinstance(block_number, str) else int(block_number),
+            "gas_used": int(str(gas_used), 16) if isinstance(gas_used, str) else int(gas_used),
+        }
 
     def _rpc(self, method: str, params: Sequence[object]) -> Any:
         urllib_request = importlib.import_module("urllib.request")
@@ -973,6 +1001,26 @@ def _gas_transaction_payload(
             "value": hex(_amount_base_units(amount) if amount is not None else 0),
         }.items()
         if value
+    }
+
+
+def _refund_transaction_payload(
+    amount: Mapping[str, object] | None,
+    refund_account: str,
+    wallet_to: str,
+) -> dict[str, object]:
+    token_address = None if amount is None else _optional_text_value(amount, "token_address", "tokenAddress")
+    if token_address:
+        return {
+            "from": refund_account,
+            "to": token_address,
+            "value": "0x0",
+            "data": _erc20_transfer_data(wallet_to, _amount_base_units(amount)),
+        }
+    return {
+        "from": refund_account,
+        "to": wallet_to,
+        "value": hex(_amount_base_units(amount) if amount is not None else 0),
     }
 
 
@@ -1516,10 +1564,40 @@ class _TransactionalAuthUseCase:
             lambda connection: self._service(connection).requestLoginChallenge(command),
         )
 
+    def requestWalletLinkChallenge(self, command: RequestWalletLinkChallengeCommand):
+        return _with_transaction(
+            self._dependencies,
+            lambda connection: self._service(connection).requestWalletLinkChallenge(command),
+        )
+
     def loginWithMetaMask(self, command: LoginWithMetaMaskCommand):
         return _with_transaction(
             self._dependencies,
             lambda connection: self._service(connection).loginWithMetaMask(command),
+        )
+
+    def linkWallet(self, command: LinkWalletCommand):
+        return _with_transaction(
+            self._dependencies,
+            lambda connection: self._service(connection).linkWallet(command),
+        )
+
+    def listWallets(self, query: ListWalletsQuery):
+        return _with_transaction(
+            self._dependencies,
+            lambda connection: self._service(connection).listWallets(query),
+        )
+
+    def setPrimaryWallet(self, command: SetPrimaryWalletCommand):
+        return _with_transaction(
+            self._dependencies,
+            lambda connection: self._service(connection).setPrimaryWallet(command),
+        )
+
+    def revokeWallet(self, command: RevokeWalletCommand):
+        return _with_transaction(
+            self._dependencies,
+            lambda connection: self._service(connection).revokeWallet(command),
         )
 
     def refreshSession(self, command: RefreshSessionCommand):
@@ -1565,6 +1643,7 @@ class _TransactionalAuthUseCase:
             user_id_generator=self._dependencies.id_generator,
             session_id_generator=self._dependencies.id_generator,
             users=PostgresUserRepository(connection),
+            wallets=PostgresUserWalletRepository(connection),
             login_challenges=PostgresLoginChallengeRepository(connection),
             sessions=PostgresAuthSessionRepository(connection),
             rbac=PostgresAuthRbacRepository(connection),
@@ -1600,6 +1679,8 @@ class _TransactionalOrderUseCase:
             event_message_id=MessageId(_new_id(self._dependencies.id_generator, "event_message_id")),
             requested_at=command.requested_at,
             causation_id=command.causation_id,
+            wallet_id=command.wallet_id,
+            payment_asset_id=command.payment_asset_id,
         )
         return _with_transaction(
             self._dependencies,
@@ -1613,6 +1694,8 @@ class _TransactionalOrderUseCase:
             stores=PostgresStoreRepository(connection),
             orders=PostgresOrderRepository(connection),
             outbox_messages=outbox,
+            wallets=PostgresUserWalletRepository(connection),
+            payment_assets=_runtime_payment_asset_registry(self._config),
         ).createOrder(command)
         self._start_payment_request(connection, command, result)
         return result
@@ -1646,6 +1729,8 @@ class _TransactionalOrderUseCase:
                 requested_at=command.requested_at,
                 causation_id=str(result.outbox_message.identity),
                 event_message_id=MessageId(_new_id(self._dependencies.id_generator, "payment_event_message_id")),
+                payer_wallet_id=_optional_payload_text(payload, "payerWalletId"),
+                payment_asset_id=_optional_payload_text(payload, "paymentAssetId"),
             )
         )
 
@@ -1664,6 +1749,73 @@ def _required_payload_text(payload: Mapping[str, Any], key: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"checkout payload missing {key}")
     return value.strip()
+
+
+def _optional_payload_text(payload: Mapping[str, Any], key: str) -> str | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return value.strip()
+
+
+def _runtime_payment_asset_registry(config: LiveRuntimeConfig) -> PaymentAssetRegistry:
+    token_assets = list(_deployed_stablecoin_assets(config))
+    if not token_assets and config.blockchain_token_address:
+        token_assets.append(
+            PaymentAsset.erc20("local-usdc", config.blockchain_chain_id, "USDC", 6, config.blockchain_token_address)
+        )
+    return PaymentAssetRegistry(
+        chains=(
+            PaymentChain(
+                chain_id=config.blockchain_chain_id,
+                display_name=f"chain-{config.blockchain_chain_id}",
+                native_symbol=config.blockchain_native_symbol,
+                enabled=True,
+            ),
+        ),
+        assets=(
+            PaymentAsset.native(
+                "native",
+                config.blockchain_chain_id,
+                config.blockchain_native_symbol,
+                config.blockchain_native_decimals,
+            ),
+            *token_assets,
+        ),
+    )
+
+
+def _deployed_stablecoin_assets(config: LiveRuntimeConfig) -> tuple[PaymentAsset, ...]:
+    path = os.environ.get("ADAPTER_BLOCKCHAIN_DEPLOYED_CONTRACTS_PATH", "/var/chainDB/deployed_contracts.json")
+    try:
+        with open(path, encoding="utf-8") as file:
+            payload = json.load(file)
+    except FileNotFoundError:
+        return ()
+    if not isinstance(payload, Mapping):
+        return ()
+    assets = payload.get("assets")
+    if not isinstance(assets, Mapping):
+        return ()
+    result: list[PaymentAsset] = []
+    for symbol in ("USDC", "USDT"):
+        entry = assets.get(symbol)
+        if not isinstance(entry, Mapping):
+            continue
+        address = entry.get("address")
+        if address:
+            result.append(
+                PaymentAsset.erc20(
+                    f"local-{symbol.lower()}",
+                    config.blockchain_chain_id,
+                    symbol,
+                    int(entry.get("decimals") or 6),
+                    str(address),
+                )
+            )
+    return tuple(result)
 
 
 class _TransactionalCheckoutTrackingQuery:
