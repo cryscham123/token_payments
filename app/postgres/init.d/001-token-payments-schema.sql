@@ -59,6 +59,26 @@ CREATE TABLE IF NOT EXISTS auth_users (
 CREATE INDEX IF NOT EXISTS idx_auth_users_wallet_address
     ON auth_users (wallet_address);
 
+CREATE TABLE IF NOT EXISTS auth_user_wallets (
+    wallet_id UUID PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES auth_users (user_id),
+    wallet_address TEXT NOT NULL,
+    chain_id INTEGER NOT NULL CHECK (chain_id > 0),
+    wallet_type TEXT NOT NULL CHECK (wallet_type IN ('EOA', 'SMART_WALLET')),
+    verification_status TEXT NOT NULL CHECK (verification_status IN ('VERIFIED', 'PENDING', 'REVOKED')),
+    "primary" BOOLEAN NOT NULL DEFAULT false,
+    linked_at TIMESTAMPTZ NOT NULL,
+    revoked_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_user_wallets_user_chain_address
+    ON auth_user_wallets (user_id, chain_id, wallet_address) WHERE (verification_status <> 'REVOKED');
+
+CREATE INDEX IF NOT EXISTS idx_auth_user_wallets_user_id
+    ON auth_user_wallets (user_id);
+
 CREATE TABLE IF NOT EXISTS auth_user_profiles (
     user_id UUID PRIMARY KEY REFERENCES auth_users (user_id),
     display_name TEXT,
@@ -115,7 +135,7 @@ CREATE INDEX IF NOT EXISTS idx_auth_login_challenges_wallet_status
 CREATE TABLE IF NOT EXISTS auth_sessions (
     session_id UUID PRIMARY KEY,
     user_id UUID NOT NULL,
-    wallet_address TEXT NOT NULL,
+    login_wallet_id UUID NOT NULL REFERENCES auth_user_wallets (wallet_id),
     refresh_token_hash TEXT NOT NULL,
     refresh_token_salt TEXT NOT NULL,
     refresh_token_rotation_version INTEGER NOT NULL CHECK (refresh_token_rotation_version >= 0),
@@ -426,7 +446,6 @@ CREATE INDEX IF NOT EXISTS idx_store_catalog_audit_store_recorded_at
 CREATE TABLE IF NOT EXISTS order_customers (
     customer_id UUID PRIMARY KEY,
     user_id UUID NOT NULL UNIQUE,
-    wallet_address TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

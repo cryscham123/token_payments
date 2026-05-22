@@ -16,10 +16,12 @@ from .model import (
     Store,
     TrackingId,
 )
+from token_payments.shared.domain import CustomerId
 
 __all__ = [
     "Address",
     "Customer",
+    "CustomerId",
     "Order",
     "OrderCancelledEvent",
     "OrderCreatedEvent",

@@ -47,11 +47,12 @@ from token_payments.shared.domain import (
 
 SELECT_CUSTOMER_BY_USER_ID_SQL = """
 SELECT
-    customer_id,
-    user_id,
-    wallet_address
-FROM order_customers
-WHERE user_id = %(user_id)s
+    c.customer_id,
+    c.user_id,
+    w.wallet_address
+FROM order_customers c
+LEFT JOIN auth_user_wallets w ON c.user_id = w.user_id AND w."primary" = true
+WHERE c.user_id = %(user_id)s
 """
 
 SELECT_STORE_SQL = """
@@ -483,11 +484,14 @@ class PostgresCheckoutTrackingQuery:
 
 
 def _row_to_customer(row: Mapping[str, Any] | object) -> Customer:
-    return Customer(
+    customer = Customer(
         customer_id=CustomerId(_row_value(row, "customer_id")),
         user_id=UserId(_row_value(row, "user_id")),
-        customer_wallet=WalletAddress(_row_value(row, "wallet_address")),
     )
+    wallet_val = _row_value(row, "wallet_address")
+    if wallet_val is not None:
+        object.__setattr__(customer, "_customer_wallet", WalletAddress(str(wallet_val)))
+    return customer
 
 
 def _row_to_product(row: Mapping[str, Any] | object) -> Product:

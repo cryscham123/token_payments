@@ -123,14 +123,16 @@ class Product:
 class Customer:
     customer_id: CustomerId
     user_id: UserId
-    customer_wallet: WalletAddress | str
 
     def __post_init__(self) -> None:
         if not isinstance(self.customer_id, CustomerId):
             raise ValueError("Customer.customer_id must be a CustomerId")
         if not isinstance(self.user_id, UserId):
             raise ValueError("Customer.user_id must be a UserId")
-        object.__setattr__(self, "customer_wallet", _coerce_wallet(self.customer_wallet))
+
+    @property
+    def customer_wallet(self) -> WalletAddress | None:
+        return getattr(self, "_customer_wallet", None)
 
 
 @dataclass(frozen=True)
@@ -140,7 +142,7 @@ class Store:
     products: tuple[Product, ...]
     active: bool = True
     store_address: Address | None = None
-    store_wallet: WalletAddress | str | None = None
+    store_wallet: WalletAddress | None = None
     supported_chain_ids: tuple[int, ...] = ()
 
     def __post_init__(self) -> None:

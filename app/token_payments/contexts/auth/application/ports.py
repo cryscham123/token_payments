@@ -20,6 +20,8 @@ from token_payments.contexts.auth.domain import (
     UserProfile,
 )
 from token_payments.shared.domain import UserId, WalletAddress
+from token_payments.contexts.auth.domain.wallet import WalletId
+
 
 
 @dataclass(frozen=True)
@@ -156,6 +158,9 @@ class UserRepository(Protocol):
         ...
 
     def get_by_wallet(self, wallet: WalletAddress) -> User | None:
+        ...
+
+    def get_wallet_id_for_address(self, user_id: UserId, wallet: WalletAddress) -> WalletId:
         ...
 
 

@@ -388,6 +388,81 @@ POSTGRES_SCHEMA_COMPATIBILITY_SQL: tuple[str, ...] = (
         ADD CONSTRAINT inventory_audit_log_actor_role_check
         CHECK (actor_role IN ('CUSTOMER', 'STORE_OWNER', 'ADMIN'))
     """,
+    """
+    CREATE TABLE IF NOT EXISTS auth_user_wallets (
+        wallet_id UUID PRIMARY KEY,
+        user_id UUID NOT NULL REFERENCES auth_users (user_id),
+        wallet_address TEXT NOT NULL,
+        chain_id INTEGER NOT NULL CHECK (chain_id > 0),
+        wallet_type TEXT NOT NULL CHECK (wallet_type IN ('EOA', 'SMART_WALLET')),
+        verification_status TEXT NOT NULL CHECK (verification_status IN ('VERIFIED', 'PENDING', 'REVOKED')),
+        "primary" BOOLEAN NOT NULL DEFAULT false,
+        linked_at TIMESTAMPTZ NOT NULL,
+        revoked_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+    """,
+    """
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_user_wallets_user_chain_address
+        ON auth_user_wallets (user_id, chain_id, wallet_address) WHERE (verification_status <> 'REVOKED')
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_auth_user_wallets_user_id
+        ON auth_user_wallets (user_id)
+    """,
+    """
+    INSERT INTO auth_user_wallets (
+        wallet_id,
+        user_id,
+        wallet_address,
+        chain_id,
+        wallet_type,
+        verification_status,
+        "primary",
+        linked_at
+    )
+    SELECT
+        gen_random_uuid(),
+        user_id,
+        wallet_address,
+        1,
+        'EOA',
+        'VERIFIED',
+        true,
+        created_at
+    FROM auth_users
+    ON CONFLICT DO NOTHING
+    """,
+    """
+    ALTER TABLE auth_sessions ADD COLUMN IF NOT EXISTS login_wallet_id UUID REFERENCES auth_user_wallets (wallet_id)
+    """,
+    """
+    UPDATE auth_sessions s
+    SET login_wallet_id = w.wallet_id
+    FROM auth_user_wallets w
+    WHERE s.user_id = w.user_id AND s.wallet_address = w.wallet_address
+      AND s.login_wallet_id IS NULL
+    """,
+    """
+    UPDATE auth_sessions s
+    SET login_wallet_id = w.wallet_id
+    FROM auth_user_wallets w
+    WHERE s.user_id = w.user_id AND w."primary" = true
+      AND s.login_wallet_id IS NULL
+    """,
+    """
+    DELETE FROM auth_sessions WHERE login_wallet_id IS NULL
+    """,
+    """
+    ALTER TABLE auth_sessions ALTER COLUMN login_wallet_id SET NOT NULL
+    """,
+    """
+    ALTER TABLE auth_sessions DROP COLUMN IF EXISTS wallet_address
+    """,
+    """
+    ALTER TABLE order_customers DROP COLUMN IF EXISTS wallet_address
+    """,
 )
 
 

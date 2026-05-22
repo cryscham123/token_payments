@@ -47,6 +47,7 @@ from token_payments.contexts.auth.domain import (  # noqa: E402
     UserRegisteredEvent,
     WalletVerifiedEvent,
 )
+from token_payments.contexts.auth.domain.wallet import WalletId
 from token_payments.shared.domain import UserId, WalletAddress  # noqa: E402
 
 
@@ -353,7 +354,7 @@ def test_auth_postgres_repositories_round_trip_user_challenge_and_session() -> N
     session = AuthSession.create(
         session_id=SessionId(SESSION_ID),
         user_id=UserId(USER_ID),
-        wallet=WALLET,
+        login_wallet_id=WalletId.new(),
         refresh_token_hash=RefreshTokenHash("hash-1", "salt-1", 0),
         device_id="device-1",
         expires_at=NOW + timedelta(days=30),
@@ -522,6 +523,7 @@ class DeterministicTokenIssuer:
 class FakeUserRepository:
     def __init__(self) -> None:
         self.users_by_id: dict[str, User] = {}
+        self.wallets: dict[tuple[str, str], WalletId] = {}
 
     def save(self, user: User) -> None:
         self.users_by_id[str(user.user_id)] = user
@@ -531,6 +533,12 @@ class FakeUserRepository:
 
     def get_by_wallet(self, wallet: WalletAddress) -> User | None:
         return next((user for user in self.users_by_id.values() if user.primary_wallet == wallet), None)
+
+    def get_wallet_id_for_address(self, user_id: UserId, wallet: WalletAddress) -> WalletId:
+        key = (str(user_id), str(wallet))
+        if key not in self.wallets:
+            self.wallets[key] = WalletId.new()
+        return self.wallets[key]
 
 
 class FakeLoginChallengeRepository:

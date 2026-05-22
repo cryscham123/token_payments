@@ -72,7 +72,8 @@ def test_order_initialization_creates_pending_order_with_product_snapshot() -> N
         store_wallet=STORE_WALLET,
         supported_chain_ids=(11155111,),
     )
-    customer = Customer(customer_id=CUSTOMER_ID, user_id=USER_ID, customer_wallet=WALLET)
+    customer = Customer(customer_id=CUSTOMER_ID, user_id=USER_ID)
+    object.__setattr__(customer, "_customer_wallet", WALLET)
 
     order = Order.initialize_order(
         order_id=ORDER_ID,

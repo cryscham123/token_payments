@@ -459,7 +459,7 @@ def _run_happy_path_checkout() -> SmokeScenarioResult:
     payment_processed_commands = _InMemoryProcessedCommandRepository()
     approval_processed_commands = _InMemoryProcessedCommandRepository()
 
-    customer = Customer(customer_id=customer_id, user_id=user_id, customer_wallet=wallet_from)
+    customer = Customer(customer_id=customer_id, user_id=user_id)
     order_product = OrderProduct(product_id=product_id, name="Deterministic Checkout Item", price=unit_price)
     order_store = OrderStore(
         store_id=store_id,
@@ -1592,7 +1592,7 @@ def _build_compensation_fixture(marker: str) -> _CompensationCheckoutFixture:
     approval_processed_commands = _InMemoryProcessedCommandRepository()
     order_processed_commands = _InMemoryProcessedCommandRepository()
 
-    customer = Customer(customer_id=customer_id, user_id=user_id, customer_wallet=wallet_from)
+    customer = Customer(customer_id=customer_id, user_id=user_id)
     order_product = OrderProduct(product_id=product_id, name="Deterministic Compensation Item", price=unit_price)
     order_store = OrderStore(
         store_id=store_id,
