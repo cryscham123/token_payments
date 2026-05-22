@@ -558,6 +558,27 @@ class AuthApplicationService:
                 raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, "linked wallet user is missing or inactive")
             return user, wallet, False
 
+        user = self._users.get_by_wallet(challenge.wallet)
+        if user is not None:
+            if not user.active:
+                raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, "linked wallet user is missing or inactive")
+            active_same_chain = [
+                item
+                for item in self._wallets.list_for_user(user.user_id)
+                if item.chain_id == challenge.chain_id and item.is_active()
+            ]
+            wallet = UserWallet(
+                wallet_id=WalletId.new(),
+                user_id=user.user_id,
+                address=challenge.wallet,
+                chain_id=challenge.chain_id,
+                wallet_type=WalletType.EOA,
+                verification_status=WalletVerificationStatus.VERIFIED,
+                primary=not active_same_chain,
+                linked_at=now,
+            )
+            return user, wallet, False
+
         user = User.register_by_wallet(
             UserId(_new_text_id(self._user_id_generator, "user_id_generator")),
             challenge.wallet,

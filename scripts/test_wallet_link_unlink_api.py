@@ -260,6 +260,48 @@ def test_revoke_wallet_blocks_last_verified_wallet_and_publishes_audit_event() -
     assert exc.value.code is AuthErrorCode.LAST_WALLET_REVOKE_DENIED
 
 
+def test_login_with_existing_user_different_chain() -> None:
+    service, repositories, verifier = _service(nonces=("login-nonce-1",))
+
+    # Pre-register user in user repository
+    user = User.register_by_wallet(UserId(USER_ID), PRIMARY_WALLET)
+    repositories.users.save(user)
+
+    # Force a different user ID from the generator if it tries to register a new user
+    service._user_id_generator = SequenceGenerator((OTHER_USER_ID,))
+
+    # Simulate a login challenge on POLYGON_CHAIN_ID
+    from token_payments.contexts.auth.application import RequestLoginChallengeCommand, LoginWithMetaMaskCommand
+    challenge = service.requestLoginChallenge(
+        RequestLoginChallengeCommand(
+            wallet_address=PRIMARY_WALLET,
+            domain=DOMAIN,
+            chain_id=POLYGON_CHAIN_ID,
+        )
+    )
+    verifier.recovered_wallet = PRIMARY_WALLET
+
+    # Try to login
+    result = service.loginWithMetaMask(
+        LoginWithMetaMaskCommand(
+            wallet_address=PRIMARY_WALLET,
+            message=challenge.signing_message,
+            signature="signature-valid",
+            device_id="device-1",
+        )
+    )
+
+    # It should resolve to the existing USER_ID, not a new one
+    assert result.user.user_id == UserId(USER_ID)
+
+    # A new UserWallet should be created for POLYGON_CHAIN_ID and stored in repositories.wallets
+    linked_wallet = repositories.wallets.get_active_by_address(POLYGON_CHAIN_ID, WalletAddress(PRIMARY_WALLET))
+    assert linked_wallet is not None
+    assert linked_wallet.user_id == UserId(USER_ID)
+    assert linked_wallet.address == WalletAddress(PRIMARY_WALLET)
+    assert linked_wallet.chain_id == POLYGON_CHAIN_ID
+
+
 @dataclass
 class FakeRepositories:
     users: "FakeUserRepository"
