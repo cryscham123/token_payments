@@ -8,6 +8,7 @@ from typing import Any, Mapping
 
 from token_payments.contexts.auth.domain import GroupId
 from token_payments.contexts.auth.domain import User, UserRole
+from token_payments.contexts.payment.domain import PaymentAsset, PaymentAssetRegistry
 from token_payments.contexts.store_catalog.domain import (
     ProductStatus,
     ProductVisibility,
@@ -836,7 +837,37 @@ def _merchant_product_payload(
     return payload
 
 
-def _payment_capability_payload(store: StoreProfile, price: Any | None = None) -> dict[str, Any]:
+def _payment_capability_payload(
+    store: StoreProfile,
+    price: Any | None = None,
+    *,
+    asset_registry: PaymentAssetRegistry | None = None,
+) -> dict[str, Any]:
+    if asset_registry is not None:
+        chain_ids = set(store.supported_chain_ids)
+        chains = [chain for chain in asset_registry.chains if chain.enabled and chain.chain_id in chain_ids]
+        accepted_chain_ids = {chain.chain_id for chain in chains}
+        configured_asset_ids = set(store.supported_payment_asset_ids)
+        accepted_assets = [
+            asset
+            for asset in asset_registry.assets
+            if asset.enabled
+            and asset.chain_id in accepted_chain_ids
+            and (not configured_asset_ids or asset.asset_id in configured_asset_ids)
+        ]
+        return {
+            "supportedChains": [
+                {
+                    "chainId": chain.chain_id,
+                    "displayName": chain.display_name,
+                    "nativeSymbol": chain.native_symbol,
+                }
+                for chain in chains
+            ],
+            "acceptedAssets": [_payment_asset_payload(asset) for asset in accepted_assets],
+            "settlement": {"available": store.store_wallet is not None},
+        }
+
     assets = []
     if price is not None:
         assets.append(
@@ -852,6 +883,19 @@ def _payment_capability_payload(store: StoreProfile, price: Any | None = None) -
         "assets": assets,
         "settlement": {"available": store.store_wallet is not None},
     }
+
+
+def _payment_asset_payload(asset: PaymentAsset) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "assetId": asset.asset_id,
+        "assetType": asset.asset_type.value,
+        "chainId": asset.chain_id,
+        "symbol": asset.symbol,
+        "decimals": asset.decimals,
+    }
+    if asset.contract_address is not None:
+        payload["tokenContract"] = {"address": str(asset.contract_address)}
+    return payload
 
 
 def _pagination(*, limit: int, offset: int, count: int) -> dict[str, int | None]:

@@ -13,6 +13,7 @@ from token_payments.contexts.order.application import (
     OrderUseCase,
 )
 from token_payments.contexts.order.domain import Address, OrderItem
+from token_payments.contexts.auth.domain.wallet import WalletId
 from token_payments.shared.domain import Crypto
 
 from .contracts import ApiRequest, ApiResponse, json_response
@@ -36,6 +37,8 @@ class OrdersApi:
                     items=_items_from_body(body),
                     requested_at=request.received_at,
                     causation_id=idempotency_key_from_request(request, body, fallback=request.request_id),
+                    wallet_id=_optional_wallet_id(body, "walletId"),
+                    payment_asset_id=_optional_text(body, "paymentAssetId"),
                 )
             )
             return json_response(_order_creation_payload(result), status_code=201, request_id=request.request_id)
@@ -138,6 +141,20 @@ def _required_text(body: Mapping[str, Any], key: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise OrderApplicationError(OrderErrorCode.VALIDATION_ERROR, f"{key} is required")
     return value.strip()
+
+
+def _optional_text(body: Mapping[str, Any], key: str) -> str | None:
+    value = body.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise OrderApplicationError(OrderErrorCode.VALIDATION_ERROR, f"{key} must be a non-empty string")
+    return value.strip()
+
+
+def _optional_wallet_id(body: Mapping[str, Any], key: str) -> WalletId | None:
+    value = _optional_text(body, key)
+    return WalletId(value) if value is not None else None
 
 
 def _required_int(body: Mapping[str, Any], key: str) -> int:

@@ -533,7 +533,6 @@ SELECT
     payments.amount_token_address,
     payments.amount_decimals,
     payments.chain_id,
-    payments.chain_name,
     payments.wallet_from,
     payments.wallet_to,
     payments.tx_hash,
@@ -829,7 +828,10 @@ def _payment_from_row(row: Mapping[str, Any] | object) -> OperatorPaymentSnapsho
         customer_id=CustomerId(_row_value(row, "customer_id")),
         status=PaymentStatus(_row_value(row, "status")),
         amount=_crypto_from_row(row, "amount"),
-        chain=ChainNetwork(chain_id=int(_row_value(row, "chain_id")), name=str(_row_value(row, "chain_name"))),
+        chain=ChainNetwork(
+            chain_id=int(_row_value(row, "chain_id")),
+            name=str(_optional_row_value(row, "chain_name") or f"chain-{_row_value(row, 'chain_id')}"),
+        ),
         wallet_from=WalletAddress(_row_value(row, "wallet_from")),
         wallet_to=WalletAddress(_row_value(row, "wallet_to")),
         tx_hash=_optional_tx_hash(_row_value(row, "tx_hash")),
@@ -949,6 +951,12 @@ def _row_value(row: Mapping[str, Any] | object, key: str) -> Any:
     if isinstance(row, Mapping):
         return row[key]
     return getattr(row, key)
+
+
+def _optional_row_value(row: Mapping[str, Any] | object, key: str) -> Any:
+    if isinstance(row, Mapping):
+        return row.get(key)
+    return getattr(row, key, None)
 
 
 def _probe_component(probe: object) -> str:

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+from token_payments.contexts.auth.domain.wallet import WalletId
 from token_payments.shared.domain import (
     ChainNetwork,
     CommandId,
@@ -34,6 +35,8 @@ class InitiatePaymentCommand:
     requested_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     causation_id: str | None = None
     event_message_id: MessageId = field(default_factory=MessageId.new)
+    payer_wallet_id: WalletId | str | None = None
+    payment_asset_id: str | None = None
 
     def __post_init__(self) -> None:
         _validate_command_identity(self)
@@ -59,6 +62,14 @@ class InitiatePaymentCommand:
             "requested_at",
             _require_aware_datetime(self.requested_at, "InitiatePaymentCommand.requested_at"),
         )
+        if self.payer_wallet_id is not None and not isinstance(self.payer_wallet_id, WalletId):
+            object.__setattr__(self, "payer_wallet_id", WalletId(str(self.payer_wallet_id)))
+        if self.payment_asset_id is not None:
+            object.__setattr__(
+                self,
+                "payment_asset_id",
+                _require_text(self.payment_asset_id, "InitiatePaymentCommand.payment_asset_id"),
+            )
         _validate_optional_causation(self)
         _validate_event_message_id(self)
 

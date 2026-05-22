@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+from token_payments.contexts.auth.domain.wallet import WalletId
 from token_payments.contexts.order.domain import Address, TrackingId
 from token_payments.shared.domain import CommandId, MessageId, OrderId, ProductId, StoreId, UserId
 
@@ -30,6 +31,8 @@ class CreateOrderCommand:
     event_message_id: MessageId | str = field(default_factory=MessageId.new)
     requested_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     causation_id: str | None = None
+    wallet_id: WalletId | str | None = None
+    payment_asset_id: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "authenticated_user_id", _coerce_user_id(self.authenticated_user_id))
@@ -45,6 +48,10 @@ class CreateOrderCommand:
             "requested_at",
             _require_aware_datetime(self.requested_at, "CreateOrderCommand.requested_at"),
         )
+        if self.wallet_id is not None and not isinstance(self.wallet_id, WalletId):
+            object.__setattr__(self, "wallet_id", WalletId(str(self.wallet_id)))
+        if self.payment_asset_id is not None:
+            object.__setattr__(self, "payment_asset_id", _require_text(self.payment_asset_id, "CreateOrderCommand.payment_asset_id"))
         if self.causation_id is not None:
             object.__setattr__(
                 self,

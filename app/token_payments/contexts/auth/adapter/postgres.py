@@ -9,6 +9,7 @@ import uuid
 from token_payments.contexts.auth.domain import (
     AuthNonce,
     AuthSession,
+    ChallengePurpose,
     ChallengeStatus,
     GroupId,
     GroupType,
@@ -23,7 +24,12 @@ from token_payments.contexts.auth.domain import (
     UserProfileStatus,
     UserRole,
 )
-from token_payments.contexts.auth.domain.wallet import WalletId
+from token_payments.contexts.auth.domain.wallet import (
+    UserWallet,
+    WalletId,
+    WalletType,
+    WalletVerificationStatus,
+)
 from token_payments.shared.adapter.postgres import PostgresConnection
 from token_payments.shared.domain import UserId, WalletAddress
 
@@ -130,7 +136,9 @@ SELECT
     status,
     issued_at,
     verified_at,
-    rejected_reason
+    rejected_reason,
+    purpose,
+    target_user_id
 FROM auth_login_challenges
 WHERE nonce_value = %(nonce_value)s
 """
@@ -146,7 +154,9 @@ SELECT
     status,
     issued_at,
     verified_at,
-    rejected_reason
+    rejected_reason,
+    purpose,
+    target_user_id
 FROM auth_login_challenges
 WHERE wallet_address = %(wallet_address)s
   AND status = 'ISSUED'
@@ -165,7 +175,9 @@ INSERT INTO auth_login_challenges (
     status,
     issued_at,
     verified_at,
-    rejected_reason
+    rejected_reason,
+    purpose,
+    target_user_id
 ) VALUES (
     %(wallet_address)s,
     %(nonce_value)s,
@@ -176,7 +188,9 @@ INSERT INTO auth_login_challenges (
     %(status)s,
     %(issued_at)s,
     %(verified_at)s,
-    %(rejected_reason)s
+    %(rejected_reason)s,
+    %(purpose)s,
+    %(target_user_id)s
 )
 ON CONFLICT (nonce_value) DO UPDATE SET
     wallet_address = EXCLUDED.wallet_address,
@@ -188,7 +202,124 @@ ON CONFLICT (nonce_value) DO UPDATE SET
     issued_at = EXCLUDED.issued_at,
     verified_at = EXCLUDED.verified_at,
     rejected_reason = EXCLUDED.rejected_reason,
+    purpose = EXCLUDED.purpose,
+    target_user_id = EXCLUDED.target_user_id,
     updated_at = now()
+"""
+
+SELECT_WALLET_BY_ID_SQL = """
+SELECT
+    wallet_id,
+    user_id,
+    wallet_address,
+    chain_id,
+    wallet_type,
+    verification_status,
+    "primary",
+    linked_at,
+    revoked_at
+FROM auth_user_wallets
+WHERE wallet_id = %(wallet_id)s
+"""
+
+SELECT_ACTIVE_WALLET_BY_ADDRESS_SQL = """
+SELECT
+    wallet_id,
+    user_id,
+    wallet_address,
+    chain_id,
+    wallet_type,
+    verification_status,
+    "primary",
+    linked_at,
+    revoked_at
+FROM auth_user_wallets
+WHERE chain_id = %(chain_id)s
+  AND wallet_address = %(wallet_address)s
+  AND verification_status = 'VERIFIED'
+  AND revoked_at IS NULL
+LIMIT 1
+"""
+
+SELECT_WALLETS_BY_USER_SQL = """
+SELECT
+    wallet_id,
+    user_id,
+    wallet_address,
+    chain_id,
+    wallet_type,
+    verification_status,
+    "primary",
+    linked_at,
+    revoked_at
+FROM auth_user_wallets
+WHERE user_id = %(user_id)s
+ORDER BY chain_id ASC, linked_at ASC, wallet_id ASC
+"""
+
+SELECT_PRIMARY_WALLET_BY_USER_CHAIN_SQL = """
+SELECT
+    wallet_id,
+    user_id,
+    wallet_address,
+    chain_id,
+    wallet_type,
+    verification_status,
+    "primary",
+    linked_at,
+    revoked_at
+FROM auth_user_wallets
+WHERE user_id = %(user_id)s
+  AND chain_id = %(chain_id)s
+  AND "primary" = true
+  AND verification_status = 'VERIFIED'
+  AND revoked_at IS NULL
+ORDER BY linked_at DESC, wallet_id ASC
+LIMIT 1
+"""
+
+UPSERT_WALLET_SQL = """
+INSERT INTO auth_user_wallets (
+    wallet_id,
+    user_id,
+    wallet_address,
+    chain_id,
+    wallet_type,
+    verification_status,
+    "primary",
+    linked_at,
+    revoked_at
+) VALUES (
+    %(wallet_id)s,
+    %(user_id)s,
+    %(wallet_address)s,
+    %(chain_id)s,
+    %(wallet_type)s,
+    %(verification_status)s,
+    %(primary)s,
+    %(linked_at)s,
+    %(revoked_at)s
+)
+ON CONFLICT (wallet_id) DO UPDATE SET
+    user_id = EXCLUDED.user_id,
+    wallet_address = EXCLUDED.wallet_address,
+    chain_id = EXCLUDED.chain_id,
+    wallet_type = EXCLUDED.wallet_type,
+    verification_status = EXCLUDED.verification_status,
+    "primary" = EXCLUDED."primary",
+    linked_at = EXCLUDED.linked_at,
+    revoked_at = EXCLUDED.revoked_at,
+    updated_at = now()
+"""
+
+UNSET_PRIMARY_WALLETS_FOR_CHAIN_SQL = """
+UPDATE auth_user_wallets
+SET "primary" = false, updated_at = now()
+WHERE user_id = %(user_id)s
+  AND chain_id = %(chain_id)s
+  AND wallet_id <> %(except_wallet_id)s
+  AND verification_status = 'VERIFIED'
+  AND revoked_at IS NULL
 """
 
 SELECT_SESSION_BY_ID_SQL = """
@@ -328,6 +459,85 @@ class PostgresUserRepository:
         return wallet_id
 
 
+class PostgresUserWalletRepository:
+    """Persist canonical verified wallets inside an injected transaction."""
+
+    def __init__(self, connection: PostgresConnection) -> None:
+        self._connection = connection
+
+    def save(self, wallet: UserWallet) -> None:
+        if not isinstance(wallet, UserWallet):
+            raise ValueError("PostgresUserWalletRepository.save requires a UserWallet")
+        self._connection.execute(
+            UPSERT_WALLET_SQL,
+            {
+                "wallet_id": str(wallet.wallet_id),
+                "user_id": str(wallet.user_id),
+                "wallet_address": str(wallet.address),
+                "chain_id": wallet.chain_id,
+                "wallet_type": wallet.wallet_type.value,
+                "verification_status": wallet.verification_status.value,
+                "primary": wallet.primary,
+                "linked_at": wallet.linked_at,
+                "revoked_at": wallet.revoked_at,
+            },
+        )
+
+    def get_by_id(self, wallet_id: WalletId) -> UserWallet | None:
+        if not isinstance(wallet_id, WalletId):
+            raise ValueError("PostgresUserWalletRepository.get_by_id requires a WalletId")
+        row = _fetch_one(self._connection.execute(SELECT_WALLET_BY_ID_SQL, {"wallet_id": str(wallet_id)}))
+        return _row_to_wallet(row) if row is not None else None
+
+    def get_active_by_address(self, chain_id: int, wallet: WalletAddress) -> UserWallet | None:
+        if isinstance(chain_id, bool) or not isinstance(chain_id, int) or chain_id <= 0:
+            raise ValueError("PostgresUserWalletRepository.get_active_by_address requires positive chain_id")
+        if not isinstance(wallet, WalletAddress):
+            raise ValueError("PostgresUserWalletRepository.get_active_by_address requires a WalletAddress")
+        row = _fetch_one(
+            self._connection.execute(
+                SELECT_ACTIVE_WALLET_BY_ADDRESS_SQL,
+                {"chain_id": chain_id, "wallet_address": str(wallet)},
+            )
+        )
+        return _row_to_wallet(row) if row is not None else None
+
+    def list_for_user(self, user_id: UserId) -> tuple[UserWallet, ...]:
+        if not isinstance(user_id, UserId):
+            raise ValueError("PostgresUserWalletRepository.list_for_user requires a UserId")
+        result = self._connection.execute(SELECT_WALLETS_BY_USER_SQL, {"user_id": str(user_id)})
+        return tuple(_row_to_wallet(row) for row in result)
+
+    def get_primary_for_user_chain(self, user_id: UserId, chain_id: int) -> UserWallet | None:
+        if not isinstance(user_id, UserId):
+            raise ValueError("PostgresUserWalletRepository.get_primary_for_user_chain requires a UserId")
+        if isinstance(chain_id, bool) or not isinstance(chain_id, int) or chain_id <= 0:
+            raise ValueError("PostgresUserWalletRepository.get_primary_for_user_chain requires positive chain_id")
+        row = _fetch_one(
+            self._connection.execute(
+                SELECT_PRIMARY_WALLET_BY_USER_CHAIN_SQL,
+                {"user_id": str(user_id), "chain_id": chain_id},
+            )
+        )
+        return _row_to_wallet(row) if row is not None else None
+
+    def unset_primary_for_chain(self, user_id: UserId, chain_id: int, except_wallet_id: WalletId) -> None:
+        if not isinstance(user_id, UserId):
+            raise ValueError("PostgresUserWalletRepository.unset_primary_for_chain requires a UserId")
+        if isinstance(chain_id, bool) or not isinstance(chain_id, int) or chain_id <= 0:
+            raise ValueError("PostgresUserWalletRepository.unset_primary_for_chain requires positive chain_id")
+        if not isinstance(except_wallet_id, WalletId):
+            raise ValueError("PostgresUserWalletRepository.unset_primary_for_chain requires a WalletId")
+        self._connection.execute(
+            UNSET_PRIMARY_WALLETS_FOR_CHAIN_SQL,
+            {
+                "user_id": str(user_id),
+                "chain_id": chain_id,
+                "except_wallet_id": str(except_wallet_id),
+            },
+        )
+
+
 class PostgresUserProfileRepository:
     """Persist auth user profiles inside an injected transaction."""
 
@@ -383,6 +593,8 @@ class PostgresLoginChallengeRepository:
                 "rejected_reason": (
                     challenge.rejected_reason.value if challenge.rejected_reason is not None else None
                 ),
+                "purpose": challenge.purpose.value,
+                "target_user_id": str(challenge.target_user_id) if challenge.target_user_id is not None else None,
             },
         )
 
@@ -639,8 +851,23 @@ def _row_to_profile(row: Mapping[str, Any] | object) -> UserProfile:
     )
 
 
+def _row_to_wallet(row: Mapping[str, Any] | object) -> UserWallet:
+    return UserWallet(
+        wallet_id=WalletId(uuid.UUID(str(_row_value(row, "wallet_id")))),
+        user_id=UserId(_row_value(row, "user_id")),
+        address=WalletAddress(str(_row_value(row, "wallet_address"))),
+        chain_id=int(_row_value(row, "chain_id")),
+        wallet_type=WalletType(str(_row_value(row, "wallet_type"))),
+        verification_status=WalletVerificationStatus(str(_row_value(row, "verification_status"))),
+        primary=bool(_row_value(row, "primary")),
+        linked_at=_row_value(row, "linked_at"),
+        revoked_at=_row_value(row, "revoked_at"),
+    )
+
+
 def _row_to_challenge(row: Mapping[str, Any] | object) -> LoginChallenge:
     rejected_reason = _row_value(row, "rejected_reason")
+    target_user_id = _optional_row_value(row, "target_user_id")
     return LoginChallenge(
         wallet=WalletAddress(str(_row_value(row, "wallet_address"))),
         nonce=AuthNonce(
@@ -654,6 +881,8 @@ def _row_to_challenge(row: Mapping[str, Any] | object) -> LoginChallenge:
         chain_id=_optional_int_row_value(row, "chain_id"),
         verified_at=_row_value(row, "verified_at"),
         rejected_reason=LoginFailureReason(rejected_reason) if rejected_reason is not None else None,
+        purpose=ChallengePurpose(_optional_row_value(row, "purpose") or ChallengePurpose.LOGIN.value),
+        target_user_id=UserId(target_user_id) if target_user_id is not None else None,
     )
 
 

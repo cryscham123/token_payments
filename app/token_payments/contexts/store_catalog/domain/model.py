@@ -90,6 +90,7 @@ class StorePaymentSettings:
     store_id: StoreId
     store_wallet: WalletAddress | str
     supported_chain_ids: tuple[int, ...]
+    supported_payment_asset_ids: tuple[str, ...] = ()
     active: bool = True
 
     def __post_init__(self) -> None:
@@ -104,6 +105,10 @@ class StorePaymentSettings:
         if len(set(chains)) != len(chains):
             raise ValueError("StorePaymentSettings.supported_chain_ids cannot contain duplicates")
         object.__setattr__(self, "supported_chain_ids", chains)
+        asset_ids = tuple(_bounded_text(asset_id, "StorePaymentSettings.supported_payment_asset_ids", max_length=120) for asset_id in self.supported_payment_asset_ids)
+        if len(set(asset_ids)) != len(asset_ids):
+            raise ValueError("StorePaymentSettings.supported_payment_asset_ids cannot contain duplicates")
+        object.__setattr__(self, "supported_payment_asset_ids", asset_ids)
 
     def supports_chain(self, chain_id: int) -> bool:
         return _positive_int(chain_id, "chain_id") in self.supported_chain_ids
@@ -210,6 +215,10 @@ class StoreProfile:
     @property
     def supported_chain_ids(self) -> tuple[int, ...]:
         return self.payment_settings.supported_chain_ids if self.payment_settings is not None else ()
+
+    @property
+    def supported_payment_asset_ids(self) -> tuple[str, ...]:
+        return self.payment_settings.supported_payment_asset_ids if self.payment_settings is not None else ()
 
     def supports_chain(self, chain_id: int) -> bool:
         return self.payment_settings is not None and self.payment_settings.supports_chain(chain_id)

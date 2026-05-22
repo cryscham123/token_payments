@@ -4,6 +4,7 @@ from .model import (
     AuthEvent,
     AuthNonce,
     AuthSession,
+    ChallengePurpose,
     ChallengeStatus,
     Group,
     GroupId,
@@ -30,6 +31,9 @@ from .model import (
     UserLoggedInEvent,
     UserRegisteredEvent,
     UserRole,
+    WalletLinkedEvent,
+    WalletPrimaryChangedEvent,
+    WalletRevokedEvent,
     WalletVerifiedEvent,
 )
 from .profile import UserProfile, UserProfileStatus
@@ -38,6 +42,7 @@ __all__ = [
     "AuthEvent",
     "AuthNonce",
     "AuthSession",
+    "ChallengePurpose",
     "ChallengeStatus",
     "Group",
     "GroupId",
@@ -66,5 +71,8 @@ __all__ = [
     "UserProfileStatus",
     "UserRegisteredEvent",
     "UserRole",
+    "WalletLinkedEvent",
+    "WalletPrimaryChangedEvent",
+    "WalletRevokedEvent",
     "WalletVerifiedEvent",
 ]

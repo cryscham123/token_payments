@@ -28,11 +28,11 @@ CheckoutProcessManager consumes checkout events from the checkout context adapte
 7. CheckoutProcessManager가 `InventoryReservedEvent`를 소비한다.
 8. CheckoutProcessManager가 `InitiatePaymentCommand`를 발행한다.
 9. Payment Context가 `InitiatePaymentCommand`를 수신한다.
-10. Payment Context가 `Payment(AWAITING_SIGNATURE, expiresAt)`를 만들고 `paymentRequest + gasEstimate(buffered)`를 반환한다.
+10. Payment Context가 selected payer wallet과 registry-driven `paymentAssetId`를 확인한 뒤 `Payment(AWAITING_SIGNATURE, expiresAt)`를 만들고 `paymentRequest + gasEstimate(buffered)`를 반환한다.
 11. Customer Browser가 MetaMask 지갑 연결, nonce 서명, 결제 트랜잭션 전송을 진행한다.
 12. Customer Browser가 `txHash`를 Payment Context에 제출하고, Payment가 `SUBMITTED`로 전이한다.
 13. Payment Context가 Blockchain RPC에 `monitorTransaction(txHash)`를 호출한다.
-14. Blockchain RPC가 confirmed receipt를 반환한다.
+14. Blockchain RPC가 confirmed receipt를 반환하고, ERC-20 stablecoin 결제는 USDC/USDT 같은 enabled asset의 Transfer log에서 token, payer wallet, recipient, amount를 검증한다.
 15. Payment Context가 `PaymentConfirmedEvent`를 발행한다.
 16. CheckoutProcessManager가 `PaymentConfirmedEvent`를 소비한다.
 17. CheckoutProcessManager가 `RequestStoreApprovalCommand`를 발행한다.
@@ -59,6 +59,8 @@ CheckoutProcessManager consumes checkout events from the checkout context adapte
 | 중복 `MessageId` | 이미 처리된 메시지로 판단하고 추가 커맨드를 발행하지 않는다 |
 
 보상 커맨드는 결정적 `commandId = OrderId + action`을 사용한다. 재시도 시에도 같은 command id가 사용되어 환불, 재고 해제, 주문 취소가 중복 실행되지 않아야 한다.
+
+Stablecoin checkout scope is registry-driven: native coin and enabled ERC-20 stablecoin assets such as USDC and USDT are supported, while arbitrary ERC-20 tokens are not. Permit, gas sponsorship, swap, and exchange-rate conversion are future scope. `chain_id` is the canonical network key; display names come from the chain registry. Payment authorization rows own expected payer wallet/payment terms, and payment rows own observed transaction/receipt results.
 
 ## SIWE MetaMask Login
 

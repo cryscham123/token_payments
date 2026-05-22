@@ -4,13 +4,13 @@ This document captures the Live API Runtime Composition boundary for the local T
 
 Default `api`/`serve-api` commands keep the no-server-start preview boundary. Use `PYTHONPATH=app python3 -m token_payments serve-api --live --dry-run` for a bounded live server plan, and `PYTHONPATH=app python3 -m token_payments serve-api --live --confirm-live-api` only when an approved live environment is ready to start the long-running server.
 
-이 문서는 `23-user-store-product-profile-catalog` 진행 중인 로컬 backend API를 기준으로 한 최종 명세 초안이다. Route surface는 현재 `app/token_payments/api/http.py`의 route manifest 42개를 기준으로 고정한다.
+이 문서는 `25-multi-wallet-accounts` 진행 중인 로컬 backend API를 기준으로 한 최종 명세 초안이다. Route surface는 현재 `app/token_payments/api/http.py`의 route manifest 47개를 기준으로 고정한다.
 
 ## Route Surface Contract
 
 ### Public HTTP route surface
 
-Public HTTP route surface is exactly the current 42-route manifest from `app/token_payments/api/http.py`. This manifest contains auth session routes, order creation, checkout tracking, payment txHash submission, public store profile reads, merchant store profile listing/update routes, admin store catalog provisioning routes, store-owner product registration, store owner inventory query/mutation routes, merchant member/invitation routes, operator dashboard/detail reads, and cancel/retry/replay operator actions. It does not include store owner manual approval routes, role/permission full CRUD, platform group CRUD, personal group CRUD, owner transfer, settlement wallet mutation, or checkout saga command endpoints.
+Public HTTP route surface is exactly the current 47-route manifest from `app/token_payments/api/http.py`. This manifest contains auth session routes, authenticated wallet link/list/primary/revoke routes, order creation, checkout tracking, payment txHash submission, public store profile reads, merchant store profile listing/update routes, admin store catalog provisioning routes, store-owner product registration, store owner inventory query/mutation routes, merchant member/invitation routes, operator dashboard/detail reads, and cancel/retry/replay operator actions. It does not include store owner manual approval routes, role/permission full CRUD, platform group CRUD, personal group CRUD, owner transfer, settlement wallet mutation, or checkout saga command endpoints.
 
 ### Message listener input surface
 
@@ -41,6 +41,16 @@ Catalog query filtering is the PostgreSQL baseline for phase 23. Query text, cat
 Order creation and checkout start must revalidate server-side current store/product/price/inventory/payment capability state. Client-provided product detail, price, stock, chain, asset, or settlement capability values from public catalog reads are hints only and must not be trusted as authorization or pricing inputs.
 
 Elasticsearch, DID-based account identity, and email account recovery are future scope. Phase 23 documents their boundaries but does not add search engine services, DID flows, or email recovery implementations.
+
+### Multi-wallet and stablecoin payment contract
+
+The login wallet is the wallet that signs the SIWE session challenge. A linked wallet is an authenticated user's verified, active wallet record. A payer wallet is the linked wallet selected for checkout by `walletId`; when omitted, checkout chooses that user's primary linked wallet for the selected asset chain. A settlement wallet is the store-side destination for payment proceeds and is a separate store payment setting. wallet revocation does not recover assets and does not rewrite historical payment records.
+
+Checkout write APIs accept `paymentAssetId` and optional `walletId`. They never accept a raw wallet address or arbitrary token address as proof of ownership or payment asset support. Store and product capability responses use `supportedChains` and `acceptedAssets`; display metadata is derived from the registry, while `chain_id` remains the canonical network key. `payment_authorizations` owns expected payer wallet, asset, recipient, chain, and amount terms. `payments` owns observed transaction hash, transaction status, and receipt verification result.
+
+Stablecoin support is registry-driven. The local registry may enable native coin payments plus ERC-20 stablecoin assets such as USDC and USDT; disabled assets and arbitrary ERC-20 contracts are rejected. permit, gas sponsorship, swap, exchange-rate conversion, DID identity, and email account recovery remain future scope.
+
+Roadmap status note: Kafka live worker, multi-wallet, and stablecoin support are implemented in the local runtime contract. Historical architecture wording, "ERC-20/USDC/USDT payment support is not an immediate roadmap phase", is superseded by phase 25. Counterfactual linked wallets are not implemented; verified linked wallets are implemented through the authenticated wallet link APIs.
 
 ### Store profile API surface
 
@@ -227,7 +237,7 @@ Request body size is bounded by `REQUEST_BODY_MAX_BYTES`. Exceeding it returns `
 
 ## Live System Routes And Observability
 
-`GET /healthz` and `GET /readyz` are live server-only system routes and are not part of the 42-route public facade manifest. `/healthz` reports process/runtime health only and must not open PostgreSQL, Kafka, Blockchain, Docker, or local `.env`. `/readyz` summarizes injected PostgreSQL/Kafka/Blockchain readiness probes; unavailable components return `503` with bounded component details.
+`GET /healthz` and `GET /readyz` are live server-only system routes and are not part of the 47-route public facade manifest. `/healthz` reports process/runtime health only and must not open PostgreSQL, Kafka, Blockchain, Docker, or local `.env`. `/readyz` summarizes injected PostgreSQL/Kafka/Blockchain readiness probes; unavailable components return `503` with bounded component details.
 
 All HTTP responses include `X-Request-Id` when a request id is known, and an incoming `X-Request-Id` is preserved. Live access log events include method, path template or route id, status, request id, duration, actor summary, and error code. Access logs must not record cookie values, signed tokens, authorization headers, private keys, signatures, or full request bodies.
 
@@ -262,6 +272,11 @@ Common status codes:
 | --- | --- | --- |
 | `requestLoginChallenge` | `POST` | `/auth/challenges` |
 | `loginWithMetaMask` | `POST` | `/auth/sessions` |
+| `requestWalletLinkChallenge` | `POST` | `/auth/wallets/challenges` |
+| `linkWallet` | `POST` | `/auth/wallets` |
+| `listWallets` | `GET` | `/auth/wallets` |
+| `setPrimaryWallet` | `PATCH` | `/auth/wallets/{walletId}/primary` |
+| `revokeWallet` | `DELETE` | `/auth/wallets/{walletId}` |
 | `refreshSession` | `POST` | `/auth/sessions/refresh` |
 | `logout` | `DELETE` | `/auth/sessions` |
 | `getCurrentUser` | `GET` | `/auth/me` |
@@ -360,7 +375,7 @@ Errors: `400 VALIDATION_ERROR`.
 
 MetaMask `personal_sign`으로 서명한 SIWE v1 message를 검증하고 session/token을 발급한다. Operation id는 기존 route compatibility를 위해 `loginWithMetaMask`를 유지한다. Server는 message의 `nonce`, `domain`, `address`, `chainId`, `issuedAt`, `expirationTime`, `uri`, `version`이 저장된 challenge와 일치하는지 확인한 뒤 wallet account type에 따라 EOA signature recovery 또는 deployed ERC-1271 smart contract wallet verification을 수행한다. Session response의 `signatureVerification`은 어떤 account type으로 성공했는지에 대한 audit event가 아니라 지원 범위를 설명하는 redacted runtime contract metadata다.
 
-ERC-1271 verification은 configured auth chain RPC에서 signer wallet의 `eth_getCode` 결과가 deployed contract일 때만 적용된다. Contract wallet은 SIWE `personal_sign` digest와 signature를 `isValidSignature(bytes32,bytes)`로 검증하며, success magic value `0x1626ba7e`만 유효하다. Revert, wrong magic value, timeout, unsupported chain, undeployed/counterfactual account verification failure는 `401 INVALID_SIGNATURE` 또는 chain mismatch에 대한 bounded auth failure로 매핑된다. Linked wallets API와 ERC-6492 counterfactual account deployment/signature wrapping은 future scope이며 현재 route surface에 추가하지 않는다. Unsupported ERC-6492/counterfactual accounts are future scope; linked wallets are not implemented.
+ERC-1271 verification은 configured auth chain RPC에서 signer wallet의 `eth_getCode` 결과가 deployed contract일 때만 적용된다. Contract wallet은 SIWE `personal_sign` digest와 signature를 `isValidSignature(bytes32,bytes)`로 검증하며, success magic value `0x1626ba7e`만 유효하다. Revert, wrong magic value, timeout, unsupported chain, undeployed/counterfactual account verification failure는 `401 INVALID_SIGNATURE` 또는 chain mismatch에 대한 bounded auth failure로 매핑된다. Authenticated linked wallet APIs reuse SIWE messages with `WALLET_LINK` challenge purpose. ERC-6492 counterfactual account deployment/signature wrapping remains future scope.
 
 Request:
 
@@ -418,6 +433,109 @@ Response `200`:
 Browser HTTP response headers include `Set-Cookie` values for signed access/refresh session tokens and the `csrf_token` double-submit cookie. Cookie values are not shown in response examples.
 
 Errors: `400 VALIDATION_ERROR`, `401 INVALID_SIGNATURE`, `401 WALLET_MISMATCH`, `401 SIWE_MESSAGE_MISMATCH`, `409 EXPIRED_CHALLENGE`, `409 REUSED_NONCE`.
+
+### `POST /auth/wallets/challenges`
+
+인증된 사용자가 추가 wallet을 연결하기 위한 SIWE v1 challenge를 발급한다. Login challenge와 같은 nonce repository를 쓰지만 `purpose`는 `WALLET_LINK`이고 `targetUserId`는 현재 authenticated user id로 고정된다. 이미 다른 active user에게 같은 `(chainId, walletAddress)` wallet이 연결되어 있으면 `409 WALLET_ALREADY_LINKED`를 반환한다.
+
+Request:
+
+```json
+{
+  "walletAddress": "0x2222222222222222222222222222222222222222",
+  "domain": "token-payments.local",
+  "uri": "https://token-payments.local",
+  "chainId": 1337
+}
+```
+
+Response `201`: same SIWE challenge shape as `POST /auth/challenges`, plus:
+
+```json
+{
+  "purpose": "WALLET_LINK",
+  "targetUserId": "user-001"
+}
+```
+
+Errors: `400 VALIDATION_ERROR`, `401 AUTHENTICATION_REQUIRED`, `409 WALLET_ALREADY_LINKED`.
+
+### `POST /auth/wallets`
+
+`requestWalletLinkChallenge`로 발급받은 SIWE message와 signature를 검증하고 wallet을 현재 authenticated user에게 연결한다. Server는 request body의 user id를 신뢰하지 않고 session actor와 challenge `targetUserId`가 같은지 확인한다. 같은 `(chainId, walletAddress)` active wallet은 한 user에게만 연결될 수 있다.
+
+Request:
+
+```json
+{
+  "walletAddress": "0x2222222222222222222222222222222222222222",
+  "message": "<siwe-wallet-link-message>",
+  "signature": "0xsignature",
+  "walletType": "EOA"
+}
+```
+
+Response `201`:
+
+```json
+{
+  "wallet": {
+    "walletId": "wallet-002",
+    "userId": "user-001",
+    "walletAddress": "0x2222222222222222222222222222222222222222",
+    "chainId": 1337,
+    "walletType": "EOA",
+    "verificationStatus": "VERIFIED",
+    "primary": false,
+    "linkedAt": "2026-05-22T01:00:00+00:00",
+    "revokedAt": null
+  }
+}
+```
+
+Errors: `400 VALIDATION_ERROR`, `401 AUTHENTICATION_REQUIRED`, `401 INVALID_SIGNATURE`, `401 WALLET_MISMATCH`, `401 SIWE_MESSAGE_MISMATCH`, `409 WALLET_LINK_CHALLENGE_MISMATCH`, `409 WALLET_ALREADY_LINKED`.
+
+### `GET /auth/wallets`
+
+현재 authenticated user의 wallet 목록을 반환한다. Revoked wallet도 audit/history 표시를 위해 포함될 수 있으며 login/payment selection에는 `verificationStatus=VERIFIED` and `revokedAt=null`인 wallet만 사용할 수 있다.
+
+Response `200`:
+
+```json
+{
+  "wallets": [
+    {
+      "walletId": "wallet-001",
+      "userId": "user-001",
+      "walletAddress": "0x1111111111111111111111111111111111111111",
+      "chainId": 1337,
+      "walletType": "EOA",
+      "verificationStatus": "VERIFIED",
+      "primary": true,
+      "linkedAt": "2026-05-17T10:00:00+09:00",
+      "revokedAt": null
+    }
+  ]
+}
+```
+
+Errors: `401 AUTHENTICATION_REQUIRED`.
+
+### `PATCH /auth/wallets/{walletId}/primary`
+
+현재 authenticated user가 소유한 verified active wallet만 chain-scoped primary로 지정할 수 있다. 같은 chain의 다른 active wallet은 primary에서 해제되고 다른 chain의 primary wallet은 유지된다.
+
+Response `200`: same `{ "wallet": ... }` shape as `POST /auth/wallets`.
+
+Errors: `401 AUTHENTICATION_REQUIRED`, `404 WALLET_NOT_FOUND`, `409 WALLET_NOT_ACTIVE`.
+
+### `DELETE /auth/wallets/{walletId}`
+
+현재 authenticated user가 소유한 wallet을 revoke한다. 마지막 verified active wallet revoke는 복구 정책이 없으므로 `409 LAST_WALLET_REVOKE_DENIED`로 거부한다. Revoke는 wallet audit event를 남기며 revoked wallet은 session refresh나 payment selection에 사용할 수 없다.
+
+Response `200`: same `{ "wallet": ... }` shape as `POST /auth/wallets`, with `verificationStatus=REVOKED`.
+
+Errors: `401 AUTHENTICATION_REQUIRED`, `404 WALLET_NOT_FOUND`, `409 WALLET_NOT_ACTIVE`, `409 LAST_WALLET_REVOKE_DENIED`.
 
 ### `POST /auth/sessions/refresh`
 

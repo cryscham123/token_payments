@@ -10,6 +10,7 @@ from typing import Any
 from token_payments.contexts.auth.domain import (
     AuthNonce,
     AuthSession,
+    ChallengePurpose,
     IssuedToken,
     LoginChallenge,
     LoginChallengeRejected,
@@ -21,10 +22,18 @@ from token_payments.contexts.auth.domain import (
     UserLoggedInEvent,
     UserProfile,
     UserRegisteredEvent,
+    WalletLinkedEvent,
+    WalletPrimaryChangedEvent,
+    WalletRevokedEvent,
     WalletVerifiedEvent,
 )
 from token_payments.shared.domain import UserId, WalletAddress
-from token_payments.contexts.auth.domain.wallet import WalletId
+from token_payments.contexts.auth.domain.wallet import (
+    UserWallet,
+    WalletId,
+    WalletType,
+    WalletVerificationStatus,
+)
 
 from .ports import (
     AuthEventPublisher,
@@ -33,6 +42,8 @@ from .ports import (
     CurrentUserQuery,
     GetCurrentUserProfileQuery,
     GetUserProfileQuery,
+    LinkWalletCommand,
+    ListWalletsQuery,
     LoginChallengeRepository,
     LoginChallengeResult,
     LoginResult,
@@ -40,13 +51,20 @@ from .ports import (
     LogoutCommand,
     RefreshSessionCommand,
     RequestLoginChallengeCommand,
+    RequestWalletLinkChallengeCommand,
+    RevokeWalletCommand,
+    SetPrimaryWalletCommand,
     TokenIssuer,
     UpdateUserProfileCommand,
     UserProfileRepository,
     UserRepository,
+    UserWalletRepository,
+    WalletLinkChallengeResult,
+    WalletResult,
     WalletSignatureVerificationFailure,
     WalletSignatureVerificationResult,
     WalletSignatureVerifier,
+    WalletsResult,
 )
 from .siwe import (
     SIWE_VERSION,
@@ -68,6 +86,11 @@ class AuthErrorCode(StrEnum):
     AUTHENTICATION_REQUIRED = "AUTHENTICATION_REQUIRED"
     USER_PROFILE_FORBIDDEN = "USER_PROFILE_FORBIDDEN"
     USER_PROFILE_NOT_FOUND = "USER_PROFILE_NOT_FOUND"
+    WALLET_ALREADY_LINKED = "WALLET_ALREADY_LINKED"
+    WALLET_LINK_CHALLENGE_MISMATCH = "WALLET_LINK_CHALLENGE_MISMATCH"
+    WALLET_NOT_FOUND = "WALLET_NOT_FOUND"
+    WALLET_NOT_ACTIVE = "WALLET_NOT_ACTIVE"
+    LAST_WALLET_REVOKE_DENIED = "LAST_WALLET_REVOKE_DENIED"
 
 
 class AuthApplicationError(Exception):
@@ -92,6 +115,7 @@ class AuthApplicationService:
         signature_verifier: WalletSignatureVerifier,
         token_issuer: TokenIssuer,
         event_publisher: AuthEventPublisher,
+        wallets: UserWalletRepository | None = None,
         rbac: AuthRbacRepository | None = None,
         profiles: UserProfileRepository | None = None,
         challenge_ttl: timedelta = timedelta(minutes=5),
@@ -102,6 +126,7 @@ class AuthApplicationService:
         self._user_id_generator = user_id_generator
         self._session_id_generator = session_id_generator
         self._users = users
+        self._wallets = wallets
         self._login_challenges = login_challenges
         self._sessions = sessions
         self._rbac = rbac
@@ -147,6 +172,49 @@ class AuthApplicationService:
         self._login_challenges.save(challenge)
         return LoginChallengeResult(challenge=challenge, signing_message=signing_message)
 
+    def requestWalletLinkChallenge(self, command: RequestWalletLinkChallengeCommand) -> WalletLinkChallengeResult:
+        if not isinstance(command.actor_user_id, UserId):
+            raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, "actor_user_id must be a UserId")
+        user = self._users.get_by_id(command.actor_user_id)
+        if user is None or not user.active:
+            raise AuthApplicationError(AuthErrorCode.AUTHENTICATION_REQUIRED, _message_for_code(AuthErrorCode.AUTHENTICATION_REQUIRED))
+
+        wallet = _coerce_wallet(command.wallet_address)
+        domain = _require_text(command.domain, "domain")
+        chain_id = _require_positive_int(command.chain_id, "chain_id")
+        existing = self._active_wallet_by_address(chain_id, wallet)
+        if existing is not None and existing.user_id != command.actor_user_id:
+            raise AuthApplicationError(AuthErrorCode.WALLET_ALREADY_LINKED, _message_for_code(AuthErrorCode.WALLET_ALREADY_LINKED))
+
+        uri = _optional_text(command.uri, "uri") or _default_siwe_uri(domain)
+        issued_at = _coerce_datetime(command.issued_at or self._now(), "issued_at")
+        nonce_value = _new_siwe_nonce(self._nonce_generator)
+        nonce = AuthNonce(value=nonce_value, expires_at=issued_at + self._challenge_ttl)
+        challenge = LoginChallenge.issue(
+            wallet=wallet,
+            nonce=nonce,
+            issued_at=issued_at,
+            domain=domain,
+            uri=uri,
+            chain_id=chain_id,
+            purpose=ChallengePurpose.WALLET_LINK,
+            target_user_id=command.actor_user_id,
+        )
+        signing_message = _build_siwe_message(
+            SiweMessage(
+                domain=domain,
+                address=wallet,
+                uri=uri,
+                version=SIWE_VERSION,
+                chain_id=chain_id,
+                nonce=nonce.value,
+                issued_at=issued_at,
+                expiration_time=nonce.expires_at,
+            )
+        )
+        self._login_challenges.save(challenge)
+        return WalletLinkChallengeResult(challenge=challenge, signing_message=signing_message)
+
     def loginWithMetaMask(self, command: LoginWithMetaMaskCommand) -> LoginResult:
         now = self._now()
         wallet = _coerce_wallet(command.wallet_address)
@@ -191,23 +259,141 @@ class AuthApplicationService:
             raise AuthApplicationError(_code_for_reason(exc.reason), _message_for_code(_code_for_reason(exc.reason))) from exc
 
         self._login_challenges.save(verified)
-        user = self._users.get_by_wallet(verified.wallet)
-        registered = user is None
-        if user is None:
-            user = User.register_by_wallet(UserId(_new_text_id(self._user_id_generator, "user_id_generator")), verified.wallet)
+        user, login_wallet, registered = self._resolve_login_user_and_wallet(verified, now)
 
         user = user.record_login(now)
         self._users.save(user)
+        if login_wallet is not None:
+            self._wallet_repository().save(login_wallet)
         if registered:
             self._ensure_personal_membership(user, now)
-        session, issued_token = self._create_session_and_tokens(user, verified.wallet, device_id, now)
+        session, issued_token = self._create_session_and_tokens(
+            user,
+            verified.wallet,
+            device_id,
+            now,
+            login_wallet_id=login_wallet.wallet_id if login_wallet is not None else None,
+        )
 
         self._sessions.save(session)
         if registered:
-            self._event_publisher.publish(UserRegisteredEvent(user.user_id, user.primary_wallet, now))
-        self._event_publisher.publish(WalletVerifiedEvent(user.user_id, user.primary_wallet, now))
+            self._event_publisher.publish(UserRegisteredEvent(user.user_id, verified.wallet, now))
+        self._event_publisher.publish(WalletVerifiedEvent(user.user_id, verified.wallet, now))
         self._event_publisher.publish(UserLoggedInEvent(user.user_id, session.session_id, now))
         return LoginResult(user=user, session=session, issued_token=issued_token)
+
+    def linkWallet(self, command: LinkWalletCommand) -> WalletResult:
+        now = self._now()
+        if not isinstance(command.actor_user_id, UserId):
+            raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, "actor_user_id must be a UserId")
+        user = self._users.get_by_id(command.actor_user_id)
+        if user is None or not user.active:
+            raise AuthApplicationError(AuthErrorCode.AUTHENTICATION_REQUIRED, _message_for_code(AuthErrorCode.AUTHENTICATION_REQUIRED))
+        wallet = _coerce_wallet(command.wallet_address)
+        message = _require_text(command.message, "message")
+        signature = _require_text(command.signature, "signature")
+        siwe_message = _parse_siwe_message(message)
+        lookup_nonce = AuthNonce(siwe_message.nonce, now + self._challenge_ttl)
+        challenge = self._login_challenges.get_by_nonce(lookup_nonce)
+        if challenge is None:
+            raise AuthApplicationError(AuthErrorCode.INVALID_SIGNATURE, _message_for_code(AuthErrorCode.INVALID_SIGNATURE))
+        if (
+            challenge.purpose is not ChallengePurpose.WALLET_LINK
+            or challenge.target_user_id != command.actor_user_id
+            or challenge.wallet != wallet
+        ):
+            raise AuthApplicationError(
+                AuthErrorCode.WALLET_LINK_CHALLENGE_MISMATCH,
+                _message_for_code(AuthErrorCode.WALLET_LINK_CHALLENGE_MISMATCH),
+            )
+        try:
+            _ensure_siwe_matches_challenge(siwe_message, challenge, wallet)
+        except AuthApplicationError as exc:
+            reason = (
+                LoginFailureReason.WALLET_MISMATCH
+                if exc.code is AuthErrorCode.WALLET_MISMATCH
+                else LoginFailureReason.SIWE_MESSAGE_MISMATCH
+            )
+            self._reject_challenge(challenge, reason, now)
+            raise
+
+        verification_result = self._verify_wallet_signature(
+            wallet=wallet,
+            message=message,
+            signature=signature,
+            chain_id=siwe_message.chain_id,
+        )
+        if not verification_result.verified:
+            reason, code = _failure_to_login_rejection(verification_result.failure)
+            self._reject_challenge(challenge, reason, now)
+            raise AuthApplicationError(code, _message_for_code(code))
+        try:
+            verified = challenge.confirm_signature_verified(now=now)
+        except LoginChallengeRejected as exc:
+            self._handle_challenge_rejection(challenge, exc.reason, now)
+            raise AuthApplicationError(_code_for_reason(exc.reason), _message_for_code(_code_for_reason(exc.reason))) from exc
+        self._login_challenges.save(verified)
+
+        wallet_repo = self._wallet_repository()
+        existing = wallet_repo.get_active_by_address(siwe_message.chain_id, wallet)
+        if existing is not None:
+            if existing.user_id != command.actor_user_id:
+                raise AuthApplicationError(AuthErrorCode.WALLET_ALREADY_LINKED, _message_for_code(AuthErrorCode.WALLET_ALREADY_LINKED))
+            return WalletResult(existing)
+        active_same_chain = [
+            item
+            for item in wallet_repo.list_for_user(command.actor_user_id)
+            if item.chain_id == siwe_message.chain_id and item.is_active()
+        ]
+        linked = UserWallet(
+            wallet_id=WalletId.new(),
+            user_id=command.actor_user_id,
+            address=wallet,
+            chain_id=siwe_message.chain_id,
+            wallet_type=_coerce_wallet_type(command.wallet_type),
+            verification_status=WalletVerificationStatus.VERIFIED,
+            primary=not active_same_chain,
+            linked_at=now,
+        )
+        wallet_repo.save(linked)
+        self._event_publisher.publish(WalletLinkedEvent(linked.user_id, linked.wallet_id, linked.address, linked.chain_id, now))
+        return WalletResult(linked)
+
+    def listWallets(self, query: ListWalletsQuery) -> WalletsResult:
+        if not isinstance(query.actor_user_id, UserId):
+            raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, "actor_user_id must be a UserId")
+        user = self._users.get_by_id(query.actor_user_id)
+        if user is None or not user.active:
+            raise AuthApplicationError(AuthErrorCode.AUTHENTICATION_REQUIRED, _message_for_code(AuthErrorCode.AUTHENTICATION_REQUIRED))
+        return WalletsResult(self._wallet_repository().list_for_user(query.actor_user_id))
+
+    def setPrimaryWallet(self, command: SetPrimaryWalletCommand) -> WalletResult:
+        now = self._now()
+        wallet = self._owned_wallet(command.actor_user_id, command.wallet_id)
+        if not wallet.is_active():
+            raise AuthApplicationError(AuthErrorCode.WALLET_NOT_ACTIVE, _message_for_code(AuthErrorCode.WALLET_NOT_ACTIVE))
+        wallet_repo = self._wallet_repository()
+        wallet_repo.unset_primary_for_chain(wallet.user_id, wallet.chain_id, wallet.wallet_id)
+        primary = wallet.mark_primary()
+        wallet_repo.save(primary)
+        self._event_publisher.publish(WalletPrimaryChangedEvent(primary.user_id, primary.wallet_id, primary.chain_id, now))
+        return WalletResult(primary)
+
+    def revokeWallet(self, command: RevokeWalletCommand) -> WalletResult:
+        revoked_at = _coerce_datetime(command.revoked_at or self._now(), "revoked_at")
+        wallet = self._owned_wallet(command.actor_user_id, command.wallet_id)
+        if not wallet.is_active():
+            raise AuthApplicationError(AuthErrorCode.WALLET_NOT_ACTIVE, _message_for_code(AuthErrorCode.WALLET_NOT_ACTIVE))
+        active_wallets = [item for item in self._wallet_repository().list_for_user(command.actor_user_id) if item.is_active()]
+        if len(active_wallets) <= 1:
+            raise AuthApplicationError(
+                AuthErrorCode.LAST_WALLET_REVOKE_DENIED,
+                _message_for_code(AuthErrorCode.LAST_WALLET_REVOKE_DENIED),
+            )
+        revoked = wallet.revoke(revoked_at)
+        self._wallet_repository().save(revoked)
+        self._event_publisher.publish(WalletRevokedEvent(revoked.user_id, revoked.wallet_id, revoked.address, revoked.chain_id, revoked_at))
+        return WalletResult(revoked)
 
     def refreshSession(self, command: RefreshSessionCommand) -> LoginResult:
         now = self._now()
@@ -327,10 +513,79 @@ class AuthApplicationService:
             )
         return self._profiles
 
-    def _create_session_and_tokens(self, user: User, wallet_address: WalletAddress, device_id: str, now: datetime) -> tuple[AuthSession, IssuedToken]:
+    def _wallet_repository(self) -> UserWalletRepository:
+        if self._wallets is None:
+            raise AuthApplicationError(
+                AuthErrorCode.VALIDATION_ERROR,
+                "user wallet repository is not configured",
+            )
+        return self._wallets
+
+    def _active_wallet_by_address(self, chain_id: int, wallet: WalletAddress) -> UserWallet | None:
+        if self._wallets is None:
+            return None
+        return self._wallets.get_active_by_address(chain_id, wallet)
+
+    def _owned_wallet(self, actor_user_id: UserId, wallet_id: WalletId) -> UserWallet:
+        if not isinstance(actor_user_id, UserId):
+            raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, "actor_user_id must be a UserId")
+        if not isinstance(wallet_id, WalletId):
+            raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, "wallet_id must be a WalletId")
+        wallet = self._wallet_repository().get_by_id(wallet_id)
+        if wallet is None or wallet.user_id != actor_user_id:
+            raise AuthApplicationError(AuthErrorCode.WALLET_NOT_FOUND, _message_for_code(AuthErrorCode.WALLET_NOT_FOUND))
+        return wallet
+
+    def _resolve_login_user_and_wallet(
+        self,
+        challenge: LoginChallenge,
+        now: datetime,
+    ) -> tuple[User, UserWallet | None, bool]:
+        if self._wallets is None or challenge.chain_id is None:
+            user = self._users.get_by_wallet(challenge.wallet)
+            registered = user is None
+            if user is None:
+                user = User.register_by_wallet(
+                    UserId(_new_text_id(self._user_id_generator, "user_id_generator")),
+                    challenge.wallet,
+                )
+            return user, None, registered
+
+        wallet = self._wallets.get_active_by_address(challenge.chain_id, challenge.wallet)
+        if wallet is not None:
+            user = self._users.get_by_id(wallet.user_id)
+            if user is None or not user.active:
+                raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, "linked wallet user is missing or inactive")
+            return user, wallet, False
+
+        user = User.register_by_wallet(
+            UserId(_new_text_id(self._user_id_generator, "user_id_generator")),
+            challenge.wallet,
+        )
+        wallet = UserWallet(
+            wallet_id=WalletId.new(),
+            user_id=user.user_id,
+            address=challenge.wallet,
+            chain_id=challenge.chain_id,
+            wallet_type=WalletType.EOA,
+            verification_status=WalletVerificationStatus.VERIFIED,
+            primary=True,
+            linked_at=now,
+        )
+        return user, wallet, True
+
+    def _create_session_and_tokens(
+        self,
+        user: User,
+        wallet_address: WalletAddress,
+        device_id: str,
+        now: datetime,
+        *,
+        login_wallet_id: WalletId | None = None,
+    ) -> tuple[AuthSession, IssuedToken]:
         session_id = SessionId(_new_text_id(self._session_id_generator, "session_id_generator"))
         salt = str(session_id)
-        login_wallet_id = self._users.get_wallet_id_for_address(user.user_id, wallet_address)
+        login_wallet_id = login_wallet_id or self._users.get_wallet_id_for_address(user.user_id, wallet_address)
         provisional_session = AuthSession.create(
             session_id=session_id,
             user_id=user.user_id,
@@ -497,6 +752,11 @@ def _message_for_code(code: AuthErrorCode) -> str:
         AuthErrorCode.AUTHENTICATION_REQUIRED: "authenticated session is required",
         AuthErrorCode.USER_PROFILE_FORBIDDEN: "user profile permission denied",
         AuthErrorCode.USER_PROFILE_NOT_FOUND: "user profile was not found",
+        AuthErrorCode.WALLET_ALREADY_LINKED: "wallet is already linked to another active user",
+        AuthErrorCode.WALLET_LINK_CHALLENGE_MISMATCH: "wallet link challenge does not match the authenticated user",
+        AuthErrorCode.WALLET_NOT_FOUND: "wallet was not found for the authenticated user",
+        AuthErrorCode.WALLET_NOT_ACTIVE: "wallet is not a verified active wallet",
+        AuthErrorCode.LAST_WALLET_REVOKE_DENIED: "cannot revoke the last verified wallet",
     }[code]
 
 
@@ -529,6 +789,15 @@ def _coerce_wallet(value: WalletAddress | str) -> WalletAddress:
         return value if isinstance(value, WalletAddress) else WalletAddress(value)
     except ValueError as exc:
         raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, str(exc)) from exc
+
+
+def _coerce_wallet_type(value: WalletType | str) -> WalletType:
+    if isinstance(value, WalletType):
+        return value
+    try:
+        return WalletType(str(value))
+    except ValueError as exc:
+        raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, "wallet_type is invalid") from exc
 
 
 def _coerce_wallet_signature_verification_result(value: object) -> WalletSignatureVerificationResult:

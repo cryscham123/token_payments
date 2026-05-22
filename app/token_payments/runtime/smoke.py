@@ -383,6 +383,7 @@ def _normalize_scenario(scenario: str) -> str:
 
 
 def _run_happy_path_checkout() -> SmokeScenarioResult:
+    from token_payments.contexts.auth.domain.wallet import UserWallet, WalletId, WalletType, WalletVerificationStatus
     from token_payments.contexts.checkout.application import CheckoutProcessManager
     from token_payments.contexts.inventory.application import InventoryCommandHandler, ReserveInventoryCommand
     from token_payments.contexts.inventory.domain import ProductInventory
@@ -439,6 +440,7 @@ def _run_happy_path_checkout() -> SmokeScenarioResult:
     user_id = UserId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c27")
     owner_user_id = UserId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c28")
     tracking_id = TrackingId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c29")
+    wallet_id = WalletId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c2a")
     wallet_from = WalletAddress("0x1111111111111111111111111111111111111111")
     wallet_to = WalletAddress("0x2222222222222222222222222222222222222222")
     token_address = WalletAddress("0x3333333333333333333333333333333333333333")
@@ -460,6 +462,16 @@ def _run_happy_path_checkout() -> SmokeScenarioResult:
     approval_processed_commands = _InMemoryProcessedCommandRepository()
 
     customer = Customer(customer_id=customer_id, user_id=user_id)
+    payer_wallet = UserWallet(
+        wallet_id=wallet_id,
+        user_id=user_id,
+        address=wallet_from,
+        chain_id=chain.chain_id,
+        wallet_type=WalletType.EOA,
+        verification_status=WalletVerificationStatus.VERIFIED,
+        primary=True,
+        linked_at=now,
+    )
     order_product = OrderProduct(product_id=product_id, name="Deterministic Checkout Item", price=unit_price)
     order_store = OrderStore(
         store_id=store_id,
@@ -475,6 +487,7 @@ def _run_happy_path_checkout() -> SmokeScenarioResult:
         stores=_InMemoryOrderStoreRepository({str(store_id): order_store}),
         orders=order_repository,
         outbox_messages=outbox_messages,
+        wallets=_InMemoryUserWalletRepository((payer_wallet,)),
     )
     order_status_projector = OrderStatusEventProjector(order_repository, order_projected_messages)
 
@@ -1522,6 +1535,7 @@ class _CompensationCheckoutFixture:
 
 
 def _build_compensation_fixture(marker: str) -> _CompensationCheckoutFixture:
+    from token_payments.contexts.auth.domain.wallet import UserWallet, WalletId, WalletType, WalletVerificationStatus
     from token_payments.contexts.checkout.application import CheckoutProcessManager
     from token_payments.contexts.inventory.application import InventoryCommandHandler, ReserveInventoryCommand
     from token_payments.contexts.inventory.domain import ProductInventory
@@ -1571,6 +1585,7 @@ def _build_compensation_fixture(marker: str) -> _CompensationCheckoutFixture:
     user_id = UserId(str(_uuid(marker, "27")))
     owner_user_id = UserId(str(_uuid(marker, "28")))
     tracking_id = TrackingId(str(_uuid(marker, "29")))
+    wallet_id = WalletId(str(_uuid(marker, "2a")))
     wallet_from = WalletAddress("0x1111111111111111111111111111111111111111")
     wallet_to = WalletAddress("0x2222222222222222222222222222222222222222")
     token_address = WalletAddress("0x3333333333333333333333333333333333333333")
@@ -1593,6 +1608,16 @@ def _build_compensation_fixture(marker: str) -> _CompensationCheckoutFixture:
     order_processed_commands = _InMemoryProcessedCommandRepository()
 
     customer = Customer(customer_id=customer_id, user_id=user_id)
+    payer_wallet = UserWallet(
+        wallet_id=wallet_id,
+        user_id=user_id,
+        address=wallet_from,
+        chain_id=chain.chain_id,
+        wallet_type=WalletType.EOA,
+        verification_status=WalletVerificationStatus.VERIFIED,
+        primary=True,
+        linked_at=now,
+    )
     order_product = OrderProduct(product_id=product_id, name="Deterministic Compensation Item", price=unit_price)
     order_store = OrderStore(
         store_id=store_id,
@@ -1608,6 +1633,7 @@ def _build_compensation_fixture(marker: str) -> _CompensationCheckoutFixture:
         stores=_InMemoryOrderStoreRepository({str(store_id): order_store}),
         orders=order_repository,
         outbox_messages=outbox_messages,
+        wallets=_InMemoryUserWalletRepository((payer_wallet,)),
     )
     order_command_handler = OrderCommandHandler(order_repository, order_processed_commands, outbox_messages)
     order_status_projector = OrderStatusEventProjector(order_repository, order_projected_messages)
@@ -2660,6 +2686,20 @@ class _InMemoryCustomerRepository:
 
     def get_by_user_id(self, user_id: Any) -> Any | None:
         return self.customers_by_user_id.get(str(user_id))
+
+
+class _InMemoryUserWalletRepository:
+    def __init__(self, wallets: Sequence[Any]) -> None:
+        self.wallets_by_id = {str(wallet.wallet_id): wallet for wallet in wallets}
+
+    def get_by_id(self, wallet_id: Any) -> Any | None:
+        return self.wallets_by_id.get(str(wallet_id))
+
+    def get_primary_for_user_chain(self, user_id: Any, chain_id: int) -> Any | None:
+        for wallet in self.wallets_by_id.values():
+            if wallet.user_id == user_id and wallet.chain_id == chain_id and wallet.primary and wallet.is_active():
+                return wallet
+        return None
 
 
 class _InMemoryOrderStoreRepository:

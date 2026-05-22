@@ -79,6 +79,16 @@ def test_auth_route_manifest_exposes_stable_methods_paths_and_operations() -> No
     assert AUTH_HTTP_ROUTES["request_login_challenge"].operation_id == "requestLoginChallenge"
     assert AUTH_HTTP_ROUTES["login_with_metamask"].method == "POST"
     assert AUTH_HTTP_ROUTES["login_with_metamask"].path == "/auth/sessions"
+    assert AUTH_HTTP_ROUTES["request_wallet_link_challenge"].method == "POST"
+    assert AUTH_HTTP_ROUTES["request_wallet_link_challenge"].path == "/auth/wallets/challenges"
+    assert AUTH_HTTP_ROUTES["link_wallet"].method == "POST"
+    assert AUTH_HTTP_ROUTES["link_wallet"].path == "/auth/wallets"
+    assert AUTH_HTTP_ROUTES["list_wallets"].method == "GET"
+    assert AUTH_HTTP_ROUTES["list_wallets"].path == "/auth/wallets"
+    assert AUTH_HTTP_ROUTES["set_primary_wallet"].method == "PATCH"
+    assert AUTH_HTTP_ROUTES["set_primary_wallet"].path == "/auth/wallets/{walletId}/primary"
+    assert AUTH_HTTP_ROUTES["revoke_wallet"].method == "DELETE"
+    assert AUTH_HTTP_ROUTES["revoke_wallet"].path == "/auth/wallets/{walletId}"
     assert AUTH_HTTP_ROUTES["refresh_session"].method == "POST"
     assert AUTH_HTTP_ROUTES["refresh_session"].path == "/auth/sessions/refresh"
     assert AUTH_HTTP_ROUTES["logout"].method == "DELETE"
@@ -97,10 +107,15 @@ def test_auth_http_routes_call_existing_auth_facade_methods() -> None:
 
     routes = register_auth_routes(router, AuthApi(use_case))
 
-    assert len(routes) == 5
+    assert len(routes) == 10
     assert {route.operation_id for route in routes} == {
         "requestLoginChallenge",
         "loginWithMetaMask",
+        "requestWalletLinkChallenge",
+        "linkWallet",
+        "listWallets",
+        "setPrimaryWallet",
+        "revokeWallet",
         "refreshSession",
         "logout",
         "getCurrentUser",

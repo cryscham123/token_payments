@@ -426,6 +426,15 @@ def register_auth_routes(
         ),
         _add_manifest_route(
             router,
+            AUTH_HTTP_ROUTES["request_wallet_link_challenge"],
+            auth_api.request_wallet_link_challenge,
+        ),
+        _add_manifest_route(router, AUTH_HTTP_ROUTES["link_wallet"], auth_api.link_wallet),
+        _add_manifest_route(router, AUTH_HTTP_ROUTES["list_wallets"], auth_api.list_wallets),
+        _add_manifest_route(router, AUTH_HTTP_ROUTES["set_primary_wallet"], auth_api.set_primary_wallet),
+        _add_manifest_route(router, AUTH_HTTP_ROUTES["revoke_wallet"], auth_api.revoke_wallet),
+        _add_manifest_route(
+            router,
             AUTH_HTTP_ROUTES["refresh_session"],
             _csrf_issue_handler(
                 _cookie_login_handler(auth_api.refresh_session, session_transport),
@@ -1015,6 +1024,11 @@ AUTH_HTTP_ROUTES: Mapping[str, HttpRouteSpec] = MappingProxyType(
     {
         "request_login_challenge": HttpRouteSpec("POST", "/auth/challenges", "requestLoginChallenge"),
         "login_with_metamask": HttpRouteSpec("POST", "/auth/sessions", "loginWithMetaMask"),
+        "request_wallet_link_challenge": HttpRouteSpec("POST", "/auth/wallets/challenges", "requestWalletLinkChallenge"),
+        "link_wallet": HttpRouteSpec("POST", "/auth/wallets", "linkWallet"),
+        "list_wallets": HttpRouteSpec("GET", "/auth/wallets", "listWallets"),
+        "set_primary_wallet": HttpRouteSpec("PATCH", "/auth/wallets/{walletId}/primary", "setPrimaryWallet"),
+        "revoke_wallet": HttpRouteSpec("DELETE", "/auth/wallets/{walletId}", "revokeWallet"),
         "refresh_session": HttpRouteSpec("POST", "/auth/sessions/refresh", "refreshSession"),
         "logout": HttpRouteSpec("DELETE", "/auth/sessions", "logout"),
         "current_user": HttpRouteSpec("GET", "/auth/me", "getCurrentUser"),

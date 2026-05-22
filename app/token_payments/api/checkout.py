@@ -51,7 +51,7 @@ def _tracking_lookup(request: ApiRequest) -> tuple[str, str]:
 
 
 def _tracking_payload(snapshot: CheckoutTrackingSnapshot) -> dict[str, Any]:
-    return {
+    payload = {
         "orderId": str(snapshot.order_id),
         "trackingId": str(snapshot.tracking_id),
         "paymentId": str(snapshot.payment_id) if snapshot.payment_id is not None else None,
@@ -73,17 +73,32 @@ def _tracking_payload(snapshot: CheckoutTrackingSnapshot) -> dict[str, Any]:
             for outbox in snapshot.outbox_statuses
         ],
     }
+    payer_wallet = _payer_wallet_payload(snapshot)
+    if payer_wallet is not None:
+        payload["payerWallet"] = payer_wallet
+    return payload
 
 
 def _payment_request_payload(request: TransactionSignatureRequest | None) -> dict[str, Any] | None:
     if request is None:
         return None
-    return {
+    payload = {
         "requestId": request.request_id,
         "amount": _crypto_payload(request.amount),
         "to": str(request.to),
         "expiresAt": request.expires_at.isoformat(),
     }
+    if request.payment_asset_id is not None:
+        payload["paymentAssetId"] = request.payment_asset_id
+    if request.transfer_type is not None:
+        payload["transferType"] = request.transfer_type
+    if request.token_address is not None:
+        payload["tokenAddress"] = str(request.token_address)
+    if request.amount_minor_units is not None:
+        payload["amountMinorUnits"] = str(request.amount_minor_units)
+    if request.chain_id is not None:
+        payload["chainId"] = request.chain_id
+    return payload
 
 
 def _gas_estimate_payload(gas_estimate: GasEstimate | None) -> dict[str, Any] | None:
@@ -104,6 +119,18 @@ def _crypto_payload(value: Crypto) -> dict[str, Any]:
         "chainId": value.chain_id,
         "tokenAddress": str(value.token_address) if value.token_address is not None else None,
         "decimals": value.decimals,
+    }
+
+
+def _payer_wallet_payload(snapshot: CheckoutTrackingSnapshot) -> dict[str, Any] | None:
+    payment = snapshot.payment
+    if payment is None or payment.payer_wallet_id is None:
+        return None
+    address = str(payment.wallet_from)
+    return {
+        "walletId": str(payment.payer_wallet_id),
+        "chainId": payment.chain_network.chain_id,
+        "addressPreview": f"{address[:6]}...{address[-4:]}",
     }
 
 

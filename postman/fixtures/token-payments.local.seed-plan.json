@@ -34,9 +34,13 @@
   },
   "ids": {
     "demoCustomerUserId": "11111111-1111-4111-8111-111111111111",
+    "demoCustomerWalletId": "11111111-1111-4111-8111-111111111101",
     "demoCustomerWallet": "0x1111111111111111111111111111111111111111",
+    "demoCustomerSepoliaWalletId": "11111111-1111-4111-8111-111111111102",
+    "demoCustomerSepoliaWallet": "0x4444444444444444444444444444444444444444",
     "demoCustomerId": "22222222-2222-4222-8222-222222222222",
     "demoStoreOwnerUserId": "33333333-3333-4333-8333-333333333333",
+    "demoStoreOwnerWalletId": "33333333-3333-4333-8333-333333333301",
     "demoStoreOwnerWallet": "0x2222222222222222222222222222222222222222",
     "demoStoreId": "44444444-4444-4444-8444-444444444444",
     "demoPublicStoreId": "st_demo_store_001",
@@ -44,7 +48,9 @@
     "demoPublicProductId": "prd_local_hoodie_001",
     "demoInventoryAvailableStock": 25,
     "paymentDestinationWallet": "0x2222222222222222222222222222222222222222",
-    "paymentTokenAddress": "0x3333333333333333333333333333333333333333",
+    "paymentAssetId": "local-usdc",
+    "paymentTokenAddress": "${DEPLOYED_USDC_ADDRESS}",
+    "disabledPaymentAssetId": "local-disabled-dai",
     "testNetworkChainId": 1337,
     "testNetworkNetworkId": "1337",
     "testNetworkAccountPlaceholder": "${TEST_NETWORK_ACCOUNT}",
@@ -102,6 +108,153 @@
       }
     },
     {
+      "table": "auth_user_wallets",
+      "columns": [
+        "wallet_id",
+        "user_id",
+        "wallet_address",
+        "chain_id",
+        "wallet_type",
+        "verification_status",
+        "\"primary\"",
+        "linked_at"
+      ],
+      "values": {
+        "wallet_id": "11111111-1111-4111-8111-111111111101",
+        "user_id": "11111111-1111-4111-8111-111111111111",
+        "wallet_address": "0x1111111111111111111111111111111111111111",
+        "chain_id": 1337,
+        "wallet_type": "EOA",
+        "verification_status": "VERIFIED",
+        "\"primary\"": true,
+        "linked_at": "2026-05-22T00:00:00Z"
+      }
+    },
+    {
+      "table": "auth_user_wallets",
+      "columns": [
+        "wallet_id",
+        "user_id",
+        "wallet_address",
+        "chain_id",
+        "wallet_type",
+        "verification_status",
+        "\"primary\"",
+        "linked_at"
+      ],
+      "values": {
+        "wallet_id": "11111111-1111-4111-8111-111111111102",
+        "user_id": "11111111-1111-4111-8111-111111111111",
+        "wallet_address": "0x4444444444444444444444444444444444444444",
+        "chain_id": 11155111,
+        "wallet_type": "EOA",
+        "verification_status": "VERIFIED",
+        "\"primary\"": true,
+        "linked_at": "2026-05-22T00:00:00Z"
+      }
+    },
+    {
+      "table": "auth_user_wallets",
+      "columns": [
+        "wallet_id",
+        "user_id",
+        "wallet_address",
+        "chain_id",
+        "wallet_type",
+        "verification_status",
+        "\"primary\"",
+        "linked_at"
+      ],
+      "values": {
+        "wallet_id": "33333333-3333-4333-8333-333333333301",
+        "user_id": "33333333-3333-4333-8333-333333333333",
+        "wallet_address": "0x2222222222222222222222222222222222222222",
+        "chain_id": 1337,
+        "wallet_type": "EOA",
+        "verification_status": "VERIFIED",
+        "\"primary\"": true,
+        "linked_at": "2026-05-22T00:00:00Z"
+      }
+    },
+    {
+      "table": "chains",
+      "columns": [
+        "chain_id",
+        "display_name",
+        "native_symbol",
+        "enabled"
+      ],
+      "values": {
+        "chain_id": 1337,
+        "display_name": "Local",
+        "native_symbol": "ETH",
+        "enabled": true
+      }
+    },
+    {
+      "table": "payment_assets",
+      "columns": [
+        "asset_id",
+        "asset_type",
+        "chain_id",
+        "symbol",
+        "decimals",
+        "contract_address",
+        "enabled"
+      ],
+      "values": {
+        "asset_id": "local-usdc",
+        "asset_type": "ERC20",
+        "chain_id": 1337,
+        "symbol": "USDC",
+        "decimals": 6,
+        "contract_address": "${DEPLOYED_USDC_ADDRESS}",
+        "enabled": true
+      }
+    },
+    {
+      "table": "payment_assets",
+      "columns": [
+        "asset_id",
+        "asset_type",
+        "chain_id",
+        "symbol",
+        "decimals",
+        "contract_address",
+        "enabled"
+      ],
+      "values": {
+        "asset_id": "local-usdt",
+        "asset_type": "ERC20",
+        "chain_id": 1337,
+        "symbol": "USDT",
+        "decimals": 6,
+        "contract_address": "${DEPLOYED_USDT_ADDRESS}",
+        "enabled": true
+      }
+    },
+    {
+      "table": "payment_assets",
+      "columns": [
+        "asset_id",
+        "asset_type",
+        "chain_id",
+        "symbol",
+        "decimals",
+        "contract_address",
+        "enabled"
+      ],
+      "values": {
+        "asset_id": "local-disabled-dai",
+        "asset_type": "ERC20",
+        "chain_id": 1337,
+        "symbol": "DAI",
+        "decimals": 18,
+        "contract_address": "${DEPLOYED_DISABLED_DAI_ADDRESS}",
+        "enabled": false
+      }
+    },
+    {
       "table": "order_customers",
       "columns": [
         "customer_id",
@@ -125,7 +278,8 @@
         "support_email_public",
         "active",
         "store_wallet_address",
-        "supported_chain_ids"
+        "supported_chain_ids",
+        "supported_payment_asset_ids"
       ],
       "values": {
         "store_id": "44444444-4444-4444-8444-444444444444",
@@ -139,6 +293,10 @@
         "store_wallet_address": "0x2222222222222222222222222222222222222222",
         "supported_chain_ids": [
           1337
+        ],
+        "supported_payment_asset_ids": [
+          "local-usdc",
+          "local-usdt"
         ],
         "group_id": "66666666-6666-4666-8666-666666666666"
       }
