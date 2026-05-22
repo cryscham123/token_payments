@@ -131,7 +131,7 @@ class StoreOwnerInventoryApi:
         store_role_for_user = getattr(self._query, "store_role_for_user", None)
         if callable(store_role_for_user):
             store_role = store_role_for_user(store_id, claims.user_id)
-            if store_role is not None:
+            if _canonical_write_role(store_role):
                 return _InventoryPermission(store_role=str(store_role), forbidden=None)
             return _InventoryPermission(
                 store_role=None,
@@ -142,18 +142,6 @@ class StoreOwnerInventoryApi:
                     request_id,
                 ),
             )
-        if claims.role is not UserRole.STORE_OWNER:
-            return _InventoryPermission(
-                store_role=None,
-                forbidden=lambda request_id: _error_response(
-                    "STORE_OWNER_INVENTORY_FORBIDDEN",
-                    "store ownership or membership is required",
-                    403,
-                    request_id,
-                ),
-            )
-        if self._query.owner_for_store(store_id) == claims.user_id:
-            return _InventoryPermission(store_role=None, forbidden=None)
         return _InventoryPermission(
             store_role=None,
             forbidden=lambda request_id: _error_response(
@@ -241,6 +229,12 @@ class _InventoryPermission:
     def __init__(self, *, store_role: str | None, forbidden: Any | None) -> None:
         self.store_role = store_role
         self.forbidden = forbidden
+
+
+def _canonical_write_role(value: object) -> bool:
+    if value is None:
+        return False
+    return str(value) in {"OWNER", "MANAGER"}
 
 
 def _claims_from_request(request: ApiRequest) -> _InventoryClaims:

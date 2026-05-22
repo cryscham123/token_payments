@@ -172,7 +172,6 @@ def test_auth_http_routes_call_existing_auth_facade_methods() -> None:
     )
 
     assert refresh.status_code == 200
-    assert _json(refresh.body)["session"]["refreshTokenHash"]["rotationVersion"] == 1
     assert isinstance(use_case.calls[-1], RefreshSessionCommand)
     assert use_case.calls[-1].refresh_token_hash.hash == "hash-route"
 

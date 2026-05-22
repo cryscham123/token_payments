@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
-from token_payments.contexts.auth.domain import UserRole
 from token_payments.contexts.inventory.domain import InventorySaleStatus, ProductInventory
 from token_payments.shared.domain import CommandId, OutboxMessage, ProcessedCommand, ProductId, StoreId, UserId
 
@@ -38,7 +37,7 @@ class InventorySnapshot:
 @dataclass(frozen=True)
 class InventoryAuditRecord:
     actor_user_id: UserId
-    actor_role: UserRole | str
+    actor_role: str
     store_id: StoreId
     product_id: ProductId
     action: str
@@ -59,8 +58,7 @@ class InventoryAuditRecord:
     def __post_init__(self) -> None:
         if not isinstance(self.actor_user_id, UserId):
             raise ValueError("InventoryAuditRecord.actor_user_id must be a UserId")
-        if not isinstance(self.actor_role, UserRole):
-            object.__setattr__(self, "actor_role", UserRole(_text(str(self.actor_role), "actor_role")))
+        object.__setattr__(self, "actor_role", _text(str(self.actor_role), "actor_role"))
         if not isinstance(self.store_id, StoreId):
             raise ValueError("InventoryAuditRecord.store_id must be a StoreId")
         if not isinstance(self.product_id, ProductId):

@@ -263,7 +263,6 @@ def test_auth_api_success_responses_and_structured_error_mapping() -> None:
 
     assert login_response.status_code == 200
     assert login_response.body["user"]["walletAddress"] == NORMALIZED_WALLET
-    assert login_response.body["session"]["sessionId"] == SESSION_ID
     assert login_response.body["token"]["accessToken"].startswith(f"access:{USER_ID}:{SESSION_ID}")
 
     reuse_response = api.login_with_metamask(

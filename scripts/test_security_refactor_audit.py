@@ -86,7 +86,8 @@ def test_cross_context_domain_imports_audit() -> None:
         ("app/token_payments/contexts/inventory/application/commands.py", "auth.domain"),
         ("app/token_payments/contexts/store_catalog/application/service.py", "auth.domain"),
         ("app/token_payments/contexts/store_catalog/application/service.py", "payment.domain"),
-        ("app/token_payments/contexts/order/adapter/postgres.py", "payment.domain"),
+        ("app/token_payments/contexts/order/adapter/postgres.py", "GasEstimate,"),
+        ("app/token_payments/contexts/order/adapter/postgres.py", "TransactionSignatureRequest"),
     ]
     
     found_violations = []
@@ -101,15 +102,19 @@ def test_cross_context_domain_imports_audit() -> None:
     for path, context in found_violations:
         print(f"  - {path} imports {context}")
         
-    assert len(found_violations) > 0, "Expected cross-context domain imports to be found for auditing in step 0"
+    assert found_violations == []
 
 
 def test_runtime_composition_size_and_responsibility_audit() -> None:
     comp_file = ROOT / "app/token_payments/runtime/composition.py"
+    impl_file = ROOT / "app/token_payments/runtime/composition_impl.py"
     assert comp_file.exists()
+    assert impl_file.exists()
     lines = comp_file.read_text(encoding="utf-8").splitlines()
+    impl_lines = impl_file.read_text(encoding="utf-8").splitlines()
     print(f"\n[Audit] runtime/composition.py line count: {len(lines)}")
-    assert len(lines) > 500, "composition.py is expected to be a single large file coordinating composition"
+    assert len(lines) < 180, "composition.py must stay a thin public facade"
+    assert len(impl_lines) > 500, "composition_impl.py preserves the extracted implementation"
 
 
 def test_store_memberships_and_group_memberships_write_paths_audit() -> None:

@@ -19,15 +19,18 @@ from token_payments.contexts.order.domain import (
     Store,
     TrackingId,
 )
-from token_payments.contexts.order.application.queries import CheckoutTrackingSnapshot, OutboxStatusSnapshot
+from token_payments.contexts.order.application.queries import (
+    CheckoutTrackingSnapshot,
+    GasEstimateSnapshot,
+    OutboxStatusSnapshot,
+    PaymentRequestSnapshot,
+    TrackingAuthorizationSnapshot,
+    TrackingPaymentSnapshot,
+)
 from token_payments.contexts.payment.domain import (
     AuthorizationStatus,
-    GasEstimate,
-    Payment,
-    PaymentAuthorization,
     PaymentStatus,
     TransactionReceipt,
-    TransactionSignatureRequest,
 )
 from token_payments.shared.adapter.postgres import PostgresConnection
 from token_payments.shared.domain import (
@@ -603,8 +606,8 @@ def _total_amount(items: tuple[OrderItem, ...]) -> Crypto:
     )
 
 
-def _tracking_payment_from_row(row: Mapping[str, Any] | object) -> Payment:
-    return Payment(
+def _tracking_payment_from_row(row: Mapping[str, Any] | object) -> TrackingPaymentSnapshot:
+    return TrackingPaymentSnapshot(
         payment_id=PaymentId(_row_value(row, "payment_id")),
         order_id=OrderId(_row_value(row, "order_id")),
         customer_id=CustomerId(_row_value(row, "customer_id")),
@@ -624,11 +627,11 @@ def _tracking_payment_from_row(row: Mapping[str, Any] | object) -> Payment:
     )
 
 
-def _tracking_authorization_from_row(row: Mapping[str, Any] | object) -> PaymentAuthorization:
+def _tracking_authorization_from_row(row: Mapping[str, Any] | object) -> TrackingAuthorizationSnapshot:
     payment_asset_id = _optional_row_value(row, "payment_asset_id")
     expected_amount_minor_units = _optional_int_row_value(row, "expected_amount_minor_units")
     include_transfer_terms = payment_asset_id is not None or expected_amount_minor_units is not None
-    signature_request = TransactionSignatureRequest(
+    signature_request = PaymentRequestSnapshot(
         request_id=str(_row_value(row, "request_id")),
         amount=_crypto_from_row(row, "amount"),
         to=WalletAddress(_row_value(row, "to_wallet_address")),
@@ -643,7 +646,7 @@ def _tracking_authorization_from_row(row: Mapping[str, Any] | object) -> Payment
         amount_minor_units=expected_amount_minor_units,
         chain_id=int(_row_value(row, "chain_id")) if include_transfer_terms else None,
     )
-    return PaymentAuthorization(
+    return TrackingAuthorizationSnapshot(
         payment_id=PaymentId(_row_value(row, "payment_id")),
         user_id=UserId(_row_value(row, "user_id")),
         wallet=WalletAddress(_row_value(row, "wallet_address")),
@@ -658,7 +661,7 @@ def _tracking_authorization_from_row(row: Mapping[str, Any] | object) -> Payment
     )
 
 
-def _tracking_gas_estimate_from_row(row: Mapping[str, Any] | object) -> GasEstimate | None:
+def _tracking_gas_estimate_from_row(row: Mapping[str, Any] | object) -> GasEstimateSnapshot | None:
     if _row_value(row, "gas_estimated_fee") is None:
         return None
     estimated_fee = Crypto(
@@ -678,7 +681,7 @@ def _tracking_gas_estimate_from_row(row: Mapping[str, Any] | object) -> GasEstim
             token_address=estimated_fee.token_address,
             decimals=estimated_fee.decimals,
         )
-    return GasEstimate(
+    return GasEstimateSnapshot(
         estimated_fee=estimated_fee,
         gas_limit=int(_row_value(row, "gas_limit")),
         buffer_rate=Decimal(str(_row_value(row, "gas_buffer_rate"))),

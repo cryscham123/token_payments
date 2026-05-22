@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from token_payments.contexts.auth.domain import UserRole
 from token_payments.contexts.inventory.domain import Quantity
 from token_payments.shared.domain import CommandId, MessageId, OrderId, ProductId, StoreId, UserId
 
@@ -63,7 +62,7 @@ class StoreOwnerIncreaseStockCommand:
     store_id: StoreId
     product_id: ProductId
     actor_user_id: UserId
-    actor_role: UserRole | str
+    actor_role: str
     quantity: Quantity | int
     reason: str
     requested_at: datetime
@@ -84,7 +83,7 @@ class StoreOwnerCorrectStockCommand:
     store_id: StoreId
     product_id: ProductId
     actor_user_id: UserId
-    actor_role: UserRole | str
+    actor_role: str
     target_total_stock: Quantity | int
     reason: str
     requested_at: datetime
@@ -102,7 +101,7 @@ class PauseProductSalesCommand:
     store_id: StoreId
     product_id: ProductId
     actor_user_id: UserId
-    actor_role: UserRole | str
+    actor_role: str
     reason: str
     requested_at: datetime
     request_id: str
@@ -118,7 +117,7 @@ class ResumeProductSalesCommand:
     store_id: StoreId
     product_id: ProductId
     actor_user_id: UserId
-    actor_role: UserRole | str
+    actor_role: str
     reason: str
     requested_at: datetime
     request_id: str
@@ -170,8 +169,7 @@ def _validate_store_owner_command(
         raise ValueError(f"{type(command).__name__}.product_id must be a ProductId")
     if not isinstance(command.actor_user_id, UserId):
         raise ValueError(f"{type(command).__name__}.actor_user_id must be a UserId")
-    if not isinstance(command.actor_role, UserRole):
-        object.__setattr__(command, "actor_role", UserRole(_require_text(str(command.actor_role), "actor_role")))
+    object.__setattr__(command, "actor_role", _require_text(str(command.actor_role), "actor_role"))
     object.__setattr__(command, "reason", _require_text(command.reason, f"{type(command).__name__}.reason"))
     object.__setattr__(
         command,

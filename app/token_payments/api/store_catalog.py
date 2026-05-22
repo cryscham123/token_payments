@@ -303,7 +303,6 @@ class StoreCatalogApi:
             command = RegisterStoreProductCommand(
                 command_id=CommandId(idempotency_key),
                 actor_user_id=claims.user_id,
-                actor_platform_role=UserRole.ADMIN if "product:write:any" in claims.scopes else UserRole.CUSTOMER,
                 public_store_id=PublicStoreId(_lookup_value(request, "publicStoreId")),
                 product_id=ProductId(_new_id(self._id_generator)),
                 public_product_id=None,
@@ -318,6 +317,7 @@ class StoreCatalogApi:
                 price=_price(body),
                 initial_total_stock=_required_int(body, "initialTotalStock"),
                 active=active,
+                platform_override="product:write:any" in claims.scopes,
                 requested_at=request.received_at,
                 request_id=request.request_id,
                 payload_hash=payload_hash(_idempotency_payload(request, body, claims.user_id)),

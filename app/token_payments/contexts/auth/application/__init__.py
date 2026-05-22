@@ -41,6 +41,7 @@ from .merchant_membership import (
     MerchantMembershipResult,
     MerchantMembershipService,
 )
+from .membership_projection import StoreMembershipProjectionConsumer, StoreMembershipProjectionRepository
 from .service import AuthApplicationError, AuthApplicationService, AuthErrorCode
 from .siwe import SIWE_VERSION, SiweMessage, build_siwe_message, parse_siwe_message
 
@@ -78,6 +79,8 @@ __all__ = [
     "SIWE_VERSION",
     "SetPrimaryWalletCommand",
     "SiweMessage",
+    "StoreMembershipProjectionConsumer",
+    "StoreMembershipProjectionRepository",
     "TokenIssuer",
     "UpdateUserProfileCommand",
     "UserProfileRepository",

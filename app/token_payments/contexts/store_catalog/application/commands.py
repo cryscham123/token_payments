@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Mapping
 
-from token_payments.contexts.auth.domain import UserRole
 from token_payments.contexts.store_catalog.domain import (
     ProductStatus,
     ProductVisibility,
@@ -163,7 +162,6 @@ class GrantStoreMembershipCommand:
 class RegisterStoreProductCommand:
     command_id: CommandId
     actor_user_id: UserId
-    actor_platform_role: UserRole
     public_store_id: PublicStoreId
     product_id: ProductId
     title: str
@@ -181,17 +179,12 @@ class RegisterStoreProductCommand:
     status: ProductStatus | str = ProductStatus.ACTIVE
     visibility: ProductVisibility | str = ProductVisibility.PUBLIC
     active: bool = True
+    platform_override: bool = False
 
     def __post_init__(self) -> None:
         _validate_common(self)
         if not isinstance(self.actor_user_id, UserId):
             raise ValueError("RegisterStoreProductCommand.actor_user_id must be a UserId")
-        if not isinstance(self.actor_platform_role, UserRole):
-            object.__setattr__(
-                self,
-                "actor_platform_role",
-                UserRole(_text(str(self.actor_platform_role), "actor_platform_role")),
-            )
         if not isinstance(self.public_store_id, PublicStoreId):
             object.__setattr__(self, "public_store_id", PublicStoreId(str(self.public_store_id)))
         if not isinstance(self.product_id, ProductId):
@@ -205,6 +198,8 @@ class RegisterStoreProductCommand:
             raise ValueError("RegisterStoreProductCommand.initial_total_stock must be a non-negative integer")
         if not isinstance(self.active, bool):
             raise ValueError("RegisterStoreProductCommand.active must be a bool")
+        if not isinstance(self.platform_override, bool):
+            raise ValueError("RegisterStoreProductCommand.platform_override must be a bool")
         for field_name in ("description", "category"):
             value = getattr(self, field_name)
             if value is not None:

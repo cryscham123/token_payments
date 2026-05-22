@@ -13,6 +13,7 @@ from .commands import (
 from .ports import (
     CatalogAuditRecord,
     CatalogIdempotencyRecord,
+    CatalogUserRecord,
     CatalogWriteRepository,
     StoreCatalogCommandResult,
     StoreCatalogCommandStatus,
@@ -22,6 +23,7 @@ from .service import StoreCatalogApplicationService
 __all__ = [
     "CatalogAuditRecord",
     "CatalogIdempotencyRecord",
+    "CatalogUserRecord",
     "CatalogWriteRepository",
     "CreateOrReuseStoreUserCommand",
     "CreateStoreCommand",

@@ -202,7 +202,7 @@
                   "  pm.expect(body.signatureVerification.signatureVerificationMethod).to.eql(\"SIWE_PERSONAL_SIGN_EOA_OR_ERC1271\");",
                   "  pm.expect(body.signatureVerification.supportedWalletTypes).to.include(\"DEPLOYED_SMART_WALLET\");",
                   "  pm.expect(body.signatureVerification.erc6492).to.eql(\"future_scope\");",
-                  "  pm.environment.set(\"sessionId\", body.session.sessionId);",
+                  "  pm.environment.set(\"userId\", body.session.userId);",
                   "  pm.environment.set(\"csrfToken\", body.csrfToken);",
                   "  assertSignedSessionCookie(\"access_token\", \"access\");",
                   "  assertSignedSessionCookie(\"refresh_token\", \"refresh\");",
@@ -489,7 +489,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"sessionId\": \"{{sessionId}}\"\n}"
+              "raw": "{}"
             },
             "url": {
               "raw": "{{baseUrl}}/auth/sessions",

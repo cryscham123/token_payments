@@ -13,7 +13,8 @@ from token_payments.contexts.payment.application import (
     PaymentCommandStatus,
     SubmitTransactionHashCommand,
 )
-from token_payments.shared.domain import CommandId, OrderId, PaymentId
+from token_payments.shared.domain import CommandId, OrderId, PaymentId, UserId
+from token_payments.contexts.order.domain import TrackingId
 
 from .contracts import ApiRequest, ApiResponse, json_response
 from .idempotency import IdempotencyKeyConflict, idempotency_conflict_response, idempotency_key_from_request
@@ -22,29 +23,58 @@ from .idempotency import IdempotencyKeyConflict, idempotency_conflict_response, 
 class PaymentsApi:
     """Payment API facade that delegates state changes to the payment application handler."""
 
-    def __init__(self, handler: PaymentCommandHandler) -> None:
+    def __init__(self, handler: PaymentCommandHandler, tracking_query: Any = None) -> None:
         self._handler = handler
+        self._tracking_query = tracking_query
 
     def submit_transaction_hash(self, request: ApiRequest) -> ApiResponse:
         try:
             body = _request_body(request)
-            order_id = OrderId(_required_text(body, "orderId"))
+            if "orderId" in body:
+                raise ValueError("orderId is not allowed in request body")
+            
+            tracking_id = TrackingId(_required_text(body, "trackingId"))
+            
+            user_id_str = None
+            if request.auth_context is not None and request.auth_context.user_id is not None:
+                user_id_str = request.auth_context.user_id
+            elif request.local_auth_fallback_enabled:
+                for key, value in request.headers.items():
+                    if key.lower() == "x-user-id" and value.strip():
+                        user_id_str = value.strip()
+                        break
+
+            if user_id_str is None:
+                raise ValueError("authenticated session is required")
+
+            user_id = UserId(user_id_str)
+            
+            if self._tracking_query is None:
+                raise ValueError("tracking query is not configured")
+                
+            order_id, payment_id = self._tracking_query.resolve_and_verify(tracking_id, user_id)
+            
             command = SubmitTransactionHashCommand(
-                command_id=_command_id(request, body, order_id),
-                payment_id=PaymentId(_required_text(body, "paymentId")),
+                command_id=_command_id(request, body, tracking_id),
+                payment_id=payment_id,
                 order_id=order_id,
                 tx_hash=_required_text(body, "txHash"),
                 submitted_at=request.received_at,
                 causation_id=request.request_id,
             )
             result = self._handler.submit_transaction_hash(command)
-            return json_response(_submit_payload(result, request.received_at), status_code=202, request_id=request.request_id)
+            return json_response(_submit_payload(result, tracking_id, request.received_at), status_code=202, request_id=request.request_id)
         except IdempotencyKeyConflict as exc:
             return idempotency_conflict_response(exc, request.request_id)
         except PaymentCommandRejected as exc:
             return _payment_error_response(exc, request.request_id)
         except ValueError as exc:
-            return _error_response("VALIDATION_ERROR", str(exc), 400, request.request_id)
+            msg = str(exc)
+            if "not own" in msg or "forbidden" in msg:
+                return _error_response("FORBIDDEN", msg, 403, request.request_id)
+            if "not found" in msg or "NotFound" in msg:
+                return _error_response("NOT_FOUND", msg, 404, request.request_id)
+            return _error_response("VALIDATION_ERROR", msg, 400, request.request_id)
 
 
 def _request_body(request: ApiRequest) -> Mapping[str, Any]:
@@ -60,22 +90,22 @@ def _required_text(body: Mapping[str, Any], key: str) -> str:
     return value.strip()
 
 
-def _command_id(request: ApiRequest, body: Mapping[str, Any], order_id: OrderId) -> CommandId:
+def _command_id(request: ApiRequest, body: Mapping[str, Any], tracking_id: TrackingId) -> CommandId:
     return CommandId(
         idempotency_key_from_request(
             request,
             body,
-            fallback=f"{order_id}:SubmitTransactionHashCommand",
+            fallback=f"payment.submit_tx:{tracking_id}",
         )
     )
 
 
-def _submit_payload(result: PaymentCommandResult, updated_at: datetime) -> dict[str, Any]:
+def _submit_payload(result: PaymentCommandResult, tracking_id: TrackingId, updated_at: datetime) -> dict[str, Any]:
     payment = result.payment
     tx_hash = payment.tx_hash if payment is not None else None
     return {
         "payment": {
-            "orderId": str(result.order_id),
+            "trackingId": str(tracking_id),
             "status": result.status.value,
             "currentStep": _current_step(result.status),
             "pendingAction": _pending_action(result.status),

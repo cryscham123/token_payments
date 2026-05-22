@@ -6,6 +6,17 @@ Default `api`/`serve-api` commands keep the no-server-start preview boundary. Us
 
 이 문서는 `25-multi-wallet-accounts` 진행 중인 로컬 backend API를 기준으로 한 최종 명세 초안이다. Route surface는 현재 `app/token_payments/api/http.py`의 route manifest 47개를 기준으로 고정한다.
 
+## Phase 26 public security contract
+
+Phase 26 hardens the public API and runtime architecture around externally safe identifiers, fail-closed writes, bounded context boundaries, modular composition, and membership projection.
+
+- external payment submission uses `trackingId`; the server resolves order/payment ids internally after session ownership verification. The idempotency fallback is `payment.submit_tx:{trackingId}` and never embeds a raw internal order id.
+- Session, order creation, and payment submission responses do not expose `sessionId`, `refreshTokenHash`, internal `customerId`, or internal store primary keys on public customer/browser surfaces.
+- Inventory mutation requires `inventory:write` and canonical store membership (`OWNER` or `MANAGER`). Product registration requires `product:write` at the API boundary and canonical store membership in the service boundary. Both paths fail-closed when membership is missing, revoked, stale, or unavailable.
+- bounded contexts exchange ports, DTOs, ACLs, snapshots, or shared-kernel value objects. They do not serialize another bounded context domain object as their own persistence schema.
+- `store_catalog_store_memberships` is the canonical membership source. `auth_group_memberships` is an RBAC projection updated from a transactional outbox event. projection lag never authorizes writes; replay uses the same idempotent event handler for rebuild/replay.
+- runtime composition facade remains the public import path, while context-specific factories live in runtime composition modules and preserve the no-server-start dry-run boundary.
+
 ## Route Surface Contract
 
 ### Public HTTP route surface
@@ -766,21 +777,19 @@ Request:
 
 ```json
 {
-  "orderId": "order-001",
-  "paymentId": "payment-001",
-  "txHash": "0xtransactionhash",
-  "commandId": "order-001:SubmitTransactionHashCommand"
+  "trackingId": "tracking-001",
+  "txHash": "0xtransactionhash"
 }
 ```
 
-`commandId`는 optional이다. 없으면 server가 `orderId` 기반 결정적 command id를 사용한다.
+`Idempotency-Key` header is recommended. If it is omitted, the bounded fallback command id is `payment.submit_tx:{trackingId}`. The request must not include `orderId` or `paymentId`; those internal identifiers are resolved server-side from the authenticated session and tracking id.
 
 Response `202`:
 
 ```json
 {
   "payment": {
-    "orderId": "order-001",
+    "trackingId": "tracking-001",
     "status": "TX_SUBMITTED",
     "currentStep": "RECEIPT_PENDING",
     "pendingAction": "WAIT_FOR_RECEIPT",
@@ -790,7 +799,7 @@ Response `202`:
 }
 ```
 
-Errors: `400 VALIDATION_ERROR`, `404 PAYMENT_NOT_FOUND`, `404 AUTHORIZATION_NOT_FOUND`, `409 INVALID_STATE`.
+Errors: `400 VALIDATION_ERROR`, `403 FORBIDDEN`, `404 PAYMENT_NOT_FOUND`, `404 AUTHORIZATION_NOT_FOUND`, `409 INVALID_STATE`.
 
 ## Operator Observability
 

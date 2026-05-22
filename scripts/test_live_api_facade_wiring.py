@@ -199,8 +199,7 @@ def test_live_api_facade_wiring_dispatches_routes_through_injected_transactional
         headers=_customer_headers("req-submit-tx"),
         body=_json_body(
             {
-                "orderId": str(ORDER_ID),
-                "paymentId": str(PAYMENT_ID),
+                "trackingId": str(TRACKING_ID),
                 "txHash": TX_HASH,
             }
         ),
@@ -209,6 +208,7 @@ def test_live_api_facade_wiring_dispatches_routes_through_injected_transactional
     assert submit_tx.status_code == 202
     submit_payload = _json(submit_tx.body)
     assert submit_payload["payment"]["status"] == "TX_SUBMITTED"
+    assert submit_payload["payment"]["trackingId"] == str(TRACKING_ID)
     assert submit_payload["payment"]["txHash"] == TX_HASH
     submit_tx_id = session.statement_tx("insert into payments", after_tx=2)
     assert submit_tx_id is not None

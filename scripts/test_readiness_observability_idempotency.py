@@ -164,7 +164,7 @@ def test_idempotency_key_header_standardizes_order_payment_and_operator_action_c
     order_router = HttpRouter()
     register_order_routes(order_router, OrdersApi(order_use_case))
     payment_router = HttpRouter()
-    register_payment_routes(payment_router, PaymentsApi(payment_handler))
+    register_payment_routes(payment_router, PaymentsApi(payment_handler, tracking_query=FakeCheckoutTrackingQuery()))
     operator_router = HttpRouter()
     register_operator_action_routes(
         operator_router,
@@ -198,12 +198,12 @@ def test_idempotency_key_header_standardizes_order_payment_and_operator_action_c
         headers={
             "Content-Type": "application/json",
             "X-Request-Id": "req-payment",
+            "X-User-Id": str(USER_ID),
             "Idempotency-Key": "idem-payment-header",
         },
         body=_json_body(
             {
-                "orderId": str(ORDER_ID),
-                "paymentId": str(PAYMENT_ID),
+                "trackingId": str(TRACKING_ID),
                 "txHash": "0x" + "ab" * 32,
             }
         ),
@@ -234,7 +234,7 @@ def test_idempotency_key_header_standardizes_order_payment_and_operator_action_c
 
 def test_idempotency_key_header_conflicts_with_body_command_ids_deterministically() -> None:
     payment_router = HttpRouter()
-    register_payment_routes(payment_router, PaymentsApi(CapturingPaymentHandler()))
+    register_payment_routes(payment_router, PaymentsApi(CapturingPaymentHandler(), tracking_query=FakeCheckoutTrackingQuery()))
     operator_router = HttpRouter()
     register_operator_action_routes(
         operator_router,
@@ -250,13 +250,13 @@ def test_idempotency_key_header_conflicts_with_body_command_ids_deterministicall
         headers={
             "Content-Type": "application/json",
             "X-Request-Id": "req-payment-conflict",
+            "X-User-Id": str(USER_ID),
             "Idempotency-Key": "idem-header",
         },
         body=_json_body(
             {
                 "commandId": "idem-body",
-                "orderId": str(ORDER_ID),
-                "paymentId": str(PAYMENT_ID),
+                "trackingId": str(TRACKING_ID),
                 "txHash": "0x" + "ab" * 32,
             }
         ),
@@ -390,3 +390,8 @@ class NoopOutboxActionPort:
 
     def request_replay(self, request: Any) -> Any:
         raise AssertionError("replay is not used")
+
+
+class FakeCheckoutTrackingQuery:
+    def resolve_and_verify(self, tracking_id: TrackingId, user_id: UserId) -> tuple[OrderId, PaymentId]:
+        return ORDER_ID, PAYMENT_ID

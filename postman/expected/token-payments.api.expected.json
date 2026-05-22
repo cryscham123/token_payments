@@ -138,7 +138,11 @@
           "erc6492": "future_scope"
         },
         "session": {
-          "sessionId": "<session-id>"
+          "userId": "<user-id>",
+          "walletAddress": "<wallet-address>",
+          "deviceId": "<device-id>",
+          "expiresAt": "<timestamp>",
+          "revokedAt": null
         }
       }
     },
@@ -334,12 +338,44 @@
         "X-Request-Id": "postman-order-create-001"
       },
       "body": {
-        "orderId": "<order-id>",
-        "trackingId": "<tracking-id>",
-        "status": "PENDING",
-        "payment": {
-          "paymentId": "<payment-id>",
-          "destinationWallet": "0x2222222222222222222222222222222222222222"
+        "order": {
+          "orderId": "<order-id>",
+          "trackingId": "<tracking-id>",
+          "publicStoreId": "<public-store-id>",
+          "status": "PENDING",
+          "deliveryAddress": {
+            "id": "<address-id>",
+            "street": "<street>"
+          },
+          "totalAmount": {
+            "amount": "<amount>",
+            "symbol": "TPAY",
+            "chainId": 1337,
+            "tokenAddress": null,
+            "decimals": 18
+          },
+          "items": [
+            {
+              "orderItemId": "<order-item-id>",
+              "productId": "<product-id>",
+              "name": "<product-name>",
+              "quantity": 1,
+              "unitPrice": {
+                "amount": "<amount>",
+                "symbol": "TPAY",
+                "chainId": 1337,
+                "tokenAddress": null,
+                "decimals": 18
+              },
+              "subTotal": {
+                "amount": "<amount>",
+                "symbol": "TPAY",
+                "chainId": 1337,
+                "tokenAddress": null,
+                "decimals": 18
+              }
+            }
+          ]
         }
       }
     },
@@ -383,10 +419,14 @@
         "X-Request-Id": "postman-payment-submit-001"
       },
       "body": {
-        "paymentId": "<payment-id>",
-        "orderId": "<order-id>",
-        "status": "SUBMITTED",
-        "txHash": "<local-test-network-transaction-hash>"
+        "payment": {
+          "trackingId": "<tracking-id>",
+          "status": "TX_SUBMITTED",
+          "currentStep": "RECEIPT_PENDING",
+          "pendingAction": "WAIT_FOR_RECEIPT",
+          "txHash": "<local-test-network-transaction-hash>",
+          "updatedAt": "<timestamp>"
+        }
       }
     },
     {

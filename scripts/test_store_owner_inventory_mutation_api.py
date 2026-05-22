@@ -77,6 +77,7 @@ def test_stock_intake_endpoint_requires_positive_quantity_reason_and_updates_sto
         reason="warehouse intake",
         requested_at=NOW,
         request_id="req-intake",
+        actor_store_role="OWNER",
     )
     assert payload["status"] == "accepted"
     assert payload["inventory"]["availableStock"] == 9
@@ -270,6 +271,9 @@ class FakeInventoryQuery:
 
     def owner_for_store(self, store_id: StoreId) -> UserId | None:
         return self.owners.get(store_id)
+
+    def store_role_for_user(self, store_id: StoreId, user_id: UserId) -> str | None:
+        return "OWNER" if self.owners.get(store_id) == user_id else None
 
 
 class FakeMutationHandler:

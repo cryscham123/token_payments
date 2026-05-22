@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+import hashlib
+
 from token_payments.contexts.order.application import (
     CreateOrderCommand,
     CreateOrderItem,
@@ -50,12 +52,13 @@ class OrdersApi:
 
 def _order_creation_payload(result: OrderCreationResult) -> dict[str, Any]:
     order = result.order
+    digest = hashlib.blake2s(str(order.store_id).encode("ascii"), digest_size=10).hexdigest()
+    public_store_id = f"st_{digest}"
     return {
         "order": {
             "orderId": str(order.order_id),
             "trackingId": str(order.tracking_id),
-            "customerId": str(order.customer_id),
-            "storeId": str(order.store_id),
+            "publicStoreId": public_store_id,
             "status": order.status.value,
             "deliveryAddress": {
                 "id": order.delivery_address.id,

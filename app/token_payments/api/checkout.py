@@ -6,7 +6,6 @@ from typing import Any
 
 from token_payments.contexts.order.application import CheckoutTrackingQueryPort, CheckoutTrackingSnapshot
 from token_payments.contexts.order.domain import TrackingId
-from token_payments.contexts.payment.domain import GasEstimate, TransactionSignatureRequest
 from token_payments.shared.domain import Crypto, OrderId
 
 from .contracts import ApiRequest, ApiResponse, json_response
@@ -79,7 +78,7 @@ def _tracking_payload(snapshot: CheckoutTrackingSnapshot) -> dict[str, Any]:
     return payload
 
 
-def _payment_request_payload(request: TransactionSignatureRequest | None) -> dict[str, Any] | None:
+def _payment_request_payload(request: Any | None) -> dict[str, Any] | None:
     if request is None:
         return None
     payload = {
@@ -101,7 +100,7 @@ def _payment_request_payload(request: TransactionSignatureRequest | None) -> dic
     return payload
 
 
-def _gas_estimate_payload(gas_estimate: GasEstimate | None) -> dict[str, Any] | None:
+def _gas_estimate_payload(gas_estimate: Any | None) -> dict[str, Any] | None:
     if gas_estimate is None:
         return None
     return {

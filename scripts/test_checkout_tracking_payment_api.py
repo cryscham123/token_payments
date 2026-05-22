@@ -12,7 +12,7 @@ from typing import Any, Mapping, get_type_hints
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "app"))
 
-from token_payments.api import ApiRequest  # noqa: E402
+from token_payments.api import ApiRequest, ApiAuthContext  # noqa: E402
 from token_payments.api.checkout import CheckoutApi  # noqa: E402
 from token_payments.api.payments import PaymentsApi  # noqa: E402
 from token_payments.contexts.order.adapter import PostgresCheckoutTrackingQuery  # noqa: E402
@@ -246,19 +246,22 @@ def test_submit_transaction_hash_api_delegates_to_payment_handler_and_returns_re
         timeout_scheduler=FakePaymentTimeoutScheduler(),
         transaction_service=FakeTransactionService(),
     )
-    api = PaymentsApi(handler)
+    tracking_query = FakeCheckoutTrackingQuery(_awaiting_snapshot())
+    api = PaymentsApi(handler, tracking_query=tracking_query)
 
     response = api.submit_transaction_hash(
         ApiRequest(
             request_id="req-submit",
             method="POST",
             path=f"/payments/{PAYMENT_ID}/tx-hash",
-            body={"paymentId": str(PAYMENT_ID), "orderId": str(ORDER_ID), "txHash": str(TX_HASH)},
+            body={"trackingId": str(TRACKING_ID), "txHash": str(TX_HASH)},
+            auth_context=ApiAuthContext(user_id=str(USER_ID), session_id="session-1"),
             received_at=NOW,
         )
     )
 
     assert response.status_code == 202
+    assert response.body["payment"]["trackingId"] == str(TRACKING_ID)
     assert response.body["payment"]["status"] == PaymentCommandStatus.TX_SUBMITTED.value
     assert response.body["payment"]["currentStep"] == "RECEIPT_PENDING"
     assert response.body["payment"]["pendingAction"] == "WAIT_FOR_RECEIPT"
@@ -273,14 +276,16 @@ def test_submit_transaction_hash_api_delegates_to_payment_handler_and_returns_re
 
 
 def test_submit_transaction_hash_api_builds_deterministic_command_and_maps_errors() -> None:
-    api = PaymentsApi(CapturingPaymentCommandHandler())
+    tracking_query = FakeCheckoutTrackingQuery(_awaiting_snapshot())
+    api = PaymentsApi(CapturingPaymentCommandHandler(), tracking_query=tracking_query)
 
     response = api.submit_transaction_hash(
         ApiRequest(
             request_id="req-capture",
             method="POST",
             path="/payments/submit-tx-hash",
-            body={"paymentId": str(PAYMENT_ID), "orderId": str(ORDER_ID), "txHash": str(TX_HASH)},
+            body={"trackingId": str(TRACKING_ID), "txHash": str(TX_HASH)},
+            auth_context=ApiAuthContext(user_id=str(USER_ID), session_id="session-1"),
             received_at=NOW,
         )
     )
@@ -288,7 +293,7 @@ def test_submit_transaction_hash_api_builds_deterministic_command_and_maps_error
     command = api._handler.commands[0]
     assert response.status_code == 202
     assert command == SubmitTransactionHashCommand(
-        command_id=SUBMIT_COMMAND_ID,
+        command_id=CommandId(f"payment.submit_tx:{TRACKING_ID}"),
         payment_id=PAYMENT_ID,
         order_id=ORDER_ID,
         tx_hash=TX_HASH,
@@ -301,7 +306,8 @@ def test_submit_transaction_hash_api_builds_deterministic_command_and_maps_error
             request_id="req-invalid",
             method="POST",
             path="/payments/submit-tx-hash",
-            body={"paymentId": str(PAYMENT_ID), "orderId": str(ORDER_ID), "txHash": "not-a-hash"},
+            body={"trackingId": str(TRACKING_ID), "txHash": "not-a-hash"},
+            auth_context=ApiAuthContext(user_id=str(USER_ID), session_id="session-1"),
             received_at=NOW,
         )
     )
@@ -482,6 +488,13 @@ class FakeCheckoutTrackingQuery:
     def get_by_order_id(self, order_id: OrderId) -> CheckoutTrackingSnapshot | None:
         self.order_id_calls.append(order_id)
         return self.snapshot
+
+    def resolve_and_verify(self, tracking_id: TrackingId, user_id: UserId) -> tuple[OrderId, PaymentId]:
+        if self.snapshot is None:
+            raise ValueError("not found")
+        if user_id != USER_ID:
+            raise ValueError("authenticated user does not own the order")
+        return self.snapshot.order_id, self.snapshot.payment.payment_id if self.snapshot.payment else PAYMENT_ID
 
 
 class FakePaymentRepository:

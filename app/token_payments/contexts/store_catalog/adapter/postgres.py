@@ -20,7 +20,8 @@ from token_payments.contexts.store_catalog.domain import (
     StoreStatus,
 )
 from token_payments.shared.adapter.postgres import PostgresConnection
-from token_payments.shared.domain import Crypto, ProductId, StoreId, UserId, WalletAddress
+from token_payments.shared.adapter.postgres import PostgresOutboxMessageRepository
+from token_payments.shared.domain import Crypto, OutboxMessage, ProductId, StoreId, UserId, WalletAddress
 
 
 SELECT_USER_BY_ID_SQL = """
@@ -740,6 +741,9 @@ class PostgresStoreCatalogRepository:
                 "active": membership.active,
             },
         )
+
+    def record_membership_projection_event(self, message: OutboxMessage) -> None:
+        PostgresOutboxMessageRepository(self._connection).save(message)
 
     def get_store_role(self, store_id: StoreId, user_id: UserId) -> StoreMembershipRole | None:
         row = _fetch_one(

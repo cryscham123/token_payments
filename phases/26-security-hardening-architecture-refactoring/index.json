@@ -11,33 +11,40 @@
     {
       "step": 1,
       "name": "api-sensitive-payload-tracking-id-hardening",
-      "status": "pending"
+      "status": "completed",
+      "summary": "Hardened response payloads by redacting sensitive identifiers (sessionId, refreshTokenHash on login; customerId, storeId on order creation). Hardened transaction hash submission to require trackingId, reject orderId, verify order ownership, and use trackingId-centric fallback idempotency keys. Updated Postman expected response fixtures and Postman collection variables."
     },
     {
       "step": 2,
       "name": "fail-closed-authorization-hardening",
-      "status": "pending"
+      "status": "completed",
+      "summary": "Added fail-closed authorization tests and removed inventory write owner-role fallback. Inventory mutations now require inventory:write or inventory:write:any and canonical store_role_for_user membership of OWNER/MANAGER; stale projection or owner lookup alone no longer authorizes writes. Product registration tests now cover API-level product:write scope and service-level canonical membership rejection."
     },
     {
       "step": 3,
       "name": "context-boundary-ports-dtos",
-      "status": "pending"
+      "status": "completed",
+      "summary": "Added context boundary import tests. Replaced inventory application UserRole coupling with actor role string DTOs, changed store catalog product registration to platform_override and CatalogUserRecord DTOs, removed store catalog service auth/payment domain imports, and moved checkout tracking payment request/gas data to order-owned snapshot DTOs instead of constructing payment domain GasEstimate/TransactionSignatureRequest in the order postgres adapter."
     },
     {
       "step": 4,
       "name": "runtime-composition-modularization",
-      "status": "pending"
+      "status": "completed",
+      "summary": "Added runtime composition modularization tests. Preserved token_payments.runtime.composition as a thin public facade, moved the existing implementation to runtime/composition_impl.py, exposed context-specific composition modules for auth, store_catalog, inventory, order, payment, checkout, and api wiring, and kept route helper monkeypatch compatibility plus no-server-start dry-run behavior."
     },
     {
       "step": 5,
       "name": "membership-outbox-projection",
-      "status": "pending"
+      "status": "completed",
+      "summary": "Added membership outbox/projection tests and StoreMembershipProjectionConsumer. Store catalog membership writes now prefer recording StoreCatalogStoreMembershipChangedEvent to auth.rbac.projections through the transactional outbox hook, with direct auth group writes only as compatibility fallback when the hook is absent. PostgresStoreCatalogRepository records membership projection events through PostgresOutboxMessageRepository in the same transaction boundary."
     },
     {
       "step": 6,
       "name": "security-refactor-public-verification",
-      "status": "pending"
+      "status": "completed",
+      "summary": "Added public security refactor contract tests and documented the Phase 26 public security contract. API docs now describe trackingId-only payment transaction hash submission, fail-closed inventory/product write requirements, bounded context DTO/port rules, canonical membership plus RBAC projection/outbox/rebuild policy, and runtime composition facade/no-server-start boundaries. Postman expected payment submission remains trackingId-only."
     }
   ],
-  "created_at": "2026-05-22T03:30:00+0900"
+  "created_at": "2026-05-22T03:30:00+0900",
+  "completed_at": "2026-05-22T18:30:00+0900"
 }

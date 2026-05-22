@@ -348,17 +348,11 @@ def _user_payload(user: User) -> dict[str, Any]:
 
 def _session_payload(session: AuthSession) -> dict[str, Any]:
     return {
-        "sessionId": str(session.session_id),
         "userId": str(session.user_id),
         "walletAddress": str(session.wallet),
         "deviceId": session.device_id,
         "expiresAt": session.expires_at.isoformat(),
         "revokedAt": session.revoked_at.isoformat() if session.revoked_at is not None else None,
-        "refreshTokenHash": {
-            "hash": session.refresh_token_hash.hash,
-            "salt": session.refresh_token_hash.salt,
-            "rotationVersion": session.refresh_token_hash.rotation_version,
-        },
     }
 
 

@@ -142,20 +142,24 @@ def test_checkout_http_routes_keep_query_string_lookup_compatible_with_facade_co
 def test_payment_http_route_submits_tx_hash_and_preserves_request_id_and_command_id() -> None:
     handler = CapturingPaymentCommandHandler()
     router = HttpRouter()
+    query = FakeCheckoutTrackingQuery(_tracking_snapshot())
 
-    routes = register_payment_routes(router, PaymentsApi(handler))
+    routes = register_payment_routes(router, PaymentsApi(handler, tracking_query=query))
 
     assert [route.operation_id for route in routes] == ["submitTransactionHash"]
 
     response = router.handle(
         "POST",
         "/payments/transaction-hashes",
-        headers={"Content-Type": "application/json", "X-Request-Id": "req-payment-submit"},
+        headers={
+            "Content-Type": "application/json",
+            "X-Request-Id": "req-payment-submit",
+            "X-User-Id": str(USER_ID),
+        },
         body=json.dumps(
             {
                 "commandId": str(COMMAND_ID),
-                "paymentId": str(PAYMENT_ID),
-                "orderId": str(ORDER_ID),
+                "trackingId": str(TRACKING_ID),
                 "txHash": str(TX_HASH),
             },
             separators=(",", ":"),
@@ -168,7 +172,7 @@ def test_payment_http_route_submits_tx_hash_and_preserves_request_id_and_command
     assert _json(response.body) == {
         "payment": {
             "currentStep": "RECEIPT_PENDING",
-            "orderId": str(ORDER_ID),
+            "trackingId": str(TRACKING_ID),
             "pendingAction": "WAIT_FOR_RECEIPT",
             "status": "TX_SUBMITTED",
             "txHash": str(TX_HASH),
@@ -268,6 +272,13 @@ class FakeCheckoutTrackingQuery:
     def get_by_order_id(self, order_id: OrderId) -> CheckoutTrackingSnapshot | None:
         self.order_id_calls.append(order_id)
         return self.snapshot
+
+    def resolve_and_verify(self, tracking_id: TrackingId, user_id: UserId) -> tuple[OrderId, PaymentId]:
+        if self.snapshot is None:
+            raise ValueError("not found")
+        if user_id != USER_ID:
+            raise ValueError("authenticated user does not own the order")
+        return self.snapshot.order_id, self.snapshot.payment.payment_id if self.snapshot.payment else PAYMENT_ID
 
 
 class CapturingPaymentCommandHandler:

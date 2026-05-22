@@ -7,7 +7,6 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any, Mapping, Protocol
 
-from token_payments.contexts.auth.domain import User
 from token_payments.contexts.store_catalog.domain import (
     PublicProductId,
     PublicStoreId,
@@ -39,6 +38,28 @@ class StoreCatalogCommandResult:
             raise ValueError("StoreCatalogCommandResult.payload must be a mapping")
         if self.rejection_reason is not None:
             object.__setattr__(self, "rejection_reason", _text(self.rejection_reason, "rejection_reason"))
+
+
+@dataclass(frozen=True)
+class CatalogUserRecord:
+    user_id: UserId
+    primary_wallet: WalletAddress
+    role: str = "CUSTOMER"
+    active: bool = True
+    last_login_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.user_id, UserId):
+            raise ValueError("CatalogUserRecord.user_id must be a UserId")
+        if not isinstance(self.primary_wallet, WalletAddress):
+            raise ValueError("CatalogUserRecord.primary_wallet must be a WalletAddress")
+        object.__setattr__(self, "role", _text(str(self.role), "role"))
+        if not isinstance(self.active, bool):
+            raise ValueError("CatalogUserRecord.active must be a bool")
+        if self.last_login_at is not None and (
+            not isinstance(self.last_login_at, datetime) or self.last_login_at.tzinfo is None
+        ):
+            raise ValueError("CatalogUserRecord.last_login_at must be timezone-aware or None")
 
 
 @dataclass(frozen=True)
@@ -105,13 +126,13 @@ class CatalogWriteRepository(Protocol):
     def save_idempotency_record(self, record: CatalogIdempotencyRecord) -> None:
         ...
 
-    def get_user_by_wallet(self, wallet: WalletAddress) -> User | None:
+    def get_user_by_wallet(self, wallet: WalletAddress) -> CatalogUserRecord | None:
         ...
 
-    def get_user_by_id(self, user_id: UserId) -> User | None:
+    def get_user_by_id(self, user_id: UserId) -> CatalogUserRecord | None:
         ...
 
-    def save_user(self, user: User) -> None:
+    def save_user(self, user: CatalogUserRecord) -> None:
         ...
 
     def get_store(self, store_id: StoreId) -> StoreProfile | None:

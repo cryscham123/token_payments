@@ -4,18 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from enum import StrEnum
-from typing import Protocol
+from typing import Any, Protocol
 
 from token_payments.contexts.order.domain import OrderStatus, TrackingId
-from token_payments.contexts.payment.domain import (
-    GasEstimate,
-    Payment,
-    PaymentAuthorization,
-    PaymentStatus,
-    TransactionSignatureRequest,
-)
-from token_payments.shared.domain import OrderId, OutboxPublishStatus, PaymentId, TransactionHash
+from token_payments.shared.domain import ChainNetwork, Crypto, CustomerId, OrderId, OutboxPublishStatus, PaymentId
+from token_payments.shared.domain import TransactionHash, UserId, WalletAddress
 
 
 class CheckoutCurrentStep(StrEnum):
@@ -59,13 +54,112 @@ class OutboxStatusSnapshot:
 
 
 @dataclass(frozen=True)
+class PaymentRequestSnapshot:
+    request_id: str
+    amount: Crypto
+    to: WalletAddress
+    expires_at: datetime
+    payment_asset_id: str | None = None
+    transfer_type: str | None = None
+    token_address: WalletAddress | str | None = None
+    amount_minor_units: int | None = None
+    chain_id: int | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "request_id", _require_text(self.request_id, "PaymentRequestSnapshot.request_id"))
+        if not isinstance(self.amount, Crypto):
+            raise ValueError("PaymentRequestSnapshot.amount must be a Crypto value")
+        if not isinstance(self.to, WalletAddress):
+            object.__setattr__(self, "to", WalletAddress(str(self.to)))
+        object.__setattr__(
+            self,
+            "expires_at",
+            _require_aware_datetime(self.expires_at, "PaymentRequestSnapshot.expires_at"),
+        )
+        if self.payment_asset_id is not None:
+            object.__setattr__(self, "payment_asset_id", _require_text(self.payment_asset_id, "payment_asset_id"))
+        if self.transfer_type is not None:
+            object.__setattr__(self, "transfer_type", _require_text(self.transfer_type, "transfer_type"))
+        if self.token_address is not None and not isinstance(self.token_address, WalletAddress):
+            object.__setattr__(self, "token_address", WalletAddress(str(self.token_address)))
+        if self.amount_minor_units is not None and (
+            isinstance(self.amount_minor_units, bool)
+            or not isinstance(self.amount_minor_units, int)
+            or self.amount_minor_units < 0
+        ):
+            raise ValueError("PaymentRequestSnapshot.amount_minor_units must be a non-negative integer or None")
+        if self.chain_id is not None and (
+            isinstance(self.chain_id, bool) or not isinstance(self.chain_id, int) or self.chain_id <= 0
+        ):
+            raise ValueError("PaymentRequestSnapshot.chain_id must be a positive integer or None")
+
+
+@dataclass(frozen=True)
+class GasEstimateSnapshot:
+    estimated_fee: Crypto
+    gas_limit: int
+    buffer_rate: Decimal
+    max_fee: Crypto | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.estimated_fee, Crypto):
+            raise ValueError("GasEstimateSnapshot.estimated_fee must be a Crypto value")
+        if isinstance(self.gas_limit, bool) or not isinstance(self.gas_limit, int) or self.gas_limit <= 0:
+            raise ValueError("GasEstimateSnapshot.gas_limit must be a positive integer")
+        object.__setattr__(self, "buffer_rate", Decimal(str(self.buffer_rate)))
+        if self.max_fee is not None and not isinstance(self.max_fee, Crypto):
+            raise ValueError("GasEstimateSnapshot.max_fee must be a Crypto value or None")
+
+    def __eq__(self, other: object) -> bool:
+        return all(
+            getattr(other, field_name, object()) == getattr(self, field_name)
+            for field_name in ("estimated_fee", "gas_limit", "buffer_rate", "max_fee")
+        )
+
+
+@dataclass(frozen=True)
+class TrackingPaymentSnapshot:
+    payment_id: PaymentId
+    order_id: OrderId
+    customer_id: CustomerId
+    amount: Crypto
+    wallet_from: WalletAddress
+    wallet_to: WalletAddress
+    chain_network: ChainNetwork
+    gas_estimate: Any | None
+    expires_at: datetime
+    status: Any
+    tx_hash: TransactionHash | None = None
+    receipt: Any | None = None
+    failure_reason: str | None = None
+    refund_receipt: Any | None = None
+    payer_wallet_id: Any | None = None
+    payment_asset_id: str | None = None
+
+
+@dataclass(frozen=True)
+class TrackingAuthorizationSnapshot:
+    payment_id: PaymentId
+    user_id: UserId
+    wallet: WalletAddress
+    chain_network: ChainNetwork
+    signature_request: Any
+    status: Any
+    tx_hash: TransactionHash | None = None
+    authorized_at: datetime | None = None
+    payer_wallet_id: Any | None = None
+    payment_asset_id: str | None = None
+    expected_amount_minor_units: int | None = None
+
+
+@dataclass(frozen=True)
 class CheckoutTrackingSnapshot:
     order_id: OrderId
     tracking_id: TrackingId
     order_status: OrderStatus
     failure_messages: tuple[str, ...]
-    payment: Payment | None
-    authorization: PaymentAuthorization | None
+    payment: Any | None
+    authorization: Any | None
     outbox_statuses: tuple[OutboxStatusSnapshot, ...]
     updated_at: datetime
 
@@ -81,10 +175,6 @@ class CheckoutTrackingSnapshot:
             "failure_messages",
             tuple(_require_text(message, "CheckoutTrackingSnapshot.failure_messages") for message in self.failure_messages),
         )
-        if self.payment is not None and not isinstance(self.payment, Payment):
-            raise ValueError("CheckoutTrackingSnapshot.payment must be a Payment or None")
-        if self.authorization is not None and not isinstance(self.authorization, PaymentAuthorization):
-            raise ValueError("CheckoutTrackingSnapshot.authorization must be a PaymentAuthorization or None")
         object.__setattr__(
             self,
             "outbox_statuses",
@@ -106,7 +196,7 @@ class CheckoutTrackingSnapshot:
         }:
             return self.order_status.value
         if self.payment is not None:
-            return self.payment.status.value
+            return _status_value(self.payment.status)
         return self.order_status.value
 
     @property
@@ -126,15 +216,15 @@ class CheckoutTrackingSnapshot:
         if self.payment is None:
             return CheckoutCurrentStep.ORDER_CREATED
         return {
-            PaymentStatus.INITIATED: CheckoutCurrentStep.ORDER_CREATED,
-            PaymentStatus.AWAITING_SIGNATURE: CheckoutCurrentStep.AWAITING_SIGNATURE,
-            PaymentStatus.SUBMITTED: CheckoutCurrentStep.RECEIPT_PENDING,
-            PaymentStatus.CONFIRMING: CheckoutCurrentStep.RECEIPT_PENDING,
-            PaymentStatus.CONFIRMED: CheckoutCurrentStep.PAYMENT_CONFIRMED,
-            PaymentStatus.FAILED: CheckoutCurrentStep.PAYMENT_FAILED,
-            PaymentStatus.EXPIRED: CheckoutCurrentStep.PAYMENT_EXPIRED,
-            PaymentStatus.REFUNDED: CheckoutCurrentStep.PAYMENT_REFUNDED,
-        }[self.payment.status]
+            "INITIATED": CheckoutCurrentStep.ORDER_CREATED,
+            "AWAITING_SIGNATURE": CheckoutCurrentStep.AWAITING_SIGNATURE,
+            "SUBMITTED": CheckoutCurrentStep.RECEIPT_PENDING,
+            "CONFIRMING": CheckoutCurrentStep.RECEIPT_PENDING,
+            "CONFIRMED": CheckoutCurrentStep.PAYMENT_CONFIRMED,
+            "FAILED": CheckoutCurrentStep.PAYMENT_FAILED,
+            "EXPIRED": CheckoutCurrentStep.PAYMENT_EXPIRED,
+            "REFUNDED": CheckoutCurrentStep.PAYMENT_REFUNDED,
+        }[_status_value(self.payment.status)]
 
     @property
     def pending_action(self) -> CheckoutPendingAction | None:
@@ -155,12 +245,12 @@ class CheckoutTrackingSnapshot:
         return None
 
     @property
-    def payment_request(self) -> TransactionSignatureRequest | None:
+    def payment_request(self) -> Any | None:
         if self.authorization is not None:
             return self.authorization.signature_request
-        if self.payment is None or self.payment.status is not PaymentStatus.AWAITING_SIGNATURE:
+        if self.payment is None or _status_value(self.payment.status) != "AWAITING_SIGNATURE":
             return None
-        return TransactionSignatureRequest(
+        return PaymentRequestSnapshot(
             request_id=str(self.payment.payment_id),
             amount=self.payment.amount,
             to=self.payment.wallet_to,
@@ -168,7 +258,7 @@ class CheckoutTrackingSnapshot:
         )
 
     @property
-    def gas_estimate(self) -> GasEstimate | None:
+    def gas_estimate(self) -> Any | None:
         if self.payment is None:
             return None
         return self.payment.gas_estimate
@@ -204,6 +294,11 @@ def _coerce_tuple(values: tuple[object, ...], item_type: type, field_name: str):
     if not all(isinstance(value, item_type) for value in values):
         raise ValueError(f"{field_name} must contain only {item_type.__name__}")
     return values
+
+
+def _status_value(value: Any) -> str:
+    enum_value = getattr(value, "value", None)
+    return str(enum_value if enum_value is not None else value)
 
 
 def _require_text(value: str, field_name: str) -> str:

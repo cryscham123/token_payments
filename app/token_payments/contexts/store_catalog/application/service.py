@@ -5,10 +5,8 @@ from __future__ import annotations
 from html import escape
 from collections.abc import Callable
 from typing import Any, Mapping
+from uuid import NAMESPACE_URL, uuid5
 
-from token_payments.contexts.auth.domain import GroupId
-from token_payments.contexts.auth.domain import User, UserRole
-from token_payments.contexts.payment.domain import PaymentAsset, PaymentAssetRegistry
 from token_payments.contexts.store_catalog.domain import (
     ProductStatus,
     ProductVisibility,
@@ -20,7 +18,7 @@ from token_payments.contexts.store_catalog.domain import (
     StoreProduct,
     StoreProfile,
 )
-from token_payments.shared.domain import UserId
+from token_payments.shared.domain import EventMetadata, MessageId, OutboxMessage, UserId
 
 from .commands import (
     CreateOrReuseStoreUserCommand,
@@ -35,6 +33,7 @@ from .commands import (
 from .ports import (
     CatalogAuditRecord,
     CatalogIdempotencyRecord,
+    CatalogUserRecord,
     CatalogWriteRepository,
     StoreCatalogCommandResult,
     StoreCatalogCommandStatus,
@@ -209,14 +208,19 @@ class StoreCatalogApplicationService:
         user = self._repository.get_user_by_wallet(command.wallet_address)
         user_created = user is None
         if user is None:
-            user = User.register_by_wallet(self._new_user_id(), command.wallet_address, role=UserRole.CUSTOMER)
+            user = CatalogUserRecord(
+                user_id=self._new_user_id(),
+                primary_wallet=command.wallet_address,
+                role="CUSTOMER",
+                active=True,
+            )
             self._repository.save_user(user)
         return {
             "operation": self.CREATE_USER_HANDLER,
             "status": "created" if user_created else "reused",
             "userId": str(user.user_id),
             "walletAddress": str(user.primary_wallet),
-            "platformRole": user.role.value,
+            "platformRole": _role_value(user.role),
             "userCreated": user_created,
             "userReused": not user_created,
             "globalStoreOwnerRoleGranted": False,
@@ -393,7 +397,7 @@ class StoreCatalogApplicationService:
             return _rejected("UNSUPPORTED_PRICE_CHAIN", "product price chain id is not supported by the store")
 
         store_role = self._repository.get_store_role(store.store_id, command.actor_user_id)
-        if command.actor_platform_role is not UserRole.ADMIN and store_role is None:
+        if not command.platform_override and store_role is None:
             return _rejected("STORE_OWNER_STORE_FORBIDDEN", "store ownership or membership is required")
 
         product = StoreProduct(
@@ -430,7 +434,7 @@ class StoreCatalogApplicationService:
                 before={"product": None, "storeRole": store_role.value if store_role else None},
                 after={"product": _product_payload(product), "initialTotalStock": command.initial_total_stock},
                 recorded_at=command.requested_at,
-                permission="product:write:any" if command.actor_platform_role is UserRole.ADMIN else "product:write",
+                permission="product:write:any" if command.platform_override else "product:write",
                 resource_type="store",
                 resource_id=str(store.public_store_id),
             )
@@ -557,32 +561,97 @@ class StoreCatalogApplicationService:
 
     def _ensure_merchant_group_owner(self, command: CreateStoreCommand) -> Mapping[str, Any] | None:
         ensure_group = getattr(self._repository, "ensure_merchant_group_for_store", None)
-        grant_owner = getattr(self._repository, "grant_group_membership", None)
-        if not callable(ensure_group) or not callable(grant_owner):
+        if not callable(ensure_group):
             return None
         group_id = ensure_group(command.store_id)
-        grant_owner(group_id, command.owner_user_id, "MERCHANT_OWNER", active=True)
-        return {
+        projected = self._record_membership_projection_event(
+            command=command,
+            group_id=group_id,
+            user_id=command.owner_user_id,
+            role_id="MERCHANT_OWNER",
+            active=True,
+        )
+        if not projected:
+            grant_owner = getattr(self._repository, "grant_group_membership", None)
+            if not callable(grant_owner):
+                return None
+            grant_owner(group_id, command.owner_user_id, "MERCHANT_OWNER", active=True)
+        payload = {
             "groupId": str(group_id),
             "ownerUserId": str(command.owner_user_id),
             "roleId": "MERCHANT_OWNER",
         }
+        if projected:
+            payload["projection"] = "outbox"
+        return payload
 
     def _grant_merchant_group_membership(self, command: GrantStoreMembershipCommand) -> Mapping[str, Any] | None:
         group_id = self._merchant_group_id_for_store(command.store_id)
         grant_membership = getattr(self._repository, "grant_group_membership", None)
-        if group_id is None or not callable(grant_membership):
+        if group_id is None:
             return None
         role_id = _merchant_role_for_store_role(command.role)
-        grant_membership(group_id, command.user_id, role_id, active=command.active)
-        return {
+        projected = self._record_membership_projection_event(
+            command=command,
+            group_id=group_id,
+            user_id=command.user_id,
+            role_id=role_id,
+            active=command.active,
+        )
+        if not projected:
+            if not callable(grant_membership):
+                return None
+            grant_membership(group_id, command.user_id, role_id, active=command.active)
+        payload = {
             "groupId": str(group_id),
             "userId": str(command.user_id),
             "roleId": role_id,
             "active": command.active,
         }
+        if projected:
+            payload["projection"] = "outbox"
+        return payload
 
-    def _merchant_group_id_for_store(self, store_id: Any) -> GroupId | None:
+    def _record_membership_projection_event(
+        self,
+        *,
+        command: CreateStoreCommand | GrantStoreMembershipCommand,
+        group_id: Any,
+        user_id: UserId,
+        role_id: str,
+        active: bool,
+    ) -> bool:
+        record_event = getattr(self._repository, "record_membership_projection_event", None)
+        if not callable(record_event):
+            return False
+        event_identity = _membership_event_identity(command.command_id, user_id)
+        message = OutboxMessage.record_event(
+            metadata=EventMetadata(
+                message_id=MessageId(str(uuid5(NAMESPACE_URL, event_identity))),
+                name="StoreCatalogStoreMembershipChangedEvent",
+                aggregate_id=f"store:{command.store_id}",
+                occurred_at=command.requested_at,
+                correlation_id=str(command.command_id),
+                causation_id=command.request_id,
+            ),
+            topic="auth.rbac.projections",
+            key=str(command.store_id),
+            payload={
+                "eventId": event_identity,
+                "sourceOfTruth": "store_catalog_store_memberships",
+                "projection": "auth_group_memberships",
+                "storeId": str(command.store_id),
+                "groupId": str(group_id),
+                "userId": str(user_id),
+                "roleId": role_id,
+                "active": active,
+                "version": 1,
+            },
+        )
+        record_event(message)
+        return True
+
+    def _merchant_group_id_for_store(self, store_id: Any) -> Any | None:
         merchant_group = getattr(self._repository, "merchant_group_for_store", None)
         if callable(merchant_group):
             group = merchant_group(store_id)
@@ -753,6 +822,10 @@ def _merchant_role_for_store_role(role: StoreMembershipRole) -> str:
     return "MERCHANT_MANAGER"
 
 
+def _membership_event_identity(command_id: Any, user_id: UserId) -> str:
+    return f"store-membership:{command_id}:{user_id}"
+
+
 def _product_payload(product: StoreProduct | None) -> dict[str, Any] | None:
     if product is None:
         return None
@@ -840,7 +913,7 @@ def _payment_capability_payload(
     store: StoreProfile,
     price: Any | None = None,
     *,
-    asset_registry: PaymentAssetRegistry | None = None,
+    asset_registry: Any | None = None,
 ) -> dict[str, Any]:
     if asset_registry is not None:
         chain_ids = set(store.supported_chain_ids)
@@ -884,7 +957,7 @@ def _payment_capability_payload(
     }
 
 
-def _payment_asset_payload(asset: PaymentAsset) -> dict[str, Any]:
+def _payment_asset_payload(asset: Any) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "assetId": asset.asset_id,
         "assetType": asset.asset_type.value,
@@ -911,7 +984,10 @@ def _crypto_payload(price: Any) -> dict[str, Any]:
     }
 
 
-def _group_id(value: Any) -> GroupId:
-    if isinstance(value, GroupId):
-        return value
-    return GroupId(str(value))
+def _role_value(value: Any) -> str:
+    enum_value = getattr(value, "value", None)
+    return str(enum_value if enum_value is not None else value)
+
+
+def _group_id(value: Any) -> str:
+    return str(value)
