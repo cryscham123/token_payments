@@ -1,6 +1,6 @@
 {
   "project": "Token Payments",
-  "phase": "25-multi-wallet-accounts",
+  "phase": "25-multi-wallet-stablecoin-asset-payments",
   "steps": [
     {
       "step": 0,
@@ -20,6 +20,31 @@
     {
       "step": 3,
       "name": "multi-wallet-public-verification",
+      "status": "pending"
+    },
+    {
+      "step": 4,
+      "name": "payment-asset-chain-registry-domain",
+      "status": "pending"
+    },
+    {
+      "step": 5,
+      "name": "wallet-asset-aware-pricing-checkout",
+      "status": "pending"
+    },
+    {
+      "step": 6,
+      "name": "erc20-payment-authorization-receipts",
+      "status": "pending"
+    },
+    {
+      "step": 7,
+      "name": "stablecoin-api-store-catalog-contracts",
+      "status": "pending"
+    },
+    {
+      "step": 8,
+      "name": "multi-wallet-stablecoin-public-verification",
       "status": "pending"
     }
   ],

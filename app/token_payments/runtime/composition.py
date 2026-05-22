@@ -87,10 +87,11 @@ from token_payments.shared.domain import (
 from token_payments.shared.adapter.postgres import (
     PostgresOutboxMessageRepository,
     PostgresProcessedCommandRepository,
+    PostgresProcessedMessageRepository,
     ensure_postgres_schema_compatibility,
 )
 
-from .contracts import Clock, HealthState, IdGenerator, JsonValue
+from .contracts import Clock, HealthState, IdGenerator, JsonValue, WorkerLoopOptions
 from .observability import PostgresOperatorObservabilityQuery, ReadinessProbe, ReadinessProbeResult
 from .security import (
     DEFAULT_CORS_ALLOWED_ORIGINS,
@@ -217,6 +218,17 @@ class LiveRuntimeConfig:
     cookie_secure: bool = True
     cookie_samesite: str = "Lax"
     request_body_max_bytes: int = DEFAULT_REQUEST_BODY_MAX_BYTES
+    kafka_request_timeout_seconds: float = 3.0
+    worker_batch_size: int = 100
+    worker_poll_interval_seconds: float = 1.0
+    receipt_poll_interval_seconds: float = 5.0
+
+    def worker_loop_options(self) -> WorkerLoopOptions:
+        return WorkerLoopOptions(
+            batch_size=self.worker_batch_size,
+            poll_interval_seconds=self.worker_poll_interval_seconds,
+            receipt_poll_interval_seconds=self.receipt_poll_interval_seconds,
+        )
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "api_host", _require_text(self.api_host, "RUNTIME_API_HOST"))
@@ -364,6 +376,26 @@ class LiveRuntimeConfig:
             "request_body_max_bytes",
             _require_positive_int(self.request_body_max_bytes, "REQUEST_BODY_MAX_BYTES"),
         )
+        object.__setattr__(
+            self,
+            "kafka_request_timeout_seconds",
+            _require_positive_number(self.kafka_request_timeout_seconds, "ADAPTER_KAFKA_REQUEST_TIMEOUT_SECONDS"),
+        )
+        object.__setattr__(
+            self,
+            "worker_batch_size",
+            _require_positive_int(self.worker_batch_size, "RUNTIME_WORKER_BATCH_SIZE"),
+        )
+        object.__setattr__(
+            self,
+            "worker_poll_interval_seconds",
+            _require_positive_number(self.worker_poll_interval_seconds, "RUNTIME_WORKER_POLL_INTERVAL_SECONDS"),
+        )
+        object.__setattr__(
+            self,
+            "receipt_poll_interval_seconds",
+            _require_positive_number(self.receipt_poll_interval_seconds, "RUNTIME_RECEIPT_POLL_INTERVAL_SECONDS"),
+        )
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Self:
@@ -444,6 +476,22 @@ class LiveRuntimeConfig:
                 "REQUEST_BODY_MAX_BYTES",
                 DEFAULT_REQUEST_BODY_MAX_BYTES,
             ),
+            kafka_request_timeout_seconds=_parse_float(
+                source,
+                "ADAPTER_KAFKA_REQUEST_TIMEOUT_SECONDS",
+                3.0,
+            ),
+            worker_batch_size=_parse_int(source, "RUNTIME_WORKER_BATCH_SIZE", 100),
+            worker_poll_interval_seconds=_parse_float(
+                source,
+                "RUNTIME_WORKER_POLL_INTERVAL_SECONDS",
+                1.0,
+            ),
+            receipt_poll_interval_seconds=_parse_float(
+                source,
+                "RUNTIME_RECEIPT_POLL_INTERVAL_SECONDS",
+                5.0,
+            ),
         )
 
     def to_redacted_dict(self) -> dict[str, JsonValue]:
@@ -496,6 +544,7 @@ class LiveRuntimeConfig:
                 "kafka": {
                     "bootstrapServers": list(self.kafka_bootstrap_servers),
                     "clientId": self.kafka_client_id,
+                    "requestTimeoutSeconds": self.kafka_request_timeout_seconds,
                     "producerInjectedExternally": True,
                 },
                 "walletSignature": {
@@ -2362,6 +2411,215 @@ def _type_name(value: Any) -> str:
     return type(value).__name__
 
 
+class _TransactionalOutboxRelayRepository:
+    def __init__(self, dependencies: LiveRuntimeDependencies) -> None:
+        self._dependencies = dependencies
+
+    def claim_ready_batch(self, *, limit: int) -> tuple[OutboxMessage, ...]:
+        return _with_transaction(
+            self._dependencies,
+            lambda connection: PostgresOutboxMessageRepository(connection).claim_ready_batch(limit=limit)
+        )
+
+    def mark_published(
+        self,
+        kind: OutboxMessageKind | str,
+        identity: str,
+        *,
+        published_at: datetime | None = None,
+    ) -> None:
+        _with_transaction(
+            self._dependencies,
+            lambda connection: PostgresOutboxMessageRepository(connection).mark_published(
+                kind, identity, published_at=published_at
+            )
+        )
+
+    def mark_failed(self, kind: OutboxMessageKind | str, identity: str, error_message: str) -> None:
+        _with_transaction(
+            self._dependencies,
+            lambda connection: PostgresOutboxMessageRepository(connection).mark_failed(
+                kind, identity, error_message
+            )
+        )
+
+
+class _TransactionalListener:
+    def __init__(self, dependencies: LiveRuntimeDependencies, listener_factory: Callable[[Any], Any]) -> None:
+        self._dependencies = dependencies
+        self._listener_factory = listener_factory
+
+    def handle(self, message: Any) -> Any:
+        return _with_transaction(
+            self._dependencies,
+            lambda connection: self._listener_factory(connection).handle(message)
+        )
+
+
+def build_live_worker_runtime_from_env(
+    env: Mapping[str, str] | None = None,
+    *,
+    config: LiveRuntimeConfig | None = None,
+    dependencies: LiveRuntimeDependencies | None = None,
+) -> WorkerRuntime:
+    """Build live worker runtime with outbox relay, kafka consumer, and polling workers."""
+
+    from token_payments.runtime.workers import OutboxRelayWorker, WorkerRuntime, KafkaConsumerWorker
+    from token_payments.shared.adapter.kafka import KafkaProducerPublisher, LazyKafkaConsumerClient
+    from token_payments.shared.adapter.outbox_relay import OutboxRelay
+
+    live_config = config or LiveRuntimeConfig.from_env(env)
+    live_dependencies = dependencies or build_live_runtime_dependencies_from_env(env, config=live_config)
+
+    live_dependencies.validate()
+
+    outbox_repo = _TransactionalOutboxRelayRepository(live_dependencies)
+    kafka_publisher = KafkaProducerPublisher(
+        live_dependencies.kafka_producer,
+        send_timeout_seconds=live_config.kafka_request_timeout_seconds,
+    )
+
+    relay = OutboxRelay(outbox_repo, kafka_publisher)
+    outbox_worker = OutboxRelayWorker(
+        relay,
+        options=live_config.worker_loop_options(),
+    )
+
+    # 1. Checkout Event Listener
+    from token_payments.contexts.checkout.adapter.kafka import CheckoutKafkaEventListener
+    from token_payments.contexts.checkout.application import CheckoutProcessManager
+
+    checkout_listener = _TransactionalListener(
+        live_dependencies,
+        lambda connection: CheckoutKafkaEventListener(
+            process_manager=CheckoutProcessManager(),
+            processed_messages=PostgresProcessedMessageRepository(connection),
+            outbox_messages=PostgresOutboxMessageRepository(connection),
+        )
+    )
+    checkout_consumer = LazyKafkaConsumerClient(
+        bootstrap_servers=live_config.kafka_bootstrap_servers,
+        client_id=live_config.kafka_client_id,
+        group_id="checkout-process-manager",
+        topics=("checkout.events",),
+        request_timeout_ms=int(live_config.kafka_request_timeout_seconds * 1000),
+    )
+    checkout_worker = KafkaConsumerWorker(
+        consumer=checkout_consumer,
+        listener=checkout_listener,
+        options=live_config.worker_loop_options(),
+        name="checkout-process-manager",
+    )
+
+    # 2. Inventory Command Listener
+    from token_payments.contexts.inventory.adapter.kafka import InventoryKafkaCommandListener
+    from token_payments.contexts.inventory.application import InventoryCommandHandler
+
+    inventory_listener = _TransactionalListener(
+        live_dependencies,
+        lambda connection: InventoryKafkaCommandListener(
+            command_handler=InventoryCommandHandler(
+                inventory_repository=PostgresInventoryRepository(connection),
+                processed_commands=PostgresProcessedCommandRepository(connection),
+                outbox_messages=PostgresOutboxMessageRepository(connection),
+            ),
+            processed_commands=PostgresProcessedCommandRepository(connection),
+        )
+    )
+    inventory_consumer = LazyKafkaConsumerClient(
+        bootstrap_servers=live_config.kafka_bootstrap_servers,
+        client_id=live_config.kafka_client_id,
+        group_id="inventory-command-listener",
+        topics=("inventory.commands",),
+        request_timeout_ms=int(live_config.kafka_request_timeout_seconds * 1000),
+    )
+    inventory_worker = KafkaConsumerWorker(
+        consumer=inventory_consumer,
+        listener=inventory_listener,
+        options=live_config.worker_loop_options(),
+        name="inventory-command-listener",
+    )
+
+    # 3. Payment Command Listener
+    from token_payments.contexts.payment.adapter.kafka import PaymentKafkaCommandListener
+    from token_payments.contexts.payment.application import PaymentCommandHandler
+    from token_payments.contexts.payment.adapter.blockchain import ClientBlockchainAdapter
+    from token_payments.contexts.payment.adapter.transaction_service import ClientTransactionService
+
+    def payment_listener_factory(connection: Any) -> Any:
+        blockchain = ClientBlockchainAdapter(
+            live_dependencies.blockchain_client,
+            default_buffer_rate=live_config.blockchain_gas_buffer_rate,
+        )
+        handler = PaymentCommandHandler(
+            payment_repository=PostgresPaymentRepository(connection),
+            authorization_repository=PostgresPaymentAuthorizationRepository(connection),
+            processed_commands=PostgresProcessedCommandRepository(connection),
+            outbox_messages=PostgresOutboxMessageRepository(connection),
+            blockchain_adapter=blockchain,
+            timeout_scheduler=_NoopPaymentTimeoutScheduler(),
+            transaction_service=ClientTransactionService(live_dependencies.blockchain_client),
+        )
+        return PaymentKafkaCommandListener(
+            command_handler=handler,
+            processed_commands=PostgresProcessedCommandRepository(connection),
+        )
+
+    payment_listener = _TransactionalListener(live_dependencies, payment_listener_factory)
+    payment_consumer = LazyKafkaConsumerClient(
+        bootstrap_servers=live_config.kafka_bootstrap_servers,
+        client_id=live_config.kafka_client_id,
+        group_id="payment-command-listener",
+        topics=("payment.commands",),
+        request_timeout_ms=int(live_config.kafka_request_timeout_seconds * 1000),
+    )
+    payment_worker = KafkaConsumerWorker(
+        consumer=payment_consumer,
+        listener=payment_listener,
+        options=live_config.worker_loop_options(),
+        name="payment-command-listener",
+    )
+
+    # 4. Store Approval Command Listener
+    from token_payments.contexts.store_approval.adapter.kafka import StoreApprovalKafkaCommandListener
+    from token_payments.contexts.store_approval.application import StoreApprovalService
+
+    store_approval_listener = _TransactionalListener(
+        live_dependencies,
+        lambda connection: StoreApprovalKafkaCommandListener(
+            service=StoreApprovalService(
+                store_repository=PostgresStoreRepository(connection),
+                order_detail_repository=PostgresOrderRepository(connection),
+                processed_commands=PostgresProcessedCommandRepository(connection),
+                outbox_messages=PostgresOutboxMessageRepository(connection),
+            ),
+            processed_commands=PostgresProcessedCommandRepository(connection),
+        )
+    )
+    store_approval_consumer = LazyKafkaConsumerClient(
+        bootstrap_servers=live_config.kafka_bootstrap_servers,
+        client_id=live_config.kafka_client_id,
+        group_id="store-approval-command-listener",
+        topics=("store-approval.commands",),
+        request_timeout_ms=int(live_config.kafka_request_timeout_seconds * 1000),
+    )
+    store_approval_worker = KafkaConsumerWorker(
+        consumer=store_approval_consumer,
+        listener=store_approval_listener,
+        options=live_config.worker_loop_options(),
+        name="store-approval-command-listener",
+    )
+
+    workers = [
+        outbox_worker,
+        checkout_worker,
+        inventory_worker,
+        payment_worker,
+        store_approval_worker,
+    ]
+    return WorkerRuntime(workers)
+
+
 __all__ = [
     "BlockchainClient",
     "BlockchainReadinessProbe",
@@ -2390,6 +2648,7 @@ __all__ = [
     "build_live_api_router",
     "build_live_readiness_probes",
     "build_live_runtime_dependencies_from_env",
+    "build_live_worker_runtime_from_env",
     "describe_live_worker_registry",
     "describe_live_runtime_dependencies",
     "live_worker_registry",

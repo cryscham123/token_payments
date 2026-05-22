@@ -5,22 +5,34 @@
     {
       "step": 0,
       "name": "live-outbox-relay-publisher-wiring",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-22T09:42:08+0900",
+      "summary": "Implemented build_live_worker_runtime_from_env to construct OutboxRelayWorker using lazy _TransactionalOutboxRelayRepository wrapping PostgreSQL and KafkaProducerPublisher without establishing network sockets during import/setup.",
+      "completed_at": "2026-05-22T09:44:00+0900"
     },
     {
       "step": 1,
       "name": "live-kafka-consumer-worker-wiring",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-22T09:44:00+0900",
+      "summary": "Implemented LazyKafkaConsumerClient to lazily import kafka-python and construct KafkaConsumer. Wired Checkout, Inventory, Payment, and Store Approval listeners using _TransactionalListener to guarantee transactional boundaries per message handoff. Verified offset commit on success and rollback on failure.",
+      "completed_at": "2026-05-22T09:46:00+0900"
     },
     {
       "step": 2,
       "name": "worker-cli-compose-live-boundary",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-22T09:46:00+0900",
+      "summary": "Updated dispatch_command and _command_from_args in entrypoint.py to parse live worker CLI flags (--live, --dry-run, --once, --loop, --confirm-live-worker). Configured token_payments_live_worker service in docker-compose.yml to run loops on confirmed startup.",
+      "completed_at": "2026-05-22T09:48:00+0900"
     },
     {
       "step": 3,
       "name": "kafka-live-smoke-public-verification",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-05-22T09:48:00+0900",
+      "summary": "Added test_kafka_live_worker_public_contracts.py to verify live worker service definitions in docker-compose.yml and documented command line options. Updated README.md and docs/HARNESS.md with setup instructions for live execution (--live, --once, --loop, --confirm-live-worker).",
+      "completed_at": "2026-05-22T09:50:00+0900"
     }
   ],
   "created_at": "2026-05-20T02:00:00+0900"

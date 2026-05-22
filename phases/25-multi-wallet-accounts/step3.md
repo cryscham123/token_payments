@@ -23,9 +23,12 @@ Multi-wallet public contract, docs, Postman fixture, seed plan을 정리한다.
    - Postman collection은 wallet link/list/primary/revoke flow를 포함해야 한다.
    - seed plan은 한 user의 여러 wallet과 chain별 primary wallet 예시를 포함해야 한다.
    - docs는 wallet revocation이 asset recovery를 의미하지 않는다고 명시해야 한다.
+   - docs/API examples는 `auth_sessions.wallet_address`, `order_customers.wallet_address`, unchecked `store_wallet_address`를 multi-wallet 이후 canonical field처럼 설명하지 않아야 한다.
+   - public contract는 session login wallet, selected payer wallet, store settlement wallet을 각각 다른 개념으로 설명해야 한다.
 2. docs/fixtures를 갱신한다.
    - DID, email recovery, linked external identity provider는 future scope로 유지한다.
    - ERC-1271 deployed smart wallet 지원과 ERC-6492 future scope를 구분한다.
+   - store settlement wallet은 verified wallet reference 또는 검증된 store settlement wallet model로 지정된다는 점을 명시한다.
 3. route manifest와 expected JSON을 갱신한다.
 
 ## Acceptance Criteria
@@ -45,6 +48,7 @@ python3 scripts/validate_phases.py
 
 - email recovery나 DID를 이번 phase route로 추가하지 마라.
 - wallet revoke를 blockchain asset transfer/recovery처럼 설명하지 마라.
+- session/customer/store settlement 계약에 raw wallet address를 canonical identity처럼 다시 노출하지 마라.
 - fixture에 real private key, seed phrase, production wallet signature를 넣지 마라.
 - Claude 전용 파일이나 명령을 추가하지 마라.
 - `scripts/execute.py`에 프로젝트별 구현 로직을 넣지 마라.

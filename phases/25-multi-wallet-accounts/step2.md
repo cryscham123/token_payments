@@ -10,6 +10,8 @@
 - `/app/token_payments/contexts/payment/application/handler.py`
 - `/app/token_payments/contexts/payment/domain/model.py`
 - `/app/token_payments/contexts/payment/adapter/postgres.py`
+- `/app/token_payments/contexts/auth/application/ports.py`
+- `/app/token_payments/contexts/auth/adapter/postgres.py`
 - `/scripts/test_checkout_tracking_payment_api.py`
 - `/scripts/test_payment_application_contracts.py`
 - `/scripts/test_happy_path_checkout_e2e.py`
@@ -23,17 +25,22 @@ Checkout/payment flow에서 결제 지갑을 명시적으로 선택할 수 있�
    - checkout 시작 또는 payment initiation은 verified active wallet id를 선택할 수 있어야 한다.
    - wallet id를 생략하면 chain별 primary wallet을 사용해야 한다.
    - 다른 user의 wallet, revoked wallet, chain mismatch wallet은 거부되어야 한다.
-   - payment authorization은 `wallet_id`, `wallet_address`, `chain_id`를 보존해야 한다.
+   - payment authorization은 선택 지갑을 `payer_wallet_id` 같은 canonical wallet reference로 보존해야 한다.
+   - transaction signing/receipt verification에 wallet address가 필요하면 verified wallet에서 파생한 immutable snapshot으로만 보존하고, raw address snapshot이 authorization의 source of truth가 되면 안 된다.
    - tracking response는 선택된 wallet을 redacted/bounded하게 반환해야 한다.
+   - `order_customers.wallet_address`에 결제 지갑을 쓰거나 업데이트하지 않아야 한다.
 2. payment command/domain을 갱신한다.
-   - `InitiatePaymentCommand`와 authorization model에 wallet id를 추가한다.
+   - `InitiatePaymentCommand`와 authorization model에 `payer_wallet_id`를 추가한다.
    - MetaMask/signature request는 selected wallet 기준으로 생성한다.
    - existing payment receipt confirmation은 wallet identity를 검증 가능한 형태로 보존한다.
+   - selected wallet lookup은 auth wallet port/DTO를 통해 수행하고, client-provided wallet address로 ownership을 판단하지 않는다.
 3. checkout/payment API를 갱신한다.
    - request body에 optional `walletId`를 추가한다.
    - response/docs/Postman expected fixtures를 갱신한다.
 4. PostgreSQL adapter를 갱신한다.
-   - payment authorization table에 wallet id/chain id/address를 저장한다.
+   - payment authorization table에 `payer_wallet_id`와 chain id를 저장한다.
+   - wallet address column이 필요하면 `payer_wallet_address_snapshot`처럼 snapshot 의미가 드러나는 이름을 사용하고, canonical wallet row와 불일치할 수 있는 write path를 만들지 않는다.
+   - `order_customers`나 customer profile table에는 selected payment wallet을 저장하지 않는다.
 
 ## Acceptance Criteria
 
@@ -52,6 +59,7 @@ python3 scripts/validate_phases.py
 
 - wallet address만 request로 받아 결제 소유권을 판단하지 마라.
 - revoked/unverified wallet을 fallback으로 사용하지 마라.
+- payment selection을 `order_customers.wallet_address` 같은 customer-level fixed wallet로 되돌리지 마라.
 - stablecoin asset model을 이 step에 크게 추가하지 마라. asset-aware 결제는 다음 phase에서 다룬다.
 - Claude 전용 파일이나 명령을 추가하지 마라.
 - `scripts/execute.py`에 프로젝트별 구현 로직을 넣지 마라.

@@ -525,8 +525,13 @@ PostgreSQL is the source of truth for auth users, login challenges, and sessions
 
 Public HTTP route surface stays bound to the current 42-route manifest, including public/merchant store profile APIs, public/merchant product catalog reads, admin store catalog provisioning, merchant member/invitation APIs, merchant product catalog writes, and the store owner inventory API. Initial `ADMIN` bootstrap is local/manual seed only, implemented as a local DB init seed controlled by `.env` `BOOTSTRAP_ADMIN_WALLET_ADDRESS`; public customer login never grants a global `STORE_OWNER` role. Store management authorization uses merchant group membership and permission scopes, not a global STORE_OWNER account role, so an existing customer wallet is reused as the same `auth_users.user_id` and checkout history is preserved. Store business profile uses stable `publicStoreId`; store wallet and supported chains remain separate payment settings. Product reads, registration, and detail updates use `publicStoreId`/`publicProductId`, are allowed according to public/merchant scope, and keep product catalog status separate from inventory sale status. Product search engine integration, DID, and email account recovery are future scope. Stock intake, target stock correction, sale pause, and sale resume are audited, idempotent inventory commands. `approveOrder`/`request_store_approval` are Kafka/message listener inputs, and store owner manual order approval HTTP API is not in current scope. manual order approval HTTP API is not an active roadmap item. UI implementation remains a separate phase. ERC-20/USDC/USDT payment support is not an immediate roadmap phase. Kafka live worker, multi-wallet, and stablecoin support are next phase candidates.
 
-Next phase candidates:
+## Live Kafka Worker Runtime
 
-- Kafka live worker runtime
-- multi-wallet accounts
-- stablecoin payment support
+The live worker execution pathways running Token Payments (Outbox Relay and 4 Kafka Consumers) are structured under the `worker` CLI command. By default, running without `--live` runs a preview worker without establishing any network sockets.
+
+To execute in live mode:
+- Bounded plan (dry-run): `PYTHONPATH=app python3 -m token_payments worker --live --dry-run`
+- Run once (single batch): `PYTHONPATH=app python3 -m token_payments worker --live --once`
+- Run loop (long-running daemon): `PYTHONPATH=app python3 -m token_payments worker --live --loop --confirm-live-worker`
+
+The Docker environment defines the `token_payments_live_worker` service in `docker-compose.yml` which executes the long-running daemon loops on confirmed startup.

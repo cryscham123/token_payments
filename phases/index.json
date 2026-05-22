@@ -122,14 +122,15 @@
     },
     {
       "dir": "24-live-kafka-worker-runtime",
-      "status": "pending"
+      "status": "completed",
+      "completed_at": "2026-05-22T09:50:00+0900"
     },
     {
       "dir": "25-multi-wallet-accounts",
       "status": "pending"
     },
     {
-      "dir": "26-stablecoin-payment-support",
+      "dir": "26-security-hardening-architecture-refactoring",
       "status": "pending"
     }
   ]
