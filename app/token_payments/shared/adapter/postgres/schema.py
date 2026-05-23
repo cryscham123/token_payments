@@ -551,6 +551,9 @@ POSTGRES_SCHEMA_COMPATIBILITY_SQL: tuple[str, ...] = (
     """
     ALTER TABLE order_customers DROP COLUMN IF EXISTS wallet_address
     """,
+    """
+    ALTER TABLE auth_group_memberships ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1
+    """,
 )
 
 

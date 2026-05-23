@@ -748,12 +748,112 @@ WHERE m.user_id = %(user_id)s
 ORDER BY rp.permission_name ASC
 """
 
+SELECT_PROCESSED_MEMBERSHIP_EVENT_SQL = """
+SELECT 1 FROM processed_messages
+WHERE consumer = 'auth-rbac-projector'
+  AND message_id = %(message_id)s::uuid
+"""
+
+SELECT_MEMBERSHIP_VERSION_SQL = """
+SELECT version FROM auth_group_memberships
+WHERE group_id = %(group_id)s::uuid
+  AND user_id = %(user_id)s::uuid
+"""
+
+UPSERT_PROJECTED_MEMBERSHIP_SQL = """
+INSERT INTO auth_group_memberships (
+    group_id,
+    user_id,
+    role_id,
+    active,
+    version,
+    updated_at
+) VALUES (
+    %(group_id)s::uuid,
+    %(user_id)s::uuid,
+    %(role_id)s,
+    %(active)s,
+    %(version)s,
+    now()
+) ON CONFLICT (group_id, user_id) DO UPDATE SET
+    role_id = EXCLUDED.role_id,
+    active = EXCLUDED.active,
+    version = EXCLUDED.version,
+    updated_at = now()
+"""
+
+INSERT_PROCESSED_MEMBERSHIP_EVENT_SQL = """
+INSERT INTO processed_messages (
+    consumer,
+    message_id
+) VALUES (
+    'auth-rbac-projector',
+    %(message_id)s::uuid
+) ON CONFLICT (consumer, message_id) DO NOTHING
+"""
+
 
 class PostgresAuthRbacRepository:
     """Persist group memberships and scopes inside an injected transaction."""
 
     def __init__(self, connection: PostgresConnection) -> None:
         self._connection = connection
+
+    def was_membership_event_processed(self, event_id: str) -> bool:
+        from uuid import UUID
+        try:
+            UUID(str(event_id))
+        except ValueError:
+            return True
+        row = _fetch_one(
+            self._connection.execute(
+                SELECT_PROCESSED_MEMBERSHIP_EVENT_SQL,
+                {"message_id": str(event_id)},
+            )
+        )
+        return row is not None
+
+    def last_membership_projection_version(self, group_id: str, user_id: str) -> int:
+        row = _fetch_one(
+            self._connection.execute(
+                SELECT_MEMBERSHIP_VERSION_SQL,
+                {"group_id": str(group_id), "user_id": str(user_id)},
+            )
+        )
+        if row is None:
+            return 0
+        return int(_row_value(row, "version"))
+
+    def upsert_projected_membership(
+        self,
+        *,
+        group_id: str,
+        user_id: str,
+        role_id: str,
+        active: bool,
+        version: int,
+    ) -> None:
+        self._connection.execute(
+            UPSERT_PROJECTED_MEMBERSHIP_SQL,
+            {
+                "group_id": str(group_id),
+                "user_id": str(user_id),
+                "role_id": str(role_id),
+                "active": bool(active),
+                "version": int(version),
+            },
+        )
+
+    def mark_membership_event_processed(self, event_id: str) -> None:
+        from uuid import UUID
+        try:
+            UUID(str(event_id))
+        except ValueError:
+            return
+        self._connection.execute(
+            INSERT_PROCESSED_MEMBERSHIP_EVENT_SQL,
+            {"message_id": str(event_id)},
+        )
 
     def ensure_personal_membership(self, user: User, joined_at: datetime) -> tuple[SessionMembership, ...]:
         if not isinstance(user, User):

@@ -1314,6 +1314,31 @@ def live_worker_registry() -> tuple[LiveWorkerDescriptor, ...]:
             listener="token_payments.contexts.store_approval.adapter.kafka.StoreApprovalKafkaCommandListener",
             message_names=(CheckoutCommandName.REQUEST_STORE_APPROVAL.value,),
         ),
+        LiveWorkerDescriptor(
+            name="order-command-listener",
+            topic="order.commands",
+            listener="token_payments.contexts.order.adapter.kafka.OrderKafkaCommandListener",
+            message_names=(CheckoutCommandName.CANCEL_ORDER.value,),
+        ),
+        LiveWorkerDescriptor(
+            name="order-status-listener",
+            topic="payment.events",
+            listener="token_payments.contexts.order.adapter.kafka.OrderStatusKafkaEventListener",
+            message_names=(
+                CheckoutEventName.PAYMENT_CONFIRMED.value,
+                CheckoutEventName.ORDER_APPROVED.value,
+                CheckoutEventName.PAYMENT_FAILED.value,
+                CheckoutEventName.PAYMENT_EXPIRED.value,
+                CheckoutEventName.ORDER_REJECTED.value,
+                CheckoutEventName.ORDER_CANCELLED.value,
+            ),
+        ),
+        LiveWorkerDescriptor(
+            name="auth-rbac-projector",
+            topic="auth.rbac.projections",
+            listener="token_payments.contexts.auth.application.StoreMembershipProjectionConsumer",
+            message_names=("StoreCatalogStoreMembershipChangedEvent",),
+        ),
     )
 
 
@@ -2713,7 +2738,7 @@ def build_live_worker_runtime_from_env(
         bootstrap_servers=live_config.kafka_bootstrap_servers,
         client_id=live_config.kafka_client_id,
         group_id="checkout-process-manager",
-        topics=("checkout.events",),
+        topics=("checkout.events", "order.events", "inventory.events", "payment.events", "store-approval.events"),
         request_timeout_ms=int(live_config.kafka_request_timeout_seconds * 1000),
     )
     checkout_worker = KafkaConsumerWorker(
@@ -2822,12 +2847,97 @@ def build_live_worker_runtime_from_env(
         name="store-approval-command-listener",
     )
 
+    # 5. Order Command Listener
+    from token_payments.contexts.order.adapter.kafka import OrderKafkaCommandListener
+    from token_payments.contexts.order.application import OrderCommandHandler
+
+    order_command_listener = _TransactionalListener(
+        live_dependencies,
+        lambda connection: OrderKafkaCommandListener(
+            command_handler=OrderCommandHandler(
+                orders=PostgresOrderRepository(connection),
+                processed_commands=PostgresProcessedCommandRepository(connection),
+                outbox_messages=PostgresOutboxMessageRepository(connection),
+            ),
+            processed_commands=PostgresProcessedCommandRepository(connection),
+        ),
+    )
+    order_command_consumer = LazyKafkaConsumerClient(
+        bootstrap_servers=live_config.kafka_bootstrap_servers,
+        client_id=live_config.kafka_client_id,
+        group_id="order-command-listener",
+        topics=("order.commands",),
+        request_timeout_ms=int(live_config.kafka_request_timeout_seconds * 1000),
+    )
+    order_command_worker = KafkaConsumerWorker(
+        consumer=order_command_consumer,
+        listener=order_command_listener,
+        options=live_config.worker_loop_options(),
+        name="order-command-listener",
+    )
+
+    # 6. Order Status Event Listener
+    from token_payments.contexts.order.adapter.kafka import OrderStatusKafkaEventListener
+    from token_payments.contexts.order.application import OrderStatusEventProjector
+
+    order_status_listener = _TransactionalListener(
+        live_dependencies,
+        lambda connection: OrderStatusKafkaEventListener(
+            projector=OrderStatusEventProjector(
+                orders=PostgresOrderRepository(connection),
+                processed_messages=PostgresProcessedMessageRepository(connection),
+            )
+        ),
+    )
+    order_status_consumer = LazyKafkaConsumerClient(
+        bootstrap_servers=live_config.kafka_bootstrap_servers,
+        client_id=live_config.kafka_client_id,
+        group_id="order-status-listener",
+        topics=("payment.events", "store-approval.events"),
+        request_timeout_ms=int(live_config.kafka_request_timeout_seconds * 1000),
+    )
+    order_status_worker = KafkaConsumerWorker(
+        consumer=order_status_consumer,
+        listener=order_status_listener,
+        options=live_config.worker_loop_options(),
+        name="order-status-listener",
+    )
+
+    # 7. Auth RBAC Listener
+    from token_payments.contexts.auth.adapter import StoreMembershipProjectionKafkaListener
+    from token_payments.contexts.auth.application import StoreMembershipProjectionConsumer
+
+    auth_rbac_listener = _TransactionalListener(
+        live_dependencies,
+        lambda connection: StoreMembershipProjectionKafkaListener(
+            StoreMembershipProjectionConsumer(
+                repository=PostgresAuthRbacRepository(connection)
+            )
+        ),
+    )
+    auth_rbac_consumer = LazyKafkaConsumerClient(
+        bootstrap_servers=live_config.kafka_bootstrap_servers,
+        client_id=live_config.kafka_client_id,
+        group_id="auth-rbac-projector",
+        topics=("auth.rbac.projections",),
+        request_timeout_ms=int(live_config.kafka_request_timeout_seconds * 1000),
+    )
+    auth_rbac_worker = KafkaConsumerWorker(
+        consumer=auth_rbac_consumer,
+        listener=auth_rbac_listener,
+        options=live_config.worker_loop_options(),
+        name="auth-rbac-projector",
+    )
+
     workers = [
         outbox_worker,
         checkout_worker,
         inventory_worker,
         payment_worker,
         store_approval_worker,
+        order_command_worker,
+        order_status_worker,
+        auth_rbac_worker,
     ]
     return WorkerRuntime(workers)
 

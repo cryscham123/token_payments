@@ -387,7 +387,7 @@ class WorkerRuntime:
             processed += summary.processed
             summaries.extend(summary.results)
             idle = summary.idle
-            if summary.stopped or summary.idle:
+            if summary.stopped or (summary.idle and max_batches != 999999):
                 return WorkerRunSummary(
                     batches=batches,
                     processed=processed,
@@ -395,6 +395,9 @@ class WorkerRuntime:
                     stopped=summary.stopped or self.stopped,
                     idle=idle,
                 )
+            if summary.idle:
+                import time
+                time.sleep(1.0)
         return WorkerRunSummary(batches=batches, processed=processed, results=tuple(summaries), idle=idle)
 
 

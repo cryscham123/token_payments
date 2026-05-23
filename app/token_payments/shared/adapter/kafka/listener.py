@@ -72,17 +72,37 @@ class KafkaConsumerLoop:
             raise ValueError("KafkaConsumerLoop.run_batch limit must be a positive integer")
 
         processed = 0
-        records = iter(self._consumer)
-        while processed < limit:
+        poll = getattr(self._consumer, "poll", None)
+        res = None
+        if callable(poll):
             try:
-                record = next(records)
-            except StopIteration:
-                break
-            self._listener.handle(KafkaInboundMessage.from_record(record))
-            processed += 1
-            commit = getattr(self._consumer, "commit", None)
-            if callable(commit):
-                commit()
+                res = poll(timeout_ms=0, max_records=limit)
+            except Exception:
+                res = None
+
+        if isinstance(res, dict):
+            records_list = []
+            for partition_records in res.values():
+                if isinstance(partition_records, list):
+                    records_list.extend(partition_records)
+            for record in records_list:
+                self._listener.handle(KafkaInboundMessage.from_record(record))
+                processed += 1
+                commit = getattr(self._consumer, "commit", None)
+                if callable(commit):
+                    commit()
+        else:
+            records = iter(self._consumer)
+            while processed < limit:
+                try:
+                    record = next(records)
+                except StopIteration:
+                    break
+                self._listener.handle(KafkaInboundMessage.from_record(record))
+                processed += 1
+                commit = getattr(self._consumer, "commit", None)
+                if callable(commit):
+                    commit()
         return KafkaConsumerLoopResult(processed=processed)
 
 

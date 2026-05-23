@@ -37,9 +37,9 @@ def test_build_live_worker_runtime_wires_consumers_lazily() -> None:
         runtime = build_live_worker_runtime_from_env(config=config)
         assert isinstance(runtime, WorkerRuntime)
 
-        # There should be 4 KafkaConsumerWorkers and 1 OutboxRelayWorker
+        # There should be 7 KafkaConsumerWorkers and 1 OutboxRelayWorker
         consumers = [w for w in runtime.workers if isinstance(w, KafkaConsumerWorker)]
-        assert len(consumers) == 4
+        assert len(consumers) == 7
 
         # Verify names
         names = {w.name for w in consumers}
@@ -48,6 +48,9 @@ def test_build_live_worker_runtime_wires_consumers_lazily() -> None:
             "inventory-command-listener",
             "payment-command-listener",
             "store-approval-command-listener",
+            "order-command-listener",
+            "order-status-listener",
+            "auth-rbac-projector",
         }
         assert names == expected_names
 

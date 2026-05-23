@@ -59,3 +59,10 @@ class LazyKafkaConsumerClient:
         client = self._client()
         if hasattr(client, "commit"):
             client.commit()
+
+    def poll(self, timeout_ms: int = 0, max_records: int | None = None) -> dict[Any, list[Any]]:
+        client = self._client()
+        poll = getattr(client, "poll", None)
+        if callable(poll):
+            return poll(timeout_ms=timeout_ms, max_records=max_records)
+        return {}

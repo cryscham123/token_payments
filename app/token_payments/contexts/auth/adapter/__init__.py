@@ -9,6 +9,7 @@ from .postgres import (
     PostgresUserWalletRepository,
 )
 from .wallet_signature import ClientWalletSignatureVerifier, WalletSignatureVerifier
+from .projection_listener import StoreMembershipProjectionKafkaListener
 
 __all__ = [
     "ClientWalletSignatureVerifier",
@@ -19,4 +20,5 @@ __all__ = [
     "PostgresUserRepository",
     "PostgresUserWalletRepository",
     "WalletSignatureVerifier",
+    "StoreMembershipProjectionKafkaListener",
 ]

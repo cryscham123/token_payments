@@ -52,8 +52,8 @@ class KafkaOutboundMessage:
             headers=_headers_from_outbox(message),
         )
 
-    def encoded_headers(self) -> Sequence[tuple[str, bytes]]:
-        return tuple((key, value.encode("utf-8")) for key, value in self.headers.items())
+    def encoded_headers(self) -> list[tuple[str, bytes]]:
+        return [(key, value.encode("utf-8")) for key, value in self.headers.items()]
 
 
 @runtime_checkable

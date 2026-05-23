@@ -625,9 +625,10 @@ class StoreCatalogApplicationService:
         if not callable(record_event):
             return False
         event_identity = _membership_event_identity(command.command_id, user_id)
+        event_id = str(uuid5(NAMESPACE_URL, event_identity))
         message = OutboxMessage.record_event(
             metadata=EventMetadata(
-                message_id=MessageId(str(uuid5(NAMESPACE_URL, event_identity))),
+                message_id=MessageId(event_id),
                 name="StoreCatalogStoreMembershipChangedEvent",
                 aggregate_id=f"store:{command.store_id}",
                 occurred_at=command.requested_at,
@@ -637,7 +638,7 @@ class StoreCatalogApplicationService:
             topic="auth.rbac.projections",
             key=str(command.store_id),
             payload={
-                "eventId": event_identity,
+                "eventId": event_id,
                 "sourceOfTruth": "store_catalog_store_memberships",
                 "projection": "auth_group_memberships",
                 "storeId": str(command.store_id),

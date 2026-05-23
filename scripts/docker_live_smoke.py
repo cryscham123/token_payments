@@ -947,7 +947,7 @@ def _materialize_api_command_argv(name: str, argv: tuple[str, ...], root: Path) 
 def _seed_sql_from_plan(root: Path) -> str:
     plan_path = root / "postman" / "fixtures" / "token-payments.local.seed-plan.json"
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
-    statements: list[str] = []
+    statements: list[str] = ["SET session_replication_role = 'replica';"]
     for record in plan.get("records", ()):
         if not isinstance(record, dict):
             continue
@@ -960,11 +960,15 @@ def _seed_sql_from_plan(root: Path) -> str:
         statements.append(
             f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({', '.join(literals)}) ON CONFLICT DO NOTHING;"
         )
+    statements.append("SET session_replication_role = 'origin';")
     return "\n".join(statements)
 
 
 def _sql_identifier(value: str) -> str:
-    if not re.fullmatch(r"[a-z_][a-z0-9_]*", value):
+    inner = value
+    if value.startswith('"') and value.endswith('"') and len(value) >= 2:
+        inner = value[1:-1]
+    if not re.fullmatch(r"[a-z_][a-z0-9_]*", inner):
         raise ValueError(f"unsafe seed SQL identifier: {value}")
     return value
 

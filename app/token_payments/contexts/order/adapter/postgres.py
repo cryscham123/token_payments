@@ -334,6 +334,21 @@ class PostgresCustomerRepository:
         if not isinstance(user_id, UserId):
             raise ValueError("PostgresCustomerRepository.get_by_user_id requires a UserId")
         row = _fetch_one(self._connection.execute(SELECT_CUSTOMER_BY_USER_ID_SQL, {"user_id": str(user_id)}))
+        if row is None:
+            user_row = _fetch_one(
+                self._connection.execute(
+                    "SELECT 1 FROM auth_users WHERE user_id = %(user_id)s",
+                    {"user_id": str(user_id)},
+                )
+            )
+            if user_row is not None:
+                from uuid import uuid4
+                customer_id = uuid4()
+                self._connection.execute(
+                    "INSERT INTO order_customers (customer_id, user_id) VALUES (%(customer_id)s, %(user_id)s)",
+                    {"customer_id": str(customer_id), "user_id": str(user_id)},
+                )
+                row = _fetch_one(self._connection.execute(SELECT_CUSTOMER_BY_USER_ID_SQL, {"user_id": str(user_id)}))
         return _row_to_customer(row) if row is not None else None
 
 

@@ -215,6 +215,7 @@ CREATE TABLE IF NOT EXISTS auth_group_memberships (
     joined_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    version INT NOT NULL DEFAULT 1,
     PRIMARY KEY (group_id, user_id)
 );
 
