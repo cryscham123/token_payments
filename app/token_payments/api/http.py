@@ -447,6 +447,8 @@ def register_auth_routes(
             _cookie_logout_handler(auth_api.logout, session_transport),
         ),
         _add_manifest_route(router, AUTH_HTTP_ROUTES["current_user"], auth_api.current_user),
+        _add_manifest_route(router, AUTH_HTTP_ROUTES["current_user_profile"], auth_api.current_user_profile),
+        _add_manifest_route(router, AUTH_HTTP_ROUTES["update_current_user_profile"], auth_api.update_current_user_profile),
     )
 
 
@@ -1032,6 +1034,8 @@ AUTH_HTTP_ROUTES: Mapping[str, HttpRouteSpec] = MappingProxyType(
         "refresh_session": HttpRouteSpec("POST", "/auth/sessions/refresh", "refreshSession"),
         "logout": HttpRouteSpec("DELETE", "/auth/sessions", "logout"),
         "current_user": HttpRouteSpec("GET", "/auth/me", "getCurrentUser"),
+        "current_user_profile": HttpRouteSpec("GET", "/auth/me/profile", "getCurrentUserProfile"),
+        "update_current_user_profile": HttpRouteSpec("PATCH", "/auth/me/profile", "updateCurrentUserProfile"),
     }
 )
 

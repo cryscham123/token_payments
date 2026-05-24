@@ -563,6 +563,72 @@
               }
             }
           ]
+        },
+        {
+          "id": "getCurrentUserProfile",
+          "name": "Get current user profile",
+          "description": "Safe GET request for the optional displayName-only user profile. User email, email hash, locale, and timezone are not returned.",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Request-Id",
+                "value": "postman-auth-me-profile-001"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me/profile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "me",
+                "profile"
+              ]
+            }
+          }
+        },
+        {
+          "id": "updateCurrentUserProfile",
+          "name": "Update current user profile",
+          "description": "Updates or clears the optional displayName-only user profile. Contact fields such as email are not accepted.",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "postman-auth-profile-update-001"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "postman-auth-profile-update-001"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me/profile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "me",
+                "profile"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"displayName\": \"Postman User\"\n}"
+            }
+          }
         }
       ]
     },
@@ -1505,7 +1571,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"targetWallet\": \"{{merchantInviteWallet}}\",\n  \"roleId\": \"MERCHANT_STAFF\"\n}"
+              "raw": "{\n  \"targetDisplayName\": \"{{merchantInviteDisplayName}}\",\n  \"roleId\": \"MERCHANT_STAFF\"\n}"
             }
           }
         },

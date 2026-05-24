@@ -4,7 +4,7 @@ This document captures the Live API Runtime Composition boundary for the local T
 
 Default `api`/`serve-api` commands keep the no-server-start preview boundary. Use `PYTHONPATH=app python3 -m token_payments serve-api --live --dry-run` for a bounded live server plan, and `PYTHONPATH=app python3 -m token_payments serve-api --live --confirm-live-api` only when an approved live environment is ready to start the long-running server.
 
-이 문서는 현재 로컬 backend API와 Phase 26 public security contract를 기준으로 한 명세다. Route surface는 현재 `app/token_payments/api/http.py`의 route manifest 47개를 기준으로 고정한다.
+이 문서는 현재 로컬 backend API와 Phase 27 privacy-first identity contract를 기준으로 한 명세다. Route surface는 현재 `app/token_payments/api/http.py`의 route manifest 49개를 기준으로 고정한다.
 
 ## Phase 26 public security contract
 
@@ -21,7 +21,7 @@ Phase 26 hardens the public API and runtime architecture around externally safe 
 
 ### Public HTTP route surface
 
-Public HTTP route surface is exactly the current 47-route manifest from `app/token_payments/api/http.py`. This manifest contains auth session routes, authenticated wallet link/list/primary/revoke routes, order creation, checkout tracking, payment txHash submission, public store profile reads, merchant store profile listing/update routes, admin store catalog provisioning routes, store-owner product registration, store owner inventory query/mutation routes, merchant member/invitation routes, operator dashboard/detail reads, and cancel/retry/replay operator actions. It does not include store owner manual approval routes, role/permission full CRUD, platform group CRUD, personal group CRUD, owner transfer, settlement wallet mutation, or checkout saga command endpoints.
+Public HTTP route surface is exactly the current 49-route manifest from `app/token_payments/api/http.py`. This manifest contains auth session routes, authenticated wallet link/list/primary/revoke routes, current user display profile routes, order creation, checkout tracking, payment txHash submission, public store profile reads, merchant store profile listing/update routes, admin store catalog provisioning routes, store-owner product registration, store owner inventory query/mutation routes, merchant member/invitation routes, operator dashboard/detail reads, and cancel/retry/replay operator actions. It does not include store owner manual approval routes, role/permission full CRUD, platform group CRUD, personal group CRUD, owner transfer, settlement wallet mutation, or checkout saga command endpoints.
 
 ### Message listener input surface
 
@@ -51,7 +51,7 @@ Catalog query filtering is the PostgreSQL baseline for phase 23. Query text, cat
 
 Order creation and checkout start must revalidate server-side current store/product/price/inventory/payment capability state. Client-provided product detail, price, stock, chain, asset, or settlement capability values from public catalog reads are hints only and must not be trusted as authorization or pricing inputs.
 
-Elasticsearch, DID-based account identity, and email account recovery are future scope. Phase 23 documents their boundaries but does not add search engine services, DID flows, or email recovery implementations.
+Elasticsearch and DID-based account identity are future scope. Email account recovery is not supported because the backend does not persist user email or email hashes.
 
 ### Multi-wallet and stablecoin payment contract
 
@@ -59,9 +59,13 @@ The login wallet is the wallet that signs the SIWE session challenge. A linked w
 
 Checkout write APIs accept `paymentAssetId` and optional `walletId`. They never accept a raw wallet address or arbitrary token address as proof of ownership or payment asset support. Store and product capability responses use `supportedChains` and `acceptedAssets`; display metadata is derived from the registry, while `chain_id` remains the canonical network key. `payment_authorizations` owns expected payer wallet, asset, recipient, chain, and amount terms. `payments` owns observed transaction hash, transaction status, and receipt verification result.
 
-Stablecoin support is registry-driven. The local registry may enable native coin payments plus ERC-20 stablecoin assets such as USDC and USDT; disabled assets and arbitrary ERC-20 contracts are rejected. permit, gas sponsorship, swap, exchange-rate conversion, DID identity, and email account recovery remain future scope.
+Stablecoin support is registry-driven. The local registry may enable native coin payments plus ERC-20 stablecoin assets such as USDC and USDT; disabled assets and arbitrary ERC-20 contracts are rejected. permit, gas sponsorship, swap, exchange-rate conversion, and DID identity remain future scope. Email account recovery remains unsupported because user email is not stored.
 
 Roadmap status note: Kafka live worker, multi-wallet, and stablecoin support are implemented in the local runtime contract. Historical architecture wording, "ERC-20/USDC/USDT payment support is not an immediate roadmap phase", is superseded by phase 25. Counterfactual linked wallets are not implemented; verified linked wallets are implemented through the authenticated wallet link APIs.
+
+### Privacy-first OAuth identity contract
+
+OAuth/social identity is keyed by `provider` plus `providerSubject`, not by email. Google email claims are not persisted, and email/hash matching must not automatically merge accounts. A new social login creates or links the provider-subject identity to a user only through an authenticated session or an explicit EOA signature proof for existing wallet accounts. OAuth unlink is a soft revoke using `revokedAt`; unlink must not remove the final active login method, and wallet/social identity unlink is blocked while active payment, refund, or reservation work depends on that identity.
 
 ### Store profile API surface
 
@@ -83,7 +87,7 @@ Product sale availability is stored canonically in the inventory context as `Pro
 
 ### Planned phase 22/23 RBAC and profile/catalog alignment
 
-Phase 22 removes global account-role authorization from new execution paths. User remains the authenticated identity and audit actor. `UserProfile` is bounded display/contact profile data and is not an authorization source. `Group` is a permission scope/resource boundary, not a user-like actor, and nested groups are not part of the model. GroupMembership connects a user to a group with a role. `GroupMembership` connects a user to a `PERSONAL`, `MERCHANT`, or `PLATFORM` group with a role. Roles are permission bundles; API authorization checks permission plus resource scope through `AuthorizationPolicy.can(...)`.
+Phase 22 removes global account-role authorization from new execution paths. User remains the authenticated identity and audit actor. `UserProfile` is optional bounded display data only and is not an authorization source. The backend does not store user email, email hash, locale, or timezone in profile data. `Group` is a permission scope/resource boundary, not a user-like actor, and nested groups are not part of the model. GroupMembership connects a user to a group with a role. `GroupMembership` connects a user to a `PERSONAL`, `MERCHANT`, or `PLATFORM` group with a role. Roles are permission bundles; API authorization checks permission plus resource scope through `AuthorizationPolicy.can(...)`.
 
 `PERSONAL` groups are retained as the customer self-scope. They support self operations without granting merchant or platform authority. `MERCHANT` groups scope store owner/manager permissions to a store or merchant resource. `PLATFORM` groups scope operator/admin permissions.
 
@@ -130,7 +134,7 @@ Externally exposed RBAC and membership API surface for phase 22:
 | `POST /admin/stores/{storeId}/memberships` | `admin:provision` or `rbac:manage` | Admin-level compatibility path for setting store membership, including owner assignment during migration |
 | `GET /merchant/stores/{storeId}/members` | `merchant_member:read` | Lists users in the caller's scoped merchant group |
 | `GET /merchant/stores/{storeId}/invitations` | `merchant_member:read` | Lists pending/accepted/revoked invitations for the scoped merchant group |
-| `POST /merchant/stores/{storeId}/invitations` | `merchant_member:invite` | Invites a user/wallet/email target to a non-owner merchant role template |
+| `POST /merchant/stores/{storeId}/invitations` | `merchant_member:invite` | Invites a displayName-resolved user, internal user id, or wallet target to a non-owner merchant role template |
 | `POST /merchant/invitations/{invitationId}/accept` | authenticated target user | Accepts an invitation and creates membership in the invitation's merchant group |
 | `POST /merchant/invitations/{invitationId}/revoke` | `merchant_member:invite` or `merchant_member:manage` | Revokes pending invitations in the scoped merchant group |
 | `PATCH /merchant/stores/{storeId}/members/{userId}` | `merchant_member:manage` | Changes staff role templates only; cannot grant, revoke, or transfer `MERCHANT_OWNER` |
@@ -248,7 +252,7 @@ Request body size is bounded by `REQUEST_BODY_MAX_BYTES`. Exceeding it returns `
 
 ## Live System Routes And Observability
 
-`GET /healthz` and `GET /readyz` are live server-only system routes and are not part of the 47-route public facade manifest. `/healthz` reports process/runtime health only and must not open PostgreSQL, Kafka, Blockchain, Docker, or local `.env`. `/readyz` summarizes injected PostgreSQL/Kafka/Blockchain readiness probes; unavailable components return `503` with bounded component details.
+`GET /healthz` and `GET /readyz` are live server-only system routes and are not part of the 49-route public facade manifest. `/healthz` reports process/runtime health only and must not open PostgreSQL, Kafka, Blockchain, Docker, or local `.env`. `/readyz` summarizes injected PostgreSQL/Kafka/Blockchain readiness probes; unavailable components return `503` with bounded component details.
 
 All HTTP responses include `X-Request-Id` when a request id is known, and an incoming `X-Request-Id` is preserved. Live access log events include method, path template or route id, status, request id, duration, actor summary, and error code. Access logs must not record cookie values, signed tokens, authorization headers, private keys, signatures, or full request bodies.
 
@@ -291,6 +295,8 @@ Common status codes:
 | `refreshSession` | `POST` | `/auth/sessions/refresh` |
 | `logout` | `DELETE` | `/auth/sessions` |
 | `getCurrentUser` | `GET` | `/auth/me` |
+| `getCurrentUserProfile` | `GET` | `/auth/me/profile` |
+| `updateCurrentUserProfile` | `PATCH` | `/auth/me/profile` |
 | `createOrder` | `POST` | `/orders` |
 | `getCheckoutTrackingByTrackingId` | `GET` | `/checkouts/tracking/{trackingId}` |
 | `getCheckoutTrackingByOrderId` | `GET` | `/checkouts/orders/{orderId}` |
@@ -1074,7 +1080,7 @@ Default PostgreSQL bootstrap uses `app/postgres/init.d/002-token-payments-defaul
 
 Manual seed data for local Postman examples is still described by `postman/fixtures/token-payments.local.seed-plan.json`. It references demo customer/store/product/inventory/payment destination/test network ids using committed PostgreSQL schema table and column names, but it is fixture metadata rather than the default init path. Route-level expected response examples live in `postman/expected/token-payments.api.expected.json`; the fixture covers auth, cookie/CSRF headers, `Idempotency-Key`, `X-Request-Id`, happy-path checkout, compensation cancellation, and operator action recovery while keeping signed token and cookie values redacted.
 
-The Docker Compose API service is `token_payments_api`. After `cp .env.example .env`, `COMPOSE_PROFILES=runtime,smoke,api` makes it part of plain `docker compose up`; automated checks use daemon-less compose config and smoke plans and do not start Docker. Daemon-less compose config validation does not start Docker:
+The Docker Compose API service is `token_payments_api`. Async checkout progress, including inventory reservation and payment receipt confirmation, also requires the runtime profile's `token_payments_live_worker`. After `cp .env.example .env`, `COMPOSE_PROFILES=runtime,smoke,api` makes both services part of plain `docker compose up`; automated checks use daemon-less compose config and smoke plans and do not start Docker. Daemon-less compose config validation does not start Docker:
 
 ```bash
 docker compose --env-file .env.example config --services

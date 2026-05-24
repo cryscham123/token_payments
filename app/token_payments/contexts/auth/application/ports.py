@@ -170,9 +170,7 @@ class UpdateUserProfileCommand:
     actor_user_id: UserId
     target_user_id: UserId
     display_name: str | None = None
-    email: str | None = None
-    locale: str | None = None
-    timezone: str | None = None
+    display_name_provided: bool = False
     requested_at: datetime | None = None
     request_id: str | None = None
     actor_scopes: tuple[str, ...] = ()

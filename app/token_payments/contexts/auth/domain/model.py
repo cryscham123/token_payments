@@ -364,7 +364,6 @@ class GroupInvitation:
     created_at: datetime
     target_user_id: UserId | None = None
     target_wallet: WalletAddress | str | None = None
-    target_email: str | None = None
     expires_at: datetime | None = None
 
     def __post_init__(self) -> None:
@@ -382,12 +381,10 @@ class GroupInvitation:
             raise ValueError("GroupInvitation.target_user_id must be a UserId")
         if self.target_wallet is not None:
             object.__setattr__(self, "target_wallet", _coerce_wallet(self.target_wallet))
-        if self.target_email is not None:
-            object.__setattr__(self, "target_email", _require_text(self.target_email, "GroupInvitation.target_email"))
         if self.expires_at is not None:
             object.__setattr__(self, "expires_at", _require_aware_datetime(self.expires_at, "GroupInvitation.expires_at"))
-        if self.target_user_id is None and self.target_wallet is None and self.target_email is None:
-            raise ValueError("GroupInvitation requires a user, wallet, or email target")
+        if self.target_user_id is None and self.target_wallet is None:
+            raise ValueError("GroupInvitation requires a user or wallet target")
 
     def is_open_for(self, user_id: UserId, wallet: WalletAddress | str | None, now: datetime) -> bool:
         now = _require_aware_datetime(now, "now")
@@ -397,8 +394,11 @@ class GroupInvitation:
             return False
         if self.target_user_id is not None and self.target_user_id != user_id:
             return False
-        if self.target_wallet is not None and wallet is not None and self.target_wallet != _coerce_wallet(wallet):
-            return False
+        if self.target_wallet is not None:
+            if wallet is None:
+                return False
+            if self.target_wallet != _coerce_wallet(wallet):
+                return False
         return True
 
 

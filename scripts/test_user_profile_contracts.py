@@ -40,26 +40,21 @@ def test_user_profile_is_separate_from_auth_identity_and_supports_tombstones() -
 
     profile = _profile(
         display_name="  Cafe\u0301 Wallet  ",
-        email="ALICE@Example.COM",
-        email_verified_at=NOW,
-        locale="ko-KR",
-        timezone="Asia/Seoul",
     )
+    anonymous_profile = _profile(display_name=None)
 
     assert profile.display_name == "Caf\u00e9 Wallet"
-    assert profile.email == "alice@example.com"
-    assert profile.locale == "ko-KR"
-    assert profile.timezone == "Asia/Seoul"
     assert profile.status is UserProfileStatus.ACTIVE
+    assert anonymous_profile.display_name is None
+    assert anonymous_profile.display_name_html is None
+
+    profile_fields = {field.name for field in fields(UserProfile)}
+    assert {"email", "email_verified_at", "email_hash", "locale", "timezone"}.isdisjoint(profile_fields)
 
     tombstone = profile.delete(deleted_at=NOW + timedelta(minutes=1))
 
     assert tombstone.status is UserProfileStatus.DELETED
     assert tombstone.display_name is None
-    assert tombstone.email is None
-    assert tombstone.email_verified_at is None
-    assert tombstone.locale is None
-    assert tombstone.timezone is None
     assert tombstone.user_id == profile.user_id
 
 
@@ -82,26 +77,19 @@ def test_user_profile_display_name_rejects_untrusted_text(display_name: str) -> 
         _profile(display_name=display_name)
 
 
-@pytest.mark.parametrize(
-    "kwargs",
-    [
-        {"email": "not-an-email"},
-        {"email": "alice@example"},
-        {"locale": "en_US"},
-        {"locale": "ko-\x00KR"},
-        {"timezone": "Mars/Phobos"},
-        {"timezone": "Asia/Seoul\n"},
-    ],
-)
-def test_user_profile_contact_and_locale_fields_are_bounded(kwargs: dict[str, str]) -> None:
-    with pytest.raises(ValueError):
-        _profile(**kwargs)
-
-
-def test_email_profile_field_does_not_enable_email_login_recovery_or_did_identity() -> None:
+def test_user_profile_does_not_store_contact_or_email_identity() -> None:
     profile_fields = {field.name for field in fields(UserProfile)}
-    assert "email" in profile_fields
-    assert {"password_hash", "email_recovery_token", "did", "did_document"}.isdisjoint(profile_fields)
+    assert {
+        "email",
+        "email_verified_at",
+        "email_hash",
+        "locale",
+        "timezone",
+        "password_hash",
+        "email_recovery_token",
+        "did",
+        "did_document",
+    }.isdisjoint(profile_fields)
 
     forbidden_methods = {
         "loginWithEmail",
@@ -132,8 +120,8 @@ def test_user_profile_display_name_must_be_unique_across_active_profiles() -> No
     assert profiles.get_by_user_id(USER_ID) is None
 
 
-def test_profile_api_redacts_contact_fields_and_requires_self_or_user_manage_for_update() -> None:
-    use_case = FakeProfileUseCase(_profile(display_name="<Alice & Bob>", email="alice@example.com"))
+def test_profile_api_exposes_display_name_only_and_requires_self_or_user_manage_for_update() -> None:
+    use_case = FakeProfileUseCase(_profile(display_name="<Alice & Bob>"))
     api = AuthApi(use_case)
 
     public_response = api.get_user_profile(
@@ -153,6 +141,8 @@ def test_profile_api_redacts_contact_fields_and_requires_self_or_user_manage_for
     assert public_profile["displayNameHtml"] == "&lt;Alice &amp; Bob&gt;"
     assert "email" not in public_profile
     assert "emailVerifiedAt" not in public_profile
+    assert "locale" not in public_profile
+    assert "timezone" not in public_profile
 
     self_response = api.current_user_profile(
         ApiRequest(
@@ -165,7 +155,10 @@ def test_profile_api_redacts_contact_fields_and_requires_self_or_user_manage_for
     )
 
     assert self_response.status_code == 200
-    assert self_response.body["profile"]["email"] == "alice@example.com"
+    assert "email" not in self_response.body["profile"]
+    assert "emailVerifiedAt" not in self_response.body["profile"]
+    assert "locale" not in self_response.body["profile"]
+    assert "timezone" not in self_response.body["profile"]
 
     forbidden_update = api.update_current_user_profile(
         ApiRequest(
@@ -188,7 +181,7 @@ def test_profile_api_redacts_contact_fields_and_requires_self_or_user_manage_for
             method="PATCH",
             path="/users/profile",
             query={"userId": str(USER_ID)},
-            body={"displayName": "New Name", "locale": "en-US", "timezone": "UTC"},
+            body={"displayName": "New Name"},
             auth_context=ApiAuthContext(user_id=str(ADMIN_USER_ID), session_id="session", scopes=("user:manage",)),
             received_at=NOW,
         )
@@ -200,8 +193,36 @@ def test_profile_api_redacts_contact_fields_and_requires_self_or_user_manage_for
     assert use_case.update_commands[-1].request_id == "req-update-admin"
     assert admin_update.body["profile"]["displayName"] == "New Name"
 
+    unsupported_contact_update = api.update_current_user_profile(
+        ApiRequest(
+            request_id="req-update-contact",
+            method="PATCH",
+            path="/auth/me/profile",
+            body={"email": "alice@example.com"},
+            auth_context=ApiAuthContext(user_id=str(USER_ID), session_id="session", scopes=("user:self",)),
+            received_at=NOW,
+        )
+    )
 
-def test_postgres_profile_schema_and_repository_keep_profile_out_of_auth_users() -> None:
+    assert unsupported_contact_update.status_code == 400
+    assert unsupported_contact_update.body["error"]["code"] == "VALIDATION_ERROR"
+
+    cleared = api.update_current_user_profile(
+        ApiRequest(
+            request_id="req-clear-display",
+            method="PATCH",
+            path="/auth/me/profile",
+            body={"displayName": None},
+            auth_context=ApiAuthContext(user_id=str(USER_ID), session_id="session", scopes=("user:self",)),
+            received_at=NOW,
+        )
+    )
+
+    assert cleared.status_code == 200
+    assert cleared.body["profile"]["displayName"] is None
+
+
+def test_postgres_profile_schema_and_repository_store_display_name_only() -> None:
     schema = (ROOT / "app/postgres/init.d/001-token-payments-schema.sql").read_text(encoding="utf-8")
     normalized_schema = " ".join(schema.lower().split())
     compatibility_sql = " ".join("\n".join(POSTGRES_SCHEMA_COMPATIBILITY_SQL).lower().split())
@@ -211,6 +232,18 @@ def test_postgres_profile_schema_and_repository_keep_profile_out_of_auth_users()
     assert "references auth_users (user_id)" in normalized_schema
     assert "idx_auth_user_profiles_display_name_unique" in normalized_schema
     assert "idx_auth_user_profiles_display_name_unique" in compatibility_sql
+    assert "auth_oauth_identities" in normalized_schema
+    assert "auth_oauth_identities" in compatibility_sql
+    assert "provider_subject" in normalized_schema
+    assert "email_hash" not in normalized_schema
+    oauth_block = re.search(
+        r"create table if not exists auth_oauth_identities \((.*?)\);",
+        normalized_schema,
+    )
+    assert oauth_block is not None
+    assert {"email", "email_hash", "locale", "timezone"}.isdisjoint(
+        set(oauth_block.group(1).replace(",", " ").split())
+    )
 
     auth_users_block = re.search(
         r"create table if not exists auth_users \((.*?)\);",
@@ -223,7 +256,7 @@ def test_postgres_profile_schema_and_repository_keep_profile_out_of_auth_users()
 
     connection = FakeProfileConnection()
     repository = PostgresUserProfileRepository(connection)
-    profile = _profile(display_name="Alice <Ops>", email="alice@example.com")
+    profile = _profile(display_name="Alice <Ops>")
 
     assert repository.get_by_user_id(USER_ID) is None
     repository.save(profile)
@@ -234,9 +267,11 @@ def test_postgres_profile_schema_and_repository_keep_profile_out_of_auth_users()
     normalized_sql = " ".join(combined_sql.lower().split())
     assert "insert into auth_user_profiles" in normalized_sql
     assert "%(display_name)s" in combined_sql
-    assert "%(email)s" in combined_sql
+    assert "%(email)s" not in combined_sql
+    assert "%(email_verified_at)s" not in combined_sql
+    assert "%(locale)s" not in combined_sql
+    assert "%(timezone)s" not in combined_sql
     assert profile.display_name not in combined_sql
-    assert profile.email not in combined_sql
     insert_statement = next(
         statement
         for statement in connection.statements
@@ -249,19 +284,11 @@ def _profile(
     *,
     user_id: UserId = USER_ID,
     display_name: str | None = "Alice",
-    email: str | None = None,
-    email_verified_at: datetime | None = None,
-    locale: str | None = "en-US",
-    timezone: str | None = "UTC",
     status: UserProfileStatus = UserProfileStatus.ACTIVE,
 ) -> UserProfile:
     return UserProfile(
         user_id=user_id,
         display_name=display_name,
-        email=email,
-        email_verified_at=email_verified_at,
-        locale=locale,
-        timezone=timezone,
         status=status,
         created_at=NOW,
         updated_at=NOW,
@@ -286,9 +313,7 @@ class FakeProfileUseCase:
         self.update_commands.append(command)
         self.profile = self.profile.update(
             display_name=command.display_name,
-            email=command.email,
-            locale=command.locale,
-            timezone=command.timezone,
+            display_name_provided=command.display_name_provided,
             updated_at=command.requested_at,
         )
         return self.profile

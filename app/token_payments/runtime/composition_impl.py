@@ -19,6 +19,7 @@ from token_payments.contexts.auth.adapter import (
     PostgresAuthRbacRepository,
     PostgresAuthSessionRepository,
     PostgresLoginChallengeRepository,
+    PostgresMerchantMembershipRepository,
     PostgresUserProfileRepository,
     PostgresUserRepository,
     PostgresUserWalletRepository,
@@ -32,6 +33,7 @@ from token_payments.contexts.auth.application import (
     ListWalletsQuery,
     LoginWithMetaMaskCommand,
     LogoutCommand,
+    MerchantMembershipService,
     RefreshSessionCommand,
     RequestLoginChallengeCommand,
     RequestWalletLinkChallengeCommand,
@@ -1433,38 +1435,41 @@ def register_operator_action_routes(router: Any, operator_action_api: Any) -> An
     return _register_operator_action_routes(router, operator_action_api)
 
 
-class _LiveMerchantMembershipRepository:
-    """Bounded phase-22 merchant membership repository until PostgreSQL RBAC persistence is wired."""
+class _TransactionalMerchantMembershipUseCase:
+    def __init__(self, dependencies: LiveRuntimeDependencies) -> None:
+        self._dependencies = dependencies
 
-    def merchant_group_for_store(self, store_id: Any) -> Any | None:
-        return None
+    def role_catalog(self, actor: Any):
+        return self._execute(lambda service: service.role_catalog(actor))
 
-    def members_for_group(self, group_id: Any) -> tuple[Any, ...]:
-        return ()
+    def list_members(self, actor: Any, store_id: Any):
+        return self._execute(lambda service: service.list_members(actor, store_id))
 
-    def get_membership(self, group_id: Any, user_id: Any) -> Any | None:
-        return None
+    def list_invitations(self, actor: Any, store_id: Any):
+        return self._execute(lambda service: service.list_invitations(actor, store_id))
 
-    def save_membership(self, membership: Any) -> None:
-        return None
+    def create_invitation(self, actor: Any, store_id: Any, **kwargs: Any):
+        return self._execute(lambda service: service.create_invitation(actor, store_id, **kwargs))
 
-    def invitations_for_group(self, group_id: Any) -> tuple[Any, ...]:
-        return ()
+    def accept_invitation(self, actor: Any, invitation_id: Any, **kwargs: Any):
+        return self._execute(lambda service: service.accept_invitation(actor, invitation_id, **kwargs))
 
-    def get_invitation(self, invitation_id: Any) -> Any | None:
-        return None
+    def revoke_invitation(self, actor: Any, invitation_id: Any):
+        return self._execute(lambda service: service.revoke_invitation(actor, invitation_id))
 
-    def save_invitation(self, invitation: Any) -> None:
-        return None
+    def update_member_role(self, actor: Any, store_id: Any, user_id: Any, role_id: Any):
+        return self._execute(lambda service: service.update_member_role(actor, store_id, user_id, role_id))
 
-    def role_catalog(self) -> tuple[Any, ...]:
-        from token_payments.contexts.auth.domain import GroupType, Role, RoleId
+    def remove_member(self, actor: Any, store_id: Any, user_id: Any):
+        return self._execute(lambda service: service.remove_member(actor, store_id, user_id))
 
-        return (
-            Role(RoleId("MERCHANT_OWNER"), "Merchant Owner", GroupType.MERCHANT, owner_role=True),
-            Role(RoleId("MERCHANT_MANAGER"), "Merchant Manager", GroupType.MERCHANT, merchant_assignable=True),
-            Role(RoleId("MERCHANT_STAFF"), "Merchant Staff", GroupType.MERCHANT, merchant_assignable=True),
-            Role(RoleId("PLATFORM_ADMIN"), "Platform Admin", GroupType.PLATFORM),
+    def _execute(self, callback: Callable[[MerchantMembershipService], Any]) -> Any:
+        return _with_transaction(self._dependencies, lambda connection: callback(self._service(connection)))
+
+    def _service(self, connection: Any) -> MerchantMembershipService:
+        return MerchantMembershipService(
+            PostgresMerchantMembershipRepository(connection),
+            invitation_id_generator=self._dependencies.id_generator,
         )
 
 
@@ -1488,8 +1493,6 @@ def build_live_api_facades(
         StoreCatalogApi,
         StoreOwnerInventoryApi,
     )
-    from token_payments.contexts.auth.application import MerchantMembershipService
-
     live_config = config or LiveRuntimeConfig.from_env()
     live_dependencies = dependencies or LiveRuntimeDependencies()
     LiveApiComposition(config=live_config, dependencies=live_dependencies)
@@ -1512,10 +1515,7 @@ def build_live_api_facades(
             command_handler=_TransactionalStoreOwnerInventoryCommandHandler(live_dependencies),
         ),
         merchant=MerchantMembershipApi(
-            MerchantMembershipService(
-                _LiveMerchantMembershipRepository(),
-                invitation_id_generator=live_dependencies.id_generator,
-            )
+            _TransactionalMerchantMembershipUseCase(live_dependencies)
         ),
         operator=OperatorApi(_TransactionalOperatorObservabilityQuery(live_dependencies)),
         operator_action=OperatorActionApi(
@@ -1925,6 +1925,17 @@ class _TransactionalPaymentCommandHandler:
             blockchain_adapter=blockchain,
             timeout_scheduler=_NoopPaymentTimeoutScheduler(),
             transaction_service=ClientTransactionService(self._dependencies.blockchain_client),
+        )
+
+
+class _TransactionalReceiptPollingRepository:
+    def __init__(self, dependencies: LiveRuntimeDependencies) -> None:
+        self._dependencies = dependencies
+
+    def list_receipt_polling_candidates(self, *, limit: int):
+        return _with_transaction(
+            self._dependencies,
+            lambda connection: PostgresPaymentRepository(connection).list_receipt_polling_candidates(limit=limit),
         )
 
 
@@ -2701,7 +2712,12 @@ def build_live_worker_runtime_from_env(
 ) -> WorkerRuntime:
     """Build live worker runtime with outbox relay, kafka consumer, and polling workers."""
 
-    from token_payments.runtime.workers import OutboxRelayWorker, WorkerRuntime, KafkaConsumerWorker
+    from token_payments.runtime.workers import (
+        KafkaConsumerWorker,
+        OutboxRelayWorker,
+        PaymentReceiptPollingWorker,
+        WorkerRuntime,
+    )
     from token_payments.shared.adapter.kafka import KafkaProducerPublisher, LazyKafkaConsumerClient
     from token_payments.shared.adapter.outbox_relay import OutboxRelay
 
@@ -2929,6 +2945,13 @@ def build_live_worker_runtime_from_env(
         name="auth-rbac-projector",
     )
 
+    receipt_polling_worker = PaymentReceiptPollingWorker(
+        payment_repository=_TransactionalReceiptPollingRepository(live_dependencies),
+        command_handler=_TransactionalPaymentCommandHandler(live_config, live_dependencies),
+        clock=live_dependencies.clock,
+        options=live_config.worker_loop_options(),
+    )
+
     workers = [
         outbox_worker,
         checkout_worker,
@@ -2938,6 +2961,7 @@ def build_live_worker_runtime_from_env(
         order_command_worker,
         order_status_worker,
         auth_rbac_worker,
+        receipt_polling_worker,
     ]
     return WorkerRuntime(workers)
 

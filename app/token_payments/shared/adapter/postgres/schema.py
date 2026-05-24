@@ -22,24 +22,12 @@ POSTGRES_SCHEMA_COMPATIBILITY_SQL: tuple[str, ...] = (
     CREATE TABLE IF NOT EXISTS auth_user_profiles (
         user_id UUID PRIMARY KEY,
         display_name TEXT,
-        email TEXT,
-        email_verified_at TIMESTAMPTZ,
-        locale TEXT,
-        timezone TEXT,
         status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'SUSPENDED', 'DELETED')),
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         CHECK (
-            status = 'DELETED'
-            OR display_name IS NOT NULL
-        ),
-        CHECK (
             status <> 'DELETED'
-            OR (
-                display_name IS NULL
-                AND email IS NULL
-                AND email_verified_at IS NULL
-            )
+            OR display_name IS NULL
         )
     )
     """,
@@ -50,6 +38,29 @@ POSTGRES_SCHEMA_COMPATIBILITY_SQL: tuple[str, ...] = (
     """
     CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_user_profiles_display_name_unique
         ON auth_user_profiles (lower(display_name)) WHERE status <> 'DELETED'
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS auth_oauth_identities (
+        oauth_identity_id UUID PRIMARY KEY,
+        provider TEXT NOT NULL,
+        provider_subject TEXT NOT NULL,
+        user_id UUID NOT NULL,
+        wallet_id UUID,
+        linked_at TIMESTAMPTZ NOT NULL,
+        revoked_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        CHECK (provider <> ''),
+        CHECK (provider_subject <> '')
+    )
+    """,
+    """
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_oauth_identities_active_provider_subject
+        ON auth_oauth_identities (provider, provider_subject) WHERE revoked_at IS NULL
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_auth_oauth_identities_user_active
+        ON auth_oauth_identities (user_id, revoked_at)
     """,
     """
     CREATE TABLE IF NOT EXISTS auth_groups (
@@ -113,7 +124,6 @@ POSTGRES_SCHEMA_COMPATIBILITY_SQL: tuple[str, ...] = (
         invited_by_user_id UUID NOT NULL,
         target_user_id UUID,
         target_wallet_address TEXT,
-        target_email TEXT,
         status TEXT NOT NULL CHECK (status IN ('PENDING', 'ACCEPTED', 'REVOKED', 'EXPIRED')),
         expires_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),

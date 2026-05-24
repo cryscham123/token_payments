@@ -28,6 +28,7 @@ from token_payments.contexts.auth.domain import (  # noqa: E402
     InvitationStatus,
     Role,
     RoleId,
+    UserProfile,
 )
 from token_payments.contexts.store_catalog.application import StoreCatalogApplicationService  # noqa: E402
 from token_payments.contexts.store_catalog.application.commands import GrantStoreMembershipCommand  # noqa: E402
@@ -43,6 +44,9 @@ GROUP_ID = GroupId("018f33aa-9e6d-73d8-9dc3-47d6cdccdd01")
 INVITATION_ID = InvitationId("018f33aa-9e6d-73d8-9dc3-47d6cdccdd02")
 STAFF_ID = UserId("018f33aa-9e6d-73d8-9dc3-47d6cdccdd03")
 OTHER_STORE_ID = StoreId("018f33aa-9e6d-73d8-9dc3-47d6cdccdd04")
+INTRUDER_ID = UserId("018f33aa-9e6d-73d8-9dc3-47d6cdccdd05")
+STAFF_WALLET = WalletAddress("0x5555555555555555555555555555555555555555")
+STAFF_PRIMARY_WALLET = WalletAddress("0x6666666666666666666666666666666666666666")
 
 
 def test_store_provisioning_links_merchant_group_and_initial_owner_membership() -> None:
@@ -150,6 +154,98 @@ def test_merchant_member_invitation_accept_and_lists_are_store_scoped() -> None:
     assert {member["userId"] for member in _json(members.body)["members"]} == {str(OWNER_ID), str(STAFF_ID)}
 
 
+def test_wallet_targeted_invitation_accepts_user_who_owns_linked_wallet_without_body_wallet() -> None:
+    repository = FakeMerchantRepository()
+    repository.seed_user(STAFF_ID, STAFF_PRIMARY_WALLET)
+    repository.link_wallet(STAFF_ID, STAFF_WALLET)
+    owner_router = _router(repository, _auth(OWNER_ID, "merchant_member:invite"))
+
+    created = owner_router.handle(
+        "POST",
+        f"/merchant/stores/{STORE_ID}/invitations",
+        headers={"Content-Type": "application/json"},
+        body=_json_body({"targetWallet": str(STAFF_WALLET), "roleId": "MERCHANT_MANAGER"}),
+        received_at=NOW,
+    )
+    accepted = _router(repository, _auth(STAFF_ID)).handle(
+        "POST",
+        f"/merchant/invitations/{INVITATION_ID}/accept",
+        headers={"Content-Type": "application/json"},
+        body=_json_body({}),
+        received_at=NOW + timedelta(minutes=5),
+    )
+
+    assert created.status_code == 201
+    assert accepted.status_code == 200
+    assert repository.group_memberships[(GROUP_ID, STAFF_ID)].role_id == RoleId("MERCHANT_MANAGER")
+
+
+def test_wallet_targeted_invitation_rejects_actor_who_does_not_own_wallet_even_without_body_wallet() -> None:
+    repository = FakeMerchantRepository()
+    repository.seed_user(STAFF_ID, STAFF_PRIMARY_WALLET)
+    repository.link_wallet(STAFF_ID, STAFF_WALLET)
+    owner_router = _router(repository, _auth(OWNER_ID, "merchant_member:invite"))
+
+    created = owner_router.handle(
+        "POST",
+        f"/merchant/stores/{STORE_ID}/invitations",
+        headers={"Content-Type": "application/json"},
+        body=_json_body({"targetWallet": str(STAFF_WALLET), "roleId": "MERCHANT_MANAGER"}),
+        received_at=NOW,
+    )
+    accepted = _router(repository, _auth(INTRUDER_ID)).handle(
+        "POST",
+        f"/merchant/invitations/{INVITATION_ID}/accept",
+        headers={"Content-Type": "application/json"},
+        body=_json_body({}),
+        received_at=NOW + timedelta(minutes=5),
+    )
+
+    assert created.status_code == 201
+    assert accepted.status_code == 409
+    assert _json(accepted.body)["error"]["code"] == "INVITATION_NOT_ACCEPTABLE"
+    assert (GROUP_ID, INTRUDER_ID) not in repository.group_memberships
+
+
+def test_display_name_targeted_invitation_resolves_to_user_id_without_storing_contact_target() -> None:
+    repository = FakeMerchantRepository()
+    repository.seed_profile(STAFF_ID, "민수 Ops")
+    owner_router = _router(repository, _auth(OWNER_ID, "merchant_member:invite"))
+
+    created = owner_router.handle(
+        "POST",
+        f"/merchant/stores/{STORE_ID}/invitations",
+        headers={"Content-Type": "application/json"},
+        body=_json_body({"targetDisplayName": "민수 Ops", "roleId": "MERCHANT_STAFF"}),
+        received_at=NOW,
+    )
+    payload = _json(created.body)["invitation"]
+    invitation = repository.invitations[INVITATION_ID]
+
+    assert created.status_code == 201
+    assert payload["targetUserId"] == str(STAFF_ID)
+    assert "targetEmail" not in payload
+    assert invitation.target_user_id == STAFF_ID
+    assert invitation.target_wallet is None
+
+
+def test_merchant_invitation_rejects_email_target() -> None:
+    repository = FakeMerchantRepository()
+    owner_router = _router(repository, _auth(OWNER_ID, "merchant_member:invite"))
+
+    rejected = owner_router.handle(
+        "POST",
+        f"/merchant/stores/{STORE_ID}/invitations",
+        headers={"Content-Type": "application/json"},
+        body=_json_body({"targetEmail": "staff@example.com", "roleId": "MERCHANT_STAFF"}),
+        received_at=NOW,
+    )
+
+    assert rejected.status_code == 400
+    assert _json(rejected.body)["error"]["code"] == "VALIDATION_ERROR"
+    assert repository.invitations == {}
+
+
 def test_merchant_facing_apis_reject_owner_and_platform_role_assignment() -> None:
     repository = FakeMerchantRepository()
     router = _router(repository, _auth(OWNER_ID, "merchant_member:invite", "merchant_member:manage"))
@@ -249,8 +345,10 @@ class FixedIdGenerator:
 class FakeMerchantRepository:
     def __init__(self) -> None:
         self.users: dict[UserId, object] = {}
+        self.wallet_owners: dict[WalletAddress, UserId] = {}
         self.groups = {GROUP_ID: Group(GROUP_ID, GroupType.MERCHANT, "Demo store group", resource_type="store", resource_id=str(STORE_ID))}
         self.store_groups = {STORE_ID: GROUP_ID}
+        self.user_profiles: dict[UserId, UserProfile] = {}
         self.group_memberships: dict[tuple[GroupId, UserId], GroupMembership] = {
             (GROUP_ID, OWNER_ID): GroupMembership(OWNER_ID, GROUP_ID, RoleId("MERCHANT_OWNER"), joined_at=NOW)
         }
@@ -264,6 +362,13 @@ class FakeMerchantRepository:
         from token_payments.contexts.auth.domain import User
 
         self.users[user_id] = User.register_by_wallet(user_id, wallet)
+        self.wallet_owners[wallet] = user_id
+
+    def link_wallet(self, user_id: UserId, wallet: WalletAddress) -> None:
+        self.wallet_owners[wallet] = user_id
+
+    def seed_profile(self, user_id: UserId, display_name: str) -> None:
+        self.user_profiles[user_id] = UserProfile(user_id=user_id, display_name=display_name, created_at=NOW, updated_at=NOW)
 
     def get_user_by_id(self, user_id: UserId):
         return self.users.get(user_id)
@@ -333,6 +438,16 @@ class FakeMerchantRepository:
 
     def save_invitation(self, invitation: GroupInvitation) -> None:
         self.invitations[invitation.invitation_id] = invitation
+
+    def user_id_for_active_wallet(self, wallet: WalletAddress) -> UserId | None:
+        return self.wallet_owners.get(wallet)
+
+    def user_id_for_active_display_name(self, display_name: str) -> UserId | None:
+        key = display_name.casefold()
+        for user_id, profile in self.user_profiles.items():
+            if profile.display_name is not None and profile.display_name.casefold() == key:
+                return user_id
+        return None
 
     def role_catalog(self) -> tuple[Role, ...]:
         return (

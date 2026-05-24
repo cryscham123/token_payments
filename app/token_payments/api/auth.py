@@ -206,7 +206,7 @@ class AuthApi:
                     request.request_id,
                 )
             return json_response(
-                {"profile": _profile_payload(profile, include_contact=True)},
+                {"profile": _profile_payload(profile)},
                 status_code=200,
                 request_id=request.request_id,
             )
@@ -225,12 +225,7 @@ class AuthApi:
                     request.request_id,
                 )
             return json_response(
-                {
-                    "profile": _profile_payload(
-                        profile,
-                        include_contact=_can_view_profile_contact(request, target_user_id),
-                    )
-                },
+                {"profile": _profile_payload(profile)},
                 status_code=200,
                 request_id=request.request_id,
             )
@@ -249,21 +244,20 @@ class AuthApi:
                     request.request_id,
                 )
             body = _request_body(request)
+            _reject_unknown_profile_fields(body, {"displayName", "userId"})
             profile = self._use_case.updateUserProfile(
                 UpdateUserProfileCommand(
                     actor_user_id=UserId(actor_user_id),
                     target_user_id=UserId(target_user_id),
                     display_name=_optional_profile_text(body, "displayName"),
-                    email=_optional_profile_text(body, "email"),
-                    locale=_optional_profile_text(body, "locale"),
-                    timezone=_optional_profile_text(body, "timezone"),
+                    display_name_provided="displayName" in body,
                     requested_at=request.received_at,
                     request_id=request.request_id,
                     actor_scopes=request.auth_context.scopes if request.auth_context is not None else (),
                 )
             )
             return json_response(
-                {"profile": _profile_payload(profile, include_contact=True)},
+                {"profile": _profile_payload(profile)},
                 status_code=200,
                 request_id=request.request_id,
             )
@@ -356,26 +350,15 @@ def _session_payload(session: AuthSession) -> dict[str, Any]:
     }
 
 
-def _profile_payload(profile: UserProfile, *, include_contact: bool) -> dict[str, Any]:
+def _profile_payload(profile: UserProfile) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "userId": str(profile.user_id),
         "displayName": profile.display_name,
         "displayNameHtml": profile.display_name_html,
-        "locale": profile.locale,
-        "timezone": profile.timezone,
         "status": profile.status.value,
         "createdAt": profile.created_at.isoformat() if profile.created_at is not None else None,
         "updatedAt": profile.updated_at.isoformat() if profile.updated_at is not None else None,
     }
-    if include_contact:
-        payload.update(
-            {
-                "email": profile.email,
-                "emailVerifiedAt": (
-                    profile.email_verified_at.isoformat() if profile.email_verified_at is not None else None
-                ),
-            }
-        )
     return payload
 
 
@@ -396,13 +379,6 @@ def _target_profile_user_id(request: ApiRequest, *, default_user_id: str | None 
     return value.strip()
 
 
-def _can_view_profile_contact(request: ApiRequest, target_user_id: str) -> bool:
-    context = request.auth_context
-    if context is None or context.user_id is None:
-        return False
-    return context.user_id == target_user_id or "user:manage" in context.scopes
-
-
 def _has_scope(request: ApiRequest, scope: str) -> bool:
     return request.auth_context is not None and scope in request.auth_context.scopes
 
@@ -414,6 +390,15 @@ def _optional_profile_text(body: Mapping[str, Any], key: str) -> str | None:
     if not isinstance(value, str):
         raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, f"{key} must be a string")
     return value
+
+
+def _reject_unknown_profile_fields(body: Mapping[str, Any], allowed: set[str]) -> None:
+    unknown = sorted(str(key) for key in body if key not in allowed)
+    if unknown:
+        raise AuthApplicationError(
+            AuthErrorCode.VALIDATION_ERROR,
+            f"unknown user profile field(s): {', '.join(unknown)}",
+        )
 
 
 def _refresh_token_hash_from_body(body: Mapping[str, Any]) -> RefreshTokenHash:

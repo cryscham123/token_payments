@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT / "app"))
 from token_payments.api import (  # noqa: E402
     AUTH_HTTP_ROUTES,
     ORDER_HTTP_ROUTES,
+    ApiAuthContext,
     AuthApi,
     HttpRouter,
     OrdersApi,
@@ -23,12 +24,14 @@ from token_payments.contexts.auth.application import (  # noqa: E402
     AuthApplicationError,
     AuthErrorCode,
     CurrentUserQuery,
+    GetCurrentUserProfileQuery,
     LoginChallengeResult,
     LoginResult,
     LoginWithMetaMaskCommand,
     LogoutCommand,
     RefreshSessionCommand,
     RequestLoginChallengeCommand,
+    UpdateUserProfileCommand,
 )
 from token_payments.contexts.auth.domain import (  # noqa: E402
     AuthNonce,
@@ -39,6 +42,7 @@ from token_payments.contexts.auth.domain import (  # noqa: E402
     RefreshTokenHash,
     SessionId,
     User,
+    UserProfile,
 )
 from token_payments.contexts.auth.domain.wallet import WalletId
 from token_payments.contexts.order.application import CreateOrderCommand, OrderCreationResult  # noqa: E402
@@ -95,6 +99,10 @@ def test_auth_route_manifest_exposes_stable_methods_paths_and_operations() -> No
     assert AUTH_HTTP_ROUTES["logout"].path == "/auth/sessions"
     assert AUTH_HTTP_ROUTES["current_user"].method == "GET"
     assert AUTH_HTTP_ROUTES["current_user"].path == "/auth/me"
+    assert AUTH_HTTP_ROUTES["current_user_profile"].method == "GET"
+    assert AUTH_HTTP_ROUTES["current_user_profile"].path == "/auth/me/profile"
+    assert AUTH_HTTP_ROUTES["update_current_user_profile"].method == "PATCH"
+    assert AUTH_HTTP_ROUTES["update_current_user_profile"].path == "/auth/me/profile"
 
     assert ORDER_HTTP_ROUTES["create_order"].method == "POST"
     assert ORDER_HTTP_ROUTES["create_order"].path == "/orders"
@@ -103,11 +111,11 @@ def test_auth_route_manifest_exposes_stable_methods_paths_and_operations() -> No
 
 def test_auth_http_routes_call_existing_auth_facade_methods() -> None:
     use_case = FakeAuthUseCase()
-    router = HttpRouter()
+    router = HttpRouter(auth_context_factory=lambda _request: ApiAuthContext(user_id=USER_ID, session_id=SESSION_ID))
 
     routes = register_auth_routes(router, AuthApi(use_case))
 
-    assert len(routes) == 10
+    assert len(routes) == 12
     assert {route.operation_id for route in routes} == {
         "requestLoginChallenge",
         "loginWithMetaMask",
@@ -119,6 +127,8 @@ def test_auth_http_routes_call_existing_auth_facade_methods() -> None:
         "refreshSession",
         "logout",
         "getCurrentUser",
+        "getCurrentUserProfile",
+        "updateCurrentUserProfile",
     }
 
     challenge = router.handle(
@@ -198,6 +208,34 @@ def test_auth_http_routes_call_existing_auth_facade_methods() -> None:
     assert current_user.status_code == 200
     assert _json(current_user.body)["user"]["userId"] == USER_ID
     assert isinstance(use_case.calls[-1], CurrentUserQuery)
+
+    current_profile = router.handle(
+        "GET",
+        "/auth/me/profile",
+        headers={"X-Request-Id": "req-auth-me-profile", "X-User-Id": USER_ID},
+        received_at=NOW,
+    )
+
+    assert current_profile.status_code == 200
+    assert _json(current_profile.body)["profile"]["displayName"] == "Route User"
+    assert "email" not in _json(current_profile.body)["profile"]
+    assert isinstance(use_case.calls[-1], GetCurrentUserProfileQuery)
+
+    update_profile = router.handle(
+        "PATCH",
+        "/auth/me/profile",
+        headers={
+            "Content-Type": "application/json",
+            "X-Request-Id": "req-auth-profile-update",
+            "X-User-Id": USER_ID,
+        },
+        body=b'{"displayName":"Updated Route User"}',
+        received_at=NOW,
+    )
+
+    assert update_profile.status_code == 200
+    assert _json(update_profile.body)["profile"]["displayName"] == "Updated Route User"
+    assert isinstance(use_case.calls[-1], UpdateUserProfileCommand)
 
 
 def test_auth_http_routes_preserve_facade_error_status_and_body() -> None:
@@ -293,6 +331,14 @@ class FakeAuthUseCase:
         self.calls.append(query)
         return _user()
 
+    def getCurrentUserProfile(self, query: GetCurrentUserProfileQuery) -> UserProfile:
+        self.calls.append(query)
+        return _profile()
+
+    def updateUserProfile(self, command: UpdateUserProfileCommand) -> UserProfile:
+        self.calls.append(command)
+        return _profile(display_name=command.display_name)
+
 
 class RejectingAuthUseCase:
     def requestLoginChallenge(self, command: object) -> object:
@@ -308,6 +354,12 @@ class RejectingAuthUseCase:
         raise AssertionError("not used")
 
     def getCurrentUser(self, query: object) -> object:
+        raise AssertionError("not used")
+
+    def getCurrentUserProfile(self, query: object) -> object:
+        raise AssertionError("not used")
+
+    def updateUserProfile(self, command: object) -> object:
         raise AssertionError("not used")
 
 
@@ -391,6 +443,15 @@ def _user() -> User:
         primary_wallet=WALLET,
         active=True,
         last_login_at=NOW,
+    )
+
+
+def _profile(*, display_name: str | None = "Route User") -> UserProfile:
+    return UserProfile(
+        user_id=UserId(USER_ID),
+        display_name=display_name,
+        created_at=NOW,
+        updated_at=NOW,
     )
 
 

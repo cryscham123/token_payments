@@ -105,7 +105,7 @@ def test_build_live_api_router_uses_route_registration_helpers_and_manifest_cont
     assert [(route.method, route.path_template, route.operation_id) for route in router.routes] == [
         (entry["method"], entry["path"], entry["operationId"]) for entry in http_route_manifest()
     ]
-    assert len(router.routes) == 47
+    assert len(router.routes) == 49
 
 
 def test_live_api_facade_wiring_dispatches_routes_through_injected_transactional_repositories() -> None:
@@ -122,6 +122,7 @@ def test_live_api_facade_wiring_dispatches_routes_through_injected_transactional
     assert type(facades.catalog).__name__ == "StoreCatalogApi"
     assert type(facades.inventory).__name__ == "StoreOwnerInventoryApi"
     assert type(facades.merchant).__name__ == "MerchantMembershipApi"
+    assert type(facades.merchant._use_case).__name__ == "_TransactionalMerchantMembershipUseCase"
     assert type(facades.operator).__name__ == "OperatorApi"
     assert type(facades.operator_action).__name__ == "OperatorActionApi"
 

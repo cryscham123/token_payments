@@ -128,7 +128,7 @@ Codex hook은 다음을 수행한다.
 
 ## Live Kafka Worker 실행 가이드
 
-Token Payments 라이브 워커(Outbox Relay 및 4개의 Kafka Consumers)는 `worker` 명령어 아래 `--live` 플래그를 제공하여 실행합니다.
+Token Payments 라이브 워커(Outbox Relay, 7개의 Kafka Consumers, payment receipt polling)는 `worker` 명령어 아래 `--live` 플래그를 제공하여 실행합니다.
 
 - Bounded plan (dry-run): `PYTHONPATH=app python3 -m token_payments worker --live --dry-run`
 - Run once (single batch): `PYTHONPATH=app python3 -m token_payments worker --live --once`

@@ -43,7 +43,7 @@
 
 ### RBAC Authorization Model
 
-User remains the authenticated identity and audit actor. `UserProfile` stores bounded display/contact profile data and is separate from authentication, authorization, and group membership. `auth_users.role` column is legacy compatibility only; auth_users.role column is legacy compatibility only and is not the permission source for new execution paths. `Group` is not a user-like actor; it is a permission scope/resource boundary. GroupMembership connects a user to a group with a role, and `RolePermission` defines the permissions granted by that role. Nested groups are not part of the model.
+User remains the authenticated identity and audit actor. `UserProfile` stores optional bounded `displayName` data only and is separate from authentication, authorization, and group membership. User email, email hash, locale, and timezone are not stored in the user profile model. `auth_users.role` column is legacy compatibility only; auth_users.role column is legacy compatibility only and is not the permission source for new execution paths. `Group` is not a user-like actor; it is a permission scope/resource boundary. GroupMembership connects a user to a group with a role, and `RolePermission` defines the permissions granted by that role. Nested groups are not part of the model.
 
 `PERSONAL` groups are retained as a thin customer self-scope so customer behavior can be represented without a global `CUSTOMER` role. `MERCHANT` groups scope store owner/manager permissions to one store or merchant resource. `PLATFORM` groups scope operator/admin permissions.
 

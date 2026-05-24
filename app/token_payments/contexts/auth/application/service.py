@@ -480,27 +480,18 @@ class AuthApplicationService:
         requested_at = _coerce_datetime(command.requested_at or self._now(), "requested_at")
         repository = self._profile_repository()
         existing = repository.get_by_user_id(command.target_user_id)
+        display_name_provided = command.display_name_provided or command.display_name is not None
         if existing is None:
-            if command.display_name is None:
-                raise AuthApplicationError(
-                    AuthErrorCode.VALIDATION_ERROR,
-                    "display_name is required when creating a profile",
-                )
             existing = UserProfile(
                 user_id=command.target_user_id,
-                display_name=command.display_name,
-                email=command.email,
-                locale=command.locale,
-                timezone=command.timezone,
+                display_name=command.display_name if display_name_provided else None,
                 created_at=requested_at,
                 updated_at=requested_at,
             )
         else:
             existing = existing.update(
                 display_name=command.display_name,
-                email=command.email,
-                locale=command.locale,
-                timezone=command.timezone,
+                display_name_provided=display_name_provided,
                 updated_at=requested_at,
             )
         if existing.display_name is not None:

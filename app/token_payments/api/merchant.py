@@ -37,6 +37,8 @@ class MerchantMembershipApi:
     def create_invitation(self, request: ApiRequest) -> ApiResponse:
         try:
             body = _body(request)
+            if "targetEmail" in body:
+                raise ValueError("targetEmail is not supported; use targetDisplayName, targetUserId, or targetWallet")
             return _result_response(
                 self._use_case.create_invitation(
                     _actor(request),
@@ -44,7 +46,7 @@ class MerchantMembershipApi:
                     role_id=RoleId(_required_text(body, "roleId")),
                     target_user_id=_optional_user_id(body.get("targetUserId")),
                     target_wallet=_optional_wallet(body.get("targetWallet")),
-                    target_email=_optional_text(body.get("targetEmail")),
+                    target_display_name=_optional_text(body.get("targetDisplayName")),
                     expires_at=_optional_datetime(body.get("expiresAt")),
                     requested_at=request.received_at,
                 ),

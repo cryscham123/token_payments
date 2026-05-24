@@ -16,7 +16,7 @@ from token_payments.runtime.composition import (
     LiveRuntimeDependencies,
     build_live_worker_runtime_from_env,
 )
-from token_payments.runtime.workers import KafkaConsumerWorker, WorkerRuntime
+from token_payments.runtime.workers import KafkaConsumerWorker, PaymentReceiptPollingWorker, WorkerRuntime
 from token_payments.shared.adapter.kafka import KafkaInboundMessage, MalformedKafkaMessage
 from token_payments.shared.domain import (
     CheckoutCommandName,
@@ -37,9 +37,12 @@ def test_build_live_worker_runtime_wires_consumers_lazily() -> None:
         runtime = build_live_worker_runtime_from_env(config=config)
         assert isinstance(runtime, WorkerRuntime)
 
-        # There should be 7 KafkaConsumerWorkers and 1 OutboxRelayWorker
+        # There should be 7 KafkaConsumerWorkers plus a receipt polling worker.
         consumers = [w for w in runtime.workers if isinstance(w, KafkaConsumerWorker)]
         assert len(consumers) == 7
+        pollers = [w for w in runtime.workers if isinstance(w, PaymentReceiptPollingWorker)]
+        assert len(pollers) == 1
+        assert pollers[0].name == "payment-receipt-polling"
 
         # Verify names
         names = {w.name for w in consumers}

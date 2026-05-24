@@ -67,6 +67,12 @@ class MerchantMembershipRepository(Protocol):
     def save_invitation(self, invitation: GroupInvitation) -> None:
         ...
 
+    def user_id_for_active_wallet(self, wallet: WalletAddress) -> UserId | None:
+        ...
+
+    def user_id_for_active_display_name(self, display_name: str) -> UserId | None:
+        ...
+
     def role_catalog(self) -> tuple[Role, ...]:
         ...
 
@@ -108,7 +114,7 @@ class MerchantMembershipService:
         role_id: RoleId,
         target_user_id: UserId | None = None,
         target_wallet: WalletAddress | None = None,
-        target_email: str | None = None,
+        target_display_name: str | None = None,
         expires_at: datetime | None = None,
         requested_at: datetime | None = None,
     ) -> MerchantMembershipResult:
@@ -119,15 +125,19 @@ class MerchantMembershipService:
         rejected = self._reject_merchant_role(role_id)
         if rejected is not None:
             return rejected
+        resolved_user_id = target_user_id
+        if target_display_name is not None:
+            resolved_user_id = self._repository.user_id_for_active_display_name(_text(target_display_name, "targetDisplayName"))
+            if resolved_user_id is None:
+                return _rejected("INVITATION_TARGET_NOT_FOUND", "target displayName was not found")
         now = requested_at or datetime.now(UTC)
         invitation = GroupInvitation(
             invitation_id=self._new_invitation_id(),
             group_id=group.group_id,
             invited_role_id=role_id,
             invited_by_user_id=actor.user_id,
-            target_user_id=target_user_id,
+            target_user_id=resolved_user_id,
             target_wallet=target_wallet,
-            target_email=target_email,
             status=InvitationStatus.PENDING,
             created_at=now,
             expires_at=expires_at,
@@ -147,8 +157,17 @@ class MerchantMembershipService:
         if invitation is None:
             return _rejected("INVITATION_NOT_FOUND", "invitation was not found")
         now = accepted_at or datetime.now(UTC)
-        if not invitation.is_open_for(actor.user_id, wallet, now):
-            return _rejected("INVITATION_NOT_ACCEPTABLE", "invitation is expired, revoked, accepted, or not targeted to this user")
+        not_acceptable = "invitation is expired, revoked, accepted, or not targeted to this user"
+        accepted_wallet = wallet
+        if invitation.target_wallet is not None:
+            if wallet is not None and wallet != invitation.target_wallet:
+                return _rejected("INVITATION_NOT_ACCEPTABLE", not_acceptable)
+            wallet_owner = self._repository.user_id_for_active_wallet(invitation.target_wallet)
+            if wallet_owner != actor.user_id:
+                return _rejected("INVITATION_NOT_ACCEPTABLE", not_acceptable)
+            accepted_wallet = invitation.target_wallet
+        if not invitation.is_open_for(actor.user_id, accepted_wallet, now):
+            return _rejected("INVITATION_NOT_ACCEPTABLE", not_acceptable)
         existing = self._repository.get_membership(invitation.group_id, actor.user_id)
         if existing is not None and existing.active:
             return _rejected("MEMBERSHIP_ALREADY_EXISTS", "target user is already an active merchant member")
@@ -160,7 +179,6 @@ class MerchantMembershipService:
             invited_by_user_id=invitation.invited_by_user_id,
             target_user_id=invitation.target_user_id,
             target_wallet=invitation.target_wallet,
-            target_email=invitation.target_email,
             status=InvitationStatus.ACCEPTED,
             created_at=invitation.created_at,
             expires_at=invitation.expires_at,
@@ -186,7 +204,6 @@ class MerchantMembershipService:
             invited_by_user_id=invitation.invited_by_user_id,
             target_user_id=invitation.target_user_id,
             target_wallet=invitation.target_wallet,
-            target_email=invitation.target_email,
             status=InvitationStatus.REVOKED,
             created_at=invitation.created_at,
             expires_at=invitation.expires_at,
@@ -288,7 +305,6 @@ def _invitation_payload(invitation: GroupInvitation) -> dict[str, Any]:
         "roleId": str(invitation.invited_role_id),
         "targetUserId": str(invitation.target_user_id) if invitation.target_user_id is not None else None,
         "targetWallet": str(invitation.target_wallet) if invitation.target_wallet is not None else None,
-        "targetEmail": invitation.target_email,
         "status": invitation.status.value,
         "expiresAt": invitation.expires_at.isoformat() if invitation.expires_at is not None else None,
     }

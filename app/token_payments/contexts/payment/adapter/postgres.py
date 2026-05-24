@@ -63,6 +63,46 @@ FROM payments
 WHERE payment_id = %(payment_id)s
 """
 
+SELECT_RECEIPT_POLLING_CANDIDATES_SQL = """
+SELECT
+    payment_id,
+    order_id,
+    customer_id,
+    amount_numeric,
+    amount_symbol,
+    amount_chain_id,
+    amount_token_address,
+    amount_decimals,
+    status,
+    wallet_from,
+    wallet_to,
+    chain_id,
+    payer_wallet_id,
+    payment_asset_id,
+    tx_hash,
+    gas_estimated_fee,
+    gas_fee_symbol,
+    gas_fee_chain_id,
+    gas_fee_token_address,
+    gas_fee_decimals,
+    gas_limit,
+    gas_buffer_rate,
+    gas_max_fee,
+    receipt_block_number,
+    receipt_gas_used,
+    failure_reason,
+    refund_tx_hash,
+    refund_block_number,
+    refund_gas_used,
+    expires_at
+FROM payments
+WHERE status IN ('SUBMITTED', 'CONFIRMING')
+  AND tx_hash IS NOT NULL
+  AND receipt_block_number IS NULL
+ORDER BY updated_at ASC, payment_id ASC
+LIMIT %(limit)s
+"""
+
 UPSERT_PAYMENT_SQL = """
 INSERT INTO payments (
     payment_id,
@@ -258,24 +298,13 @@ class PostgresPaymentRepository:
         row = _fetch_one(self._connection.execute(SELECT_PAYMENT_SQL, {"payment_id": str(payment_id)}))
         if row is None:
             return None
-        return Payment(
-            payment_id=PaymentId(_row_value(row, "payment_id")),
-            order_id=OrderId(_row_value(row, "order_id")),
-            customer_id=CustomerId(_row_value(row, "customer_id")),
-            amount=_crypto_from_row(row, "amount"),
-            wallet_from=WalletAddress(_row_value(row, "wallet_from")),
-            wallet_to=WalletAddress(_row_value(row, "wallet_to")),
-            chain_network=_chain_network_from_row(row),
-            gas_estimate=_gas_estimate_from_row(row),
-            expires_at=_row_value(row, "expires_at"),
-            status=PaymentStatus(_row_value(row, "status")),
-            tx_hash=_optional_tx_hash(_row_value(row, "tx_hash")),
-            receipt=_receipt_from_row(row, "tx_hash", "receipt_block_number", "receipt_gas_used"),
-            failure_reason=_row_value(row, "failure_reason"),
-            refund_receipt=_receipt_from_row(row, "refund_tx_hash", "refund_block_number", "refund_gas_used"),
-            payer_wallet_id=_optional_row_value(row, "payer_wallet_id"),
-            payment_asset_id=_optional_row_value(row, "payment_asset_id"),
-        )
+        return _row_to_payment(row)
+
+    def list_receipt_polling_candidates(self, *, limit: int) -> tuple[Payment, ...]:
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
+            raise ValueError("PostgresPaymentRepository.list_receipt_polling_candidates requires positive limit")
+        result = self._connection.execute(SELECT_RECEIPT_POLLING_CANDIDATES_SQL, {"limit": limit})
+        return tuple(_row_to_payment(row) for row in _fetch_all(result))
 
     def save(self, payment: Payment) -> None:
         if not isinstance(payment, Payment):
@@ -377,6 +406,27 @@ class PostgresPaymentAuthorizationRepository:
         self._connection.execute(UPSERT_AUTHORIZATION_SQL, params)
 
 
+def _row_to_payment(row: Mapping[str, Any] | object) -> Payment:
+    return Payment(
+        payment_id=PaymentId(_row_value(row, "payment_id")),
+        order_id=OrderId(_row_value(row, "order_id")),
+        customer_id=CustomerId(_row_value(row, "customer_id")),
+        amount=_crypto_from_row(row, "amount"),
+        wallet_from=WalletAddress(_row_value(row, "wallet_from")),
+        wallet_to=WalletAddress(_row_value(row, "wallet_to")),
+        chain_network=_chain_network_from_row(row),
+        gas_estimate=_gas_estimate_from_row(row),
+        expires_at=_row_value(row, "expires_at"),
+        status=PaymentStatus(_row_value(row, "status")),
+        tx_hash=_optional_tx_hash(_row_value(row, "tx_hash")),
+        receipt=_receipt_from_row(row, "tx_hash", "receipt_block_number", "receipt_gas_used"),
+        failure_reason=_row_value(row, "failure_reason"),
+        refund_receipt=_receipt_from_row(row, "refund_tx_hash", "refund_block_number", "refund_gas_used"),
+        payer_wallet_id=_optional_row_value(row, "payer_wallet_id"),
+        payment_asset_id=_optional_row_value(row, "payment_asset_id"),
+    )
+
+
 def _crypto_params(prefix: str, value: Crypto) -> dict[str, Any]:
     return {
         f"{prefix}_numeric": value.amount,
@@ -460,7 +510,7 @@ def _receipt_from_row(
     tx_hash = _optional_tx_hash(_row_value(row, hash_key))
     block_number = _row_value(row, block_number_key)
     gas_used = _row_value(row, gas_used_key)
-    if tx_hash is None and block_number is None and gas_used is None:
+    if block_number is None and gas_used is None and (tx_hash is None or hash_key == "tx_hash"):
         return None
     if tx_hash is None or block_number is None or gas_used is None:
         raise ValueError("payment receipt row must include hash, block number, and gas used")
@@ -503,6 +553,15 @@ def _fetch_one(result: Any) -> Any:
         return fetchone()
     iterator = iter(result)
     return next(iterator, None)
+
+
+def _fetch_all(result: Any) -> tuple[Any, ...]:
+    if result is None:
+        return ()
+    fetchall = getattr(result, "fetchall", None)
+    if callable(fetchall):
+        return tuple(fetchall())
+    return tuple(result)
 
 
 def _row_value(row: Mapping[str, Any] | object, key: str) -> Any:

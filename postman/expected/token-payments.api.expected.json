@@ -13,6 +13,8 @@
     "refreshSession",
     "logout",
     "getCurrentUser",
+    "getCurrentUserProfile",
+    "updateCurrentUserProfile",
     "createOrder",
     "getCheckoutTrackingByTrackingId",
     "getCheckoutTrackingByOrderId",
@@ -324,6 +326,48 @@
         "scopes": [
           "user:self"
         ]
+      }
+    },
+    {
+      "operationId": "getCurrentUserProfile",
+      "requestName": "Get current user profile",
+      "method": "GET",
+      "path": "/auth/me/profile",
+      "status": 200,
+      "headers": {
+        "X-Request-Id": "postman-auth-me-profile-001"
+      },
+      "body": {
+        "profile": {
+          "userId": "<user-id>",
+          "displayName": "Postman User",
+          "displayNameHtml": "Postman User",
+          "status": "ACTIVE",
+          "createdAt": "<timestamp>",
+          "updatedAt": "<timestamp>"
+        }
+      }
+    },
+    {
+      "operationId": "updateCurrentUserProfile",
+      "requestName": "Update current user profile",
+      "method": "PATCH",
+      "path": "/auth/me/profile",
+      "status": 200,
+      "headers": {
+        "X-CSRF-Token": "{{csrfToken}}",
+        "Idempotency-Key": "postman-auth-profile-update-001",
+        "X-Request-Id": "postman-auth-profile-update-001"
+      },
+      "body": {
+        "profile": {
+          "userId": "<user-id>",
+          "displayName": "Postman User",
+          "displayNameHtml": "Postman User",
+          "status": "ACTIVE",
+          "createdAt": "<timestamp>",
+          "updatedAt": "<timestamp>"
+        }
       }
     },
     {

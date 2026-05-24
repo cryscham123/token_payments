@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import ast
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -72,11 +72,14 @@ STORE_ID = StoreId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c25")
 PRODUCT_ID = ProductId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c26")
 RESERVATION_ID = ReservationId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c27")
 MESSAGE_ID = MessageId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c28")
+ORDER_ID_2 = OrderId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c29")
+PAYMENT_ID_2 = PaymentId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c2a")
 WALLET_FROM = WalletAddress("0x1111111111111111111111111111111111111111")
 WALLET_TO = WalletAddress("0x2222222222222222222222222222222222222222")
 TOKEN_ADDRESS = WalletAddress("0x3333333333333333333333333333333333333333")
 CHAIN = ChainNetwork(chain_id=11155111, name="Sepolia")
 TX_HASH = TransactionHash("0x" + "ab" * 32)
+TX_HASH_2 = TransactionHash("0x" + "cd" * 32)
 
 
 def test_inventory_repository_round_trips_inventory_and_missing_lookup() -> None:
@@ -112,6 +115,25 @@ def test_payment_repositories_round_trip_payment_authorization_and_missing_looku
     assert authorizations.get(PAYMENT_ID) == authorization
     assert connection.payments[str(PAYMENT_ID)]["receipt_block_number"] == 12345
     assert connection.payment_authorizations[str(PAYMENT_ID)]["tx_hash"] == str(TX_HASH)
+
+
+def test_payment_repository_lists_unconfirmed_receipt_polling_candidates() -> None:
+    connection = FakePostgresConnection()
+    payments = PostgresPaymentRepository(connection)
+    submitted = _submitted_payment()
+    confirming = replace(_submitted_payment(payment_id=PAYMENT_ID_2, order_id=ORDER_ID_2, tx_hash=TX_HASH_2), status=PaymentStatus.CONFIRMING)
+
+    payments.save(_awaiting_payment())
+    payments.save(submitted)
+    payments.save(confirming)
+    payments.save(_confirmed_payment(payment_id=PaymentId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c2b"), order_id=OrderId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c2c")))
+
+    candidates = payments.list_receipt_polling_candidates(limit=10)
+
+    assert candidates == (submitted, confirming)
+    normalized_sql = _normalize_sql("\n".join(statement.sql for statement in connection.statements))
+    assert "receipt_block_number is null" in normalized_sql
+    assert "status in ('submitted', 'confirming')" in normalized_sql
 
 
 def test_store_approval_repositories_round_trip_store_and_order_detail() -> None:
@@ -223,22 +245,43 @@ def _inventory() -> ProductInventory:
     )
 
 
-def _confirmed_payment() -> Payment:
+def _awaiting_payment(
+    *,
+    payment_id: PaymentId = PAYMENT_ID,
+    order_id: OrderId = ORDER_ID,
+) -> Payment:
+    return Payment.initialize_payment(
+        payment_id=payment_id,
+        order_id=order_id,
+        customer_id=CUSTOMER_ID,
+        amount=_amount(),
+        wallet_from=WALLET_FROM,
+        wallet_to=WALLET_TO,
+        chain_network=CHAIN,
+        gas_estimate=_gas_estimate().apply_buffer(),
+        expires_at=EXPIRES_AT,
+        status=PaymentStatus.AWAITING_SIGNATURE,
+    )
+
+
+def _submitted_payment(
+    *,
+    payment_id: PaymentId = PAYMENT_ID,
+    order_id: OrderId = ORDER_ID,
+    tx_hash: TransactionHash = TX_HASH,
+) -> Payment:
+    return _awaiting_payment(payment_id=payment_id, order_id=order_id).submit_tx_hash(tx_hash)
+
+
+def _confirmed_payment(
+    *,
+    payment_id: PaymentId = PAYMENT_ID,
+    order_id: OrderId = ORDER_ID,
+    tx_hash: TransactionHash = TX_HASH,
+) -> Payment:
     return (
-        Payment.initialize_payment(
-            payment_id=PAYMENT_ID,
-            order_id=ORDER_ID,
-            customer_id=CUSTOMER_ID,
-            amount=_amount(),
-            wallet_from=WALLET_FROM,
-            wallet_to=WALLET_TO,
-            chain_network=CHAIN,
-            gas_estimate=_gas_estimate().apply_buffer(),
-            expires_at=EXPIRES_AT,
-            status=PaymentStatus.AWAITING_SIGNATURE,
-        )
-        .submit_tx_hash(TX_HASH)
-        .confirm_payment(_receipt())
+        _submitted_payment(payment_id=payment_id, order_id=order_id, tx_hash=tx_hash)
+        .confirm_payment(_receipt(tx_hash=tx_hash))
     )
 
 
@@ -303,8 +346,8 @@ def _signature_request() -> TransactionSignatureRequest:
     )
 
 
-def _receipt() -> TransactionReceipt:
-    return TransactionReceipt(hash=TX_HASH, block_number=12345, gas_used=21000)
+def _receipt(*, tx_hash: TransactionHash = TX_HASH) -> TransactionReceipt:
+    return TransactionReceipt(hash=tx_hash, block_number=12345, gas_used=21000)
 
 
 def _outbox_message() -> OutboxMessage:
@@ -486,6 +529,17 @@ class FakePostgresConnection:
         return FakeResult(rowcount=1)
 
     def _select_payment(self, params: Mapping[str, Any]) -> FakeResult:
+        if "limit" in params and "payment_id" not in params:
+            rows = [
+                dict(row)
+                for row in self.payments.values()
+                if row["status"] in {"SUBMITTED", "CONFIRMING"}
+                and row["tx_hash"] is not None
+                and row["receipt_block_number"] is None
+            ]
+            rows.sort(key=lambda row: row["payment_id"])
+            limit = int(params["limit"])
+            return FakeResult(rows=rows[:limit], rowcount=len(rows[:limit]))
         row = self.payments.get(str(params["payment_id"]))
         return FakeResult(rows=[dict(row)] if row is not None else [], rowcount=1 if row is not None else 0)
 

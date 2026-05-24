@@ -126,6 +126,8 @@ def test_http_route_manifest_is_complete_and_deterministically_ordered() -> None
         "refreshSession",
         "logout",
         "getCurrentUser",
+        "getCurrentUserProfile",
+        "updateCurrentUserProfile",
         "createOrder",
         "getCheckoutTrackingByTrackingId",
         "getCheckoutTrackingByOrderId",
@@ -191,7 +193,7 @@ def test_api_and_serve_api_cli_return_bounded_route_manifest_without_starting_se
         assert "server was not started" in payload["summary"]
         assert payload["details"]["http"]["longRunning"] is False
         assert payload["details"]["http"]["wsgiFactory"] == "token_payments.api.build_wsgi_app"
-        assert payload["details"]["http"]["routeCount"] == 47
+        assert payload["details"]["http"]["routeCount"] == 49
         assert payload["details"]["http"]["routes"][0] == {
             "method": "POST",
             "path": "/auth/challenges",

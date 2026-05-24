@@ -11,11 +11,17 @@ from token_payments.contexts.auth.domain import (
     AuthSession,
     ChallengePurpose,
     ChallengeStatus,
+    Group,
     GroupId,
+    GroupInvitation,
+    GroupMembership,
     GroupType,
+    InvitationId,
+    InvitationStatus,
     LoginChallenge,
     LoginFailureReason,
     RefreshTokenHash,
+    Role,
     RoleId,
     SessionId,
     SessionMembership,
@@ -31,7 +37,7 @@ from token_payments.contexts.auth.domain.wallet import (
     WalletVerificationStatus,
 )
 from token_payments.shared.adapter.postgres import PostgresConnection
-from token_payments.shared.domain import UserId, WalletAddress
+from token_payments.shared.domain import StoreId, UserId, WalletAddress
 
 
 SELECT_USER_BY_ID_SQL = """
@@ -82,10 +88,6 @@ SELECT_PROFILE_BY_USER_ID_SQL = """
 SELECT
     user_id,
     display_name,
-    email,
-    email_verified_at,
-    locale,
-    timezone,
     status,
     created_at,
     updated_at
@@ -97,10 +99,6 @@ SELECT_PROFILE_BY_DISPLAY_NAME_SQL = """
 SELECT
     user_id,
     display_name,
-    email,
-    email_verified_at,
-    locale,
-    timezone,
     status,
     created_at,
     updated_at
@@ -114,30 +112,18 @@ UPSERT_PROFILE_SQL = """
 INSERT INTO auth_user_profiles (
     user_id,
     display_name,
-    email,
-    email_verified_at,
-    locale,
-    timezone,
     status,
     created_at,
     updated_at
 ) VALUES (
     %(user_id)s,
     %(display_name)s,
-    %(email)s,
-    %(email_verified_at)s,
-    %(locale)s,
-    %(timezone)s,
     %(status)s,
     %(created_at)s,
     %(updated_at)s
 )
 ON CONFLICT (user_id) DO UPDATE SET
     display_name = EXCLUDED.display_name,
-    email = EXCLUDED.email,
-    email_verified_at = EXCLUDED.email_verified_at,
-    locale = EXCLUDED.locale,
-    timezone = EXCLUDED.timezone,
     status = EXCLUDED.status,
     updated_at = EXCLUDED.updated_at
 """
@@ -569,10 +555,6 @@ class PostgresUserProfileRepository:
             {
                 "user_id": str(profile.user_id),
                 "display_name": profile.display_name,
-                "email": profile.email,
-                "email_verified_at": profile.email_verified_at,
-                "locale": profile.locale,
-                "timezone": profile.timezone,
                 "status": profile.status.value,
                 "created_at": profile.created_at,
                 "updated_at": profile.updated_at,
@@ -820,6 +802,152 @@ INSERT INTO processed_messages (
 ) ON CONFLICT (consumer, message_id) DO NOTHING
 """
 
+SELECT_MERCHANT_GROUP_FOR_STORE_SQL = """
+SELECT group_id, group_type, name, active, resource_type, resource_id
+FROM auth_groups
+WHERE group_type = 'MERCHANT'
+  AND resource_type = 'store'
+  AND resource_id = %(store_id)s
+ORDER BY created_at ASC, group_id ASC
+LIMIT 1
+"""
+
+SELECT_GROUP_MEMBERSHIPS_SQL = """
+SELECT group_id, user_id, role_id, active, joined_at
+FROM auth_group_memberships
+WHERE group_id = %(group_id)s::uuid
+ORDER BY joined_at ASC, user_id ASC
+"""
+
+SELECT_GROUP_MEMBERSHIP_SQL = """
+SELECT group_id, user_id, role_id, active, joined_at
+FROM auth_group_memberships
+WHERE group_id = %(group_id)s::uuid
+  AND user_id = %(user_id)s::uuid
+LIMIT 1
+"""
+
+UPSERT_GROUP_MEMBERSHIP_SQL = """
+INSERT INTO auth_group_memberships (
+    group_id,
+    user_id,
+    role_id,
+    active,
+    joined_at
+) VALUES (
+    %(group_id)s::uuid,
+    %(user_id)s::uuid,
+    %(role_id)s,
+    %(active)s,
+    %(joined_at)s
+)
+ON CONFLICT (group_id, user_id) DO UPDATE SET
+    role_id = EXCLUDED.role_id,
+    active = EXCLUDED.active,
+    joined_at = EXCLUDED.joined_at,
+    updated_at = now()
+"""
+
+SELECT_GROUP_INVITATIONS_SQL = """
+SELECT
+    invitation_id,
+    group_id,
+    invited_role_id,
+    invited_by_user_id,
+    target_user_id,
+    target_wallet_address,
+    status,
+    created_at,
+    expires_at
+FROM auth_group_invitations
+WHERE group_id = %(group_id)s::uuid
+ORDER BY created_at DESC, invitation_id ASC
+"""
+
+SELECT_GROUP_INVITATION_SQL = """
+SELECT
+    invitation_id,
+    group_id,
+    invited_role_id,
+    invited_by_user_id,
+    target_user_id,
+    target_wallet_address,
+    status,
+    created_at,
+    expires_at
+FROM auth_group_invitations
+WHERE invitation_id = %(invitation_id)s::uuid
+LIMIT 1
+"""
+
+UPSERT_GROUP_INVITATION_SQL = """
+INSERT INTO auth_group_invitations (
+    invitation_id,
+    group_id,
+    invited_role_id,
+    invited_by_user_id,
+    target_user_id,
+    target_wallet_address,
+    status,
+    created_at,
+    expires_at
+) VALUES (
+    %(invitation_id)s::uuid,
+    %(group_id)s::uuid,
+    %(invited_role_id)s,
+    %(invited_by_user_id)s::uuid,
+    %(target_user_id)s::uuid,
+    %(target_wallet_address)s,
+    %(status)s,
+    %(created_at)s,
+    %(expires_at)s
+)
+ON CONFLICT (invitation_id) DO UPDATE SET
+    invited_role_id = EXCLUDED.invited_role_id,
+    target_user_id = EXCLUDED.target_user_id,
+    target_wallet_address = EXCLUDED.target_wallet_address,
+    status = EXCLUDED.status,
+    expires_at = EXCLUDED.expires_at,
+    updated_at = now()
+"""
+
+SELECT_ROLE_CATALOG_SQL = """
+SELECT role_id, name, group_type, active, merchant_assignable, owner_role
+FROM auth_roles
+WHERE active = true
+ORDER BY role_id ASC
+"""
+
+SELECT_ACTIVE_WALLET_OWNER_SQL = """
+WITH active_wallet_owners AS (
+    SELECT
+        w.user_id,
+        bool_or(w."primary") AS primary_wallet,
+        min(w.linked_at) AS first_linked_at
+    FROM auth_user_wallets w
+    JOIN auth_users u ON u.user_id = w.user_id
+    WHERE w.wallet_address = %(wallet_address)s
+      AND w.verification_status = 'VERIFIED'
+      AND w.revoked_at IS NULL
+      AND u.active = true
+    GROUP BY w.user_id
+)
+SELECT user_id
+FROM active_wallet_owners
+WHERE (SELECT count(*) FROM active_wallet_owners) = 1
+ORDER BY primary_wallet DESC, first_linked_at ASC, user_id ASC
+LIMIT 1
+"""
+
+SELECT_ACTIVE_DISPLAY_NAME_OWNER_SQL = """
+SELECT user_id
+FROM auth_user_profiles
+WHERE status = 'ACTIVE'
+  AND display_name IS NOT NULL
+  AND lower(display_name) = lower(%(display_name)s)
+LIMIT 1
+"""
+
 
 class PostgresAuthRbacRepository:
     """Persist group memberships and scopes inside an injected transaction."""
@@ -955,6 +1083,118 @@ class PostgresAuthRbacRepository:
         return tuple(scopes)
 
 
+class PostgresMerchantMembershipRepository:
+    """Persist merchant group memberships and invitations inside an injected transaction."""
+
+    def __init__(self, connection: PostgresConnection) -> None:
+        self._connection = connection
+
+    def merchant_group_for_store(self, store_id: StoreId) -> Group | None:
+        if not isinstance(store_id, StoreId):
+            raise ValueError("PostgresMerchantMembershipRepository.merchant_group_for_store requires a StoreId")
+        row = _fetch_one(
+            self._connection.execute(
+                SELECT_MERCHANT_GROUP_FOR_STORE_SQL,
+                {"store_id": str(store_id)},
+            )
+        )
+        return _row_to_group(row) if row is not None else None
+
+    def members_for_group(self, group_id: GroupId) -> tuple[GroupMembership, ...]:
+        if not isinstance(group_id, GroupId):
+            raise ValueError("PostgresMerchantMembershipRepository.members_for_group requires a GroupId")
+        result = self._connection.execute(SELECT_GROUP_MEMBERSHIPS_SQL, {"group_id": str(group_id)})
+        return tuple(_row_to_group_membership(row) for row in _fetch_all(result))
+
+    def get_membership(self, group_id: GroupId, user_id: UserId) -> GroupMembership | None:
+        if not isinstance(group_id, GroupId):
+            raise ValueError("PostgresMerchantMembershipRepository.get_membership requires a GroupId")
+        if not isinstance(user_id, UserId):
+            raise ValueError("PostgresMerchantMembershipRepository.get_membership requires a UserId")
+        row = _fetch_one(
+            self._connection.execute(
+                SELECT_GROUP_MEMBERSHIP_SQL,
+                {"group_id": str(group_id), "user_id": str(user_id)},
+            )
+        )
+        return _row_to_group_membership(row) if row is not None else None
+
+    def save_membership(self, membership: GroupMembership) -> None:
+        if not isinstance(membership, GroupMembership):
+            raise ValueError("PostgresMerchantMembershipRepository.save_membership requires a GroupMembership")
+        self._connection.execute(
+            UPSERT_GROUP_MEMBERSHIP_SQL,
+            {
+                "group_id": str(membership.group_id),
+                "user_id": str(membership.user_id),
+                "role_id": str(membership.role_id),
+                "active": membership.active,
+                "joined_at": membership.joined_at,
+            },
+        )
+
+    def invitations_for_group(self, group_id: GroupId) -> tuple[GroupInvitation, ...]:
+        if not isinstance(group_id, GroupId):
+            raise ValueError("PostgresMerchantMembershipRepository.invitations_for_group requires a GroupId")
+        result = self._connection.execute(SELECT_GROUP_INVITATIONS_SQL, {"group_id": str(group_id)})
+        return tuple(_row_to_group_invitation(row) for row in _fetch_all(result))
+
+    def get_invitation(self, invitation_id: InvitationId) -> GroupInvitation | None:
+        if not isinstance(invitation_id, InvitationId):
+            raise ValueError("PostgresMerchantMembershipRepository.get_invitation requires an InvitationId")
+        row = _fetch_one(
+            self._connection.execute(
+                SELECT_GROUP_INVITATION_SQL,
+                {"invitation_id": str(invitation_id)},
+            )
+        )
+        return _row_to_group_invitation(row) if row is not None else None
+
+    def save_invitation(self, invitation: GroupInvitation) -> None:
+        if not isinstance(invitation, GroupInvitation):
+            raise ValueError("PostgresMerchantMembershipRepository.save_invitation requires a GroupInvitation")
+        self._connection.execute(
+            UPSERT_GROUP_INVITATION_SQL,
+            {
+                "invitation_id": str(invitation.invitation_id),
+                "group_id": str(invitation.group_id),
+                "invited_role_id": str(invitation.invited_role_id),
+                "invited_by_user_id": str(invitation.invited_by_user_id),
+                "target_user_id": str(invitation.target_user_id) if invitation.target_user_id is not None else None,
+                "target_wallet_address": str(invitation.target_wallet) if invitation.target_wallet is not None else None,
+                "status": invitation.status.value,
+                "created_at": invitation.created_at,
+                "expires_at": invitation.expires_at,
+            },
+        )
+
+    def user_id_for_active_wallet(self, wallet: WalletAddress) -> UserId | None:
+        if not isinstance(wallet, WalletAddress):
+            raise ValueError("PostgresMerchantMembershipRepository.user_id_for_active_wallet requires a WalletAddress")
+        row = _fetch_one(
+            self._connection.execute(
+                SELECT_ACTIVE_WALLET_OWNER_SQL,
+                {"wallet_address": str(wallet)},
+            )
+        )
+        return UserId(_row_value(row, "user_id")) if row is not None else None
+
+    def user_id_for_active_display_name(self, display_name: str) -> UserId | None:
+        if not isinstance(display_name, str) or not display_name.strip():
+            raise ValueError("PostgresMerchantMembershipRepository.user_id_for_active_display_name requires display_name")
+        row = _fetch_one(
+            self._connection.execute(
+                SELECT_ACTIVE_DISPLAY_NAME_OWNER_SQL,
+                {"display_name": display_name.strip()},
+            )
+        )
+        return UserId(_row_value(row, "user_id")) if row is not None else None
+
+    def role_catalog(self) -> tuple[Role, ...]:
+        result = self._connection.execute(SELECT_ROLE_CATALOG_SQL)
+        return tuple(_row_to_role(row) for row in _fetch_all(result))
+
+
 def _row_to_user(row: Mapping[str, Any] | object) -> User:
     return User(
         user_id=UserId(_row_value(row, "user_id")),
@@ -969,10 +1209,6 @@ def _row_to_profile(row: Mapping[str, Any] | object) -> UserProfile:
     return UserProfile(
         user_id=UserId(_row_value(row, "user_id")),
         display_name=_row_value(row, "display_name"),
-        email=_optional_row_value(row, "email"),
-        email_verified_at=_row_value(row, "email_verified_at"),
-        locale=_optional_row_value(row, "locale"),
-        timezone=_optional_row_value(row, "timezone"),
         status=UserProfileStatus(_row_value(row, "status")),
         created_at=_row_value(row, "created_at"),
         updated_at=_row_value(row, "updated_at"),
@@ -1030,6 +1266,63 @@ def _row_to_session(row: Mapping[str, Any] | object) -> AuthSession:
         revoked_at=_row_value(row, "revoked_at"),
         wallet=WalletAddress(wallet_address) if wallet_address is not None else None,
     )
+
+
+def _row_to_group(row: Mapping[str, Any] | object) -> Group:
+    return Group(
+        group_id=GroupId(_row_value(row, "group_id")),
+        group_type=GroupType(_row_value(row, "group_type")),
+        name=str(_row_value(row, "name")),
+        active=bool(_row_value(row, "active")),
+        resource_type=_optional_row_value(row, "resource_type"),
+        resource_id=_optional_row_value(row, "resource_id"),
+    )
+
+
+def _row_to_group_membership(row: Mapping[str, Any] | object) -> GroupMembership:
+    return GroupMembership(
+        user_id=UserId(_row_value(row, "user_id")),
+        group_id=GroupId(_row_value(row, "group_id")),
+        role_id=RoleId(str(_row_value(row, "role_id"))),
+        active=bool(_row_value(row, "active")),
+        joined_at=_row_value(row, "joined_at"),
+    )
+
+
+def _row_to_group_invitation(row: Mapping[str, Any] | object) -> GroupInvitation:
+    target_user_id = _optional_row_value(row, "target_user_id")
+    target_wallet = _optional_row_value(row, "target_wallet_address")
+    return GroupInvitation(
+        invitation_id=InvitationId(_row_value(row, "invitation_id")),
+        group_id=GroupId(_row_value(row, "group_id")),
+        invited_role_id=RoleId(str(_row_value(row, "invited_role_id"))),
+        invited_by_user_id=UserId(_row_value(row, "invited_by_user_id")),
+        target_user_id=UserId(target_user_id) if target_user_id is not None else None,
+        target_wallet=WalletAddress(target_wallet) if target_wallet is not None else None,
+        status=InvitationStatus(_row_value(row, "status")),
+        created_at=_row_value(row, "created_at"),
+        expires_at=_row_value(row, "expires_at"),
+    )
+
+
+def _row_to_role(row: Mapping[str, Any] | object) -> Role:
+    return Role(
+        role_id=RoleId(str(_row_value(row, "role_id"))),
+        name=str(_row_value(row, "name")),
+        group_type=GroupType(_row_value(row, "group_type")),
+        active=bool(_row_value(row, "active")),
+        merchant_assignable=bool(_row_value(row, "merchant_assignable")),
+        owner_role=bool(_row_value(row, "owner_role")),
+    )
+
+
+def _fetch_all(result: Any) -> tuple[Any, ...]:
+    if result is None:
+        return ()
+    fetchall = getattr(result, "fetchall", None)
+    if callable(fetchall):
+        return tuple(fetchall())
+    return tuple(result)
 
 
 def _fetch_one(result: Any) -> Any:
