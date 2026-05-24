@@ -22,6 +22,10 @@ Token Payments API는 로컬 backend의 public HTTP surface를 설명한다. 이
 6. [운영자와 런타임](operator-runtime.md)에서 operator recovery API와 no-server-start runtime boundary를 확인한다.
 7. [전체 Route Summary](route-summary.md)에서 operation id와 route 전체 목록을 검색한다.
 
+## 문서 역할
+
+`openapi.yaml`은 endpoint별 입력값, required body field, header/query/path parameter, response status, error code, example을 담는 interactive reference다. 나머지 Markdown 문서는 인증 흐름, 권한 모델, runtime boundary, Postman 검증 순서처럼 endpoint 블록만으로 읽기 어려운 설명형 guide로 유지한다.
+
 ## 현재 public route surface
 
 현재 public HTTP route surface는 `app/token_payments/api/http.py`의 54개 route manifest와 일치해야 한다. Postman collection과 expected response fixture도 같은 surface를 따라야 하며, 새 기능 phase는 API가 내부 전용 예외인지 명시하지 않는 한 API 문서와 테스트를 함께 갱신한다.

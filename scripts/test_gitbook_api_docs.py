@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import sys
 import re
+from collections import Counter
 from pathlib import Path
 
 import yaml
@@ -69,6 +71,7 @@ def test_api_spec_is_gitbook_ready_without_losing_route_manifest_contract() -> N
     from token_payments.api import http_route_manifest
 
     api_spec = _read("docs/API_SPEC.md")
+    auth_page = _read("docs/api/auth.md")
 
     assert api_spec.startswith("---\n")
     assert "# Token Payments API 명세" in api_spec
@@ -90,6 +93,13 @@ def test_api_spec_is_gitbook_ready_without_losing_route_manifest_contract() -> N
     for entry in http_route_manifest():
         route_row = f"| `{entry['operationId']}` | `{entry['method']}` | `{entry['path']}` |"
         assert route_row in api_spec
+
+    logout_section = _bounded_section(api_spec, "### `DELETE /auth/sessions`", "### `GET /auth/me`")
+    assert "Request: body 없음" in logout_section
+    assert "public GitBook/OpenAPI reference에는 DELETE request body를 노출하지 않는다" in logout_section
+    assert '"sessionId": "session-001"' not in logout_section
+    assert "| `DELETE /auth/sessions` | active session | no JSON body;" in auth_page
+    assert "| `DELETE /auth/sessions` | active session | optional body `sessionId`" not in auth_page
 
 
 def test_gitbook_openapi_reference_uses_project_template_and_manifest_routes() -> None:
@@ -132,6 +142,94 @@ def test_gitbook_openapi_reference_uses_project_template_and_manifest_routes() -
         assert f"operationId: {operation_id}" in openapi_text
         operation = _find_openapi_operation(openapi, operation_id)
         assert operation.get("x-codeSamples"), operation_id
+
+
+def test_gitbook_openapi_reference_documents_route_inputs_and_responses() -> None:
+    from token_payments.api import http_route_manifest
+
+    openapi = yaml.safe_load(_read("docs/api/openapi.yaml"))
+    expected = json.loads(_read("postman/expected/token-payments.api.expected.json"))
+    expected_status_by_operation = {route["operationId"]: str(route["status"]) for route in expected["routes"]}
+
+    request_body_operations = {
+        "requestLoginChallenge",
+        "loginWithMetaMask",
+        "requestOAuthAuthorization",
+        "completeOAuthSession",
+        "linkOAuthIdentity",
+        "requestWalletLinkChallenge",
+        "linkWallet",
+        "refreshSession",
+        "updateCurrentUserProfile",
+        "createOrder",
+        "submitTransactionHash",
+        "updateStoreProfile",
+        "createOrReuseStoreUser",
+        "createStore",
+        "grantStoreMembership",
+        "registerStoreProduct",
+        "updateStoreProduct",
+        "increaseStoreOwnerInventoryStock",
+        "correctStoreOwnerInventoryStock",
+        "pauseStoreOwnerInventorySales",
+        "resumeStoreOwnerInventorySales",
+        "createMerchantStoreInvitation",
+        "acceptMerchantInvitation",
+        "updateMerchantStoreMemberRole",
+        "cancelOperatorOrder",
+        "retryOperatorOutboxMessage",
+        "replayOperatorMessage",
+    }
+
+    for entry in http_route_manifest():
+        operation = openapi["paths"][entry["path"]][entry["method"].lower()]
+        operation_id = entry["operationId"]
+        parameters = [_resolve_ref(openapi, parameter) for parameter in operation.get("parameters", [])]
+        parameter_names = {(parameter["in"], parameter["name"]) for parameter in parameters}
+
+        if entry["method"] in {"GET", "HEAD", "DELETE"}:
+            assert "requestBody" not in operation, operation_id
+
+        assert ("header", "X-Request-Id") in parameter_names, operation_id
+        for path_param in re.findall(r"{([^}]+)}", entry["path"]):
+            assert ("path", path_param) in parameter_names, operation_id
+        for parameter in parameters:
+            assert parameter.get("description"), (operation_id, parameter["name"])
+            assert "schema" in parameter, (operation_id, parameter["name"])
+
+        if operation_id in request_body_operations:
+            request_body = _resolve_ref(openapi, operation["requestBody"])
+            media = request_body["content"]["application/json"]
+            schema = _resolve_ref(openapi, media["schema"])
+            assert schema.get("properties"), operation_id
+            assert set(schema.get("required", [])) <= set(schema["properties"]), operation_id
+            for property_name, property_schema in schema["properties"].items():
+                resolved_property = _resolve_ref(openapi, property_schema) if "$ref" in property_schema else property_schema
+                assert resolved_property.get("description") or resolved_property.get("properties"), (
+                    operation_id,
+                    property_name,
+                )
+        else:
+            assert "requestBody" not in operation, operation_id
+
+        assert "default" not in operation["responses"], operation_id
+        assert expected_status_by_operation[operation_id] in operation["responses"], operation_id
+        for status, response in operation["responses"].items():
+            assert response.get("description"), (operation_id, status)
+            if status != "204":
+                media = response.get("content", {}).get("application/json")
+                assert media and "schema" in media, (operation_id, status)
+
+        documented_error_statuses = {str(error["status"]) for error in operation.get("x-errorCodes", [])}
+        assert documented_error_statuses <= set(operation["responses"]), operation_id
+
+    openapi_text = _read("docs/api/openapi.yaml")
+    refs = Counter(re.findall(r"#/components/([^/]+)/([^'\"\s]+)", openapi_text))
+    for section, values in openapi["components"].items():
+        if section == "securitySchemes":
+            continue
+        for name in values:
+            assert refs[(section, name)] > 0, (section, name)
 
 
 def test_korean_gitbook_pages_cover_every_api_spec_endpoint_heading() -> None:
@@ -259,6 +357,23 @@ def _find_openapi_operation(openapi: dict[str, object], operation_id: str) -> di
             if operation.get("operationId") == operation_id:
                 return operation
     raise AssertionError(f"{operation_id} operation not found")
+
+
+def _resolve_ref(openapi: dict[str, object], value: dict[str, object]) -> dict[str, object]:
+    ref = value.get("$ref")
+    if not isinstance(ref, str):
+        return value
+    current: object = openapi
+    for part in ref.removeprefix("#/").split("/"):
+        current = current[part]  # type: ignore[index]
+    assert isinstance(current, dict)
+    return current
+
+
+def _bounded_section(text: str, start: str, end: str) -> str:
+    start_index = text.index(start)
+    end_index = text.index(end, start_index)
+    return text[start_index:end_index]
 
 
 def _read_api_pages() -> str:

@@ -774,13 +774,9 @@ Errors: `400 VALIDATION_ERROR`, `401 INVALID_SIGNATURE`, `409 EXPIRED_CHALLENGE`
 
 Session을 로그아웃 처리한다.
 
-Request:
+Request: body 없음. Browser/public contract는 signed session cookie 또는 framework auth context에서 active `sessionId`를 추출한다. Cookie-auth mutating request는 `X-CSRF-Token`을 함께 보낸다.
 
-```json
-{
-  "sessionId": "session-001"
-}
-```
+Non-browser facade harness는 내부 request model에서 `sessionId` body를 전달할 수 있지만, public GitBook/OpenAPI reference에는 DELETE request body를 노출하지 않는다. OpenAPI tooling에서 DELETE body semantics가 portable하게 정의되지 않기 때문이다.
 
 Response `200`:
 
