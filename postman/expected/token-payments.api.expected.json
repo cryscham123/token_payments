@@ -5,6 +5,11 @@
   "collectionRequestIds": [
     "requestLoginChallenge",
     "loginWithMetaMask",
+    "requestOAuthAuthorization",
+    "completeOAuthSession",
+    "linkOAuthIdentity",
+    "listOAuthIdentities",
+    "revokeOAuthIdentity",
     "requestWalletLinkChallenge",
     "linkWallet",
     "listWallets",
@@ -145,6 +150,121 @@
           "deviceId": "<device-id>",
           "expiresAt": "<timestamp>",
           "revokedAt": null
+        }
+      }
+    },
+    {
+      "operationId": "requestOAuthAuthorization",
+      "requestName": "Request OAuth authorization",
+      "method": "POST",
+      "path": "/auth/oauth/{provider}/authorize",
+      "status": 201,
+      "headers": {
+        "X-Request-Id": "postman-oauth-authorize-001"
+      },
+      "body": {
+        "oauthAuthorization": {
+          "provider": "google",
+          "authorizationUrl": "<provider-authorization-url>",
+          "state": "<redacted-oauth-state>",
+          "mode": "login",
+          "expiresAt": "<timestamp>",
+          "pkceRequired": true
+        }
+      }
+    },
+    {
+      "operationId": "completeOAuthSession",
+      "requestName": "Complete OAuth session",
+      "method": "POST",
+      "path": "/auth/oauth/{provider}/sessions",
+      "status": 200,
+      "headers": {
+        "X-CSRF-Token": "{{csrfToken}}",
+        "X-Request-Id": "postman-oauth-session-001",
+        "Set-Cookie": "access_token=<redacted-signed-session-token>; refresh_token=<redacted-signed-session-token>; csrf_token=<redacted-signed-csrf-token>"
+      },
+      "body": {
+        "token": {
+          "accessToken": "<set-cookie>",
+          "refreshToken": "<set-cookie>",
+          "transport": "cookie"
+        },
+        "oauthIdentity": {
+          "oauthIdentityId": "<oauth-identity-id>",
+          "provider": "google",
+          "userId": "<user-id>",
+          "walletId": "<wallet-id>",
+          "linkedAt": "<timestamp>",
+          "revokedAt": null
+        },
+        "authentication": {
+          "method": "OAUTH_PROVIDER_SUBJECT",
+          "provider": "google"
+        }
+      }
+    },
+    {
+      "operationId": "linkOAuthIdentity",
+      "requestName": "Link OAuth identity",
+      "method": "POST",
+      "path": "/auth/oauth/{provider}/links",
+      "status": 201,
+      "headers": {
+        "X-CSRF-Token": "{{csrfToken}}",
+        "X-Request-Id": "postman-oauth-link-001"
+      },
+      "body": {
+        "oauthIdentity": {
+          "oauthIdentityId": "<oauth-identity-id>",
+          "provider": "google",
+          "userId": "<user-id>",
+          "walletId": "<wallet-id>",
+          "linkedAt": "<timestamp>",
+          "revokedAt": null
+        }
+      }
+    },
+    {
+      "operationId": "listOAuthIdentities",
+      "requestName": "List OAuth identities",
+      "method": "GET",
+      "path": "/auth/oauth/identities",
+      "status": 200,
+      "headers": {
+        "X-Request-Id": "postman-oauth-identities-001"
+      },
+      "body": {
+        "oauthIdentities": [
+          {
+            "oauthIdentityId": "<oauth-identity-id>",
+            "provider": "google",
+            "userId": "<user-id>",
+            "walletId": "<wallet-id>",
+            "linkedAt": "<timestamp>",
+            "revokedAt": null
+          }
+        ]
+      }
+    },
+    {
+      "operationId": "revokeOAuthIdentity",
+      "requestName": "Revoke OAuth identity",
+      "method": "DELETE",
+      "path": "/auth/oauth/identities/{oauthIdentityId}",
+      "status": 200,
+      "headers": {
+        "X-CSRF-Token": "{{csrfToken}}",
+        "X-Request-Id": "postman-oauth-revoke-001"
+      },
+      "body": {
+        "oauthIdentity": {
+          "oauthIdentityId": "<oauth-identity-id>",
+          "provider": "google",
+          "userId": "<user-id>",
+          "walletId": "<wallet-id>",
+          "linkedAt": "<timestamp>",
+          "revokedAt": "<timestamp>"
         }
       }
     },

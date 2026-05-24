@@ -83,6 +83,16 @@ def test_auth_route_manifest_exposes_stable_methods_paths_and_operations() -> No
     assert AUTH_HTTP_ROUTES["request_login_challenge"].operation_id == "requestLoginChallenge"
     assert AUTH_HTTP_ROUTES["login_with_metamask"].method == "POST"
     assert AUTH_HTTP_ROUTES["login_with_metamask"].path == "/auth/sessions"
+    assert AUTH_HTTP_ROUTES["request_oauth_authorization"].method == "POST"
+    assert AUTH_HTTP_ROUTES["request_oauth_authorization"].path == "/auth/oauth/{provider}/authorize"
+    assert AUTH_HTTP_ROUTES["complete_oauth_session"].method == "POST"
+    assert AUTH_HTTP_ROUTES["complete_oauth_session"].path == "/auth/oauth/{provider}/sessions"
+    assert AUTH_HTTP_ROUTES["link_oauth_identity"].method == "POST"
+    assert AUTH_HTTP_ROUTES["link_oauth_identity"].path == "/auth/oauth/{provider}/links"
+    assert AUTH_HTTP_ROUTES["list_oauth_identities"].method == "GET"
+    assert AUTH_HTTP_ROUTES["list_oauth_identities"].path == "/auth/oauth/identities"
+    assert AUTH_HTTP_ROUTES["revoke_oauth_identity"].method == "DELETE"
+    assert AUTH_HTTP_ROUTES["revoke_oauth_identity"].path == "/auth/oauth/identities/{oauthIdentityId}"
     assert AUTH_HTTP_ROUTES["request_wallet_link_challenge"].method == "POST"
     assert AUTH_HTTP_ROUTES["request_wallet_link_challenge"].path == "/auth/wallets/challenges"
     assert AUTH_HTTP_ROUTES["link_wallet"].method == "POST"
@@ -115,10 +125,15 @@ def test_auth_http_routes_call_existing_auth_facade_methods() -> None:
 
     routes = register_auth_routes(router, AuthApi(use_case))
 
-    assert len(routes) == 12
+    assert len(routes) == 17
     assert {route.operation_id for route in routes} == {
         "requestLoginChallenge",
         "loginWithMetaMask",
+        "requestOAuthAuthorization",
+        "completeOAuthSession",
+        "linkOAuthIdentity",
+        "listOAuthIdentities",
+        "revokeOAuthIdentity",
         "requestWalletLinkChallenge",
         "linkWallet",
         "listWallets",

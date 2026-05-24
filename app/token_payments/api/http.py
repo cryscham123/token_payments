@@ -426,6 +426,22 @@ def register_auth_routes(
         ),
         _add_manifest_route(
             router,
+            AUTH_HTTP_ROUTES["request_oauth_authorization"],
+            auth_api.request_oauth_authorization,
+        ),
+        _add_manifest_route(
+            router,
+            AUTH_HTTP_ROUTES["complete_oauth_session"],
+            _csrf_issue_handler(
+                _cookie_login_handler(auth_api.complete_oauth_session, session_transport),
+                csrf_token_service,
+            ),
+        ),
+        _add_manifest_route(router, AUTH_HTTP_ROUTES["link_oauth_identity"], auth_api.link_oauth_identity),
+        _add_manifest_route(router, AUTH_HTTP_ROUTES["list_oauth_identities"], auth_api.list_oauth_identities),
+        _add_manifest_route(router, AUTH_HTTP_ROUTES["revoke_oauth_identity"], auth_api.revoke_oauth_identity),
+        _add_manifest_route(
+            router,
             AUTH_HTTP_ROUTES["request_wallet_link_challenge"],
             auth_api.request_wallet_link_challenge,
         ),
@@ -1026,6 +1042,15 @@ AUTH_HTTP_ROUTES: Mapping[str, HttpRouteSpec] = MappingProxyType(
     {
         "request_login_challenge": HttpRouteSpec("POST", "/auth/challenges", "requestLoginChallenge"),
         "login_with_metamask": HttpRouteSpec("POST", "/auth/sessions", "loginWithMetaMask"),
+        "request_oauth_authorization": HttpRouteSpec(
+            "POST",
+            "/auth/oauth/{provider}/authorize",
+            "requestOAuthAuthorization",
+        ),
+        "complete_oauth_session": HttpRouteSpec("POST", "/auth/oauth/{provider}/sessions", "completeOAuthSession"),
+        "link_oauth_identity": HttpRouteSpec("POST", "/auth/oauth/{provider}/links", "linkOAuthIdentity"),
+        "list_oauth_identities": HttpRouteSpec("GET", "/auth/oauth/identities", "listOAuthIdentities"),
+        "revoke_oauth_identity": HttpRouteSpec("DELETE", "/auth/oauth/identities/{oauthIdentityId}", "revokeOAuthIdentity"),
         "request_wallet_link_challenge": HttpRouteSpec("POST", "/auth/wallets/challenges", "requestWalletLinkChallenge"),
         "link_wallet": HttpRouteSpec("POST", "/auth/wallets", "linkWallet"),
         "list_wallets": HttpRouteSpec("GET", "/auth/wallets", "listWallets"),

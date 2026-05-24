@@ -16,6 +16,8 @@ from token_payments.contexts.auth.domain import (
     LoginChallengeRejected,
     LoginFailureReason,
     LoginRejectedEvent,
+    OAuthIdentity,
+    OAuthIdentityId,
     RefreshTokenHash,
     SessionId,
     User,
@@ -40,18 +42,31 @@ from .ports import (
     AuthRbacRepository,
     AuthSessionRepository,
     CurrentUserQuery,
+    CompleteOAuthSessionCommand,
     GetCurrentUserProfileQuery,
     GetUserProfileQuery,
+    LinkOAuthIdentityCommand,
     LinkWalletCommand,
+    ListOAuthIdentitiesQuery,
     ListWalletsQuery,
     LoginChallengeRepository,
     LoginChallengeResult,
     LoginResult,
     LoginWithMetaMaskCommand,
     LogoutCommand,
+    OAuthAuthorizationMode,
+    OAuthAuthorizationResult,
+    OAuthIdentitiesResult,
+    OAuthIdentityRepository,
+    OAuthIdentityResult,
+    OAuthProvider,
+    OAuthProviderIdentity,
+    OAuthSessionResult,
     RefreshSessionCommand,
+    RequestOAuthAuthorizationCommand,
     RequestLoginChallengeCommand,
     RequestWalletLinkChallengeCommand,
+    RevokeOAuthIdentityCommand,
     RevokeWalletCommand,
     SetPrimaryWalletCommand,
     TokenIssuer,
@@ -92,6 +107,11 @@ class AuthErrorCode(StrEnum):
     WALLET_NOT_FOUND = "WALLET_NOT_FOUND"
     WALLET_NOT_ACTIVE = "WALLET_NOT_ACTIVE"
     LAST_WALLET_REVOKE_DENIED = "LAST_WALLET_REVOKE_DENIED"
+    OAUTH_PROVIDER_UNSUPPORTED = "OAUTH_PROVIDER_UNSUPPORTED"
+    OAUTH_IDENTITY_NOT_LINKED = "OAUTH_IDENTITY_NOT_LINKED"
+    OAUTH_IDENTITY_ALREADY_LINKED = "OAUTH_IDENTITY_ALREADY_LINKED"
+    OAUTH_IDENTITY_NOT_FOUND = "OAUTH_IDENTITY_NOT_FOUND"
+    LAST_LOGIN_METHOD_REVOKE_DENIED = "LAST_LOGIN_METHOD_REVOKE_DENIED"
 
 
 class AuthApplicationError(Exception):
@@ -119,6 +139,8 @@ class AuthApplicationService:
         wallets: UserWalletRepository | None = None,
         rbac: AuthRbacRepository | None = None,
         profiles: UserProfileRepository | None = None,
+        oauth_identities: OAuthIdentityRepository | None = None,
+        oauth_provider: OAuthProvider | None = None,
         challenge_ttl: timedelta = timedelta(minutes=5),
         session_ttl: timedelta = timedelta(days=30),
     ) -> None:
@@ -132,6 +154,8 @@ class AuthApplicationService:
         self._sessions = sessions
         self._rbac = rbac
         self._profiles = profiles
+        self._oauth_identities = oauth_identities
+        self._oauth_provider = oauth_provider
         self._signature_verifier = signature_verifier
         self._token_issuer = token_issuer
         self._event_publisher = event_publisher
@@ -282,6 +306,129 @@ class AuthApplicationService:
         self._event_publisher.publish(WalletVerifiedEvent(user.user_id, verified.wallet, now))
         self._event_publisher.publish(UserLoggedInEvent(user.user_id, session.session_id, now))
         return LoginResult(user=user, session=session, issued_token=issued_token)
+
+    def requestOAuthAuthorization(self, command: RequestOAuthAuthorizationCommand) -> OAuthAuthorizationResult:
+        provider = _coerce_oauth_provider(command.provider)
+        redirect_uri = _require_text(command.redirect_uri, "redirect_uri")
+        mode = _coerce_oauth_mode(command.mode)
+        if mode is OAuthAuthorizationMode.LINK and command.actor_user_id is None:
+            raise AuthApplicationError(AuthErrorCode.AUTHENTICATION_REQUIRED, _message_for_code(AuthErrorCode.AUTHENTICATION_REQUIRED))
+        if command.actor_user_id is not None:
+            user = self._users.get_by_id(command.actor_user_id)
+            if user is None or not user.active:
+                raise AuthApplicationError(AuthErrorCode.AUTHENTICATION_REQUIRED, _message_for_code(AuthErrorCode.AUTHENTICATION_REQUIRED))
+        requested_at = _coerce_datetime(command.requested_at or self._now(), "requested_at")
+        return self._oauth_provider_port().build_authorization(
+            provider=provider,
+            redirect_uri=redirect_uri,
+            state=_new_text_id(self._nonce_generator, "oauth_state_generator"),
+            mode=mode,
+            expires_at=requested_at + self._challenge_ttl,
+        )
+
+    def completeOAuthSession(self, command: CompleteOAuthSessionCommand) -> OAuthSessionResult:
+        now = _coerce_datetime(command.requested_at or self._now(), "requested_at")
+        provider_identity = self._exchange_oauth_code(
+            provider=command.provider,
+            code=command.code,
+            state=command.state,
+            redirect_uri=command.redirect_uri,
+        )
+        identity = self._oauth_identity_repository().get_active_by_provider_subject(
+            provider_identity.provider,
+            provider_identity.provider_subject,
+        )
+        if identity is None:
+            raise AuthApplicationError(
+                AuthErrorCode.OAUTH_IDENTITY_NOT_LINKED,
+                _message_for_code(AuthErrorCode.OAUTH_IDENTITY_NOT_LINKED),
+            )
+        user = self._users.get_by_id(identity.user_id)
+        if user is None or not user.active:
+            raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, "linked OAuth user is missing or inactive")
+        device_id = _require_text(command.device_id, "device_id")
+        user = user.record_login(now)
+        self._users.save(user)
+        session, issued_token = self._create_session_and_tokens(
+            user,
+            user.primary_wallet,
+            device_id,
+            now,
+            login_wallet_id=identity.wallet_id,
+        )
+        self._sessions.save(session)
+        self._event_publisher.publish(UserLoggedInEvent(user.user_id, session.session_id, now))
+        return OAuthSessionResult(login=LoginResult(user=user, session=session, issued_token=issued_token), oauth_identity=identity)
+
+    def linkOAuthIdentity(self, command: LinkOAuthIdentityCommand) -> OAuthIdentityResult:
+        now = _coerce_datetime(command.requested_at or self._now(), "requested_at")
+        if not isinstance(command.actor_user_id, UserId):
+            raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, "actor_user_id must be a UserId")
+        user = self._users.get_by_id(command.actor_user_id)
+        if user is None or not user.active:
+            raise AuthApplicationError(AuthErrorCode.AUTHENTICATION_REQUIRED, _message_for_code(AuthErrorCode.AUTHENTICATION_REQUIRED))
+        wallet_id = command.wallet_id
+        if wallet_id is not None:
+            self._owned_wallet(command.actor_user_id, wallet_id)
+        provider_identity = self._exchange_oauth_code(
+            provider=command.provider,
+            code=command.code,
+            state=command.state,
+            redirect_uri=command.redirect_uri,
+        )
+        repository = self._oauth_identity_repository()
+        existing = repository.get_active_by_provider_subject(provider_identity.provider, provider_identity.provider_subject)
+        if existing is not None:
+            if existing.user_id == command.actor_user_id:
+                return OAuthIdentityResult(existing)
+            raise AuthApplicationError(
+                AuthErrorCode.OAUTH_IDENTITY_ALREADY_LINKED,
+                _message_for_code(AuthErrorCode.OAUTH_IDENTITY_ALREADY_LINKED),
+            )
+        identity = OAuthIdentity(
+            oauth_identity_id=OAuthIdentityId.new(),
+            provider=provider_identity.provider,
+            provider_subject=provider_identity.provider_subject,
+            user_id=command.actor_user_id,
+            wallet_id=wallet_id,
+            linked_at=now,
+        )
+        repository.save(identity)
+        return OAuthIdentityResult(identity)
+
+    def listOAuthIdentities(self, query: ListOAuthIdentitiesQuery) -> OAuthIdentitiesResult:
+        if not isinstance(query.actor_user_id, UserId):
+            raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, "actor_user_id must be a UserId")
+        user = self._users.get_by_id(query.actor_user_id)
+        if user is None or not user.active:
+            raise AuthApplicationError(AuthErrorCode.AUTHENTICATION_REQUIRED, _message_for_code(AuthErrorCode.AUTHENTICATION_REQUIRED))
+        return OAuthIdentitiesResult(self._oauth_identity_repository().list_for_user(query.actor_user_id))
+
+    def revokeOAuthIdentity(self, command: RevokeOAuthIdentityCommand) -> OAuthIdentityResult:
+        revoked_at = _coerce_datetime(command.revoked_at or self._now(), "revoked_at")
+        if not isinstance(command.actor_user_id, UserId):
+            raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, "actor_user_id must be a UserId")
+        if not isinstance(command.oauth_identity_id, OAuthIdentityId):
+            raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, "oauth_identity_id must be an OAuthIdentityId")
+        identity = self._oauth_identity_repository().get_by_id(command.oauth_identity_id)
+        if identity is None or identity.user_id != command.actor_user_id:
+            raise AuthApplicationError(
+                AuthErrorCode.OAUTH_IDENTITY_NOT_FOUND,
+                _message_for_code(AuthErrorCode.OAUTH_IDENTITY_NOT_FOUND),
+            )
+        if not identity.is_active():
+            raise AuthApplicationError(
+                AuthErrorCode.OAUTH_IDENTITY_NOT_FOUND,
+                _message_for_code(AuthErrorCode.OAUTH_IDENTITY_NOT_FOUND),
+            )
+        if self._active_login_method_count(command.actor_user_id) <= 1:
+            raise AuthApplicationError(
+                AuthErrorCode.LAST_LOGIN_METHOD_REVOKE_DENIED,
+                _message_for_code(AuthErrorCode.LAST_LOGIN_METHOD_REVOKE_DENIED),
+            )
+        revoked = identity.revoke(revoked_at)
+        self._oauth_identity_repository().save(revoked)
+        return OAuthIdentityResult(revoked)
 
     def linkWallet(self, command: LinkWalletCommand) -> WalletResult:
         now = self._now()
@@ -511,6 +658,41 @@ class AuthApplicationService:
                 "user profile repository is not configured",
             )
         return self._profiles
+
+    def _oauth_identity_repository(self) -> OAuthIdentityRepository:
+        if self._oauth_identities is None:
+            raise AuthApplicationError(
+                AuthErrorCode.OAUTH_PROVIDER_UNSUPPORTED,
+                "OAuth identity repository is not configured",
+            )
+        return self._oauth_identities
+
+    def _oauth_provider_port(self) -> OAuthProvider:
+        if self._oauth_provider is None:
+            raise AuthApplicationError(
+                AuthErrorCode.OAUTH_PROVIDER_UNSUPPORTED,
+                _message_for_code(AuthErrorCode.OAUTH_PROVIDER_UNSUPPORTED),
+            )
+        return self._oauth_provider
+
+    def _exchange_oauth_code(self, *, provider: str, code: str, state: str, redirect_uri: str) -> OAuthProviderIdentity:
+        result = self._oauth_provider_port().exchange_code(
+            provider=_coerce_oauth_provider(provider),
+            code=_require_text(code, "code"),
+            state=_require_text(state, "state"),
+            redirect_uri=_require_text(redirect_uri, "redirect_uri"),
+        )
+        return OAuthProviderIdentity(
+            provider=_coerce_oauth_provider(result.provider),
+            provider_subject=_require_text(result.provider_subject, "provider_subject"),
+        )
+
+    def _active_login_method_count(self, user_id: UserId) -> int:
+        active_oauth_count = sum(1 for identity in self._oauth_identity_repository().list_for_user(user_id) if identity.is_active())
+        if self._wallets is None:
+            return active_oauth_count + 1
+        active_wallet_count = sum(1 for wallet in self._wallets.list_for_user(user_id) if wallet.is_active())
+        return active_oauth_count + active_wallet_count
 
     def _wallet_repository(self) -> UserWalletRepository:
         if self._wallets is None:
@@ -778,6 +960,11 @@ def _message_for_code(code: AuthErrorCode) -> str:
         AuthErrorCode.WALLET_NOT_FOUND: "wallet was not found for the authenticated user",
         AuthErrorCode.WALLET_NOT_ACTIVE: "wallet is not a verified active wallet",
         AuthErrorCode.LAST_WALLET_REVOKE_DENIED: "cannot revoke the last verified wallet",
+        AuthErrorCode.OAUTH_PROVIDER_UNSUPPORTED: "OAuth provider is not configured",
+        AuthErrorCode.OAUTH_IDENTITY_NOT_LINKED: "OAuth identity is not linked to an active user",
+        AuthErrorCode.OAUTH_IDENTITY_ALREADY_LINKED: "OAuth identity is already linked to another active user",
+        AuthErrorCode.OAUTH_IDENTITY_NOT_FOUND: "OAuth identity was not found for the authenticated user",
+        AuthErrorCode.LAST_LOGIN_METHOD_REVOKE_DENIED: "cannot revoke the last active login method",
     }[code]
 
 
@@ -819,6 +1006,27 @@ def _coerce_wallet_type(value: WalletType | str) -> WalletType:
         return WalletType(str(value))
     except ValueError as exc:
         raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, "wallet_type is invalid") from exc
+
+
+def _coerce_oauth_provider(value: str) -> str:
+    provider = _require_text(value, "provider").lower()
+    if len(provider) > 32:
+        raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, "provider must be at most 32 characters")
+    if any(character not in "abcdefghijklmnopqrstuvwxyz0123456789._-" for character in provider):
+        raise AuthApplicationError(
+            AuthErrorCode.VALIDATION_ERROR,
+            "provider must contain only lowercase letters, digits, dot, underscore, or hyphen",
+        )
+    return provider
+
+
+def _coerce_oauth_mode(value: OAuthAuthorizationMode | str) -> OAuthAuthorizationMode:
+    if isinstance(value, OAuthAuthorizationMode):
+        return value
+    try:
+        return OAuthAuthorizationMode(str(value))
+    except ValueError as exc:
+        raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, "OAuth authorization mode is invalid") from exc
 
 
 def _coerce_wallet_signature_verification_result(value: object) -> WalletSignatureVerificationResult:

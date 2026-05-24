@@ -56,10 +56,15 @@ def test_http_route_manifest_includes_every_phase_7_route_family() -> None:
     described = list(describe_http_routes())
 
     assert described == manifest
-    assert len(manifest) == 49
+    assert len(manifest) == 54
     assert {entry["operationId"] for entry in manifest} == {
         "requestLoginChallenge",
         "loginWithMetaMask",
+        "requestOAuthAuthorization",
+        "completeOAuthSession",
+        "linkOAuthIdentity",
+        "listOAuthIdentities",
+        "revokeOAuthIdentity",
         "requestWalletLinkChallenge",
         "linkWallet",
         "listWallets",

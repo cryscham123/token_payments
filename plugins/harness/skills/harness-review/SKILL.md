@@ -22,6 +22,7 @@ description: Use when the user asks to review Harness framework changes, phase p
 | 기술 스택 준수 | `ADR.md`에 정의된 선택을 벗어나지 않았는가? |
 | 테스트 존재 | 새로운 기능 또는 동작 변경에 대한 테스트가 있는가? |
 | CRITICAL 규칙 | `AGENTS.md`의 CRITICAL 규칙을 위반하지 않았는가? |
+| Feature API Companion Rule | 신규 사용자/업무 기능이 API surface, API spec, route manifest, API tests/fixtures를 함께 갱신했거나 `intentional internal-only exception`을 구체적으로 남겼는가? |
 | 빌드 가능 | 해당 프로젝트의 검증 명령이 통과하는가? |
 
 ## Output

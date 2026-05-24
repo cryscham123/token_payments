@@ -10,6 +10,7 @@
 - 제품 구현 로직은 phase/step 또는 대상 애플리케이션 코드에 둔다.
 - step 실행 프롬프트는 `AGENTS.md`와 `docs/*.md`를 포함해야 한다.
 - phase step 상태는 `"pending"`, `"completed"`, `"error"`, `"blocked"`만 사용한다.
+- Feature API Companion Rule: 신규 사용자/업무 기능 phase는 의도적으로 내부 전용이라고 명시하지 않는 한 API surface를 함께 설계/구현하고, `docs/API_SPEC.md`, route manifest, API tests/fixtures 갱신을 같은 phase에 포함한다.
 
 ## 파일 역할
 
@@ -85,6 +86,8 @@
 ```
 
 애플리케이션 코드가 생긴 후에는 해당 프로젝트의 lint/build/test 커맨드를 AC에 추가한다.
+
+Feature API Companion Rule: feature step을 만들 때는 API contract step 또는 API 변경 AC를 포함한다. API가 필요 없는 순수 내부 기능이면 step 지시문과 완료 `summary`에 `intentional internal-only exception` 및 이유를 남긴다.
 
 ## 실행
 

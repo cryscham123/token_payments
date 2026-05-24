@@ -249,6 +249,171 @@
           ]
         },
         {
+          "id": "requestOAuthAuthorization",
+          "name": "Request OAuth authorization",
+          "description": "Starts a provider-subject OAuth flow. The response must not include email claims, provider tokens, or raw providerSubject values.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "postman-oauth-authorize-001"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"redirectUri\": \"{{oauthRedirectUri}}\",\n  \"mode\": \"login\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/oauth/{{provider}}/authorize",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "oauth",
+                "{{provider}}",
+                "authorize"
+              ]
+            }
+          }
+        },
+        {
+          "id": "completeOAuthSession",
+          "name": "Complete OAuth session",
+          "description": "Exchanges an OAuth callback code for a cookie session only when the provider-subject identity is already linked. Email matching must not merge accounts.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "postman-oauth-session-001"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"{{oauthCode}}\",\n  \"state\": \"{{oauthState}}\",\n  \"redirectUri\": \"{{oauthRedirectUri}}\",\n  \"deviceId\": \"{{deviceId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/oauth/{{provider}}/sessions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "oauth",
+                "{{provider}}",
+                "sessions"
+              ]
+            }
+          }
+        },
+        {
+          "id": "linkOAuthIdentity",
+          "name": "Link OAuth identity",
+          "description": "Links a provider-subject OAuth identity to the authenticated user after callback exchange.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "postman-oauth-link-001"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"{{oauthCode}}\",\n  \"state\": \"{{oauthState}}\",\n  \"redirectUri\": \"{{oauthRedirectUri}}\",\n  \"walletId\": \"{{walletId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/oauth/{{provider}}/links",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "oauth",
+                "{{provider}}",
+                "links"
+              ]
+            }
+          }
+        },
+        {
+          "id": "listOAuthIdentities",
+          "name": "List OAuth identities",
+          "description": "Lists provider-subject OAuth identities linked to the authenticated user without exposing providerSubject or email claims.",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Request-Id",
+                "value": "postman-oauth-identities-001"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/oauth/identities",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "oauth",
+                "identities"
+              ]
+            }
+          }
+        },
+        {
+          "id": "revokeOAuthIdentity",
+          "name": "Revoke OAuth identity",
+          "description": "Soft-revokes an OAuth identity while preserving at least one active login method.",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "postman-oauth-revoke-001"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/oauth/identities/{{oauthIdentityId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "oauth",
+                "identities",
+                "{{oauthIdentityId}}"
+              ]
+            }
+          }
+        },
+        {
           "id": "requestWalletLinkChallenge",
           "name": "Request wallet link challenge",
           "description": "Issues an authenticated SIWE challenge with WALLET_LINK purpose for an additional wallet.",

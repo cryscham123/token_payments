@@ -20,23 +20,29 @@ from token_payments.contexts.auth.adapter import (
     PostgresAuthSessionRepository,
     PostgresLoginChallengeRepository,
     PostgresMerchantMembershipRepository,
+    PostgresOAuthIdentityRepository,
     PostgresUserProfileRepository,
     PostgresUserRepository,
     PostgresUserWalletRepository,
 )
 from token_payments.contexts.auth.application import (
     AuthApplicationService,
+    CompleteOAuthSessionCommand,
     CurrentUserQuery,
     GetCurrentUserProfileQuery,
     GetUserProfileQuery,
+    LinkOAuthIdentityCommand,
     LinkWalletCommand,
+    ListOAuthIdentitiesQuery,
     ListWalletsQuery,
     LoginWithMetaMaskCommand,
     LogoutCommand,
     MerchantMembershipService,
     RefreshSessionCommand,
+    RequestOAuthAuthorizationCommand,
     RequestLoginChallengeCommand,
     RequestWalletLinkChallengeCommand,
+    RevokeOAuthIdentityCommand,
     RevokeWalletCommand,
     SetPrimaryWalletCommand,
     UpdateUserProfileCommand,
@@ -1601,6 +1607,36 @@ class _TransactionalAuthUseCase:
             lambda connection: self._service(connection).loginWithMetaMask(command),
         )
 
+    def requestOAuthAuthorization(self, command: RequestOAuthAuthorizationCommand):
+        return _with_transaction(
+            self._dependencies,
+            lambda connection: self._service(connection).requestOAuthAuthorization(command),
+        )
+
+    def completeOAuthSession(self, command: CompleteOAuthSessionCommand):
+        return _with_transaction(
+            self._dependencies,
+            lambda connection: self._service(connection).completeOAuthSession(command),
+        )
+
+    def linkOAuthIdentity(self, command: LinkOAuthIdentityCommand):
+        return _with_transaction(
+            self._dependencies,
+            lambda connection: self._service(connection).linkOAuthIdentity(command),
+        )
+
+    def listOAuthIdentities(self, query: ListOAuthIdentitiesQuery):
+        return _with_transaction(
+            self._dependencies,
+            lambda connection: self._service(connection).listOAuthIdentities(query),
+        )
+
+    def revokeOAuthIdentity(self, command: RevokeOAuthIdentityCommand):
+        return _with_transaction(
+            self._dependencies,
+            lambda connection: self._service(connection).revokeOAuthIdentity(command),
+        )
+
     def linkWallet(self, command: LinkWalletCommand):
         return _with_transaction(
             self._dependencies,
@@ -1673,6 +1709,7 @@ class _TransactionalAuthUseCase:
             sessions=PostgresAuthSessionRepository(connection),
             rbac=PostgresAuthRbacRepository(connection),
             profiles=PostgresUserProfileRepository(connection),
+            oauth_identities=PostgresOAuthIdentityRepository(connection),
             signature_verifier=ClientWalletSignatureVerifier(
                 self._dependencies.wallet_signature_client,
                 supported_chain_ids=(self._config.wallet_signature_chain_id,),

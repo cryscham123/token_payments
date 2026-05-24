@@ -23,6 +23,7 @@ description: Use when the user asks to plan, split, scaffold, or prepare phased 
 5. 실행 가능한 AC: `npm run build`, `python3 -m pytest`처럼 실제 검증 커맨드를 적는다.
 6. 금지사항은 구체적으로 쓴다: "X를 하지 마라. 이유: Y".
 7. step name은 kebab-case slug로 작성한다.
+8. Feature API Companion Rule: 신규 사용자/업무 기능 phase에는 API contract step 또는 API 변경 AC를 포함한다. `docs/API_SPEC.md`, route manifest, API tests/fixtures 갱신을 계획에 넣고, API가 필요 없는 순수 내부 기능이면 `intentional internal-only exception`과 이유를 step 지시문과 완료 summary에 남기도록 한다.
 
 ## File Shapes
 
@@ -65,11 +66,17 @@ Step 상태는 `"pending"`, `"completed"`, `"error"`, `"blocked"`만 사용한�
 - `/AGENTS.md`
 - `/docs/ARCHITECTURE.md`
 - `/docs/ADR.md`
+- `/docs/API_SPEC.md`
 - {이전 step에서 생성/수정된 파일 경로}
 
 ## 작업
 
 {구체적인 구현 지시}
+
+Feature API Companion Rule:
+- 사용자/업무 기능이면 API surface를 함께 설계/구현한다.
+- `docs/API_SPEC.md`, route manifest, API tests/fixtures를 갱신한다.
+- API가 필요 없는 순수 내부 기능이면 `intentional internal-only exception`과 이유를 남긴다.
 
 ## Acceptance Criteria
 

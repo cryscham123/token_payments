@@ -13,6 +13,8 @@ from token_payments.contexts.auth.domain import (
     AuthNonce,
     IssuedToken,
     LoginChallenge,
+    OAuthIdentity,
+    OAuthIdentityId,
     RefreshTokenHash,
     SessionMembership,
     SessionId,
@@ -62,6 +64,85 @@ class LoginWithMetaMaskCommand:
     message: str
     signature: str
     device_id: str
+
+
+class OAuthAuthorizationMode(StrEnum):
+    LOGIN = "login"
+    LINK = "link"
+
+
+@dataclass(frozen=True)
+class RequestOAuthAuthorizationCommand:
+    provider: str
+    redirect_uri: str
+    mode: OAuthAuthorizationMode | str = OAuthAuthorizationMode.LOGIN
+    actor_user_id: UserId | None = None
+    requested_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class CompleteOAuthSessionCommand:
+    provider: str
+    code: str
+    state: str
+    redirect_uri: str
+    device_id: str
+    requested_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class LinkOAuthIdentityCommand:
+    actor_user_id: UserId
+    provider: str
+    code: str
+    state: str
+    redirect_uri: str
+    wallet_id: WalletId | None = None
+    requested_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class ListOAuthIdentitiesQuery:
+    actor_user_id: UserId
+
+
+@dataclass(frozen=True)
+class RevokeOAuthIdentityCommand:
+    actor_user_id: UserId
+    oauth_identity_id: OAuthIdentityId
+    revoked_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class OAuthAuthorizationResult:
+    provider: str
+    authorization_url: str
+    state: str
+    mode: OAuthAuthorizationMode | str
+    expires_at: datetime
+    pkce_required: bool = True
+
+
+@dataclass(frozen=True)
+class OAuthProviderIdentity:
+    provider: str
+    provider_subject: str
+
+
+@dataclass(frozen=True)
+class OAuthSessionResult:
+    login: LoginResult
+    oauth_identity: OAuthIdentity
+
+
+@dataclass(frozen=True)
+class OAuthIdentityResult:
+    oauth_identity: OAuthIdentity
+
+
+@dataclass(frozen=True)
+class OAuthIdentitiesResult:
+    oauth_identities: tuple[OAuthIdentity, ...]
 
 
 @dataclass(frozen=True)
@@ -186,6 +267,21 @@ class AuthUseCase(Protocol):
     def loginWithMetaMask(self, command: LoginWithMetaMaskCommand) -> LoginResult:
         ...
 
+    def requestOAuthAuthorization(self, command: RequestOAuthAuthorizationCommand) -> OAuthAuthorizationResult:
+        ...
+
+    def completeOAuthSession(self, command: CompleteOAuthSessionCommand) -> OAuthSessionResult:
+        ...
+
+    def linkOAuthIdentity(self, command: LinkOAuthIdentityCommand) -> OAuthIdentityResult:
+        ...
+
+    def listOAuthIdentities(self, query: ListOAuthIdentitiesQuery) -> OAuthIdentitiesResult:
+        ...
+
+    def revokeOAuthIdentity(self, command: RevokeOAuthIdentityCommand) -> OAuthIdentityResult:
+        ...
+
     def linkWallet(self, command: LinkWalletCommand) -> WalletResult:
         ...
 
@@ -259,6 +355,43 @@ class UserProfileRepository(Protocol):
         ...
 
     def get_by_display_name(self, display_name: str) -> UserProfile | None:
+        ...
+
+
+class OAuthIdentityRepository(Protocol):
+    def save(self, identity: OAuthIdentity) -> None:
+        ...
+
+    def get_by_id(self, oauth_identity_id: OAuthIdentityId) -> OAuthIdentity | None:
+        ...
+
+    def get_active_by_provider_subject(self, provider: str, provider_subject: str) -> OAuthIdentity | None:
+        ...
+
+    def list_for_user(self, user_id: UserId) -> tuple[OAuthIdentity, ...]:
+        ...
+
+
+class OAuthProvider(Protocol):
+    def build_authorization(
+        self,
+        *,
+        provider: str,
+        redirect_uri: str,
+        state: str,
+        mode: OAuthAuthorizationMode,
+        expires_at: datetime,
+    ) -> OAuthAuthorizationResult:
+        ...
+
+    def exchange_code(
+        self,
+        *,
+        provider: str,
+        code: str,
+        state: str,
+        redirect_uri: str,
+    ) -> OAuthProviderIdentity:
         ...
 
 

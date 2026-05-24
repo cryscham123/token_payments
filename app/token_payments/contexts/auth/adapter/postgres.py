@@ -20,6 +20,8 @@ from token_payments.contexts.auth.domain import (
     InvitationStatus,
     LoginChallenge,
     LoginFailureReason,
+    OAuthIdentity,
+    OAuthIdentityId,
     RefreshTokenHash,
     Role,
     RoleId,
@@ -126,6 +128,77 @@ ON CONFLICT (user_id) DO UPDATE SET
     display_name = EXCLUDED.display_name,
     status = EXCLUDED.status,
     updated_at = EXCLUDED.updated_at
+"""
+
+SELECT_OAUTH_IDENTITY_BY_ID_SQL = """
+SELECT
+    oauth_identity_id,
+    provider,
+    provider_subject,
+    user_id,
+    wallet_id,
+    linked_at,
+    revoked_at
+FROM auth_oauth_identities
+WHERE oauth_identity_id = %(oauth_identity_id)s
+"""
+
+SELECT_ACTIVE_OAUTH_IDENTITY_BY_PROVIDER_SUBJECT_SQL = """
+SELECT
+    oauth_identity_id,
+    provider,
+    provider_subject,
+    user_id,
+    wallet_id,
+    linked_at,
+    revoked_at
+FROM auth_oauth_identities
+WHERE provider = %(provider)s
+  AND provider_subject = %(provider_subject)s
+  AND revoked_at IS NULL
+LIMIT 1
+"""
+
+SELECT_OAUTH_IDENTITIES_FOR_USER_SQL = """
+SELECT
+    oauth_identity_id,
+    provider,
+    provider_subject,
+    user_id,
+    wallet_id,
+    linked_at,
+    revoked_at
+FROM auth_oauth_identities
+WHERE user_id = %(user_id)s
+ORDER BY linked_at ASC, oauth_identity_id ASC
+"""
+
+UPSERT_OAUTH_IDENTITY_SQL = """
+INSERT INTO auth_oauth_identities (
+    oauth_identity_id,
+    provider,
+    provider_subject,
+    user_id,
+    wallet_id,
+    linked_at,
+    revoked_at
+) VALUES (
+    %(oauth_identity_id)s,
+    %(provider)s,
+    %(provider_subject)s,
+    %(user_id)s,
+    %(wallet_id)s,
+    %(linked_at)s,
+    %(revoked_at)s
+)
+ON CONFLICT (oauth_identity_id) DO UPDATE SET
+    provider = EXCLUDED.provider,
+    provider_subject = EXCLUDED.provider_subject,
+    user_id = EXCLUDED.user_id,
+    wallet_id = EXCLUDED.wallet_id,
+    linked_at = EXCLUDED.linked_at,
+    revoked_at = EXCLUDED.revoked_at,
+    updated_at = now()
 """
 
 SELECT_CHALLENGE_BY_NONCE_SQL = """
@@ -577,6 +650,59 @@ class PostgresUserProfileRepository:
             )
         )
         return _row_to_profile(row) if row is not None else None
+
+
+class PostgresOAuthIdentityRepository:
+    """Persist provider-subject OAuth identities inside an injected transaction."""
+
+    def __init__(self, connection: PostgresConnection) -> None:
+        self._connection = connection
+
+    def save(self, identity: OAuthIdentity) -> None:
+        if not isinstance(identity, OAuthIdentity):
+            raise ValueError("PostgresOAuthIdentityRepository.save requires an OAuthIdentity")
+        self._connection.execute(
+            UPSERT_OAUTH_IDENTITY_SQL,
+            {
+                "oauth_identity_id": str(identity.oauth_identity_id),
+                "provider": identity.provider,
+                "provider_subject": identity.provider_subject,
+                "user_id": str(identity.user_id),
+                "wallet_id": str(identity.wallet_id) if identity.wallet_id is not None else None,
+                "linked_at": identity.linked_at,
+                "revoked_at": identity.revoked_at,
+            },
+        )
+
+    def get_by_id(self, oauth_identity_id: OAuthIdentityId) -> OAuthIdentity | None:
+        if not isinstance(oauth_identity_id, OAuthIdentityId):
+            raise ValueError("PostgresOAuthIdentityRepository.get_by_id requires an OAuthIdentityId")
+        row = _fetch_one(
+            self._connection.execute(
+                SELECT_OAUTH_IDENTITY_BY_ID_SQL,
+                {"oauth_identity_id": str(oauth_identity_id)},
+            )
+        )
+        return _row_to_oauth_identity(row) if row is not None else None
+
+    def get_active_by_provider_subject(self, provider: str, provider_subject: str) -> OAuthIdentity | None:
+        if not isinstance(provider, str) or not provider.strip():
+            raise ValueError("PostgresOAuthIdentityRepository.get_active_by_provider_subject requires provider")
+        if not isinstance(provider_subject, str) or not provider_subject.strip():
+            raise ValueError("PostgresOAuthIdentityRepository.get_active_by_provider_subject requires provider_subject")
+        row = _fetch_one(
+            self._connection.execute(
+                SELECT_ACTIVE_OAUTH_IDENTITY_BY_PROVIDER_SUBJECT_SQL,
+                {"provider": provider.strip().lower(), "provider_subject": provider_subject.strip()},
+            )
+        )
+        return _row_to_oauth_identity(row) if row is not None else None
+
+    def list_for_user(self, user_id: UserId) -> tuple[OAuthIdentity, ...]:
+        if not isinstance(user_id, UserId):
+            raise ValueError("PostgresOAuthIdentityRepository.list_for_user requires a UserId")
+        result = self._connection.execute(SELECT_OAUTH_IDENTITIES_FOR_USER_SQL, {"user_id": str(user_id)})
+        return tuple(_row_to_oauth_identity(row) for row in result)
 
 
 class PostgresLoginChallengeRepository:
@@ -1212,6 +1338,19 @@ def _row_to_profile(row: Mapping[str, Any] | object) -> UserProfile:
         status=UserProfileStatus(_row_value(row, "status")),
         created_at=_row_value(row, "created_at"),
         updated_at=_row_value(row, "updated_at"),
+    )
+
+
+def _row_to_oauth_identity(row: Mapping[str, Any] | object) -> OAuthIdentity:
+    wallet_id = _optional_row_value(row, "wallet_id")
+    return OAuthIdentity(
+        oauth_identity_id=OAuthIdentityId(uuid.UUID(str(_row_value(row, "oauth_identity_id")))),
+        provider=str(_row_value(row, "provider")),
+        provider_subject=str(_row_value(row, "provider_subject")),
+        user_id=UserId(_row_value(row, "user_id")),
+        wallet_id=WalletId(uuid.UUID(str(wallet_id))) if wallet_id is not None else None,
+        linked_at=_row_value(row, "linked_at"),
+        revoked_at=_row_value(row, "revoked_at"),
     )
 
 

@@ -94,6 +94,21 @@ class InvitationId:
         return str(self.value)
 
 
+@dataclass(frozen=True)
+class OAuthIdentityId:
+    value: UUID
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "value", _coerce_uuid(self.value, "OAuthIdentityId.value"))
+
+    @classmethod
+    def new(cls) -> Self:
+        return cls(uuid4())
+
+    def __str__(self) -> str:
+        return str(self.value)
+
+
 class ChallengeStatus(StrEnum):
     ISSUED = "ISSUED"
     VERIFIED = "VERIFIED"
@@ -626,6 +641,44 @@ class AuthSession:
 
 
 @dataclass(frozen=True)
+class OAuthIdentity:
+    oauth_identity_id: OAuthIdentityId
+    provider: str
+    provider_subject: str
+    user_id: UserId
+    wallet_id: WalletId | None
+    linked_at: datetime
+    revoked_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.oauth_identity_id, OAuthIdentityId):
+            raise ValueError("OAuthIdentity.oauth_identity_id must be an OAuthIdentityId")
+        object.__setattr__(self, "provider", _require_oauth_provider(self.provider, "OAuthIdentity.provider"))
+        object.__setattr__(
+            self,
+            "provider_subject",
+            _require_oauth_subject(self.provider_subject, "OAuthIdentity.provider_subject"),
+        )
+        if not isinstance(self.user_id, UserId):
+            raise ValueError("OAuthIdentity.user_id must be a UserId")
+        if self.wallet_id is not None and not isinstance(self.wallet_id, WalletId):
+            raise TypeError("OAuthIdentity.wallet_id must be a WalletId or None")
+        object.__setattr__(self, "linked_at", _require_aware_datetime(self.linked_at, "OAuthIdentity.linked_at"))
+        if self.revoked_at is not None:
+            object.__setattr__(
+                self,
+                "revoked_at",
+                _require_aware_datetime(self.revoked_at, "OAuthIdentity.revoked_at"),
+            )
+
+    def is_active(self) -> bool:
+        return self.revoked_at is None
+
+    def revoke(self, revoked_at: datetime) -> Self:
+        return replace(self, revoked_at=_require_aware_datetime(revoked_at, "OAuthIdentity.revoked_at"))
+
+
+@dataclass(frozen=True)
 class UserRegisteredEvent:
     user_id: UserId
     wallet: WalletAddress | str
@@ -844,6 +897,24 @@ def _require_text(value: str, field_name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field_name} must be a non-empty string")
     return value.strip()
+
+
+def _require_oauth_provider(value: str, field_name: str) -> str:
+    provider = _require_text(value, field_name).lower()
+    if len(provider) > 32:
+        raise ValueError(f"{field_name} must be at most 32 characters")
+    if any(character not in "abcdefghijklmnopqrstuvwxyz0123456789._-" for character in provider):
+        raise ValueError(f"{field_name} must contain only lowercase letters, digits, dot, underscore, or hyphen")
+    return provider
+
+
+def _require_oauth_subject(value: str, field_name: str) -> str:
+    subject = _require_text(value, field_name)
+    if len(subject) > 256:
+        raise ValueError(f"{field_name} must be at most 256 characters")
+    if any(ord(character) < 32 or ord(character) == 127 for character in subject):
+        raise ValueError(f"{field_name} must not contain control characters")
+    return subject
 
 
 def _require_aware_datetime(value: datetime, field_name: str) -> datetime:

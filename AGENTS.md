@@ -11,6 +11,7 @@
 - CRITICAL: `scripts/execute.py`는 phase 실행 오케스트레이션만 담당한다. 프로젝트별 구현 로직은 생성되는 phase/step 또는 대상 프로젝트 코드에 둔다.
 - CRITICAL: step 실행 프롬프트에는 `AGENTS.md`와 `docs/*.md` 가드레일이 포함되어야 한다.
 - CRITICAL: `phases/{phase}/index.json`의 상태 전이는 `"pending"`, `"completed"`, `"error"`, `"blocked"`만 사용한다.
+- CRITICAL: Feature API Companion Rule: 신규 사용자/업무 기능을 phase/step으로 만들 때는 의도적으로 내부 전용이라고 명시하지 않는 한 API surface를 함께 설계/구현한다. 해당 작업은 `docs/API_SPEC.md`, route manifest, API tests/fixtures를 갱신하거나, API가 필요 없는 경우 `intentional internal-only exception`과 이유를 step/summary에 남긴다.
 - `summary`, `error_message`, `blocked_reason`은 다음 step의 판단에 직접 쓰이므로 구체적으로 작성한다.
 - `step*-output.json` 같은 실행 산출물은 추적하지 않는다. 필요한 상태는 index JSON에 남긴다.
 - Codex CLI 옵션은 현재 CLI 형식에 맞춰 최상위 옵션을 `exec` 앞에 둔다.

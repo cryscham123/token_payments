@@ -8,18 +8,28 @@ from token_payments.contexts.auth.application import (
     AuthApplicationError,
     AuthErrorCode,
     AuthUseCase,
+    CompleteOAuthSessionCommand,
     CurrentUserQuery,
     GetCurrentUserProfileQuery,
     GetUserProfileQuery,
+    LinkOAuthIdentityCommand,
     LinkWalletCommand,
+    ListOAuthIdentitiesQuery,
     ListWalletsQuery,
     LoginChallengeResult,
     LoginResult,
     LoginWithMetaMaskCommand,
     LogoutCommand,
+    OAuthAuthorizationMode,
+    OAuthAuthorizationResult,
+    OAuthIdentitiesResult,
+    OAuthIdentityResult,
+    OAuthSessionResult,
     RefreshSessionCommand,
+    RequestOAuthAuthorizationCommand,
     RequestLoginChallengeCommand,
     RequestWalletLinkChallengeCommand,
+    RevokeOAuthIdentityCommand,
     RevokeWalletCommand,
     SetPrimaryWalletCommand,
     UpdateUserProfileCommand,
@@ -28,7 +38,7 @@ from token_payments.contexts.auth.application import (
     WalletsResult,
 )
 from token_payments.contexts.auth.application.siwe import SIWE_VERSION
-from token_payments.contexts.auth.domain import AuthSession, RefreshTokenHash, SessionId, User, UserProfile
+from token_payments.contexts.auth.domain import AuthSession, OAuthIdentity, OAuthIdentityId, RefreshTokenHash, SessionId, User, UserProfile
 from token_payments.contexts.auth.domain.wallet import WalletId
 from token_payments.shared.domain import UserId
 
@@ -100,6 +110,87 @@ class AuthApi:
             return json_response(_login_payload(result), status_code=200, request_id=request.request_id)
         except AuthApplicationError as exc:
             return _error_response(exc, request.request_id)
+
+    def request_oauth_authorization(self, request: ApiRequest) -> ApiResponse:
+        try:
+            body = _request_body(request)
+            mode = _optional_text(body, "mode") or OAuthAuthorizationMode.LOGIN.value
+            result = self._use_case.requestOAuthAuthorization(
+                RequestOAuthAuthorizationCommand(
+                    provider=_required_query_text(request, "provider"),
+                    redirect_uri=_required_text(body, "redirectUri"),
+                    mode=mode,
+                    actor_user_id=UserId(request.auth_context.user_id)
+                    if request.auth_context is not None and request.auth_context.user_id is not None
+                    else None,
+                    requested_at=request.received_at,
+                )
+            )
+            return json_response(
+                {"oauthAuthorization": _oauth_authorization_payload(result)},
+                status_code=201,
+                request_id=request.request_id,
+            )
+        except (AuthApplicationError, ValueError) as exc:
+            return _error_response(_coerce_auth_error(exc), request.request_id)
+
+    def complete_oauth_session(self, request: ApiRequest) -> ApiResponse:
+        try:
+            body = _request_body(request)
+            result = self._use_case.completeOAuthSession(
+                CompleteOAuthSessionCommand(
+                    provider=_required_query_text(request, "provider"),
+                    code=_required_text(body, "code"),
+                    state=_required_text(body, "state"),
+                    redirect_uri=_required_text(body, "redirectUri"),
+                    device_id=_required_text(body, "deviceId"),
+                    requested_at=request.received_at,
+                )
+            )
+            return json_response(_oauth_session_payload(result), status_code=200, request_id=request.request_id)
+        except (AuthApplicationError, ValueError) as exc:
+            return _error_response(_coerce_auth_error(exc), request.request_id)
+
+    def link_oauth_identity(self, request: ApiRequest) -> ApiResponse:
+        try:
+            actor_user_id = _authenticated_user_id(request)
+            body = _request_body(request)
+            result = self._use_case.linkOAuthIdentity(
+                LinkOAuthIdentityCommand(
+                    actor_user_id=UserId(actor_user_id),
+                    provider=_required_query_text(request, "provider"),
+                    code=_required_text(body, "code"),
+                    state=_required_text(body, "state"),
+                    redirect_uri=_required_text(body, "redirectUri"),
+                    wallet_id=_optional_wallet_id(body),
+                    requested_at=request.received_at,
+                )
+            )
+            return json_response(_oauth_identity_result_payload(result), status_code=201, request_id=request.request_id)
+        except (AuthApplicationError, ValueError) as exc:
+            return _error_response(_coerce_auth_error(exc), request.request_id)
+
+    def list_oauth_identities(self, request: ApiRequest) -> ApiResponse:
+        try:
+            actor_user_id = _authenticated_user_id(request)
+            result = self._use_case.listOAuthIdentities(ListOAuthIdentitiesQuery(actor_user_id=UserId(actor_user_id)))
+            return json_response(_oauth_identities_payload(result), status_code=200, request_id=request.request_id)
+        except (AuthApplicationError, ValueError) as exc:
+            return _error_response(_coerce_auth_error(exc), request.request_id)
+
+    def revoke_oauth_identity(self, request: ApiRequest) -> ApiResponse:
+        try:
+            actor_user_id = _authenticated_user_id(request)
+            result = self._use_case.revokeOAuthIdentity(
+                RevokeOAuthIdentityCommand(
+                    actor_user_id=UserId(actor_user_id),
+                    oauth_identity_id=OAuthIdentityId(_required_query_text(request, "oauthIdentityId")),
+                    revoked_at=request.received_at,
+                )
+            )
+            return json_response(_oauth_identity_result_payload(result), status_code=200, request_id=request.request_id)
+        except (AuthApplicationError, ValueError) as exc:
+            return _error_response(_coerce_auth_error(exc), request.request_id)
 
     def link_wallet(self, request: ApiRequest) -> ApiResponse:
         try:
@@ -331,6 +422,55 @@ def _login_payload(result: LoginResult) -> dict[str, Any]:
     }
 
 
+def _oauth_authorization_payload(result: OAuthAuthorizationResult) -> dict[str, Any]:
+    mode = result.mode.value if isinstance(result.mode, OAuthAuthorizationMode) else str(result.mode)
+    return {
+        "provider": result.provider,
+        "authorizationUrl": result.authorization_url,
+        "state": result.state,
+        "mode": mode,
+        "expiresAt": result.expires_at.isoformat(),
+        "pkceRequired": result.pkce_required,
+    }
+
+
+def _oauth_session_payload(result: OAuthSessionResult) -> dict[str, Any]:
+    login = result.login
+    return {
+        "user": _user_payload(login.user),
+        "session": _session_payload(login.session),
+        "token": {
+            "accessToken": login.issued_token.access_token,
+            "refreshToken": login.issued_token.refresh_token,
+            "expiresAt": login.issued_token.expires_at.isoformat(),
+        },
+        "oauthIdentity": _oauth_identity_payload(result.oauth_identity),
+        "authentication": {
+            "method": "OAUTH_PROVIDER_SUBJECT",
+            "provider": result.oauth_identity.provider,
+        },
+    }
+
+
+def _oauth_identity_result_payload(result: OAuthIdentityResult) -> dict[str, Any]:
+    return {"oauthIdentity": _oauth_identity_payload(result.oauth_identity)}
+
+
+def _oauth_identities_payload(result: OAuthIdentitiesResult) -> dict[str, Any]:
+    return {"oauthIdentities": [_oauth_identity_payload(identity) for identity in result.oauth_identities]}
+
+
+def _oauth_identity_payload(identity: OAuthIdentity) -> dict[str, Any]:
+    return {
+        "oauthIdentityId": str(identity.oauth_identity_id),
+        "provider": identity.provider,
+        "userId": str(identity.user_id),
+        "walletId": str(identity.wallet_id) if identity.wallet_id is not None else None,
+        "linkedAt": identity.linked_at.isoformat(),
+        "revokedAt": identity.revoked_at.isoformat() if identity.revoked_at is not None else None,
+    }
+
+
 def _user_payload(user: User) -> dict[str, Any]:
     return {
         "userId": str(user.user_id),
@@ -390,6 +530,11 @@ def _optional_profile_text(body: Mapping[str, Any], key: str) -> str | None:
     if not isinstance(value, str):
         raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, f"{key} must be a string")
     return value
+
+
+def _optional_wallet_id(body: Mapping[str, Any]) -> WalletId | None:
+    value = _optional_text(body, "walletId")
+    return WalletId(value) if value is not None else None
 
 
 def _reject_unknown_profile_fields(body: Mapping[str, Any], allowed: set[str]) -> None:
@@ -511,6 +656,11 @@ def _status_for_error(code: AuthErrorCode) -> int:
         AuthErrorCode.WALLET_NOT_FOUND: 404,
         AuthErrorCode.WALLET_NOT_ACTIVE: 409,
         AuthErrorCode.LAST_WALLET_REVOKE_DENIED: 409,
+        AuthErrorCode.OAUTH_PROVIDER_UNSUPPORTED: 400,
+        AuthErrorCode.OAUTH_IDENTITY_NOT_LINKED: 404,
+        AuthErrorCode.OAUTH_IDENTITY_ALREADY_LINKED: 409,
+        AuthErrorCode.OAUTH_IDENTITY_NOT_FOUND: 404,
+        AuthErrorCode.LAST_LOGIN_METHOD_REVOKE_DENIED: 409,
     }[code]
 
 

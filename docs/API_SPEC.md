@@ -1,10 +1,29 @@
-# API Spec: Token Payments
+---
+description: Token Payments public HTTP API, OAuth, Postman 계약을 GitBook에서 읽기 위한 한국어 명세
+---
 
-This document captures the Live API Runtime Composition boundary for the local Token Payments backend.
+# Token Payments API 명세
+
+이 문서는 로컬 Token Payments backend의 public HTTP API, OAuth identity API, Postman fixture, Live API Runtime Composition 경계를 함께 설명하는 기준 명세다. GitBook에서는 아래 분리 페이지를 먼저 읽고, 이 파일의 Route Summary와 endpoint별 상세 계약을 source of truth로 사용한다.
 
 Default `api`/`serve-api` commands keep the no-server-start preview boundary. Use `PYTHONPATH=app python3 -m token_payments serve-api --live --dry-run` for a bounded live server plan, and `PYTHONPATH=app python3 -m token_payments serve-api --live --confirm-live-api` only when an approved live environment is ready to start the long-running server.
 
-이 문서는 현재 로컬 backend API와 Phase 27 privacy-first identity contract를 기준으로 한 명세다. Route surface는 현재 `app/token_payments/api/http.py`의 route manifest 49개를 기준으로 고정한다.
+이 문서는 현재 로컬 backend API와 Phase 27 privacy-first identity contract를 기준으로 한다. Route surface는 현재 `app/token_payments/api/http.py`의 route manifest 54개를 기준으로 고정한다.
+
+## GitBook 탐색
+
+- [API 개요](api/README.md): base URL, 인증 방식, 공통 헤더와 오류 규약.
+- [인증과 OAuth](api/auth.md): SIWE, session, wallet link, user profile, provider-subject OAuth API.
+- [주문, 체크아웃, 결제](api/orders-checkout-payments.md): 주문 생성, checkout tracking, txHash 제출.
+- [상점과 상품 카탈로그](api/catalog-inventory.md): public store/product 읽기, merchant product 쓰기, store owner inventory.
+- [머천트, 관리자, RBAC](api/merchant-admin-rbac.md): admin provisioning, merchant member/invitation, role catalog.
+- [운영자와 런타임](api/operator-runtime.md): operator dashboard/detail/action API와 live runtime boundary.
+
+아래 본문에는 자동 계약 테스트가 참조하는 canonical route manifest와 endpoint별 요청/응답 예시가 포함된다. 영어 계약 문구는 기존 public contract와 테스트 호환성을 위해 보존한다.
+
+## API Evolution Guardrail
+
+Feature API Companion Rule: 신규 사용자/업무 기능은 의도적으로 내부 전용이라고 명시하지 않는 한 API surface와 함께 설계한다. 새 기능 phase는 이 문서의 endpoint/operation contract, route manifest, public fixtures/Postman expected data, API tests를 함께 갱신해야 한다. API가 없는 순수 내부 기능은 phase step과 완료 summary에 `intentional internal-only exception` 및 이유를 남긴다.
 
 ## Phase 26 public security contract
 
@@ -21,7 +40,7 @@ Phase 26 hardens the public API and runtime architecture around externally safe 
 
 ### Public HTTP route surface
 
-Public HTTP route surface is exactly the current 49-route manifest from `app/token_payments/api/http.py`. This manifest contains auth session routes, authenticated wallet link/list/primary/revoke routes, current user display profile routes, order creation, checkout tracking, payment txHash submission, public store profile reads, merchant store profile listing/update routes, admin store catalog provisioning routes, store-owner product registration, store owner inventory query/mutation routes, merchant member/invitation routes, operator dashboard/detail reads, and cancel/retry/replay operator actions. It does not include store owner manual approval routes, role/permission full CRUD, platform group CRUD, personal group CRUD, owner transfer, settlement wallet mutation, or checkout saga command endpoints.
+Public HTTP route surface is exactly the current 54-route manifest from `app/token_payments/api/http.py`. This manifest contains auth session routes, OAuth provider-subject login/link/list/revoke routes, authenticated wallet link/list/primary/revoke routes, current user display profile routes, order creation, checkout tracking, payment txHash submission, public store profile reads, merchant store profile listing/update routes, admin store catalog provisioning routes, store-owner product registration, store owner inventory query/mutation routes, merchant member/invitation routes, operator dashboard/detail reads, and cancel/retry/replay operator actions. It does not include store owner manual approval routes, role/permission full CRUD, platform group CRUD, personal group CRUD, owner transfer, settlement wallet mutation, or checkout saga command endpoints.
 
 ### Message listener input surface
 
@@ -65,7 +84,7 @@ Roadmap status note: Kafka live worker, multi-wallet, and stablecoin support are
 
 ### Privacy-first OAuth identity contract
 
-OAuth/social identity is keyed by `provider` plus `providerSubject`, not by email. Google email claims are not persisted, and email/hash matching must not automatically merge accounts. A new social login creates or links the provider-subject identity to a user only through an authenticated session or an explicit EOA signature proof for existing wallet accounts. OAuth unlink is a soft revoke using `revokedAt`; unlink must not remove the final active login method, and wallet/social identity unlink is blocked while active payment, refund, or reservation work depends on that identity.
+OAuth/social identity is keyed by `provider` plus `providerSubject`, not by email. Google email claims are not persisted, and email/hash matching must not automatically merge accounts. A new social login creates or links the provider-subject identity to a user only through an authenticated session or an explicit EOA signature proof for existing wallet accounts. OAuth unlink is a soft revoke using `revokedAt`; unlink must not remove the final active login method, and wallet/social identity unlink is blocked while active payment, refund, or reservation work depends on that identity. Public OAuth API responses expose `oauthIdentityId`, `provider`, optional `walletId`, `linkedAt`, and `revokedAt`; they do not expose raw `providerSubject`, provider access/refresh tokens, email claims, or provider profile dumps.
 
 ### Store profile API surface
 
@@ -252,7 +271,7 @@ Request body size is bounded by `REQUEST_BODY_MAX_BYTES`. Exceeding it returns `
 
 ## Live System Routes And Observability
 
-`GET /healthz` and `GET /readyz` are live server-only system routes and are not part of the 49-route public facade manifest. `/healthz` reports process/runtime health only and must not open PostgreSQL, Kafka, Blockchain, Docker, or local `.env`. `/readyz` summarizes injected PostgreSQL/Kafka/Blockchain readiness probes; unavailable components return `503` with bounded component details.
+`GET /healthz` and `GET /readyz` are live server-only system routes and are not part of the 54-route public facade manifest. `/healthz` reports process/runtime health only and must not open PostgreSQL, Kafka, Blockchain, Docker, or local `.env`. `/readyz` summarizes injected PostgreSQL/Kafka/Blockchain readiness probes; unavailable components return `503` with bounded component details.
 
 All HTTP responses include `X-Request-Id` when a request id is known, and an incoming `X-Request-Id` is preserved. Live access log events include method, path template or route id, status, request id, duration, actor summary, and error code. Access logs must not record cookie values, signed tokens, authorization headers, private keys, signatures, or full request bodies.
 
@@ -287,6 +306,11 @@ Common status codes:
 | --- | --- | --- |
 | `requestLoginChallenge` | `POST` | `/auth/challenges` |
 | `loginWithMetaMask` | `POST` | `/auth/sessions` |
+| `requestOAuthAuthorization` | `POST` | `/auth/oauth/{provider}/authorize` |
+| `completeOAuthSession` | `POST` | `/auth/oauth/{provider}/sessions` |
+| `linkOAuthIdentity` | `POST` | `/auth/oauth/{provider}/links` |
+| `listOAuthIdentities` | `GET` | `/auth/oauth/identities` |
+| `revokeOAuthIdentity` | `DELETE` | `/auth/oauth/identities/{oauthIdentityId}` |
 | `requestWalletLinkChallenge` | `POST` | `/auth/wallets/challenges` |
 | `linkWallet` | `POST` | `/auth/wallets` |
 | `listWallets` | `GET` | `/auth/wallets` |
@@ -448,6 +472,168 @@ Response `200`:
 Browser HTTP response headers include `Set-Cookie` values for signed access/refresh session tokens and the `csrf_token` double-submit cookie. Cookie values are not shown in response examples.
 
 Errors: `400 VALIDATION_ERROR`, `401 INVALID_SIGNATURE`, `401 WALLET_MISMATCH`, `401 SIWE_MESSAGE_MISMATCH`, `409 EXPIRED_CHALLENGE`, `409 REUSED_NONCE`.
+
+### `POST /auth/oauth/{provider}/authorize`
+
+Starts an OAuth/social login or link flow for a configured provider such as `google`. The server returns a provider authorization URL plus bounded state/PKCE metadata. `mode=link` requires an authenticated session because it will attach the provider-subject identity to the current user after callback exchange.
+
+Request:
+
+```json
+{
+  "redirectUri": "https://token-payments.local/oauth/callback",
+  "mode": "login"
+}
+```
+
+Response `201`:
+
+```json
+{
+  "oauthAuthorization": {
+    "provider": "google",
+    "authorizationUrl": "https://accounts.google.com/o/oauth2/v2/auth?...",
+    "state": "oauth-state",
+    "mode": "login",
+    "expiresAt": "2026-05-24T03:05:00+00:00",
+    "pkceRequired": true
+  }
+}
+```
+
+Errors: `400 VALIDATION_ERROR`, `400 OAUTH_PROVIDER_UNSUPPORTED`, `401 AUTHENTICATION_REQUIRED`.
+
+### `POST /auth/oauth/{provider}/sessions`
+
+Completes an OAuth callback and creates a cookie/session for an already-linked provider-subject identity. This endpoint does not auto-merge accounts by email and does not create a walletless user from an email claim. A first-time social identity must be linked to an authenticated wallet-backed account through `POST /auth/oauth/{provider}/links`.
+
+Request:
+
+```json
+{
+  "code": "oauth-code",
+  "state": "oauth-state",
+  "redirectUri": "https://token-payments.local/oauth/callback",
+  "deviceId": "browser-1"
+}
+```
+
+Response `200`:
+
+```json
+{
+  "user": {
+    "userId": "user-001",
+    "walletAddress": "0x1111111111111111111111111111111111111111",
+    "active": true,
+    "lastLoginAt": "2026-05-24T03:00:00+00:00"
+  },
+  "session": {
+    "userId": "user-001",
+    "walletAddress": "0x1111111111111111111111111111111111111111",
+    "deviceId": "browser-1",
+    "expiresAt": "2026-06-23T03:00:00+00:00",
+    "revokedAt": null
+  },
+  "token": {
+    "accessToken": "<set-cookie>",
+    "refreshToken": "<set-cookie>",
+    "expiresAt": "2026-05-24T04:00:00+00:00",
+    "transport": "cookie"
+  },
+  "oauthIdentity": {
+    "oauthIdentityId": "oauth-identity-001",
+    "provider": "google",
+    "userId": "user-001",
+    "walletId": "wallet-001",
+    "linkedAt": "2026-05-24T03:00:00+00:00",
+    "revokedAt": null
+  },
+  "authentication": {
+    "method": "OAUTH_PROVIDER_SUBJECT",
+    "provider": "google"
+  },
+  "csrfToken": "csrf-token"
+}
+```
+
+Errors: `400 VALIDATION_ERROR`, `400 OAUTH_PROVIDER_UNSUPPORTED`, `404 OAUTH_IDENTITY_NOT_LINKED`.
+
+### `POST /auth/oauth/{provider}/links`
+
+Links a provider-subject OAuth identity to the current authenticated user after callback code exchange. The request may include an owned `walletId` to record which verified wallet authorized the link. If the provider-subject identity is already active for another user, the server returns `409 OAUTH_IDENTITY_ALREADY_LINKED`.
+
+Request:
+
+```json
+{
+  "code": "oauth-code",
+  "state": "oauth-state",
+  "redirectUri": "https://token-payments.local/oauth/callback",
+  "walletId": "wallet-001"
+}
+```
+
+Response `201`:
+
+```json
+{
+  "oauthIdentity": {
+    "oauthIdentityId": "oauth-identity-001",
+    "provider": "google",
+    "userId": "user-001",
+    "walletId": "wallet-001",
+    "linkedAt": "2026-05-24T03:00:00+00:00",
+    "revokedAt": null
+  }
+}
+```
+
+Errors: `400 VALIDATION_ERROR`, `400 OAUTH_PROVIDER_UNSUPPORTED`, `401 AUTHENTICATION_REQUIRED`, `404 WALLET_NOT_FOUND`, `409 OAUTH_IDENTITY_ALREADY_LINKED`.
+
+### `GET /auth/oauth/identities`
+
+Lists the current authenticated user's OAuth/social login identities. The response intentionally omits raw `providerSubject`, email claims, provider profile data, and OAuth tokens.
+
+Response `200`:
+
+```json
+{
+  "oauthIdentities": [
+    {
+      "oauthIdentityId": "oauth-identity-001",
+      "provider": "google",
+      "userId": "user-001",
+      "walletId": "wallet-001",
+      "linkedAt": "2026-05-24T03:00:00+00:00",
+      "revokedAt": null
+    }
+  ]
+}
+```
+
+Errors: `401 AUTHENTICATION_REQUIRED`.
+
+### `DELETE /auth/oauth/identities/{oauthIdentityId}`
+
+Soft-revokes a current user's OAuth/social login identity by setting `revokedAt`. The route refuses to remove the last active login method and must not hard-delete the identity row.
+
+Response `200`:
+
+```json
+{
+  "oauthIdentity": {
+    "oauthIdentityId": "oauth-identity-001",
+    "provider": "google",
+    "userId": "user-001",
+    "walletId": "wallet-001",
+    "linkedAt": "2026-05-24T03:00:00+00:00",
+    "revokedAt": "2026-05-24T03:05:00+00:00"
+  }
+}
+```
+
+Errors: `401 AUTHENTICATION_REQUIRED`, `404 OAUTH_IDENTITY_NOT_FOUND`, `409 LAST_LOGIN_METHOD_REVOKE_DENIED`.
 
 ### `POST /auth/wallets/challenges`
 
