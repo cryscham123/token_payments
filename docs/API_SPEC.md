@@ -13,6 +13,8 @@ Default `api`/`serve-api` commands keep the no-server-start preview boundary. Us
 ## GitBook 탐색
 
 - [API 개요](api/README.md): base URL, 인증 방식, 공통 헤더와 오류 규약.
+- [공통 계약](api/runtime-contract.md): API evolution guardrail, route surface, runtime, header, cookie/CSRF, error, state, Postman 계약.
+- [전체 Route Summary](api/route-summary.md): 현재 54개 public HTTP route manifest의 GitBook용 전체 표.
 - [인증과 OAuth](api/auth.md): SIWE, session, wallet link, user profile, provider-subject OAuth API.
 - [주문, 체크아웃, 결제](api/orders-checkout-payments.md): 주문 생성, checkout tracking, txHash 제출.
 - [상점과 상품 카탈로그](api/catalog-inventory.md): public store/product 읽기, merchant product 쓰기, store owner inventory.

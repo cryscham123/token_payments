@@ -1,0 +1,60 @@
+# 전체 Route Summary
+
+이 페이지는 `app/token_payments/api/http.py`의 현재 public HTTP route manifest 54개를 GitBook에서 검색하기 위한 전체 표다. 자세한 계약은 [API 명세](../API_SPEC.md)와 각 도메인별 페이지를 기준으로 한다.
+
+| Operation ID | Route | 영역 |
+| --- | --- | --- |
+| `requestLoginChallenge` | `POST /auth/challenges` | 인증 |
+| `loginWithMetaMask` | `POST /auth/sessions` | 인증 |
+| `requestOAuthAuthorization` | `POST /auth/oauth/{provider}/authorize` | OAuth |
+| `completeOAuthSession` | `POST /auth/oauth/{provider}/sessions` | OAuth |
+| `linkOAuthIdentity` | `POST /auth/oauth/{provider}/links` | OAuth |
+| `listOAuthIdentities` | `GET /auth/oauth/identities` | OAuth |
+| `revokeOAuthIdentity` | `DELETE /auth/oauth/identities/{oauthIdentityId}` | OAuth |
+| `requestWalletLinkChallenge` | `POST /auth/wallets/challenges` | Wallet |
+| `linkWallet` | `POST /auth/wallets` | Wallet |
+| `listWallets` | `GET /auth/wallets` | Wallet |
+| `setPrimaryWallet` | `PATCH /auth/wallets/{walletId}/primary` | Wallet |
+| `revokeWallet` | `DELETE /auth/wallets/{walletId}` | Wallet |
+| `refreshSession` | `POST /auth/sessions/refresh` | 인증 |
+| `logout` | `DELETE /auth/sessions` | 인증 |
+| `getCurrentUser` | `GET /auth/me` | 사용자 |
+| `getCurrentUserProfile` | `GET /auth/me/profile` | 사용자 |
+| `updateCurrentUserProfile` | `PATCH /auth/me/profile` | 사용자 |
+| `createOrder` | `POST /orders` | 주문 |
+| `getCheckoutTrackingByTrackingId` | `GET /checkouts/tracking/{trackingId}` | 체크아웃 |
+| `getCheckoutTrackingByOrderId` | `GET /checkouts/orders/{orderId}` | 체크아웃 |
+| `submitTransactionHash` | `POST /payments/transaction-hashes` | 결제 |
+| `getStoreProfile` | `GET /stores/{publicStoreId}` | 상점 |
+| `listPublicStores` | `GET /stores` | 상점 |
+| `listPublicProducts` | `GET /stores/{publicStoreId}/products` | 상품 |
+| `getPublicProduct` | `GET /stores/{publicStoreId}/products/{publicProductId}` | 상품 |
+| `listMerchantStores` | `GET /merchant/stores` | 머천트 |
+| `updateStoreProfile` | `PATCH /merchant/stores/{publicStoreId}/profile` | 머천트 |
+| `createOrReuseStoreUser` | `POST /admin/store-users` | 관리자 |
+| `createStore` | `POST /admin/stores` | 관리자 |
+| `grantStoreMembership` | `POST /admin/stores/{storeId}/memberships` | 관리자 |
+| `listMerchantProducts` | `GET /merchant/stores/{publicStoreId}/products` | 상품 |
+| `getMerchantProduct` | `GET /merchant/stores/{publicStoreId}/products/{publicProductId}` | 상품 |
+| `registerStoreProduct` | `POST /merchant/stores/{publicStoreId}/products` | 상품 |
+| `updateStoreProduct` | `PATCH /merchant/stores/{publicStoreId}/products/{publicProductId}` | 상품 |
+| `listStoreOwnerInventory` | `GET /store-owner/inventory` | 재고 |
+| `increaseStoreOwnerInventoryStock` | `POST /store-owner/stores/{storeId}/inventory/{productId}/intake` | 재고 |
+| `correctStoreOwnerInventoryStock` | `POST /store-owner/stores/{storeId}/inventory/{productId}/corrections` | 재고 |
+| `pauseStoreOwnerInventorySales` | `POST /store-owner/stores/{storeId}/inventory/{productId}/pause` | 재고 |
+| `resumeStoreOwnerInventorySales` | `POST /store-owner/stores/{storeId}/inventory/{productId}/resume` | 재고 |
+| `listMerchantStoreMembers` | `GET /merchant/stores/{storeId}/members` | RBAC |
+| `listMerchantStoreInvitations` | `GET /merchant/stores/{storeId}/invitations` | RBAC |
+| `createMerchantStoreInvitation` | `POST /merchant/stores/{storeId}/invitations` | RBAC |
+| `acceptMerchantInvitation` | `POST /merchant/invitations/{invitationId}/accept` | RBAC |
+| `revokeMerchantInvitation` | `POST /merchant/invitations/{invitationId}/revoke` | RBAC |
+| `updateMerchantStoreMemberRole` | `PATCH /merchant/stores/{storeId}/members/{userId}` | RBAC |
+| `removeMerchantStoreMember` | `DELETE /merchant/stores/{storeId}/members/{userId}` | RBAC |
+| `getMerchantRoleCatalog` | `GET /merchant/role-catalog` | RBAC |
+| `getOperatorDashboard` | `GET /operator/dashboard` | 운영자 |
+| `getOperatorOrderDetail` | `GET /operator/orders/{orderId}` | 운영자 |
+| `getOperatorPaymentDetail` | `GET /operator/payments/{paymentId}` | 운영자 |
+| `getOperatorOutboxDetail` | `GET /operator/outbox/{messageId}` | 운영자 |
+| `cancelOperatorOrder` | `POST /operator/orders/{orderId}/cancel` | 운영자 |
+| `retryOperatorOutboxMessage` | `POST /operator/outbox/{messageId}/retry` | 운영자 |
+| `replayOperatorMessage` | `POST /operator/messages/{messageId}/replay` | 운영자 |

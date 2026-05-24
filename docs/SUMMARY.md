@@ -6,6 +6,8 @@
 * [시퀀스](SEQUENCES.md)
 * [API 명세](API_SPEC.md)
   * [API 개요](api/README.md)
+  * [공통 계약](api/runtime-contract.md)
+  * [전체 Route Summary](api/route-summary.md)
   * [인증과 OAuth](api/auth.md)
   * [주문, 체크아웃, 결제](api/orders-checkout-payments.md)
   * [상점과 상품 카탈로그](api/catalog-inventory.md)
