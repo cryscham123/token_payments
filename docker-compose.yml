@@ -25,7 +25,7 @@ services:
         required: false
     volumes:
       - postgres_data:/var/lib/postgresql
-      - "${PWD}/app/postgres/init.d:/docker-entrypoint-initdb.d"
+      - "./app/postgres/init.d:/docker-entrypoint-initdb.d"
     expose:
       - "5432"
     healthcheck:
@@ -46,7 +46,7 @@ services:
       - BOOTSTRAP_POSTGRES_HOST=postgres
       - BOOTSTRAP_POSTGRES_PORT=5432
     volumes:
-      - "${PWD}/app/postgres/init.d:/docker-entrypoint-initdb.d"
+      - "./app/postgres/init.d:/docker-entrypoint-initdb.d"
     command: ["sh", "/docker-entrypoint-initdb.d/002-token-payments-default-seed.sh"]
     depends_on:
       postgres:
@@ -262,7 +262,7 @@ services:
     image: nginx
     init: true
     volumes:
-      - ${PWD}/app/nginx/certs:/etc/ssl/certs
+      - ./app/nginx/certs:/etc/ssl/certs
     ports:
       - 443:443
       - 80:80
@@ -275,7 +275,7 @@ services:
       - "6379"
     command: [ "redis-server" ]
     volumes:
-      - ${PWD}/app/redis/data:/data
+      - ./app/redis/data:/data
 
   redisinsight:
     container_name: redisinsight
