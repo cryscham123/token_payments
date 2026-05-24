@@ -44,6 +44,24 @@ def test_gitbook_summary_exposes_korean_api_spec_pages() -> None:
         assert f"]({link})" in summary
 
 
+def test_api_directory_can_be_used_as_standalone_gitbook_root() -> None:
+    summary = _read("docs/api/SUMMARY.md")
+
+    assert "# API 문서 목차" in summary
+    for label, link in (
+        ("API 개요", "README.md"),
+        ("공통 계약", "runtime-contract.md"),
+        ("전체 Route Summary", "route-summary.md"),
+        ("인증과 OAuth", "auth.md"),
+        ("주문, 체크아웃, 결제", "orders-checkout-payments.md"),
+        ("상점과 상품 카탈로그", "catalog-inventory.md"),
+        ("머천트, 관리자, RBAC", "merchant-admin-rbac.md"),
+        ("운영자와 런타임", "operator-runtime.md"),
+    ):
+        assert label in summary
+        assert f"]({link})" in summary
+
+
 def test_api_spec_is_gitbook_ready_without_losing_route_manifest_contract() -> None:
     from token_payments.api import http_route_manifest
 
@@ -106,6 +124,39 @@ def test_gitbook_runtime_contract_covers_common_api_spec_sections() -> None:
         "Postman Flow",
     ):
         assert phrase in runtime_contract
+
+
+def test_api_directory_docs_are_self_contained_for_integrators() -> None:
+    api_pages = _read_api_pages()
+
+    assert "API_SPEC.md" not in api_pages
+    assert "../API_SPEC.md" not in api_pages
+    for phrase in (
+        "Base URL",
+        "인증",
+        "권한",
+        "요청",
+        "응답",
+        "오류",
+        "Idempotency-Key",
+        "X-CSRF-Token",
+        "Postman",
+    ):
+        assert phrase in api_pages
+
+
+def test_each_domain_page_has_endpoint_detail_contracts() -> None:
+    for relative_path in (
+        "docs/api/auth.md",
+        "docs/api/orders-checkout-payments.md",
+        "docs/api/catalog-inventory.md",
+        "docs/api/merchant-admin-rbac.md",
+        "docs/api/operator-runtime.md",
+    ):
+        text = _read(relative_path)
+        assert "## Endpoint 상세" in text
+        for heading in ("Endpoint", "인증/권한", "요청", "성공 응답", "오류"):
+            assert heading in text
 
 
 def test_korean_gitbook_api_pages_cover_public_route_groups() -> None:

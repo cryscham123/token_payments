@@ -42,3 +42,39 @@ PYTHONPATH=app python3 -m token_payments serve-api --live --confirm-live-api
 ```
 
 Docker smoke와 Postman 검증도 같은 public route manifest, readiness contract, expected fixture를 기준으로 한다.
+
+## Endpoint 상세
+
+| Endpoint | 인증/권한 | 요청 | 성공 응답 | 오류 |
+| --- | --- | --- | --- | --- |
+| `GET /operator/dashboard` | platform/operator session, `operator:read` | query `context`/`contexts`, `status`, `chainId`, `storeId`, `failedOnly`, `retryCandidatesOnly`, `sort`, `limit`, `pageToken` | `200` snapshot envelope with `orders`, `payments`, `outbox`, `workers`, `errors`, `pagination` | `400 VALIDATION_ERROR`, `403 OPERATOR_FORBIDDEN` |
+| `GET /operator/orders/{orderId}` | platform/operator session, `operator:read` | path `orderId` | `200` operator snapshot narrowed to one order; may include internal recovery ids | `403 OPERATOR_FORBIDDEN`, `404 OPERATOR_RESOURCE_NOT_FOUND` |
+| `GET /operator/payments/{paymentId}` | platform/operator session, `operator:read` | path `paymentId` | `200` operator snapshot narrowed to one payment with chain/wallet/tx status | `403 OPERATOR_FORBIDDEN`, `404 OPERATOR_RESOURCE_NOT_FOUND` |
+| `GET /operator/outbox/{messageId}` | platform/operator session, `operator:read` | path `messageId`; query `kind=EVENT|COMMAND`, default `EVENT` | `200` outbox item with status, failure count, retry candidate metadata | `400 VALIDATION_ERROR`, `403 OPERATOR_FORBIDDEN`, `404 OPERATOR_RESOURCE_NOT_FOUND` |
+| `POST /operator/orders/{orderId}/cancel` | platform/operator session, `operator:action` | JSON body `reason`, `idempotencyKey`, optional `parameters`; header `Idempotency-Key` accepted | `202 accepted`, `200 duplicate`, or bounded rejected action envelope | `400 OPERATOR_ACTION_VALIDATION_FAILED`, `403 OPERATOR_FORBIDDEN`, `409 OPERATOR_ACTION_REJECTED` |
+| `POST /operator/outbox/{messageId}/retry` | platform/operator session, `operator:action` + `outbox:retry` | JSON body `kind` 또는 `messageKind`, `reason`, `idempotencyKey`, optional `parameters` | `202 accepted`, `200 duplicate`, or bounded rejected action envelope with `messageId` | `400 OPERATOR_ACTION_VALIDATION_FAILED`, `403 OPERATOR_FORBIDDEN`, `409 OPERATOR_ACTION_REJECTED` |
+| `POST /operator/messages/{messageId}/replay` | platform/operator session, `operator:action` | JSON body `kind` 또는 `messageKind`, `reason`, `idempotencyKey`, optional `parameters` | `202 accepted`, `200 duplicate`, or bounded rejected action envelope | `400 OPERATOR_ACTION_VALIDATION_FAILED`, `403 OPERATOR_FORBIDDEN`, `409 OPERATOR_ACTION_REJECTED` |
+
+## Live system route
+
+| Endpoint | 인증/권한 | 요청 | 성공 응답 | 오류 |
+| --- | --- | --- | --- | --- |
+| `GET /healthz` | live system route | no body | `200` process/runtime health only | `503` if process health fails |
+| `GET /readyz` | live system route | no body | `200` when injected PostgreSQL/Kafka/Blockchain readiness probes are ready | `503` with bounded component details |
+
+`GET /healthz`와 `GET /readyz`는 public facade 54-route manifest에는 포함되지 않는다.
+
+## 요청 예시
+
+Outbox retry:
+
+```json
+{
+  "kind": "EVENT",
+  "reason": "broker recovered",
+  "idempotencyKey": "operator-retry-msg-001",
+  "parameters": {
+    "maxAttempts": 1
+  }
+}
+```

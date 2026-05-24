@@ -37,3 +37,36 @@
 ```
 
 결제 API는 session ownership을 먼저 확인한 뒤 내부 order/payment id를 resolution한다. 실패 응답은 validation, unauthorized, conflict, not found 범주로 제한한다.
+
+## Endpoint 상세
+
+| Endpoint | 인증/권한 | 요청 | 성공 응답 | 오류 |
+| --- | --- | --- | --- | --- |
+| `POST /orders` | active customer session | JSON body: `publicStoreId` 또는 호환 `storeId`, `deliveryAddress`, `items[]`, optional `paymentAssetId`, optional `walletId`; header `Idempotency-Key` 권장 | `201` `order` with `orderId`, `trackingId`, `publicStoreId`, `status`, `deliveryAddress`, `totalAmount`, `items[]`; `customerId`와 내부 `storeId`는 제외 | `400 VALIDATION_ERROR`, `404 CUSTOMER_NOT_FOUND`, `404 STORE_NOT_FOUND`, `409 INVENTORY_UNAVAILABLE`, `409 PAYMENT_ASSET_UNSUPPORTED` |
+| `GET /checkouts/tracking/{trackingId}` | active customer session, checkout owner | path `trackingId` | `200` `checkout` with `trackingId`, `status`, `currentStep`, `pendingAction`, optional `paymentRequest`, `gasEstimate`, `txHash`, `outboxStatus` | `400 VALIDATION_ERROR`, `401 AUTHENTICATION_REQUIRED`, `403 FORBIDDEN`, `404 CHECKOUT_NOT_FOUND` |
+| `GET /checkouts/orders/{orderId}` | active customer session, checkout owner | path `orderId`; 신규 client는 `trackingId` 조회 우선 | `200` same `checkout` envelope as tracking lookup | `400 VALIDATION_ERROR`, `401 AUTHENTICATION_REQUIRED`, `403 FORBIDDEN`, `404 CHECKOUT_NOT_FOUND` |
+| `POST /payments/transaction-hashes` | active customer session, checkout owner | JSON body: `trackingId`, `txHash`; header `Idempotency-Key` 권장. `orderId`/`paymentId` body는 받지 않음 | `202` `payment` with `trackingId`, `status=TX_SUBMITTED`, `currentStep=RECEIPT_PENDING`, `pendingAction=WAIT_FOR_RECEIPT`, `txHash`, `updatedAt` | `400 VALIDATION_ERROR`, `403 FORBIDDEN`, `404 PAYMENT_NOT_FOUND`, `404 AUTHORIZATION_NOT_FOUND`, `409 INVALID_STATE` |
+
+## 응답 예시
+
+Checkout tracking:
+
+```json
+{
+  "checkout": {
+    "orderId": "order-001",
+    "trackingId": "tracking-001",
+    "paymentId": "payment-001",
+    "status": "PENDING",
+    "currentStep": "AWAITING_SIGNATURE",
+    "pendingAction": "SIGN_PAYMENT",
+    "paymentRequest": {
+      "requestId": "payment-request-001",
+      "amount": {"amount": "20.000000000000000000", "symbol": "ETH", "chainId": 1337},
+      "to": "0x2222222222222222222222222222222222222222",
+      "expiresAt": "2026-05-17T10:15:00+09:00"
+    },
+    "txHash": null
+  }
+}
+```

@@ -1,6 +1,6 @@
 # 전체 Route Summary
 
-이 페이지는 `app/token_payments/api/http.py`의 현재 public HTTP route manifest 54개를 GitBook에서 검색하기 위한 전체 표다. 자세한 계약은 [API 명세](../API_SPEC.md)와 각 도메인별 페이지를 기준으로 한다.
+이 페이지는 `app/token_payments/api/http.py`의 현재 public HTTP route manifest 54개를 GitBook에서 검색하기 위한 전체 표다. 요청/응답/오류/권한은 각 도메인별 페이지를 기준으로 한다.
 
 | Operation ID | Route | 영역 |
 | --- | --- | --- |

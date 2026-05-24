@@ -1,6 +1,6 @@
 # 공통 계약
 
-이 페이지는 [API 명세](../API_SPEC.md)의 공통 계약을 GitBook에서 한국어로 읽기 쉽게 정리한 상세 페이지다. endpoint별 요청/응답 예시는 각 도메인 페이지와 [전체 Route Summary](route-summary.md)를 함께 본다.
+이 페이지는 API 공통 계약을 GitBook에서 한국어로 읽기 쉽게 정리한 상세 페이지다. endpoint별 요청/응답 예시는 각 도메인 페이지와 [전체 Route Summary](route-summary.md)를 함께 본다.
 
 ## API Evolution Guardrail
 
