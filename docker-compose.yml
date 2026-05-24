@@ -98,9 +98,6 @@ services:
 
   token_payments_health:
     image: token_payments_runtime
-    build:
-      context: .
-      dockerfile: Dockerfile
     env_file:
       - path: .env
         required: false
@@ -120,9 +117,6 @@ services:
 
   token_payments_worker:
     image: token_payments_runtime
-    build:
-      context: .
-      dockerfile: Dockerfile
     env_file:
       - path: .env
         required: false
@@ -142,9 +136,6 @@ services:
 
   token_payments_live_worker:
     image: token_payments_runtime
-    build:
-      context: .
-      dockerfile: Dockerfile
     env_file:
       - path: .env
         required: false
@@ -174,9 +165,6 @@ services:
 
   token_payments_smoke:
     image: token_payments_runtime
-    build:
-      context: .
-      dockerfile: Dockerfile
     env_file:
       - path: .env
         required: false
