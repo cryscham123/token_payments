@@ -4,6 +4,8 @@ import sys
 import re
 from pathlib import Path
 
+import yaml
+
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "app"))
@@ -50,6 +52,7 @@ def test_api_directory_can_be_used_as_standalone_gitbook_root() -> None:
     assert "# API 문서 목차" in summary
     for label, link in (
         ("API 개요", "README.md"),
+        ("OpenAPI Reference", "openapi.yaml"),
         ("공통 계약", "runtime-contract.md"),
         ("전체 Route Summary", "route-summary.md"),
         ("인증과 OAuth", "auth.md"),
@@ -72,6 +75,7 @@ def test_api_spec_is_gitbook_ready_without_losing_route_manifest_contract() -> N
     assert "## GitBook 탐색" in api_spec
     for link in (
         "api/README.md",
+        "api/openapi.yaml",
         "api/runtime-contract.md",
         "api/route-summary.md",
         "api/auth.md",
@@ -86,6 +90,48 @@ def test_api_spec_is_gitbook_ready_without_losing_route_manifest_contract() -> N
     for entry in http_route_manifest():
         route_row = f"| `{entry['operationId']}` | `{entry['method']}` | `{entry['path']}` |"
         assert route_row in api_spec
+
+
+def test_gitbook_openapi_reference_uses_project_template_and_manifest_routes() -> None:
+    from token_payments.api import http_route_manifest
+
+    openapi = yaml.safe_load(_read("docs/api/openapi.yaml"))
+    openapi_text = _read("docs/api/openapi.yaml")
+
+    assert openapi["openapi"] == "3.0.3"
+    assert openapi["info"]["title"] == "Token Payments API"
+    assert "Token Payments public HTTP API" in openapi["info"]["description"]
+    assert "{% tabs %}" in openapi["info"]["description"]
+    assert "{% stepper %}" in openapi["info"]["description"]
+    assert "{% hint style=\"warning\" %}" in openapi["info"]["description"]
+    assert openapi["servers"][0]["url"] == "http://127.0.0.1:8000"
+    assert "cookieAuth" in openapi["components"]["securitySchemes"]
+    assert "bearerAuth" in openapi["components"]["securitySchemes"]
+
+    tag_titles = {tag["name"]: tag.get("x-page-title") for tag in openapi["tags"]}
+    assert tag_titles["auth"] == "Auth"
+    assert tag_titles["checkout"] == "Checkout"
+    assert tag_titles["merchant"] == "Merchant"
+    assert tag_titles["operator"] == "Operator"
+    assert any(tag.get("x-parent") == "commerce" for tag in openapi["tags"])
+
+    for entry in http_route_manifest():
+        operation = openapi["paths"][entry["path"]][entry["method"].lower()]
+        assert operation["operationId"] == entry["operationId"]
+        assert operation["tags"], entry["operationId"]
+        assert "summary" in operation
+        assert "responses" in operation
+
+    for operation_id in (
+        "requestLoginChallenge",
+        "createOrder",
+        "submitTransactionHash",
+        "listPublicStores",
+        "getOperatorDashboard",
+    ):
+        assert f"operationId: {operation_id}" in openapi_text
+        operation = _find_openapi_operation(openapi, operation_id)
+        assert operation.get("x-codeSamples"), operation_id
 
 
 def test_korean_gitbook_pages_cover_every_api_spec_endpoint_heading() -> None:
@@ -203,6 +249,16 @@ def test_korean_gitbook_api_pages_cover_public_route_groups() -> None:
 
 def _read(relative_path: str) -> str:
     return (ROOT / relative_path).read_text(encoding="utf-8")
+
+
+def _find_openapi_operation(openapi: dict[str, object], operation_id: str) -> dict[str, object]:
+    for path_item in openapi["paths"].values():  # type: ignore[index, union-attr]
+        for method, operation in path_item.items():
+            if method == "parameters":
+                continue
+            if operation.get("operationId") == operation_id:
+                return operation
+    raise AssertionError(f"{operation_id} operation not found")
 
 
 def _read_api_pages() -> str:

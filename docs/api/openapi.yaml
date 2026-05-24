@@ -1,0 +1,1912 @@
+openapi: 3.0.3
+info:
+  title: Token Payments API
+  version: 0.27.0
+  description: >
+    # Token Payments API
+
+
+    Token Payments public HTTP API documents the local crypto checkout backend:
+    SIWE login, OAuth identity linking, multi-wallet checkout, public catalog
+    reads, merchant product and inventory operations, RBAC membership APIs, and
+    operator recovery actions.
+
+
+    This OpenAPI reference is tailored for GitBook. GitBook reads this file and
+    creates a navigable API reference from tags, operations, schemas, examples,
+    and the `x-codeSamples` snippets below.
+
+
+    ### How this reference works
+
+
+    - **Route manifest parity** - every operation mirrors the 54 public routes
+    from `app/token_payments/api/http.py`.
+
+    - **Page groups** - high-level tags such as *Commerce*, *Merchant*, and
+    *Operations* group related endpoint pages in GitBook.
+
+    - **Readable onboarding** - the sections below use GitBook tabs, hints, and
+    stepper blocks so integrators can start from base URL, auth, and the happy
+    path before opening individual endpoint pages.
+
+    - **Public boundary** - `/healthz` and `/readyz` are live server system
+    routes and intentionally stay outside this public API reference.
+
+    - **Try it safety** - operator write actions are marked with
+    `x-hideTryItPanel` because they are recovery operations for controlled
+    environments.
+
+
+    ## Servers & Authentication
+
+
+    ### Servers
+
+
+    {% tabs %}
+
+    {% tab title="Local API" %}
+
+    **Base URL**
+
+    `http://127.0.0.1:8000`
+
+    Use this when the live API server is started intentionally for local
+    integration testing.
+
+    {% endtab %}
+
+
+    {% tab title="Docker alias" %}
+
+    **Base URL**
+
+    `http://localhost:8000`
+
+    Use this from local tooling or Postman when Docker Compose exposes the API
+    on the default host port.
+
+    {% endtab %}
+
+    {% endtabs %}
+
+
+    {% hint style="info" %}
+
+    Default `api` and `serve-api` commands keep the no-server-start preview
+    boundary. Start a long-running live server only with
+    `PYTHONPATH=app python3 -m token_payments serve-api --live --confirm-live-api`
+    in an approved environment.
+
+    {% endhint %}
+
+
+    ### Authentication
+
+
+    Browser clients authenticate with signed HttpOnly session cookies. Mutating
+    cookie-authenticated requests also send `X-CSRF-Token`.
+
+
+    Non-browser integration tests may use bearer-style local session context
+    where explicitly supported by the runtime:
+
+
+    ```http
+    Authorization: Bearer YOUR_LOCAL_ACCESS_TOKEN
+    X-CSRF-Token: YOUR_CSRF_TOKEN
+    Idempotency-Key: stable-command-key
+    ```
+
+
+    {% hint style="warning" %}
+
+    `X-User-Id` and `X-User-Scopes` are local/dev fallback headers only. Live or
+    production paths must not trust them as authentication.
+
+    {% endhint %}
+
+
+    ## Getting started
+
+
+    {% stepper %}
+
+    {% step %}
+
+    ## Request a login challenge
+
+    Call `POST /auth/challenges` with the wallet address that will sign the
+    SIWE message.
+
+    {% endstep %}
+
+
+    {% step %}
+
+    ## Create a session
+
+    Submit the signed SIWE message to `POST /auth/sessions`. The server returns
+    session metadata and sets signed cookies plus a CSRF token for browser
+    writes.
+
+    {% endstep %}
+
+
+    {% step %}
+
+    ## Create and track checkout
+
+    Call `POST /orders`, then use `GET /checkouts/tracking/{trackingId}` as the
+    customer-safe polling surface.
+
+    {% endstep %}
+
+
+    {% step %}
+
+    ## Submit payment evidence
+
+    Send the blockchain transaction hash to `POST /payments/transaction-hashes`.
+    The public API uses `trackingId` instead of exposing internal order or
+    payment ids.
+
+    {% endstep %}
+
+    {% endstepper %}
+
+
+    ## Error responses
+
+
+    Errors use a bounded JSON envelope. Messages are safe for clients and do not
+    include raw signatures, provider tokens, signed cookies, private ids, or
+    adapter stack traces.
+
+
+    ```json
+    {
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "message": "request body is invalid",
+        "status": 400
+      }
+    }
+    ```
+
+
+    | Status | Meaning |
+    |--------|---------|
+    | `400` | Malformed or invalid request body |
+    | `401` | Missing or invalid session |
+    | `403` | Missing CSRF token, permission, or scoped membership |
+    | `404` | Resource not found in the caller's visible scope |
+    | `405` | Method is not allowed for the path |
+    | `409` | Idempotency conflict or business state conflict |
+    | `413` | Request body is too large |
+    | `500` | Bounded server error |
+servers:
+  - url: http://127.0.0.1:8000
+    description: Local API server
+    x-gitbook-description-html: <p>Local API server</p>
+  - url: http://localhost:8000
+    description: Docker Compose local alias
+    x-gitbook-description-html: <p>Docker Compose local alias</p>
+security:
+  - cookieAuth: []
+  - bearerAuth: []
+tags:
+  - name: auth
+    x-page-title: Auth
+    x-page-description: SIWE sessions, OAuth identity links, wallets, and user profile.
+    x-page-icon: key
+  - name: oauth
+    x-parent: auth
+    x-page-title: OAuth
+    x-page-description: Provider-subject OAuth authorization, linking, listing, and revocation.
+    x-page-icon: link
+  - name: wallet
+    x-parent: auth
+    x-page-title: Wallets
+    x-page-description: Link, list, set primary, and revoke authenticated wallets.
+    x-page-icon: wallet
+  - name: user
+    x-parent: auth
+    x-page-title: Current User
+    x-page-description: Session user and privacy-first display profile APIs.
+    x-page-icon: user
+  - name: commerce
+    x-page-title: Commerce
+    x-page-description: Customer-facing order, checkout, payment, and catalog surfaces.
+    x-page-icon: bag-shopping
+  - name: orders
+    x-parent: commerce
+    x-page-title: Orders
+    x-page-description: Create checkout orders from public catalog products.
+    x-page-icon: receipt
+  - name: checkout
+    x-parent: commerce
+    x-page-title: Checkout
+    x-page-description: Track checkout state by customer-safe identifiers.
+    x-page-icon: list-checks
+  - name: payments
+    x-parent: commerce
+    x-page-title: Payments
+    x-page-description: Submit blockchain transaction hashes for checkout tracking.
+    x-page-icon: credit-card
+  - name: catalog
+    x-parent: commerce
+    x-page-title: Public Catalog
+    x-page-description: Public store and product reads keyed by stable public ids.
+    x-page-icon: store
+  - name: merchant
+    x-page-title: Merchant
+    x-page-description: Merchant store profile and product catalog management.
+    x-page-icon: store
+  - name: merchant-products
+    x-parent: merchant
+    x-page-title: Merchant Products
+    x-page-description: Private merchant product reads, registration, and detail updates.
+    x-page-icon: tags
+  - name: inventory
+    x-parent: merchant
+    x-page-title: Inventory
+    x-page-description: Store owner stock intake, correction, and sale pause or resume.
+    x-page-icon: boxes-stacked
+  - name: rbac
+    x-parent: merchant
+    x-page-title: RBAC
+    x-page-description: Merchant members, invitations, and server-defined role catalog.
+    x-page-icon: users
+  - name: operations
+    x-page-title: Operations
+    x-page-description: Platform administration and operator recovery endpoints.
+    x-page-icon: shield-halved
+  - name: admin
+    x-parent: operations
+    x-page-title: Admin
+    x-page-description: Platform bootstrap provisioning for store users, stores, and memberships.
+    x-page-icon: user-shield
+  - name: operator
+    x-parent: operations
+    x-page-title: Operator
+    x-page-description: Dashboard, detail reads, cancel, retry, and replay recovery APIs.
+    x-page-icon: chart-line
+paths:
+  /auth/challenges:
+    post:
+      summary: Request login challenge
+      description: >
+        Creates a SIWE login challenge for an EOA or supported ERC-1271 smart
+        contract wallet.
+      tags:
+        - auth
+      operationId: requestLoginChallenge
+      security: []
+      requestBody:
+        $ref: '#/components/requestBodies/LoginChallengeRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/AuthChallenge'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+      x-codeSamples:
+        - lang: cURL
+          label: CLI
+          source: |
+            curl -L http://127.0.0.1:8000/auth/challenges \
+              -H 'Content-Type: application/json' \
+              -d '{"walletAddress":"0x0000000000000000000000000000000000000001"}'
+  /auth/sessions:
+    post:
+      summary: Create SIWE session
+      description: Verifies the signed SIWE message and creates a cookie-backed session.
+      tags:
+        - auth
+      operationId: loginWithMetaMask
+      security: []
+      requestBody:
+        $ref: '#/components/requestBodies/LoginSessionRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+      x-codeSamples:
+        - lang: JavaScript
+          label: Fetch
+          source: |
+            const response = await fetch('http://127.0.0.1:8000/auth/sessions', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify({ message, signature })
+            });
+            const session = await response.json();
+    delete:
+      summary: Logout
+      description: Expires the current signed session cookies.
+      tags:
+        - auth
+      operationId: logout
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /auth/sessions/refresh:
+    post:
+      summary: Refresh session
+      description: Rotates the session using the signed refresh cookie.
+      tags:
+        - auth
+      operationId: refreshSession
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /auth/me:
+    get:
+      summary: Get current user
+      description: Returns the authenticated user summary without private provider subjects or signed token values.
+      tags:
+        - user
+      operationId: getCurrentUser
+      responses:
+        '200':
+          $ref: '#/components/responses/User'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /auth/me/profile:
+    get:
+      summary: Get current user profile
+      description: Returns optional bounded display profile data for the current user.
+      tags:
+        - user
+      operationId: getCurrentUserProfile
+      responses:
+        '200':
+          $ref: '#/components/responses/UserProfile'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+    patch:
+      summary: Update current user profile
+      description: Updates bounded display profile data only; email and provider claims are not persisted.
+      tags:
+        - user
+      operationId: updateCurrentUserProfile
+      requestBody:
+        $ref: '#/components/requestBodies/JsonCommand'
+      responses:
+        '200':
+          $ref: '#/components/responses/UserProfile'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /auth/oauth/{provider}/authorize:
+    parameters:
+      - $ref: '#/components/parameters/provider'
+    post:
+      summary: Request OAuth authorization
+      description: Starts provider-subject OAuth authorization without trusting email matching.
+      tags:
+        - oauth
+      operationId: requestOAuthAuthorization
+      security: []
+      requestBody:
+        $ref: '#/components/requestBodies/JsonCommand'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /auth/oauth/{provider}/sessions:
+    parameters:
+      - $ref: '#/components/parameters/provider'
+    post:
+      summary: Complete OAuth session
+      description: Completes OAuth login using provider-subject identity and creates a session.
+      tags:
+        - oauth
+      operationId: completeOAuthSession
+      security: []
+      requestBody:
+        $ref: '#/components/requestBodies/JsonCommand'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /auth/oauth/{provider}/links:
+    parameters:
+      - $ref: '#/components/parameters/provider'
+    post:
+      summary: Link OAuth identity
+      description: Links a provider-subject identity to the authenticated user.
+      tags:
+        - oauth
+      operationId: linkOAuthIdentity
+      requestBody:
+        $ref: '#/components/requestBodies/JsonCommand'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /auth/oauth/identities:
+    get:
+      summary: List OAuth identities
+      description: Lists active and revoked OAuth identities visible to the current user.
+      tags:
+        - oauth
+      operationId: listOAuthIdentities
+      responses:
+        '200':
+          $ref: '#/components/responses/OAuthIdentities'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /auth/oauth/identities/{oauthIdentityId}:
+    parameters:
+      - $ref: '#/components/parameters/oauthIdentityId'
+    delete:
+      summary: Revoke OAuth identity
+      description: Soft-revokes an OAuth identity while protecting the final active login method.
+      tags:
+        - oauth
+      operationId: revokeOAuthIdentity
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /auth/wallets/challenges:
+    post:
+      summary: Request wallet link challenge
+      description: Creates a challenge for linking an additional wallet to the authenticated user.
+      tags:
+        - wallet
+      operationId: requestWalletLinkChallenge
+      requestBody:
+        $ref: '#/components/requestBodies/LoginChallengeRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/AuthChallenge'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /auth/wallets:
+    post:
+      summary: Link wallet
+      description: Verifies a signed wallet link challenge and stores an active linked wallet.
+      tags:
+        - wallet
+      operationId: linkWallet
+      requestBody:
+        $ref: '#/components/requestBodies/LoginSessionRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/Wallet'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+    get:
+      summary: List wallets
+      description: Lists verified active and revoked wallet records for the authenticated user.
+      tags:
+        - wallet
+      operationId: listWallets
+      responses:
+        '200':
+          $ref: '#/components/responses/Wallets'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /auth/wallets/{walletId}/primary:
+    parameters:
+      - $ref: '#/components/parameters/walletId'
+    patch:
+      summary: Set primary wallet
+      description: Marks one active linked wallet as the default checkout payer wallet.
+      tags:
+        - wallet
+      operationId: setPrimaryWallet
+      responses:
+        '200':
+          $ref: '#/components/responses/Wallet'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /auth/wallets/{walletId}:
+    parameters:
+      - $ref: '#/components/parameters/walletId'
+    delete:
+      summary: Revoke wallet
+      description: Revokes a linked wallet without rewriting historical payment records.
+      tags:
+        - wallet
+      operationId: revokeWallet
+      responses:
+        '200':
+          $ref: '#/components/responses/Wallet'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /orders:
+    post:
+      summary: Create order
+      description: >
+        Creates a checkout order after server-side validation of store, product,
+        price, inventory, wallet, chain, and asset capability.
+      tags:
+        - orders
+      operationId: createOrder
+      requestBody:
+        $ref: '#/components/requestBodies/OrderCreateRequest'
+      responses:
+        '201':
+          $ref: '#/components/responses/Order'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+      x-codeSamples:
+        - lang: cURL
+          label: CLI
+          source: |
+            curl -L http://127.0.0.1:8000/orders \
+              -H 'Content-Type: application/json' \
+              -H 'Cookie: access=SESSION_COOKIE' \
+              -H 'X-CSRF-Token: YOUR_CSRF_TOKEN' \
+              -H 'Idempotency-Key: checkout-demo-001' \
+              -d '{"publicStoreId":"store_demo","publicProductId":"product_demo","quantity":1,"paymentAssetId":"native:31337"}'
+        - lang: Python
+          label: Python
+          source: |
+            import requests
+            r = requests.post(
+                'http://127.0.0.1:8000/orders',
+                headers={'X-CSRF-Token': csrf, 'Idempotency-Key': 'checkout-demo-001'},
+                cookies={'access': access_cookie},
+                json={'publicStoreId': 'store_demo', 'publicProductId': 'product_demo', 'quantity': 1, 'paymentAssetId': 'native:31337'},
+            )
+            print(r.json())
+  /checkouts/tracking/{trackingId}:
+    parameters:
+      - $ref: '#/components/parameters/trackingId'
+    get:
+      summary: Get checkout tracking by tracking id
+      description: Returns customer-safe checkout tracking state without exposing internal order or payment ids.
+      tags:
+        - checkout
+      operationId: getCheckoutTrackingByTrackingId
+      responses:
+        '200':
+          $ref: '#/components/responses/CheckoutTracking'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /checkouts/orders/{orderId}:
+    parameters:
+      - $ref: '#/components/parameters/orderId'
+    get:
+      summary: Get checkout tracking by order id
+      description: Legacy-compatible checkout tracking lookup by order id; prefer trackingId for new clients.
+      tags:
+        - checkout
+      operationId: getCheckoutTrackingByOrderId
+      responses:
+        '200':
+          $ref: '#/components/responses/CheckoutTracking'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /payments/transaction-hashes:
+    post:
+      summary: Submit transaction hash
+      description: >
+        Submits blockchain payment evidence keyed by `trackingId`; the server
+        resolves internal order and payment ids after ownership checks.
+      tags:
+        - payments
+      operationId: submitTransactionHash
+      requestBody:
+        $ref: '#/components/requestBodies/PaymentTxHashRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/PaymentSubmission'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+      x-codeSamples:
+        - lang: cURL
+          label: CLI
+          source: |
+            curl -L http://127.0.0.1:8000/payments/transaction-hashes \
+              -H 'Content-Type: application/json' \
+              -H 'Cookie: access=SESSION_COOKIE' \
+              -H 'X-CSRF-Token: YOUR_CSRF_TOKEN' \
+              -H 'Idempotency-Key: payment-submit-demo-001' \
+              -d '{"trackingId":"trk_demo","txHash":"0x0000000000000000000000000000000000000000000000000000000000000000"}'
+  /stores:
+    get:
+      summary: List public stores
+      description: Lists public store business profiles and payment capability summaries.
+      tags:
+        - catalog
+      operationId: listPublicStores
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+      responses:
+        '200':
+          $ref: '#/components/responses/Stores'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+      x-codeSamples:
+        - lang: cURL
+          label: CLI
+          source: |
+            curl -L 'http://127.0.0.1:8000/stores?limit=20&offset=0'
+  /stores/{publicStoreId}:
+    parameters:
+      - $ref: '#/components/parameters/publicStoreId'
+    get:
+      summary: Get store profile
+      description: Returns a public business profile keyed by stable public store id.
+      tags:
+        - catalog
+      operationId: getStoreProfile
+      security: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Store'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /stores/{publicStoreId}/products:
+    parameters:
+      - $ref: '#/components/parameters/publicStoreId'
+    get:
+      summary: List public products
+      description: Lists public products for a store with bounded query, category, tag, sort, and pagination filters.
+      tags:
+        - catalog
+      operationId: listPublicProducts
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/query'
+        - $ref: '#/components/parameters/category'
+        - $ref: '#/components/parameters/tag'
+        - $ref: '#/components/parameters/sort'
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+      responses:
+        '200':
+          $ref: '#/components/responses/Products'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /stores/{publicStoreId}/products/{publicProductId}:
+    parameters:
+      - $ref: '#/components/parameters/publicStoreId'
+      - $ref: '#/components/parameters/publicProductId'
+    get:
+      summary: Get public product
+      description: Returns product display, availability, and payment capability data without internal ids.
+      tags:
+        - catalog
+      operationId: getPublicProduct
+      security: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Product'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /merchant/stores:
+    get:
+      summary: List merchant stores
+      description: Lists stores visible to the current merchant membership and `store:read` permission.
+      tags:
+        - merchant
+      operationId: listMerchantStores
+      responses:
+        '200':
+          $ref: '#/components/responses/Stores'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /merchant/stores/{publicStoreId}/profile:
+    parameters:
+      - $ref: '#/components/parameters/publicStoreId'
+    patch:
+      summary: Update store profile
+      description: Updates business profile fields only; payment settings and owner transfer are separate policy-gated flows.
+      tags:
+        - merchant
+      operationId: updateStoreProfile
+      requestBody:
+        $ref: '#/components/requestBodies/StoreProfileUpdateRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/Store'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /merchant/stores/{publicStoreId}/products:
+    parameters:
+      - $ref: '#/components/parameters/publicStoreId'
+    get:
+      summary: List merchant products
+      description: Lists private and public products visible to a merchant with bounded filters.
+      tags:
+        - merchant-products
+      operationId: listMerchantProducts
+      parameters:
+        - $ref: '#/components/parameters/status'
+        - $ref: '#/components/parameters/visibility'
+        - $ref: '#/components/parameters/query'
+        - $ref: '#/components/parameters/category'
+        - $ref: '#/components/parameters/tag'
+        - $ref: '#/components/parameters/sort'
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+      responses:
+        '200':
+          $ref: '#/components/responses/Products'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+    post:
+      summary: Register store product
+      description: Registers a checkoutable product for an active store using public store id and scoped `product:write`.
+      tags:
+        - merchant-products
+      operationId: registerStoreProduct
+      requestBody:
+        $ref: '#/components/requestBodies/ProductWriteRequest'
+      responses:
+        '201':
+          $ref: '#/components/responses/Product'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /merchant/stores/{publicStoreId}/products/{publicProductId}:
+    parameters:
+      - $ref: '#/components/parameters/publicStoreId'
+      - $ref: '#/components/parameters/publicProductId'
+    get:
+      summary: Get merchant product
+      description: Returns product detail visible to the merchant, including inactive or private records within scope.
+      tags:
+        - merchant-products
+      operationId: getMerchantProduct
+      responses:
+        '200':
+          $ref: '#/components/responses/Product'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+    patch:
+      summary: Update store product
+      description: Updates product catalog detail fields without mutating inventory stock or sale status.
+      tags:
+        - merchant-products
+      operationId: updateStoreProduct
+      requestBody:
+        $ref: '#/components/requestBodies/ProductWriteRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/Product'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /store-owner/inventory:
+    get:
+      summary: List store owner inventory
+      description: Lists inventory rows visible through active merchant membership and `inventory:read`.
+      tags:
+        - inventory
+      operationId: listStoreOwnerInventory
+      parameters:
+        - $ref: '#/components/parameters/storeIdQuery'
+      responses:
+        '200':
+          $ref: '#/components/responses/InventoryRows'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /store-owner/stores/{storeId}/inventory/{productId}/intake:
+    parameters:
+      - $ref: '#/components/parameters/storeId'
+      - $ref: '#/components/parameters/productId'
+    post:
+      summary: Increase inventory stock
+      description: Records stock intake through an audited idempotent inventory command.
+      tags:
+        - inventory
+      operationId: increaseStoreOwnerInventoryStock
+      requestBody:
+        $ref: '#/components/requestBodies/InventoryMutationRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/InventoryRow'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /store-owner/stores/{storeId}/inventory/{productId}/corrections:
+    parameters:
+      - $ref: '#/components/parameters/storeId'
+      - $ref: '#/components/parameters/productId'
+    post:
+      summary: Correct inventory stock
+      description: Sets a target total stock level without dropping below reserved stock.
+      tags:
+        - inventory
+      operationId: correctStoreOwnerInventoryStock
+      requestBody:
+        $ref: '#/components/requestBodies/InventoryMutationRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/InventoryRow'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /store-owner/stores/{storeId}/inventory/{productId}/pause:
+    parameters:
+      - $ref: '#/components/parameters/storeId'
+      - $ref: '#/components/parameters/productId'
+    post:
+      summary: Pause inventory sales
+      description: Pauses new-order availability without releasing existing reservations.
+      tags:
+        - inventory
+      operationId: pauseStoreOwnerInventorySales
+      requestBody:
+        $ref: '#/components/requestBodies/InventoryMutationRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/InventoryRow'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /store-owner/stores/{storeId}/inventory/{productId}/resume:
+    parameters:
+      - $ref: '#/components/parameters/storeId'
+      - $ref: '#/components/parameters/productId'
+    post:
+      summary: Resume inventory sales
+      description: Reopens new-order availability for a paused inventory item.
+      tags:
+        - inventory
+      operationId: resumeStoreOwnerInventorySales
+      requestBody:
+        $ref: '#/components/requestBodies/InventoryMutationRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/InventoryRow'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /admin/store-users:
+    post:
+      summary: Create or reuse store user
+      description: Admin provisioning endpoint that creates or reuses a normal auth user for store ownership.
+      tags:
+        - admin
+      operationId: createOrReuseStoreUser
+      requestBody:
+        $ref: '#/components/requestBodies/JsonCommand'
+      responses:
+        '200':
+          $ref: '#/components/responses/User'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /admin/stores:
+    post:
+      summary: Create store
+      description: Creates a canonical store and merchant group through platform provisioning.
+      tags:
+        - admin
+      operationId: createStore
+      requestBody:
+        $ref: '#/components/requestBodies/JsonCommand'
+      responses:
+        '201':
+          $ref: '#/components/responses/Store'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /admin/stores/{storeId}/memberships:
+    parameters:
+      - $ref: '#/components/parameters/storeId'
+    post:
+      summary: Grant store membership
+      description: Grants bounded merchant membership during admin provisioning or migration.
+      tags:
+        - admin
+      operationId: grantStoreMembership
+      requestBody:
+        $ref: '#/components/requestBodies/JsonCommand'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /merchant/stores/{storeId}/members:
+    parameters:
+      - $ref: '#/components/parameters/storeId'
+    get:
+      summary: List merchant store members
+      description: Lists members in the caller's scoped merchant group.
+      tags:
+        - rbac
+      operationId: listMerchantStoreMembers
+      responses:
+        '200':
+          $ref: '#/components/responses/Members'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /merchant/stores/{storeId}/invitations:
+    parameters:
+      - $ref: '#/components/parameters/storeId'
+    get:
+      summary: List merchant store invitations
+      description: Lists pending, accepted, and revoked invitations for the scoped merchant group.
+      tags:
+        - rbac
+      operationId: listMerchantStoreInvitations
+      responses:
+        '200':
+          $ref: '#/components/responses/Invitations'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+    post:
+      summary: Create merchant store invitation
+      description: Invites a user or wallet target to a server-defined non-owner merchant role template.
+      tags:
+        - rbac
+      operationId: createMerchantStoreInvitation
+      requestBody:
+        $ref: '#/components/requestBodies/JsonCommand'
+      responses:
+        '201':
+          $ref: '#/components/responses/Invitation'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /merchant/invitations/{invitationId}/accept:
+    parameters:
+      - $ref: '#/components/parameters/invitationId'
+    post:
+      summary: Accept merchant invitation
+      description: Accepts an invitation as the authenticated target user.
+      tags:
+        - rbac
+      operationId: acceptMerchantInvitation
+      responses:
+        '200':
+          $ref: '#/components/responses/Invitation'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /merchant/invitations/{invitationId}/revoke:
+    parameters:
+      - $ref: '#/components/parameters/invitationId'
+    post:
+      summary: Revoke merchant invitation
+      description: Revokes a pending merchant invitation in the scoped merchant group.
+      tags:
+        - rbac
+      operationId: revokeMerchantInvitation
+      responses:
+        '200':
+          $ref: '#/components/responses/Invitation'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /merchant/stores/{storeId}/members/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/storeId'
+      - $ref: '#/components/parameters/userId'
+    patch:
+      summary: Update merchant store member role
+      description: Changes non-owner staff role templates only.
+      tags:
+        - rbac
+      operationId: updateMerchantStoreMemberRole
+      requestBody:
+        $ref: '#/components/requestBodies/JsonCommand'
+      responses:
+        '200':
+          $ref: '#/components/responses/Member'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+    delete:
+      summary: Remove merchant store member
+      description: Removes non-owner staff membership without removing the last owner.
+      tags:
+        - rbac
+      operationId: removeMerchantStoreMember
+      responses:
+        '200':
+          $ref: '#/components/responses/Member'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /merchant/role-catalog:
+    get:
+      summary: Get merchant role catalog
+      description: Returns server-defined merchant role templates, not raw permission mutation capability.
+      tags:
+        - rbac
+      operationId: getMerchantRoleCatalog
+      responses:
+        '200':
+          $ref: '#/components/responses/RoleCatalog'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /operator/dashboard:
+    get:
+      summary: Get operator dashboard
+      description: Returns bounded operator observability for orders, payments, and outbox work.
+      tags:
+        - operator
+      operationId: getOperatorDashboard
+      responses:
+        '200':
+          $ref: '#/components/responses/OperatorDashboard'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+      x-codeSamples:
+        - lang: cURL
+          label: CLI
+          source: |
+            curl -L http://127.0.0.1:8000/operator/dashboard \
+              -H 'Cookie: access=SESSION_COOKIE'
+  /operator/orders/{orderId}:
+    parameters:
+      - $ref: '#/components/parameters/orderId'
+    get:
+      summary: Get operator order detail
+      description: Returns order lifecycle detail for platform operators with `operator:read`.
+      tags:
+        - operator
+      operationId: getOperatorOrderDetail
+      responses:
+        '200':
+          $ref: '#/components/responses/OperatorDetail'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /operator/payments/{paymentId}:
+    parameters:
+      - $ref: '#/components/parameters/paymentId'
+    get:
+      summary: Get operator payment detail
+      description: Returns payment and receipt verification detail for platform operators with `operator:read`.
+      tags:
+        - operator
+      operationId: getOperatorPaymentDetail
+      responses:
+        '200':
+          $ref: '#/components/responses/OperatorDetail'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /operator/outbox/{messageId}:
+    parameters:
+      - $ref: '#/components/parameters/messageId'
+    get:
+      summary: Get operator outbox detail
+      description: Returns outbox message detail for platform operators with `operator:read`.
+      tags:
+        - operator
+      operationId: getOperatorOutboxDetail
+      responses:
+        '200':
+          $ref: '#/components/responses/OperatorDetail'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+  /operator/orders/{orderId}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/orderId'
+    post:
+      summary: Cancel operator order
+      description: Recovery endpoint for platform operators with `operator:action`.
+      tags:
+        - operator
+      operationId: cancelOperatorOrder
+      requestBody:
+        $ref: '#/components/requestBodies/OperatorActionRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/OperatorAction'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+      x-hideTryItPanel: true
+  /operator/outbox/{messageId}/retry:
+    parameters:
+      - $ref: '#/components/parameters/messageId'
+    post:
+      summary: Retry operator outbox message
+      description: Recovery endpoint requiring `operator:action` and `outbox:retry`.
+      tags:
+        - operator
+      operationId: retryOperatorOutboxMessage
+      requestBody:
+        $ref: '#/components/requestBodies/OperatorActionRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/OperatorAction'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+      x-hideTryItPanel: true
+  /operator/messages/{messageId}/replay:
+    parameters:
+      - $ref: '#/components/parameters/messageId'
+    post:
+      summary: Replay operator message
+      description: Recovery endpoint for bounded message replay with audited idempotency.
+      tags:
+        - operator
+      operationId: replayOperatorMessage
+      requestBody:
+        $ref: '#/components/requestBodies/OperatorActionRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/OperatorAction'
+        default:
+          $ref: '#/components/responses/ErrorResponse'
+      x-hideTryItPanel: true
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: access
+      description: Signed HttpOnly access session cookie set by the auth API.
+      x-gitbook-description-html: <p>Signed HttpOnly access session cookie set by the auth API.</p>
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Local integration fallback for explicit non-browser runtime paths.
+      x-gitbook-description-html: <p>Local integration fallback for explicit non-browser runtime paths.</p>
+  parameters:
+    provider:
+      name: provider
+      in: path
+      required: true
+      description: OAuth provider key.
+      schema:
+        type: string
+        example: google
+    oauthIdentityId:
+      name: oauthIdentityId
+      in: path
+      required: true
+      description: Public OAuth identity id.
+      schema:
+        type: string
+    walletId:
+      name: walletId
+      in: path
+      required: true
+      description: Public linked wallet id.
+      schema:
+        type: string
+    trackingId:
+      name: trackingId
+      in: path
+      required: true
+      description: Customer-safe checkout tracking id.
+      schema:
+        type: string
+    orderId:
+      name: orderId
+      in: path
+      required: true
+      description: Order id visible in the caller's allowed scope.
+      schema:
+        type: string
+    paymentId:
+      name: paymentId
+      in: path
+      required: true
+      description: Payment id visible to operator policy.
+      schema:
+        type: string
+    messageId:
+      name: messageId
+      in: path
+      required: true
+      description: Outbox or message id visible to operator policy.
+      schema:
+        type: string
+    publicStoreId:
+      name: publicStoreId
+      in: path
+      required: true
+      description: Stable public store id.
+      schema:
+        type: string
+        example: store_demo
+    publicProductId:
+      name: publicProductId
+      in: path
+      required: true
+      description: Stable public product id scoped to the public store.
+      schema:
+        type: string
+        example: product_demo
+    storeId:
+      name: storeId
+      in: path
+      required: true
+      description: Store id accepted by merchant/admin compatibility routes.
+      schema:
+        type: string
+    productId:
+      name: productId
+      in: path
+      required: true
+      description: Product id accepted by inventory command routes.
+      schema:
+        type: string
+    invitationId:
+      name: invitationId
+      in: path
+      required: true
+      description: Merchant invitation id.
+      schema:
+        type: string
+    userId:
+      name: userId
+      in: path
+      required: true
+      description: User id in merchant membership scope.
+      schema:
+        type: string
+    storeIdQuery:
+      name: storeId
+      in: query
+      required: false
+      description: Optional store filter for inventory rows.
+      schema:
+        type: string
+    query:
+      name: query
+      in: query
+      required: false
+      description: Bounded text query.
+      schema:
+        type: string
+    category:
+      name: category
+      in: query
+      required: false
+      description: Product category filter.
+      schema:
+        type: string
+    tag:
+      name: tag
+      in: query
+      required: false
+      description: Product tag filter.
+      schema:
+        type: string
+    status:
+      name: status
+      in: query
+      required: false
+      description: Merchant product status filter.
+      schema:
+        type: string
+    visibility:
+      name: visibility
+      in: query
+      required: false
+      description: Merchant product visibility filter.
+      schema:
+        type: string
+    sort:
+      name: sort
+      in: query
+      required: false
+      description: Allowlisted sort key.
+      schema:
+        type: string
+        example: createdAt:desc
+    limit:
+      name: limit
+      in: query
+      required: false
+      description: Page size.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    offset:
+      name: offset
+      in: query
+      required: false
+      description: Page offset.
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+  requestBodies:
+    JsonCommand:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/JsonObject'
+          example:
+            reason: local integration test
+    LoginChallengeRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - walletAddress
+            properties:
+              walletAddress:
+                type: string
+                example: '0x0000000000000000000000000000000000000001'
+    LoginSessionRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - message
+              - signature
+            properties:
+              message:
+                type: string
+              signature:
+                type: string
+    OrderCreateRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - publicStoreId
+              - publicProductId
+              - quantity
+              - paymentAssetId
+            properties:
+              publicStoreId:
+                type: string
+                example: store_demo
+              publicProductId:
+                type: string
+                example: product_demo
+              quantity:
+                type: integer
+                minimum: 1
+                example: 1
+              paymentAssetId:
+                type: string
+                example: native:31337
+              walletId:
+                type: string
+                description: Optional linked payer wallet id.
+    PaymentTxHashRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - trackingId
+              - txHash
+            properties:
+              trackingId:
+                type: string
+                example: trk_demo
+              txHash:
+                type: string
+                example: '0x0000000000000000000000000000000000000000000000000000000000000000'
+    StoreProfileUpdateRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              displayName:
+                type: string
+              description:
+                type: string
+              supportEmail:
+                type: string
+              supportEmailPublic:
+                type: boolean
+              businessRegistrationLabel:
+                type: string
+    ProductWriteRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - title
+            properties:
+              title:
+                type: string
+              description:
+                type: string
+              category:
+                type: string
+              tags:
+                type: array
+                items:
+                  type: string
+              status:
+                type: string
+              visibility:
+                type: string
+    InventoryMutationRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - reason
+            properties:
+              quantity:
+                type: integer
+                minimum: 0
+              totalStock:
+                type: integer
+                minimum: 0
+              reason:
+                type: string
+                example: cycle count correction
+    OperatorActionRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - reason
+            properties:
+              reason:
+                type: string
+                example: replay after downstream recovery
+  responses:
+    Ok:
+      description: Operation completed successfully.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/JsonObject'
+      x-gitbook-description-html: <p>Operation completed successfully.</p>
+    AuthChallenge:
+      description: SIWE challenge response.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AuthChallenge'
+      x-gitbook-description-html: <p>SIWE challenge response.</p>
+    User:
+      description: User response.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/User'
+    UserProfile:
+      description: User profile response.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/UserProfile'
+    OAuthIdentities:
+      description: OAuth identity list response.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              identities:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OAuthIdentity'
+    Wallet:
+      description: Wallet response.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Wallet'
+    Wallets:
+      description: Wallet list response.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              wallets:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Wallet'
+    Order:
+      description: Created order response.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Order'
+    CheckoutTracking:
+      description: Checkout tracking response.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/CheckoutTracking'
+    PaymentSubmission:
+      description: Payment transaction hash accepted.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/PaymentSubmission'
+    Stores:
+      description: Store list response.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              stores:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Store'
+    Store:
+      description: Store response.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Store'
+    Products:
+      description: Product list response.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              products:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Product'
+    Product:
+      description: Product response.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Product'
+    InventoryRows:
+      description: Inventory list response.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              inventory:
+                type: array
+                items:
+                  $ref: '#/components/schemas/InventoryRow'
+    InventoryRow:
+      description: Inventory row response.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/InventoryRow'
+    Members:
+      description: Merchant member list response.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              members:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Member'
+    Member:
+      description: Merchant member response.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Member'
+    Invitations:
+      description: Merchant invitation list response.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              invitations:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Invitation'
+    Invitation:
+      description: Merchant invitation response.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Invitation'
+    RoleCatalog:
+      description: Merchant role template catalog response.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/RoleCatalog'
+    OperatorDashboard:
+      description: Operator dashboard response.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/OperatorDashboard'
+    OperatorDetail:
+      description: Operator detail response.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/JsonObject'
+    OperatorAction:
+      description: Operator action accepted, duplicated, or rejected.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/OperatorAction'
+    ErrorResponse:
+      description: Bounded error response.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: request body is invalid
+              status: 400
+      x-gitbook-description-html: <p>Bounded error response.</p>
+  schemas:
+    JsonObject:
+      type: object
+      additionalProperties: true
+    AuthChallenge:
+      type: object
+      properties:
+        challengeId:
+          type: string
+        message:
+          type: string
+        csrfToken:
+          type: string
+    User:
+      type: object
+      properties:
+        userId:
+          type: string
+        walletAddress:
+          type: string
+        scopes:
+          type: array
+          items:
+            type: string
+    UserProfile:
+      type: object
+      properties:
+        userId:
+          type: string
+        displayName:
+          type: string
+        displayNameHtml:
+          type: string
+    OAuthIdentity:
+      type: object
+      properties:
+        oauthIdentityId:
+          type: string
+        provider:
+          type: string
+        walletId:
+          type: string
+        linkedAt:
+          type: string
+          format: date-time
+        revokedAt:
+          type: string
+          format: date-time
+          nullable: true
+    Wallet:
+      type: object
+      properties:
+        walletId:
+          type: string
+        address:
+          type: string
+        chainId:
+          type: integer
+        primary:
+          type: boolean
+        revokedAt:
+          type: string
+          format: date-time
+          nullable: true
+    Order:
+      type: object
+      properties:
+        orderId:
+          type: string
+        trackingId:
+          type: string
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+    CheckoutTracking:
+      type: object
+      properties:
+        trackingId:
+          type: string
+        orderStatus:
+          $ref: '#/components/schemas/OrderStatus'
+        paymentStatus:
+          $ref: '#/components/schemas/PaymentStatus'
+        pendingAction:
+          type: string
+          enum:
+            - SIGN_PAYMENT
+            - WAIT_FOR_RECEIPT
+            - WAIT_FOR_STORE_APPROVAL
+            - WAIT_FOR_COMPENSATION
+    PaymentSubmission:
+      type: object
+      properties:
+        trackingId:
+          type: string
+        status:
+          $ref: '#/components/schemas/PaymentStatus'
+        txHash:
+          type: string
+    Store:
+      type: object
+      properties:
+        publicStoreId:
+          type: string
+        displayName:
+          type: string
+        displayNameHtml:
+          type: string
+        status:
+          type: string
+        acceptedAssets:
+          type: array
+          items:
+            type: string
+    Product:
+      type: object
+      properties:
+        publicProductId:
+          type: string
+        publicStoreId:
+          type: string
+        title:
+          type: string
+        titleHtml:
+          type: string
+        displayPrice:
+          type: string
+        availability:
+          type: string
+    InventoryRow:
+      type: object
+      properties:
+        storeId:
+          type: string
+        productId:
+          type: string
+        totalStock:
+          type: integer
+        reservedStock:
+          type: integer
+        saleStatus:
+          type: string
+          enum:
+            - ON_SALE
+            - PAUSED
+    Member:
+      type: object
+      properties:
+        userId:
+          type: string
+        roleTemplate:
+          type: string
+        status:
+          type: string
+    Invitation:
+      type: object
+      properties:
+        invitationId:
+          type: string
+        roleTemplate:
+          type: string
+        status:
+          type: string
+    RoleCatalog:
+      type: object
+      properties:
+        roles:
+          type: array
+          items:
+            type: object
+            properties:
+              roleTemplate:
+                type: string
+              permissions:
+                type: array
+                items:
+                  type: string
+    OperatorDashboard:
+      type: object
+      properties:
+        orders:
+          type: array
+          items:
+            type: object
+        payments:
+          type: array
+          items:
+            type: object
+        outbox:
+          type: array
+          items:
+            type: object
+    OperatorAction:
+      type: object
+      properties:
+        actionId:
+          type: string
+        status:
+          type: string
+          enum:
+            - accepted
+            - duplicate
+            - rejected
+        reason:
+          type: string
+    OrderStatus:
+      type: string
+      enum:
+        - PENDING
+        - PAID
+        - APPROVED
+        - CANCELLING
+        - CANCELLED
+      x-enumDescriptions:
+        PENDING: Order was created and awaits payment.
+        PAID: Payment evidence was accepted.
+        APPROVED: Store approval and inventory confirmation completed.
+        CANCELLING: Cancellation or compensation is in progress.
+        CANCELLED: Order is cancelled.
+    PaymentStatus:
+      type: string
+      enum:
+        - AWAITING_SIGNATURE
+        - TX_SUBMITTED
+        - CONFIRMED
+        - FAILED
+        - EXPIRED
+        - REFUNDED
+      x-enumDescriptions:
+        AWAITING_SIGNATURE: Customer still needs to sign or submit payment.
+        TX_SUBMITTED: Transaction hash has been submitted.
+        CONFIRMED: Receipt verification succeeded.
+        FAILED: Payment failed.
+        EXPIRED: Payment authorization expired.
+        REFUNDED: Refund or compensation completed.
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              example: VALIDATION_ERROR
+              description: Machine-readable bounded error code.
+              x-gitbook-description-html: <p>Machine-readable bounded error code.</p>
+            message:
+              type: string
+              example: request body is invalid
+              description: Safe human-readable message.
+              x-gitbook-description-html: <p>Safe human-readable message.</p>
+            status:
+              type: integer
+              example: 400
+              description: HTTP status code when available.
+              x-gitbook-description-html: <p>HTTP status code when available.</p>

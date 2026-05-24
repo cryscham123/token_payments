@@ -7,6 +7,7 @@
 * [시퀀스](docs/SEQUENCES.md)
 * [API 명세](docs/API_SPEC.md)
   * [API 개요](docs/api/README.md)
+  * [OpenAPI Reference](docs/api/openapi.yaml)
   * [공통 계약](docs/api/runtime-contract.md)
   * [전체 Route Summary](docs/api/route-summary.md)
   * [인증과 OAuth](docs/api/auth.md)

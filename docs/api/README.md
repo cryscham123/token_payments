@@ -14,12 +14,13 @@ Token Payments API는 로컬 backend의 public HTTP surface를 설명한다. 이
 
 ## GitBook에서 읽는 순서
 
-1. [인증과 OAuth](auth.md)에서 session 생성과 wallet/OAuth identity 연결 규약을 확인한다.
-2. [상점과 상품 카탈로그](catalog-inventory.md)에서 public read와 merchant write의 identifier 차이를 확인한다.
-3. [주문, 체크아웃, 결제](orders-checkout-payments.md)에서 `trackingId` 중심 결제 흐름을 확인한다.
-4. [머천트, 관리자, RBAC](merchant-admin-rbac.md)에서 merchant membership과 권한 scope를 확인한다.
-5. [운영자와 런타임](operator-runtime.md)에서 operator recovery API와 no-server-start runtime boundary를 확인한다.
-6. [전체 Route Summary](route-summary.md)에서 operation id와 route 전체 목록을 검색한다.
+1. [OpenAPI Reference](openapi.yaml)를 GitBook OpenAPI import 대상으로 사용해 endpoint별 Try it, schema, code sample을 확인한다.
+2. [인증과 OAuth](auth.md)에서 session 생성과 wallet/OAuth identity 연결 규약을 확인한다.
+3. [상점과 상품 카탈로그](catalog-inventory.md)에서 public read와 merchant write의 identifier 차이를 확인한다.
+4. [주문, 체크아웃, 결제](orders-checkout-payments.md)에서 `trackingId` 중심 결제 흐름을 확인한다.
+5. [머천트, 관리자, RBAC](merchant-admin-rbac.md)에서 merchant membership과 권한 scope를 확인한다.
+6. [운영자와 런타임](operator-runtime.md)에서 operator recovery API와 no-server-start runtime boundary를 확인한다.
+7. [전체 Route Summary](route-summary.md)에서 operation id와 route 전체 목록을 검색한다.
 
 ## 현재 public route surface
 
