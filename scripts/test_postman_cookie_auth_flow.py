@@ -23,12 +23,12 @@ REQUIRED_SESSION_CLAIMS = {
     "sub",
     "sessionId",
     "walletAddress",
-    "role",
     "iat",
     "exp",
     "typ",
     "jti",
 }
+FORBIDDEN_SESSION_CLAIMS = {"role"}
 FORBIDDEN_SECRET_PATTERNS = (
     re.compile(r"0x[a-fA-F0-9]{64}"),
     re.compile(r"\b(seed phrase|mnemonic|production token|prod token|private_key)\b", re.IGNORECASE),
@@ -79,6 +79,13 @@ def test_postman_scripts_extract_csrf_and_assert_signed_cookie_metadata() -> Non
     assert '"HS256"' in scripts
     assert '"TP-SESSION"' in scripts
     assert "signature" in scripts.lower()
+    assert all("\n" not in line for line in _script_lines(collection))
+
+    challenge_test_lines = _event_script(items["requestLoginChallenge"], "test")
+    assert (
+        "  pm.environment.set(\"signingMessage\", body.signingMessage.replace(/\\n/g, '\\\\n'));"
+        in challenge_test_lines
+    )
 
     refresh_pre_request = "\n".join(_event_script(items["refreshSession"], "prerequest"))
     logout_pre_request = "\n".join(_event_script(items["logout"], "prerequest"))
@@ -125,7 +132,9 @@ def test_postman_expected_cookie_fixture_redacts_signed_tokens_but_keeps_shape_a
             "kid": "present",
             "activeKeyIdSource": "SESSION_ACTIVE_KEY_ID",
         }
-        assert REQUIRED_SESSION_CLAIMS <= set(cookie["signedTokenShape"]["payloadClaims"])
+        payload_claims = set(cookie["signedTokenShape"]["payloadClaims"])
+        assert REQUIRED_SESSION_CLAIMS <= payload_claims
+        assert FORBIDDEN_SESSION_CLAIMS.isdisjoint(payload_claims)
         assert cookie["signedTokenShape"]["signature"] == "present"
         assert cookie["attributes"]["HttpOnly"] is True
         assert cookie["attributes"]["Secure"] is False
@@ -175,8 +184,11 @@ def test_postman_environment_uses_local_placeholders_without_committed_secrets()
 
     assert values["baseUrl"]["value"] == "http://localhost:8000"
     assert values["walletAddress"]["value"] == "0x1111111111111111111111111111111111111111"
-    assert values["storeId"]["value"] == "store-001"
-    assert values["productId"]["value"] == "product-001"
+    assert values["storeId"]["value"] == ""
+    assert values["publicStoreId"]["value"] == ""
+    assert values["productId"]["value"] == ""
+    assert values["publicProductId"]["value"] == ""
+    assert values["storeOwnerUserId"]["value"] == ""
     assert values["csrfToken"]["value"] == ""
 
     for secret_key in (

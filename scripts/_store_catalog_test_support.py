@@ -176,6 +176,13 @@ class FakeStoreCatalogRepository:
             None,
         )
 
+    def get_store_by_display_name(self, display_name: str) -> StoreProfile | None:
+        key = display_name.casefold()
+        return next(
+            (store for store in self.stores.values() if store.display_name.casefold() == key),
+            None,
+        )
+
     def list_stores_for_member(self, user_id: UserId) -> tuple[StoreProfile, ...]:
         store_ids = {
             store_id

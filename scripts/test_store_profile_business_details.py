@@ -25,9 +25,12 @@ from token_payments.contexts.store_catalog.domain import (  # noqa: E402
     StoreProfile,
     StoreStatus,
 )
+from token_payments.shared.domain import StoreId  # noqa: E402
 from _store_catalog_test_support import (  # noqa: E402
     OWNER_ID,
     OWNER_WALLET,
+    OTHER_ID,
+    OTHER_WALLET,
     STORE_ID,
     STORE_WALLET,
     FakeStoreCatalogRepository,
@@ -40,6 +43,8 @@ from _store_catalog_test_support import (  # noqa: E402
 NOW = datetime(2026, 5, 22, 2, 0, tzinfo=UTC)
 PUBLIC_STORE_ID = PublicStoreId("st_ledger_cafe_001")
 GROUP_ID = GroupId("018f33aa-9e6d-73d8-9dc3-47d6cdcc2401")
+OTHER_STORE_ID = StoreId("018f33aa-9e6d-73d8-9dc3-47d6cdcc2402")
+OTHER_PUBLIC_STORE_ID = PublicStoreId("st_other_store_001")
 
 
 def test_store_profile_business_identity_is_separate_from_payment_settings() -> None:
@@ -167,6 +172,38 @@ def test_update_store_profile_uses_store_write_and_cannot_mutate_status_membersh
     assert decode(forbidden.body)["error"]["code"] == "VALIDATION_ERROR"
 
 
+def test_store_display_name_must_be_unique_except_product_titles() -> None:
+    repository = _seed_repository(_profile(display_name="Ledger Cafe"))
+    repository.seed_user(OTHER_ID, OTHER_WALLET, role=UserRole.CUSTOMER)
+    repository.save_store(
+        _profile(
+            store_id=OTHER_STORE_ID,
+            owner_user_id=OTHER_ID,
+            public_store_id=OTHER_PUBLIC_STORE_ID,
+            display_name="Other Store",
+            payment_settings=StorePaymentSettings(
+                store_id=OTHER_STORE_ID,
+                store_wallet=OTHER_WALLET,
+                supported_chain_ids=(11155111,),
+                active=True,
+            ),
+        )
+    )
+    repository.save_membership(StoreMembership.owner(OTHER_STORE_ID, OTHER_ID))
+    router = _router(repository, auth(OTHER_ID, UserRole.CUSTOMER, scopes=("store:write",)))
+
+    response = router.handle(
+        "PATCH",
+        f"/merchant/stores/{OTHER_PUBLIC_STORE_ID}/profile",
+        headers={"Content-Type": "application/json", "Idempotency-Key": "update-profile-duplicate-name"},
+        body=json_body({"displayName": "ledger cafe"}),
+    )
+
+    assert response.status_code == 409
+    assert decode(response.body)["error"]["code"] == "STORE_DISPLAY_NAME_CONFLICT"
+    assert repository.stores[OTHER_STORE_ID].display_name == "Other Store"
+
+
 def test_list_merchant_stores_returns_public_ids_without_internal_store_ids() -> None:
     repository = _seed_repository(_profile(display_name="Merchant Store", support_email_public=True))
     router = _router(repository, auth(OWNER_ID, UserRole.CUSTOMER, scopes=("store:read",)))
@@ -221,6 +258,7 @@ def test_schema_docs_and_route_manifest_expose_public_store_profile_contract() -
     assert "store_wallet_address TEXT NOT NULL" in stores_block.group(1)
     assert "supported_chain_ids JSONB NOT NULL" in stores_block.group(1)
     assert "CREATE UNIQUE INDEX IF NOT EXISTS idx_store_catalog_stores_public_store_id" in schema
+    assert "CREATE UNIQUE INDEX IF NOT EXISTS idx_store_catalog_stores_display_name_unique" in schema
     assert "UPDATE store_catalog_stores" in schema
     assert "public_store_id" in api_spec
     assert "publicStoreId" in api_spec

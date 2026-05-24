@@ -150,7 +150,7 @@ Merchant groups are created by store provisioning and linked to one store or mer
 
 Store business profile and payment settings are separate. `store:write` updates business profile fields such as display name, description, and support contact. Settlement wallet and supported chain changes are policy-gated payment settings flows, not public profile edits. Owner transfer, member invite/remove, and role/permission changes belong to RBAC/membership provisioning, not `updateStoreProfile`.
 
-Store/product slug fields and SKU fields are not part of phase 23. Public and merchant lookup starts with stable `publicStoreId` and `publicProductId`; internal `store_id`/`product_id` remain service and persistence details. Human-readable URLs and merchant-managed inventory codes are future scope. User display names, store display names, and product titles are display/search fields and may be duplicated.
+Store/product slug fields and SKU fields are not part of phase 23. Public and merchant lookup starts with stable `publicStoreId` and `publicProductId`; internal `store_id`/`product_id` remain service and persistence details. Human-readable URLs and merchant-managed inventory codes are future scope. User and store display names are unique display/search fields; product titles may be duplicated.
 
 Profile/catalog text is persisted as bounded data. Domain validation must reject or normalize empty required values, excessive length, control characters, null bytes, and log/CSV injection-prone prefixes where applicable. Persistence adapters must use parameter binding/JSON-safe serialization rather than string-built SQL values, and presentation adapters must escape text before HTML output.
 

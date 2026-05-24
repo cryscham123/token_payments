@@ -186,6 +186,23 @@ def test_order_creation_payload_excludes_sensitive_keys() -> None:
     assert "storeId" not in order_data
 
 
+def test_api_spec_public_response_examples_match_sensitive_payload_contract() -> None:
+    api_spec = (ROOT / "docs" / "API_SPEC.md").read_text(encoding="utf-8")
+
+    login_response = _after(_section(api_spec, "### `POST /auth/sessions`", "### `POST /auth/wallets/challenges`"), "Response `200`:")
+    logout_response = _after(_section(api_spec, "### `DELETE /auth/sessions`", "### `GET /auth/me`"), "Response `200`:")
+    me_response = _after(_section(api_spec, "### `GET /auth/me`", "## Orders"), "Response `200`:")
+    order_response = _after(_section(api_spec, "### `POST /orders`", "## Checkout Tracking"), "Response `201`:")
+
+    assert '"role": "CUSTOMER"' not in login_response
+    assert '"sessionId": "session-001"' not in login_response
+    assert '"sessionId": "session-001"' not in logout_response
+    assert '"role": "CUSTOMER"' not in me_response
+    assert '"customerId": "customer-001"' not in order_response
+    assert '"storeId": "store-001"' not in order_response
+    assert '"publicStoreId": "st_' in order_response
+
+
 def test_payment_submission_validations() -> None:
     handler = FakePaymentCommandHandler()
     tracking_query = FakeTrackingQuery(owner_user_id="018f33aa-9e6d-73d8-9dc3-47d6cdcc6c2a")
@@ -261,3 +278,12 @@ def test_payment_submission_validations() -> None:
     # 5. Idempotency key fallback uses trackingId
     cmd = handler.commands[0]
     assert cmd.command_id == CommandId(f"payment.submit_tx:{tracking_id_str}")
+
+
+def _section(text: str, start: str, end: str) -> str:
+    return _after(text, start).split(end, 1)[0]
+
+
+def _after(text: str, marker: str) -> str:
+    assert marker in text
+    return text.split(marker, 1)[1]

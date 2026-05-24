@@ -93,6 +93,23 @@ FROM auth_user_profiles
 WHERE user_id = %(user_id)s
 """
 
+SELECT_PROFILE_BY_DISPLAY_NAME_SQL = """
+SELECT
+    user_id,
+    display_name,
+    email,
+    email_verified_at,
+    locale,
+    timezone,
+    status,
+    created_at,
+    updated_at
+FROM auth_user_profiles
+WHERE status <> 'DELETED'
+  AND lower(display_name) = lower(%(display_name)s)
+LIMIT 1
+"""
+
 UPSERT_PROFILE_SQL = """
 INSERT INTO auth_user_profiles (
     user_id,
@@ -566,6 +583,17 @@ class PostgresUserProfileRepository:
         if not isinstance(user_id, UserId):
             raise ValueError("PostgresUserProfileRepository.get_by_user_id requires a UserId")
         row = _fetch_one(self._connection.execute(SELECT_PROFILE_BY_USER_ID_SQL, {"user_id": str(user_id)}))
+        return _row_to_profile(row) if row is not None else None
+
+    def get_by_display_name(self, display_name: str) -> UserProfile | None:
+        if not isinstance(display_name, str) or not display_name.strip():
+            raise ValueError("PostgresUserProfileRepository.get_by_display_name requires a display name")
+        row = _fetch_one(
+            self._connection.execute(
+                SELECT_PROFILE_BY_DISPLAY_NAME_SQL,
+                {"display_name": display_name.strip()},
+            )
+        )
         return _row_to_profile(row) if row is not None else None
 
 

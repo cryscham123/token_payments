@@ -221,6 +221,43 @@ def test_product_registration_generates_product_id_when_not_provided() -> None:
     assert len(repository.products) == 1
 
 
+def test_registered_public_product_is_immediately_listed_by_public_query_text() -> None:
+    repository = _seed_owner_store()
+    router = catalog_router(
+        repository,
+        auth(OWNER_ID, UserRole.CUSTOMER),
+        id_generator=FixedIdGenerator(str(PRODUCT_ID)),
+    )
+    public_store_id = repository.stores[STORE_ID].public_store_id
+
+    register = router.handle(
+        "POST",
+        f"/merchant/stores/{public_store_id}/products",
+        headers={"Content-Type": "application/json", "Idempotency-Key": "product-register-list-public-001"},
+        body=json_body(
+            {
+                "title": "Local Hoodie",
+                "price": price_payload(),
+                "initialTotalStock": 25,
+                "status": "ACTIVE",
+                "visibility": "PUBLIC",
+                "active": True,
+            }
+        ),
+    )
+    listed = catalog_router(repository, None).handle(
+        "GET",
+        f"/stores/{public_store_id}/products",
+        query={"limit": "20", "offset": "0", "q": "Local"},
+    )
+
+    payload = decode(listed.body)
+    assert register.status_code == 201
+    assert listed.status_code == 200
+    assert [product["title"] for product in payload["products"]] == ["Local Hoodie"]
+    assert payload["products"][0]["publicProductId"] == decode(register.body)["publicProductId"]
+
+
 def test_product_registration_rejects_client_provided_ids() -> None:
     repository = _seed_owner_store()
     router = catalog_router(repository, auth(OWNER_ID, UserRole.CUSTOMER))

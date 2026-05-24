@@ -48,6 +48,10 @@ POSTGRES_SCHEMA_COMPATIBILITY_SQL: tuple[str, ...] = (
         ON auth_user_profiles (status)
     """,
     """
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_user_profiles_display_name_unique
+        ON auth_user_profiles (lower(display_name)) WHERE status <> 'DELETED'
+    """,
+    """
     CREATE TABLE IF NOT EXISTS auth_groups (
         group_id UUID PRIMARY KEY,
         group_type TEXT NOT NULL CHECK (group_type IN ('PERSONAL', 'MERCHANT', 'PLATFORM')),
@@ -294,6 +298,10 @@ POSTGRES_SCHEMA_COMPATIBILITY_SQL: tuple[str, ...] = (
     """
     CREATE UNIQUE INDEX IF NOT EXISTS idx_store_catalog_stores_public_store_id
         ON store_catalog_stores (public_store_id)
+    """,
+    """
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_store_catalog_stores_display_name_unique
+        ON store_catalog_stores (lower(display_name))
     """,
     """
     CREATE TABLE IF NOT EXISTS store_catalog_store_memberships (

@@ -277,6 +277,10 @@ class FakeMerchantRepository:
     def get_store(self, store_id: StoreId):
         return self.stores.get(store_id)
 
+    def get_store_by_display_name(self, display_name: str):
+        key = display_name.casefold()
+        return next((store for store in self.stores.values() if store.display_name.casefold() == key), None)
+
     def get_membership(self, store_id: StoreId, user_id: UserId):
         return self.store_memberships.get((store_id, user_id))
 

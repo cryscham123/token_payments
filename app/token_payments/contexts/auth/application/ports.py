@@ -260,6 +260,9 @@ class UserProfileRepository(Protocol):
     def get_by_user_id(self, user_id: UserId) -> UserProfile | None:
         ...
 
+    def get_by_display_name(self, display_name: str) -> UserProfile | None:
+        ...
+
 
 class LoginChallengeRepository(Protocol):
     def save(self, challenge: LoginChallenge) -> None:

@@ -51,7 +51,7 @@ def test_docs_distinguish_store_owner_admin_inventory_permissions_and_scope_excl
     assert "STORE_OWNER" in combined
     assert "ADMIN" in combined
     assert "own store inventory" in combined
-    assert "admin can query or mutate any store inventory" in combined
+    assert "platform sessions need explicit inventory/operator policy permission for cross-store access" in combined
     assert "manual order approval HTTP API is not in current scope" in combined
     assert "UI implementation remains a separate phase" in combined
 

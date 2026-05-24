@@ -4,7 +4,7 @@ This document captures the Live API Runtime Composition boundary for the local T
 
 Default `api`/`serve-api` commands keep the no-server-start preview boundary. Use `PYTHONPATH=app python3 -m token_payments serve-api --live --dry-run` for a bounded live server plan, and `PYTHONPATH=app python3 -m token_payments serve-api --live --confirm-live-api` only when an approved live environment is ready to start the long-running server.
 
-이 문서는 `25-multi-wallet-accounts` 진행 중인 로컬 backend API를 기준으로 한 최종 명세 초안이다. Route surface는 현재 `app/token_payments/api/http.py`의 route manifest 47개를 기준으로 고정한다.
+이 문서는 현재 로컬 backend API와 Phase 26 public security contract를 기준으로 한 명세다. Route surface는 현재 `app/token_payments/api/http.py`의 route manifest 47개를 기준으로 고정한다.
 
 ## Phase 26 public security contract
 
@@ -31,11 +31,11 @@ Public HTTP route surface is exactly the current 47-route manifest from `app/tok
 
 `ReserveInventoryCommand`, `ReleaseInventoryCommand`, and `ConfirmInventoryCommand` are checkout saga internal commands. They are emitted by `CheckoutProcessManager` and handled by application/message adapters, not exposed as public customer HTTP APIs. Successful `OrderApprovedEvent` processing emits `ConfirmInventoryCommand`, and the inventory context records `InventoryConfirmedEvent`; payment failure, payment expiration, and order rejection still emit release/compensation commands.
 
-Operator action APIs are platform recovery endpoints. Current compatibility paths still use an admin role policy, but phase 22 migrates them to platform group permissions such as `operator:read`, `operator:action`, and `outbox:retry`. Store owner inventory API is a separate merchant surface with store ownership/membership, not a global STORE_OWNER account role, and must not be confused with platform operator recovery endpoints. Store owners can query or mutate only own store inventory through active membership; platform operators/admins need explicit policy permission for cross-store access. The store owner inventory API manages stock and sale pause/resume only. Store owner manual order approval HTTP API is not in current scope, and manual order approval HTTP API is not an active roadmap item.
+Operator action APIs are platform recovery endpoints. Operator action APIs require explicit platform permissions such as `operator:read`, `operator:action`, and `outbox:retry`; a global admin role is not the authorization source for new execution paths. Store owner inventory API is a separate merchant surface with store ownership/membership, not a global STORE_OWNER account role, and must not be confused with platform operator recovery endpoints. Store owners can query or mutate only own store inventory through active membership; platform sessions need explicit inventory/operator policy permission for cross-store access. The store owner inventory API manages stock and sale pause/resume only. Store owner manual order approval HTTP API is not in current scope, and manual order approval HTTP API is not an active roadmap item.
 
 ### Admin store catalog provisioning API surface
 
-`POST /admin/store-users`, `POST /admin/stores`, and `POST /admin/stores/{storeId}/memberships` are provisioning endpoints. Current compatibility paths require server-side admin authority and ignore any role-like value in the request body. Phase 22 migrates this surface to `admin:provision`/`rbac:manage` policy checks. Public customer login never grants a global `STORE_OWNER` role, and provisioning creates or reuses a normal auth user identity without changing an existing customer account role.
+`POST /admin/store-users`, `POST /admin/stores`, and `POST /admin/stores/{storeId}/memberships` require `admin:provision` or `rbac:manage` policy checks. These provisioning endpoints ignore any role-like value in the request body except the bounded merchant membership template accepted by the membership command. Public customer login never grants a global `STORE_OWNER` role, and provisioning creates or reuses a normal auth user identity without changing an existing customer account role.
 
 Store ownership is represented by canonical store records plus merchant group membership. Canonical store records use internal `store_id` only for persistence and service boundaries, and expose stable external `public_store_id`/`publicStoreId` for public and merchant profile lookup. `public_store_id` is unique/indexed and is not the internal UUID primary key or a sequential id. Compatibility tables such as `store_catalog_store_memberships` may remain during migration, but new authorization paths use group membership and permission lookup. A wallet that already has a customer identity can become a store owner by adding merchant membership to the existing user id; the same wallet must not create a second `auth_users` row, and customer checkout history/profile rows are preserved. Platform operations authority is represented by platform group membership, not a global account role.
 
@@ -71,13 +71,13 @@ Roadmap status note: Kafka live worker, multi-wallet, and stablecoin support are
 
 `PATCH /merchant/stores/{publicStoreId}/profile` updates only business profile fields: `displayName`, `description`, `supportEmail`, `supportEmailPublic`, and `businessRegistrationLabel`. It requires `store:write` for the scoped merchant group or explicit platform override. `store:manage` or platform approval flows are reserved for sensitive status/settings changes. Settlement wallet and supported chain changes are separate policy-gated payment settings flows and are not accepted by `updateStoreProfile`. Owner transfer, member invite/remove, and role/permission changes remain RBAC/membership provisioning responsibilities.
 
-Store profile input text is bounded data. `displayName`, `description`, and `businessRegistrationLabel` are Unicode-normalized, length-bounded, and reject control characters, null bytes, and log/CSV injection-prone prefixes. `supportEmail` is length-bounded and email-shaped. SQL adapters use parameter binding for `public_store_id`, display fields, and contact fields; UI/rendering layers use escaped response fields such as `displayNameHtml` and `descriptionHtml`.
+Store profile input text is bounded data. `displayName`, `description`, and `businessRegistrationLabel` are Unicode-normalized, length-bounded, and reject control characters, null bytes, and log/CSV injection-prone prefixes. Store `displayName` is globally unique case-insensitively. `supportEmail` is length-bounded and email-shaped. SQL adapters use parameter binding for `public_store_id`, display fields, and contact fields; UI/rendering layers use escaped response fields such as `displayNameHtml` and `descriptionHtml`.
 
 ### Store owner inventory API surface
 
-`GET /store-owner/inventory` returns inventory rows visible to the authenticated session. Merchant sessions are limited by active membership and `inventory:read`, including optional `storeId` filtering; platform sessions need explicit inventory/operator policy permission for cross-store access. In the current compatibility contract, admin can query or mutate any store inventory; phase 22 replaces that legacy role shortcut with explicit platform policy permission. A customer identity that owns a store through merchant membership can query/mutate that store without changing its global role. Unauthenticated sessions are rejected.
+`GET /store-owner/inventory` returns inventory rows visible to the authenticated session. Merchant sessions are limited by active membership and `inventory:read`, including optional `storeId` filtering; platform sessions need explicit inventory/operator policy permission for cross-store access. A customer identity that owns a store through merchant membership can query/mutate that store without changing its global role. Unauthenticated sessions are rejected.
 
-Inventory mutations use audited business commands rather than raw stock writes. The supported actions are stock intake, target total stock correction, sale pause, and sale resume. Mutations require cookie/session auth, `Idempotency-Key`, CSRF for browser cookie auth, `reason`, and server-side role/ownership checks. Stock correction cannot set `totalStock` below `reservedStock`. Sale pause/resume only changes new-order availability and does not release existing reservations.
+Inventory mutations use audited business commands rather than raw stock writes. The supported actions are stock intake, target total stock correction, sale pause, and sale resume. Mutations require cookie/session auth, `Idempotency-Key`, CSRF for browser cookie auth, `reason`, and server-side permission plus ownership/membership checks. Stock correction cannot set `totalStock` below `reservedStock`. Sale pause/resume only changes new-order availability and does not release existing reservations.
 
 Product sale availability is stored canonically in the inventory context as `ProductInventory.sale_status`. Store approval/order catalog projections may consume that status in later projection work, but this phase does not add a customer public inventory route.
 
@@ -141,11 +141,11 @@ Platform group creation, platform role assignment, personal group management, pe
 
 MERCHANT_OWNER assignment or transfer is not merchant-facing; merchant APIs can invite, update, or remove only non-owner staff templates selected from the server-defined merchant role catalog.
 
-Phase 23 separates user identity from user profile, store business profile from store payment settings, and product catalog from inventory. Store/product slug fields and SKU fields are not required in phase 23; public and merchant store/profile/product lookup starts with stable `publicStoreId` and `publicProductId`, while internal service/projection boundaries continue using `storeId` and `productId`. Human-readable URLs and merchant-managed inventory codes are future scope. User display names, store display names, and product titles are display/search fields and may be duplicated. Settlement wallet/supported chain changes are policy-gated payment settings flows, not `updateStoreProfile`. Owner transfer, member invite/remove, and role changes belong to RBAC/membership provisioning, not store profile update.
+Phase 23 separates user identity from user profile, store business profile from store payment settings, and product catalog from inventory. Store/product slug fields and SKU fields are not required in phase 23; public and merchant store/profile/product lookup starts with stable `publicStoreId` and `publicProductId`, while internal service/projection boundaries continue using `storeId` and `productId`. Human-readable URLs and merchant-managed inventory codes are future scope. User and store display names are unique display/search fields; product titles may be duplicated. Settlement wallet/supported chain changes are policy-gated payment settings flows, not `updateStoreProfile`. Owner transfer, member invite/remove, and role changes belong to RBAC/membership provisioning, not store profile update.
 
 Historical phase 21 note: description/category/search metadata is future scope; phase 23 has since implemented product description/category fields while search metadata remains future scope.
 
-All user-provided profile/catalog text fields are data, not executable fragments. APIs must validate bounded length, required/optional emptiness, control characters, null bytes, and normalization policy before persistence. SQL adapters must use parameter binding for values and whitelist any dynamic identifiers such as sort columns or directions. UI/rendering layers must HTML-escape display names, store descriptions, product titles, tags, and media labels before output. Query text and filter values must be parameterized; wildcard behavior for `ILIKE`/text search must be explicit and tested.
+All user-provided profile/catalog text fields are data, not executable fragments. APIs must validate bounded length, required/optional emptiness, control characters, null bytes, and normalization policy before persistence. User and store display names must remain unique outside product title search/display data. Product tags accept Unicode letters/numbers, including Korean, plus underscores and hyphens. SQL adapters must use parameter binding for values and whitelist any dynamic identifiers such as sort columns or directions. UI/rendering layers must HTML-escape display names, store descriptions, product titles, tags, and media labels before output. Query text and filter values must be parameterized; wildcard behavior for `ILIKE`/text search must be explicit and tested.
 
 User-facing capability summary:
 
@@ -220,7 +220,7 @@ Session cookie values are signed tokens. The live runtime loads signing keys fro
 - `SESSION_ACCESS_TTL_SECONDS`
 - `SESSION_REFRESH_TTL_SECONDS`
 
-`SESSION_SIGNING_KEYS`는 `kid=secret,kid2=previous_secret` 또는 동등한 object 형태로 active key와 previous key를 함께 표현한다. New tokens are signed with the active key. Verification accepts the active key and configured previous keys until token expiry. Tokens must carry a `kid` or equivalent key id. Current compatibility payloads may include `role`; phase 22 target payloads use `sub`, `sessionId`, `walletAddress`, bounded `activeGroupId`/`groupMemberships` or `scopes`, `iat`, `exp`, `typ`, and `jti` instead of global role authority. Missing signing keys or committed placeholder keys must make live/prod server startup fail with a bounded configuration error.
+`SESSION_SIGNING_KEYS`는 `kid=secret,kid2=previous_secret` 또는 동등한 object 형태로 active key와 previous key를 함께 표현한다. New tokens are signed with the active key. Verification accepts the active key and configured previous keys until token expiry. Tokens must carry a `kid` or equivalent key id. Signed session token payloads use `sub`, `sessionId`, `walletAddress`, bounded `activeGroupId`/`groupMemberships`, `scopes`, `iat`, `exp`, `typ`, `jti`, and rotation metadata instead of global role authority. Missing signing keys or committed placeholder keys must make live/prod server startup fail with a bounded configuration error.
 
 Session signing keys, signed token values, refresh token hashes/salts, and CSRF secrets must never be logged, committed in fixtures, or exposed in runtime previews.
 
@@ -406,12 +406,10 @@ Response `200`:
   "user": {
     "userId": "user-001",
     "walletAddress": "0x1111111111111111111111111111111111111111",
-    "role": "CUSTOMER",
     "active": true,
     "lastLoginAt": "2026-05-17T10:00:00+09:00"
   },
   "session": {
-    "sessionId": "session-001",
     "userId": "user-001",
     "walletAddress": "0x1111111111111111111111111111111111111111",
     "deviceId": "browser-1",
@@ -594,7 +592,6 @@ Response `200`:
 ```json
 {
   "session": {
-    "sessionId": "session-001",
     "userId": "user-001",
     "walletAddress": "0x1111111111111111111111111111111111111111",
     "deviceId": "browser-1",
@@ -617,7 +614,6 @@ Response `200`:
   "user": {
     "userId": "user-001",
     "walletAddress": "0x1111111111111111111111111111111111111111",
-    "role": "CUSTOMER",
     "active": true,
     "lastLoginAt": "2026-05-17T10:00:00+09:00"
   }
@@ -657,8 +653,7 @@ Response `201`:
   "order": {
     "orderId": "order-001",
     "trackingId": "tracking-001",
-    "customerId": "customer-001",
-    "storeId": "store-001",
+    "publicStoreId": "st_3c6a3ed15f8e1abf7d84",
     "status": "PENDING",
     "deliveryAddress": {
       "id": "addr-001",

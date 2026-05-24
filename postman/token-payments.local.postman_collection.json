@@ -84,7 +84,7 @@
                   "  pm.expect(body.signatureVerification.erc6492).to.eql(\"future_scope\");",
                   "  pm.expect(body.csrfToken).to.be.a(\"string\").and.not.empty;",
                   "  pm.expect(body.csrf.headerName).to.eql(\"X-CSRF-Token\");",
-                  "  pm.environment.set(\"signingMessage\", body.signingMessage.replace(/\n/g, '\\n'));",
+                  "  pm.environment.set(\"signingMessage\", body.signingMessage.replace(/\\n/g, '\\\\n'));",
                   "  pm.environment.set(\"csrfToken\", body.csrfToken);",
                   "});",
                   "pm.test(\"Postman cookie jar contains CSRF cookie\", function () {",
@@ -691,9 +691,26 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"storeId\": \"{{storeId}}\",\n  \"deliveryAddress\": {\n    \"id\": \"postman-address-1\",\n    \"street\": \"7 Checkout Avenue\"\n  },\n  \"items\": [\n    {\n      \"productId\": \"{{productId}}\",\n      \"quantity\": 1\n    }\n  ],\n  \"paymentAssetId\": \"local-usdc\",\n  \"walletId\": \"{{walletId}}\",\n  \"trackingId\": \"{{trackingId}}\"\n}"
+              "raw": "{\n  \"storeId\": \"{{storeId}}\",\n  \"deliveryAddress\": {\n    \"id\": \"postman-address-1\",\n    \"street\": \"7 Checkout Avenue\"\n  },\n  \"items\": [\n    {\n      \"productId\": \"{{productId}}\",\n      \"quantity\": 1\n    }\n  ],\n  \"paymentAssetId\": \"local-usdc\",\n  \"walletId\": \"{{walletId}}\"\n}"
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"order ids are available\", function () {",
+                  "  const order = pm.response.json().order;",
+                  "  pm.expect(order.orderId).to.be.a(\"string\");",
+                  "  pm.expect(order.trackingId).to.be.a(\"string\");",
+                  "  pm.environment.set(\"orderId\", order.orderId);",
+                  "  pm.environment.set(\"trackingId\", order.trackingId);",
+                  "});"
+                ]
+              }
+            }
+          ]
         },
         {
           "id": "getCheckoutTrackingByTrackingId",
@@ -767,7 +784,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"paymentId\": \"{{paymentId}}\",\n  \"txHash\": \"{{txHash}}\"\n}"
+              "raw": "{\n  \"trackingId\": \"{{trackingId}}\",\n  \"txHash\": \"{{txHash}}\"\n}"
             }
           }
         },
@@ -1025,7 +1042,22 @@
               "mode": "raw",
               "raw": "{\n  \"walletAddress\": \"{{storeOwnerWallet}}\"\n}"
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"store owner user id is available\", function () {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.userId).to.be.a(\"string\");",
+                  "  pm.environment.set(\"storeOwnerUserId\", body.userId);",
+                  "});"
+                ]
+              }
+            }
+          ]
         },
         {
           "id": "createStore",
@@ -1059,9 +1091,26 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"storeId\": \"{{storeId}}\",\n  \"ownerUserId\": \"{{storeOwnerUserId}}\",\n  \"storeWalletAddress\": \"{{storeWalletAddress}}\",\n  \"supportedChainIds\": [{{chainId}}],\n  \"active\": true\n}"
+              "raw": "{\n  \"ownerUserId\": \"{{storeOwnerUserId}}\",\n  \"storeWalletAddress\": \"{{storeWalletAddress}}\",\n  \"supportedChainIds\": [{{chainId}}],\n  \"active\": true,\n  \"displayName\": \"Local Store\"\n}"
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"store ids are available\", function () {",
+                  "  const store = pm.response.json().store;",
+                  "  pm.expect(store.storeId).to.be.a(\"string\");",
+                  "  pm.expect(store.publicStoreId).to.be.a(\"string\");",
+                  "  pm.environment.set(\"storeId\", store.storeId);",
+                  "  pm.environment.set(\"publicStoreId\", store.publicStoreId);",
+                  "});"
+                ]
+              }
+            }
+          ]
         },
         {
           "id": "grantStoreMembership",
@@ -1135,9 +1184,26 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"productId\": \"{{productId}}\",\n  \"publicProductId\": \"{{publicProductId}}\",\n  \"title\": \"Local Hoodie\",\n  \"description\": \"Local checkout test hoodie\",\n  \"category\": \"apparel\",\n  \"tags\": [\"demo\", \"hoodie\"],\n  \"media\": [\"products/local-hoodie.png\"],\n  \"attributes\": {\"size\": \"M\"},\n  \"status\": \"ACTIVE\",\n  \"visibility\": \"PUBLIC\",\n  \"price\": {\n    \"amount\": \"10.000000000000000000\",\n    \"symbol\": \"TPAY\",\n    \"chainId\": {{chainId}},\n    \"tokenAddress\": \"{{paymentTokenAddress}}\",\n    \"decimals\": 18\n  },\n  \"initialTotalStock\": 25,\n  \"active\": true\n}"
+              "raw": "{\n  \"title\": \"Local Hoodie\",\n  \"description\": \"Local checkout test hoodie\",\n  \"category\": \"apparel\",\n  \"tags\": [\"demo\", \"hoodie\"],\n  \"media\": [\"products/local-hoodie.png\"],\n  \"attributes\": {\"size\": \"M\"},\n  \"status\": \"ACTIVE\",\n  \"visibility\": \"PUBLIC\",\n  \"price\": {\n    \"amount\": \"10.000000000000000000\",\n    \"symbol\": \"TPAY\",\n    \"chainId\": {{chainId}},\n    \"tokenAddress\": \"{{paymentTokenAddress}}\",\n    \"decimals\": 18\n  },\n  \"initialTotalStock\": 25,\n  \"active\": true\n}"
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"product ids are available\", function () {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.productId).to.be.a(\"string\");",
+                  "  pm.expect(body.publicProductId).to.be.a(\"string\");",
+                  "  pm.environment.set(\"productId\", body.productId);",
+                  "  pm.environment.set(\"publicProductId\", body.publicProductId);",
+                  "});"
+                ]
+              }
+            }
+          ]
         },
         {
           "id": "updateStoreProduct",

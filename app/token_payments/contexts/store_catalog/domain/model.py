@@ -21,7 +21,7 @@ from token_payments.shared.domain import Crypto, ProductId, StoreId, UserId, Wal
 _PUBLIC_STORE_ID_RE = re.compile(r"^[a-z][a-z0-9_-]{7,63}$")
 _PUBLIC_PRODUCT_ID_RE = re.compile(r"^[a-z][a-z0-9_-]{7,63}$")
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-_TAG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
+_TAG_RE = re.compile(r"^(?=.{1,40}$)[^\W_][\w-]*$")
 _OBJECT_KEY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$")
 _LOG_CSV_INJECTION_PREFIXES = ("=", "+", "-", "@")
 
@@ -521,11 +521,11 @@ def _tags(values: tuple[str, ...] | list[str]) -> tuple[str, ...]:
 
 
 def _tag(value: str) -> str:
-    tag = unicodedata.normalize("NFC", _text(value, "StoreProduct.tag")).lower()
+    tag = unicodedata.normalize("NFC", _text(value, "StoreProduct.tag")).casefold()
     if _has_unsafe_text(tag):
         raise ValueError("StoreProduct.tag contains unsafe characters")
     if not _TAG_RE.fullmatch(tag):
-        raise ValueError("StoreProduct.tag must be lowercase letters, numbers, underscores, or hyphens")
+        raise ValueError("StoreProduct.tag must be letters, numbers, underscores, or hyphens")
     return tag
 
 

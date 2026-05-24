@@ -38,7 +38,7 @@ def test_docs_separate_identity_profile_catalog_payment_inventory_and_future_sco
         "publicStoreId",
         "publicProductId",
         "Store/product slug fields and SKU fields are not part of phase 23",
-        "User display names, store display names, and product titles are display/search fields and may be duplicated",
+        "User and store display names are unique display/search fields; product titles may be duplicated",
         "Implemented",
         "Partially implemented",
         "Future scope",
@@ -100,7 +100,49 @@ def test_postman_profile_catalog_examples_use_public_ids_and_cover_public_read_r
             assert "publicProductId" in route_text
 
 
-def test_seed_plan_and_environment_include_public_store_product_catalog_fixture() -> None:
+def test_postman_store_product_write_examples_follow_generated_id_contract() -> None:
+    collection = _read_json(COLLECTION_PATH)
+    items = _operation_items(collection)
+
+    store_user_body = items["createOrReuseStoreUser"]["request"]["body"]["raw"]
+    create_store_body = _postman_json_body(items["createStore"])
+    register_product_body = _postman_json_body(items["registerStoreProduct"])
+
+    assert "{{storeOwnerWallet}}" in store_user_body
+    assert "storeId" not in create_store_body
+    assert "ownerUserId" in create_store_body
+    assert "productId" not in register_product_body
+    assert "publicProductId" not in register_product_body
+
+    assert 'pm.environment.set("storeOwnerUserId", body.userId);' in _script_text(
+        items["createOrReuseStoreUser"], "test"
+    )
+    create_store_script = _script_text(items["createStore"], "test")
+    assert 'pm.environment.set("storeId", store.storeId);' in create_store_script
+    assert 'pm.environment.set("publicStoreId", store.publicStoreId);' in create_store_script
+
+    register_product_script = _script_text(items["registerStoreProduct"], "test")
+    assert 'pm.environment.set("productId", body.productId);' in register_product_script
+    assert 'pm.environment.set("publicProductId", body.publicProductId);' in register_product_script
+
+
+def test_postman_checkout_payment_examples_use_tracking_id_contract() -> None:
+    collection = _read_json(COLLECTION_PATH)
+    items = _operation_items(collection)
+
+    create_order_body = _postman_json_body(items["createOrder"])
+    submit_tx_body = _postman_json_body(items["submitTransactionHash"])
+
+    assert "storeId" in create_order_body
+    assert "trackingId" not in create_order_body
+    create_order_script = _script_text(items["createOrder"], "test")
+    assert 'pm.environment.set("orderId", order.orderId);' in create_order_script
+    assert 'pm.environment.set("trackingId", order.trackingId);' in create_order_script
+
+    assert submit_tx_body == {"trackingId": "{{trackingId}}", "txHash": "{{txHash}}"}
+
+
+def test_seed_plan_documents_optional_fixture_but_environment_uses_runtime_generated_catalog_ids() -> None:
     seed = _read_json(SEED_PLAN_PATH)
     environment = _read_json(ENV_PATH)
     env_values = {entry["key"]: entry["value"] for entry in environment["values"]}
@@ -109,8 +151,11 @@ def test_seed_plan_and_environment_include_public_store_product_catalog_fixture(
     assert ids["demoPublicStoreId"] == "st_demo_store_001"
     assert ids["demoPublicProductId"] == "prd_local_hoodie_001"
     assert ids["demoPlatformAdminWallet"].startswith("0x")
-    assert env_values["publicStoreId"] == ids["demoPublicStoreId"]
-    assert env_values["publicProductId"] == ids["demoPublicProductId"]
+    assert env_values["storeId"] == ""
+    assert env_values["publicStoreId"] == ""
+    assert env_values["productId"] == ""
+    assert env_values["publicProductId"] == ""
+    assert env_values["storeOwnerUserId"] == ""
 
     product_record = next(record for record in seed["records"] if record["table"] == "store_catalog_products")
     assert {
@@ -146,3 +191,15 @@ def _operation_items(collection: Mapping[str, Any]) -> dict[str, Mapping[str, An
 
     visit(collection.get("item", []))
     return flattened
+
+
+def _script_text(item: Mapping[str, Any], listen: str) -> str:
+    for event in item.get("event", []):
+        if event.get("listen") == listen:
+            return "\n".join(event.get("script", {}).get("exec", []))
+    return ""
+
+
+def _postman_json_body(item: Mapping[str, Any]) -> Mapping[str, Any]:
+    raw = item["request"]["body"]["raw"]
+    return json.loads(raw.replace("{{chainId}}", "1337"))

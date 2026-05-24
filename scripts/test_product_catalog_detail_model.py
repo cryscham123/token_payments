@@ -105,6 +105,12 @@ def test_product_catalog_fields_are_bounded_untrusted_data(kwargs: dict[str, Any
         _product(**kwargs)
 
 
+def test_product_tags_accept_korean_unicode_tokens() -> None:
+    product = _product(tags=("한글태그", "지갑-safe", "nft_굿즈"))
+
+    assert product.tags == ("한글태그", "지갑-safe", "nft_굿즈")
+
+
 def test_product_write_uses_public_ids_detail_metadata_and_payload_sensitive_idempotency() -> None:
     repository = _seed_owner_store()
     router = _router(

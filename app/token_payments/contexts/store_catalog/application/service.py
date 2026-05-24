@@ -259,6 +259,9 @@ class StoreCatalogApplicationService:
                 active=command.active,
             ),
         )
+        display_name_conflict = self._store_display_name_conflict(store.display_name, current_store_id=store.store_id)
+        if display_name_conflict is not None:
+            return display_name_conflict
         previous_membership = self._repository.get_membership(command.store_id, command.owner_user_id)
         membership_created = previous_membership is None
         membership = StoreMembership.owner(command.store_id, command.owner_user_id, active=True)
@@ -320,6 +323,9 @@ class StoreCatalogApplicationService:
             business_registration_label=command.business_registration_label,
             updated_at=command.requested_at,
         )
+        display_name_conflict = self._store_display_name_conflict(updated.display_name, current_store_id=store.store_id)
+        if display_name_conflict is not None:
+            return display_name_conflict
         self._repository.save_store(updated)
         self._repository.record_audit(
             CatalogAuditRecord(
@@ -558,6 +564,17 @@ class StoreCatalogApplicationService:
         if callable(generator):
             return UserId(str(generator()))
         raise ValueError("user_id_generator must expose new_id() or be callable")
+
+    def _store_display_name_conflict(
+        self,
+        display_name: str,
+        *,
+        current_store_id: StoreId,
+    ) -> Mapping[str, Any] | None:
+        existing = self._repository.get_store_by_display_name(display_name)
+        if existing is not None and existing.store_id != current_store_id:
+            return _rejected("STORE_DISPLAY_NAME_CONFLICT", "store displayName is already in use")
+        return None
 
     def _ensure_merchant_group_owner(self, command: CreateStoreCommand) -> Mapping[str, Any] | None:
         ensure_group = getattr(self._repository, "ensure_merchant_group_for_store", None)

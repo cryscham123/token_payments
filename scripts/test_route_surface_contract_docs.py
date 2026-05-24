@@ -38,8 +38,10 @@ def test_api_spec_separates_http_message_and_internal_inputs() -> None:
         "`approveOrder`/`request_store_approval` are Kafka/message listener inputs",
         "store owner manual order approval HTTP API is not in current scope",
         "`ReserveInventoryCommand`, `ReleaseInventoryCommand`, and `ConfirmInventoryCommand` are checkout saga internal commands",
+        "Operator action APIs require explicit platform permissions such as `operator:read`, `operator:action`, and `outbox:retry`",
         "Store owners can query or mutate only own store inventory",
-        "phase 22 replaces that legacy role shortcut with explicit platform policy permission",
+        "platform sessions need explicit inventory/operator policy permission for cross-store access",
+        "`POST /admin/store-users`, `POST /admin/stores`, and `POST /admin/stores/{storeId}/memberships` require `admin:provision` or `rbac:manage` policy checks",
         "store ownership/membership, not a global STORE_OWNER account role",
         "MERCHANT_OWNER assignment or transfer is not merchant-facing",
     ):

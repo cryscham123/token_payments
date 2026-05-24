@@ -119,6 +119,28 @@ FROM store_catalog_stores
 WHERE public_store_id = %(public_store_id)s
 """
 
+SELECT_STORE_BY_DISPLAY_NAME_SQL = """
+SELECT
+    store_id,
+    public_store_id,
+    owner_user_id,
+    group_id,
+    display_name,
+    description,
+    status,
+    support_email,
+    support_email_public,
+    business_registration_label,
+    store_wallet_address,
+    supported_chain_ids,
+    supported_payment_asset_ids,
+    created_at,
+    updated_at
+FROM store_catalog_stores
+WHERE lower(display_name) = lower(%(display_name)s)
+LIMIT 1
+"""
+
 SELECT_STORES_FOR_MEMBER_SQL = """
 SELECT
     s.store_id,
@@ -666,6 +688,15 @@ class PostgresStoreCatalogRepository:
             self._connection.execute(
                 SELECT_STORE_BY_PUBLIC_ID_SQL,
                 {"public_store_id": str(public_store_id)},
+            )
+        )
+        return _row_to_store(row) if row is not None else None
+
+    def get_store_by_display_name(self, display_name: str) -> StoreProfile | None:
+        row = _fetch_one(
+            self._connection.execute(
+                SELECT_STORE_BY_DISPLAY_NAME_SQL,
+                {"display_name": str(display_name)},
             )
         )
         return _row_to_store(row) if row is not None else None

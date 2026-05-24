@@ -17,6 +17,7 @@ from token_payments.api import ApiAuthContext, ApiRequest  # noqa: E402
 from token_payments.api.auth import AuthApi  # noqa: E402
 from token_payments.contexts.auth.adapter import PostgresUserProfileRepository  # noqa: E402
 from token_payments.contexts.auth.application import (  # noqa: E402
+    AuthApplicationError,
     AuthApplicationService,
     GetCurrentUserProfileQuery,
     GetUserProfileQuery,
@@ -44,10 +45,8 @@ def test_user_profile_is_separate_from_auth_identity_and_supports_tombstones() -
         locale="ko-KR",
         timezone="Asia/Seoul",
     )
-    duplicate_display_name = _profile(user_id=OTHER_USER_ID, display_name="Cafe\u0301 Wallet")
 
     assert profile.display_name == "Caf\u00e9 Wallet"
-    assert duplicate_display_name.display_name == profile.display_name
     assert profile.email == "alice@example.com"
     assert profile.locale == "ko-KR"
     assert profile.timezone == "Asia/Seoul"
@@ -112,6 +111,25 @@ def test_email_profile_field_does_not_enable_email_login_recovery_or_did_identit
         "linkDid",
     }
     assert forbidden_methods.isdisjoint(dir(AuthApplicationService))
+
+
+def test_user_profile_display_name_must_be_unique_across_active_profiles() -> None:
+    profiles = FakeProfileRepository()
+    profiles.save(_profile(user_id=OTHER_USER_ID, display_name="Cafe\u0301 Wallet"))
+    service = _profile_service(profiles)
+
+    with pytest.raises(AuthApplicationError) as exc_info:
+        service.updateUserProfile(
+            UpdateUserProfileCommand(
+                actor_user_id=USER_ID,
+                target_user_id=USER_ID,
+                display_name="caf\u00e9 wallet",
+                requested_at=NOW,
+            )
+        )
+
+    assert exc_info.value.code.value == "USER_PROFILE_DISPLAY_NAME_CONFLICT"
+    assert profiles.get_by_user_id(USER_ID) is None
 
 
 def test_profile_api_redacts_contact_fields_and_requires_self_or_user_manage_for_update() -> None:
@@ -191,6 +209,8 @@ def test_postgres_profile_schema_and_repository_keep_profile_out_of_auth_users()
     assert "create table if not exists auth_user_profiles" in normalized_schema
     assert "create table if not exists auth_user_profiles" in compatibility_sql
     assert "references auth_users (user_id)" in normalized_schema
+    assert "idx_auth_user_profiles_display_name_unique" in normalized_schema
+    assert "idx_auth_user_profiles_display_name_unique" in compatibility_sql
 
     auth_users_block = re.search(
         r"create table if not exists auth_users \((.*?)\);",
@@ -209,6 +229,7 @@ def test_postgres_profile_schema_and_repository_keep_profile_out_of_auth_users()
     repository.save(profile)
 
     assert repository.get_by_user_id(USER_ID) == profile
+    assert repository.get_by_display_name("alice <ops>") == profile
     combined_sql = "\n".join(statement.sql for statement in connection.statements)
     normalized_sql = " ".join(combined_sql.lower().split())
     assert "insert into auth_user_profiles" in normalized_sql
@@ -216,7 +237,12 @@ def test_postgres_profile_schema_and_repository_keep_profile_out_of_auth_users()
     assert "%(email)s" in combined_sql
     assert profile.display_name not in combined_sql
     assert profile.email not in combined_sql
-    assert connection.statements[-2].params["display_name"] == "Alice <Ops>"
+    insert_statement = next(
+        statement
+        for statement in connection.statements
+        if "insert into auth_user_profiles" in " ".join(statement.sql.lower().split())
+    )
+    assert insert_statement.params["display_name"] == "Alice <Ops>"
 
 
 def _profile(
@@ -268,6 +294,49 @@ class FakeProfileUseCase:
         return self.profile
 
 
+class FakeProfileRepository:
+    def __init__(self) -> None:
+        self.profiles: dict[UserId, UserProfile] = {}
+
+    def save(self, profile: UserProfile) -> None:
+        self.profiles[profile.user_id] = profile
+
+    def get_by_user_id(self, user_id: UserId) -> UserProfile | None:
+        return self.profiles.get(user_id)
+
+    def get_by_display_name(self, display_name: str) -> UserProfile | None:
+        key = display_name.casefold()
+        return next(
+            (
+                profile
+                for profile in self.profiles.values()
+                if profile.display_name is not None and profile.display_name.casefold() == key
+            ),
+            None,
+        )
+
+
+class FakeClock:
+    def now(self) -> datetime:
+        return NOW
+
+
+def _profile_service(profiles: FakeProfileRepository) -> AuthApplicationService:
+    return AuthApplicationService(
+        clock=FakeClock(),
+        nonce_generator=object(),
+        user_id_generator=object(),
+        session_id_generator=object(),
+        users=object(),
+        login_challenges=object(),
+        sessions=object(),
+        signature_verifier=object(),
+        token_issuer=object(),
+        event_publisher=object(),
+        profiles=profiles,
+    )
+
+
 @dataclass(frozen=True)
 class ExecutedStatement:
     sql: str
@@ -298,7 +367,20 @@ class FakeProfileConnection:
         if "insert into auth_user_profiles" in normalized_sql:
             self.profiles[str(statement.params["user_id"])] = dict(statement.params)
             return FakeResult()
-        if "from auth_user_profiles" in normalized_sql:
+        if "from auth_user_profiles" in normalized_sql and "user_id =" in normalized_sql:
             row = self.profiles.get(str(statement.params["user_id"]))
+            return FakeResult([dict(row)] if row else [])
+        if "from auth_user_profiles" in normalized_sql and "lower(display_name)" in normalized_sql:
+            key = str(statement.params["display_name"]).casefold()
+            row = next(
+                (
+                    profile
+                    for profile in self.profiles.values()
+                    if str(profile["status"]) != "DELETED"
+                    and profile["display_name"] is not None
+                    and str(profile["display_name"]).casefold() == key
+                ),
+                None,
+            )
             return FakeResult([dict(row)] if row else [])
         return FakeResult()

@@ -520,6 +520,7 @@ def _status_for_error(code: AuthErrorCode) -> int:
         AuthErrorCode.AUTHENTICATION_REQUIRED: 401,
         AuthErrorCode.USER_PROFILE_FORBIDDEN: 403,
         AuthErrorCode.USER_PROFILE_NOT_FOUND: 404,
+        AuthErrorCode.USER_PROFILE_DISPLAY_NAME_CONFLICT: 409,
         AuthErrorCode.WALLET_ALREADY_LINKED: 409,
         AuthErrorCode.WALLET_LINK_CHALLENGE_MISMATCH: 409,
         AuthErrorCode.WALLET_NOT_FOUND: 404,

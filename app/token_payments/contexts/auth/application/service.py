@@ -86,6 +86,7 @@ class AuthErrorCode(StrEnum):
     AUTHENTICATION_REQUIRED = "AUTHENTICATION_REQUIRED"
     USER_PROFILE_FORBIDDEN = "USER_PROFILE_FORBIDDEN"
     USER_PROFILE_NOT_FOUND = "USER_PROFILE_NOT_FOUND"
+    USER_PROFILE_DISPLAY_NAME_CONFLICT = "USER_PROFILE_DISPLAY_NAME_CONFLICT"
     WALLET_ALREADY_LINKED = "WALLET_ALREADY_LINKED"
     WALLET_LINK_CHALLENGE_MISMATCH = "WALLET_LINK_CHALLENGE_MISMATCH"
     WALLET_NOT_FOUND = "WALLET_NOT_FOUND"
@@ -502,6 +503,13 @@ class AuthApplicationService:
                 timezone=command.timezone,
                 updated_at=requested_at,
             )
+        if existing.display_name is not None:
+            display_name_conflict = repository.get_by_display_name(existing.display_name)
+            if display_name_conflict is not None and display_name_conflict.user_id != existing.user_id:
+                raise AuthApplicationError(
+                    AuthErrorCode.USER_PROFILE_DISPLAY_NAME_CONFLICT,
+                    "user profile displayName is already in use",
+                )
         repository.save(existing)
         return existing
 
@@ -773,6 +781,7 @@ def _message_for_code(code: AuthErrorCode) -> str:
         AuthErrorCode.AUTHENTICATION_REQUIRED: "authenticated session is required",
         AuthErrorCode.USER_PROFILE_FORBIDDEN: "user profile permission denied",
         AuthErrorCode.USER_PROFILE_NOT_FOUND: "user profile was not found",
+        AuthErrorCode.USER_PROFILE_DISPLAY_NAME_CONFLICT: "user profile displayName is already in use",
         AuthErrorCode.WALLET_ALREADY_LINKED: "wallet is already linked to another active user",
         AuthErrorCode.WALLET_LINK_CHALLENGE_MISMATCH: "wallet link challenge does not match the authenticated user",
         AuthErrorCode.WALLET_NOT_FOUND: "wallet was not found for the authenticated user",

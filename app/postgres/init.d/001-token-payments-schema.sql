@@ -109,6 +109,9 @@ CREATE TABLE IF NOT EXISTS auth_user_profiles (
 CREATE INDEX IF NOT EXISTS idx_auth_user_profiles_status
     ON auth_user_profiles (status);
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_user_profiles_display_name_unique
+    ON auth_user_profiles (lower(display_name)) WHERE status <> 'DELETED';
+
 CREATE TABLE IF NOT EXISTS auth_login_challenges (
     nonce_value TEXT PRIMARY KEY,
     wallet_address TEXT NOT NULL,
@@ -313,6 +316,9 @@ ALTER TABLE IF EXISTS store_catalog_stores
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_store_catalog_stores_public_store_id
     ON store_catalog_stores (public_store_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_store_catalog_stores_display_name_unique
+    ON store_catalog_stores (lower(display_name));
 
 CREATE INDEX IF NOT EXISTS idx_store_catalog_stores_owner_user_id
     ON store_catalog_stores (owner_user_id);

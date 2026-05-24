@@ -141,6 +141,9 @@ class CatalogWriteRepository(Protocol):
     def get_store_by_public_id(self, public_store_id: PublicStoreId) -> StoreProfile | None:
         ...
 
+    def get_store_by_display_name(self, display_name: str) -> StoreProfile | None:
+        ...
+
     def list_stores_for_member(self, user_id: UserId) -> tuple[StoreProfile, ...]:
         ...
 

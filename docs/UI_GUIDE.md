@@ -42,7 +42,7 @@
 ### Store Owner Inventory
 
 - API/backend contract supports own store inventory query, stock intake, target total correction, sale pause, and sale resume.
-- `STORE_OWNER` screens must be scoped to own store inventory; admin can query or mutate any store inventory from operational tooling.
+- Store owner screens must be scoped to own store inventory; cross-store operational tooling requires explicit platform inventory/operator permissions.
 - Manual order approval HTTP API is not in current scope for this surface.
 - UI implementation remains a separate phase; this phase only fixes the backend/API contract.
 
