@@ -23,6 +23,7 @@ from .ports import (
     ProcessedCommandRepository,
     TransactionService,
 )
+from .queries import PaymentHistoryItem, PaymentHistoryQueryPort
 
 __all__ = [
     "BlockchainAdapter",
@@ -36,6 +37,8 @@ __all__ = [
     "PaymentCommandRejectionReason",
     "PaymentCommandResult",
     "PaymentCommandStatus",
+    "PaymentHistoryItem",
+    "PaymentHistoryQueryPort",
     "PaymentRepository",
     "PaymentTimeoutScheduler",
     "ProcessedCommandRepository",

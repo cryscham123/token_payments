@@ -14,6 +14,8 @@ from token_payments.contexts.payment.domain import (
     TransactionReceipt,
     TransactionSignatureRequest,
 )
+from token_payments.contexts.payment.application.queries import PaymentHistoryItem
+from token_payments.contexts.order.domain import TrackingId
 from token_payments.shared.adapter.postgres import PostgresConnection
 from token_payments.shared.domain import (
     ChainNetwork,
@@ -100,6 +102,91 @@ WHERE status IN ('SUBMITTED', 'CONFIRMING')
   AND tx_hash IS NOT NULL
   AND receipt_block_number IS NULL
 ORDER BY updated_at ASC, payment_id ASC
+LIMIT %(limit)s
+"""
+
+SELECT_PAYMENT_HISTORY_FOR_USER_SQL = """
+SELECT
+    p.payment_id,
+    p.order_id,
+    o.tracking_id,
+    p.customer_id,
+    p.amount_numeric,
+    p.amount_symbol,
+    p.amount_chain_id,
+    p.amount_token_address,
+    p.amount_decimals,
+    p.status,
+    p.wallet_from,
+    p.wallet_to,
+    p.chain_id,
+    p.payer_wallet_id,
+    p.payment_asset_id,
+    p.tx_hash,
+    p.gas_estimated_fee,
+    p.gas_fee_symbol,
+    p.gas_fee_chain_id,
+    p.gas_fee_token_address,
+    p.gas_fee_decimals,
+    p.gas_limit,
+    p.gas_buffer_rate,
+    p.gas_max_fee,
+    p.receipt_block_number,
+    p.receipt_gas_used,
+    p.failure_reason,
+    p.refund_tx_hash,
+    p.refund_block_number,
+    p.refund_gas_used,
+    p.expires_at,
+    p.updated_at
+FROM payments p
+JOIN orders o ON o.order_id = p.order_id
+JOIN order_customers c ON c.customer_id = p.customer_id
+WHERE c.user_id = %(user_id)s
+ORDER BY p.updated_at DESC, p.payment_id DESC
+LIMIT %(limit)s
+"""
+
+SELECT_PAYMENT_HISTORY_FOR_USER_BY_STATUS_SQL = """
+SELECT
+    p.payment_id,
+    p.order_id,
+    o.tracking_id,
+    p.customer_id,
+    p.amount_numeric,
+    p.amount_symbol,
+    p.amount_chain_id,
+    p.amount_token_address,
+    p.amount_decimals,
+    p.status,
+    p.wallet_from,
+    p.wallet_to,
+    p.chain_id,
+    p.payer_wallet_id,
+    p.payment_asset_id,
+    p.tx_hash,
+    p.gas_estimated_fee,
+    p.gas_fee_symbol,
+    p.gas_fee_chain_id,
+    p.gas_fee_token_address,
+    p.gas_fee_decimals,
+    p.gas_limit,
+    p.gas_buffer_rate,
+    p.gas_max_fee,
+    p.receipt_block_number,
+    p.receipt_gas_used,
+    p.failure_reason,
+    p.refund_tx_hash,
+    p.refund_block_number,
+    p.refund_gas_used,
+    p.expires_at,
+    p.updated_at
+FROM payments p
+JOIN orders o ON o.order_id = p.order_id
+JOIN order_customers c ON c.customer_id = p.customer_id
+WHERE c.user_id = %(user_id)s
+  AND p.status = ANY(%(statuses)s)
+ORDER BY p.updated_at DESC, p.payment_id DESC
 LIMIT %(limit)s
 """
 
@@ -337,6 +424,32 @@ class PostgresPaymentRepository:
         self._connection.execute(UPSERT_PAYMENT_SQL, params)
 
 
+class PostgresPaymentHistoryQuery:
+    """Read a customer's payment history from the public payment read model."""
+
+    def __init__(self, connection: PostgresConnection) -> None:
+        self._connection = connection
+
+    def list_for_user(
+        self,
+        user_id: UserId,
+        *,
+        statuses: tuple[PaymentStatus, ...] | None = None,
+        limit: int = 50,
+    ) -> tuple[PaymentHistoryItem, ...]:
+        if not isinstance(user_id, UserId):
+            raise ValueError("PostgresPaymentHistoryQuery.list_for_user requires a UserId")
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
+            raise ValueError("PostgresPaymentHistoryQuery.list_for_user requires a positive limit")
+        params: dict[str, Any] = {"user_id": str(user_id), "limit": limit}
+        sql = SELECT_PAYMENT_HISTORY_FOR_USER_SQL
+        if statuses:
+            normalized_statuses = tuple(PaymentStatus(status) for status in statuses)
+            params["statuses"] = [status.value for status in normalized_statuses]
+            sql = SELECT_PAYMENT_HISTORY_FOR_USER_BY_STATUS_SQL
+        return tuple(_history_item_from_row(row) for row in _fetch_all(self._connection.execute(sql, params)))
+
+
 class PostgresPaymentAuthorizationRepository:
     """Persist PaymentAuthorization aggregates inside an injected transaction."""
 
@@ -424,6 +537,24 @@ def _row_to_payment(row: Mapping[str, Any] | object) -> Payment:
         refund_receipt=_receipt_from_row(row, "refund_tx_hash", "refund_block_number", "refund_gas_used"),
         payer_wallet_id=_optional_row_value(row, "payer_wallet_id"),
         payment_asset_id=_optional_row_value(row, "payment_asset_id"),
+    )
+
+
+def _history_item_from_row(row: Mapping[str, Any] | object) -> PaymentHistoryItem:
+    return PaymentHistoryItem(
+        payment_id=PaymentId(_row_value(row, "payment_id")),
+        order_id=OrderId(_row_value(row, "order_id")),
+        tracking_id=TrackingId(_row_value(row, "tracking_id")),
+        amount=_crypto_from_row(row, "amount"),
+        wallet_from=WalletAddress(_row_value(row, "wallet_from")),
+        wallet_to=WalletAddress(_row_value(row, "wallet_to")),
+        chain_network=_chain_network_from_row(row),
+        status=PaymentStatus(_row_value(row, "status")),
+        tx_hash=_optional_tx_hash(_row_value(row, "tx_hash")),
+        receipt=_receipt_from_row(row, "tx_hash", "receipt_block_number", "receipt_gas_used"),
+        failure_reason=_row_value(row, "failure_reason"),
+        payment_asset_id=_optional_row_value(row, "payment_asset_id"),
+        updated_at=_row_value(row, "updated_at"),
     )
 
 

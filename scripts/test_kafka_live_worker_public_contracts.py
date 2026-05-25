@@ -27,7 +27,7 @@ def test_docker_compose_has_live_worker_service() -> None:
     assert _json_list_for_key(worker_service, "command") == [
         "python", "-m", "token_payments", "worker", "--live", "--loop", "--confirm-live-worker"
     ]
-    assert _list_for_key(worker_service, "profiles") == ["runtime"]
+    assert _list_for_key(worker_service, "profiles") == ["runtime", "api"]
     assert _scalar_for_key(worker_service, "restart") == "unless-stopped"
 
 

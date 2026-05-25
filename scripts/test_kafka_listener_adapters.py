@@ -66,6 +66,7 @@ EXPIRES_AT = NOW + timedelta(minutes=15)
 ORDER_ID = OrderId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c21")
 MESSAGE_ID = MessageId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c22")
 PRODUCT_ID = ProductId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c23")
+PRODUCT_ID_2 = ProductId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c29")
 STORE_ID = StoreId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c24")
 PAYMENT_ID = PaymentId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c25")
 CUSTOMER_ID = CustomerId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c26")
@@ -122,6 +123,48 @@ def test_checkout_listener_deserializes_event_dispatches_process_manager_and_sav
             processed_at=NOW,
             order_id=ORDER_ID,
         )
+    ]
+
+
+def test_checkout_listener_expands_order_items_into_inventory_reservation_commands() -> None:
+    outbox_messages = FakeOutboxMessageRepository()
+    listener = CheckoutKafkaEventListener(
+        process_manager=CheckoutProcessManager(),
+        processed_messages=FakeProcessedMessageRepository(),
+        outbox_messages=outbox_messages,
+    )
+
+    listener.handle(
+        _event_message(
+            CheckoutEventName.ORDER_CREATED,
+            {
+                "storeId": str(STORE_ID),
+                "items": [
+                    {"productId": str(PRODUCT_ID), "quantity": 2},
+                    {"productId": str(PRODUCT_ID_2), "quantity": 1},
+                ],
+            },
+        )
+    )
+
+    assert [message.name for message in outbox_messages.saved] == [
+        CheckoutCommandName.RESERVE_INVENTORY.value,
+        CheckoutCommandName.RESERVE_INVENTORY.value,
+    ]
+    assert [message.identity for message in outbox_messages.saved] == [
+        f"{ORDER_ID}:ReserveInventoryCommand:{PRODUCT_ID}",
+        f"{ORDER_ID}:ReserveInventoryCommand:{PRODUCT_ID_2}",
+    ]
+    assert [
+        {
+            "productId": message.payload["productId"],
+            "storeId": message.payload["storeId"],
+            "quantity": message.payload["quantity"],
+        }
+        for message in outbox_messages.saved
+    ] == [
+        {"productId": str(PRODUCT_ID), "storeId": str(STORE_ID), "quantity": 2},
+        {"productId": str(PRODUCT_ID_2), "storeId": str(STORE_ID), "quantity": 1},
     ]
 
 

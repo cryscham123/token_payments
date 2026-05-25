@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Protocol
+from typing import Any, Mapping, Protocol
 
 from token_payments.contexts.payment.domain import (
     GasEstimate,
@@ -63,7 +63,7 @@ class BlockchainAdapter(Protocol):
     ) -> GasEstimate:
         ...
 
-    def get_transaction_receipt(self, tx_hash: TransactionHash) -> TransactionReceipt | None:
+    def get_transaction_receipt(self, tx_hash: TransactionHash) -> TransactionReceipt | Mapping[str, Any] | object | None:
         ...
 
 

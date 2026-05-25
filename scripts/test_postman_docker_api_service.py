@@ -28,6 +28,7 @@ EXPECTED_DEPENDENCIES = {
     "postgres": "service_healthy",
     "kafka": "service_started",
     "test_network": "service_started",
+    "token_payments_live_worker": "service_started",
 }
 REQUIRED_API_ENV_KEYS = {
     "LOCAL_API_ORIGIN",

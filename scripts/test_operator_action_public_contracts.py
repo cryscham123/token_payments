@@ -96,7 +96,7 @@ def test_http_route_manifest_keeps_existing_routes_and_adds_store_owner_inventor
     specs = list(list_http_route_specs())
     operation_ids = [entry["operationId"] for entry in manifest]
 
-    assert len(manifest) == 54
+    assert len(manifest) == 55
     assert len(operation_ids) == len(set(operation_ids))
     assert PHASE_7_OPERATION_IDS <= set(operation_ids)
     assert PHASE_8_OPERATION_IDS <= set(operation_ids)
@@ -181,7 +181,8 @@ def test_readmes_document_operator_action_endpoint_verification_and_phase_bounda
         "scripts/test_operator_action_http_routes.py",
         "cancel/retry/replay operator actions",
         "bounded framework-neutral endpoint contract",
-        "live Docker/Kafka publish is not started automatically",
+        "Facade tests do not start live Docker/Kafka publish",
+        "API compose profile starts `token_payments_live_worker`",
         "ASGI/FastAPI thin adapter",
         "live Docker compose integration",
         "operator action UI wiring",

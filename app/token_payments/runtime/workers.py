@@ -260,7 +260,7 @@ class PaymentReceiptPollingWorker(_BoundedWorker):
                 skipped += 1
                 continue
             command = ConfirmPaymentReceiptCommand(
-                command_id=_payment_command_id(payment.order_id, "ConfirmPaymentReceiptCommand"),
+                command_id=_receipt_polling_command_id(payment, checked_at),
                 payment_id=payment.payment_id,
                 order_id=payment.order_id,
                 checked_at=checked_at,
@@ -416,6 +416,12 @@ def _can_expire(candidate: PaymentTimeoutCandidate, now: datetime) -> bool:
 
 def _payment_command_id(order_id: object, action: str) -> CommandId:
     return CommandId(f"{order_id}:{action}")
+
+
+def _receipt_polling_command_id(payment: Payment, checked_at: datetime) -> CommandId:
+    return CommandId(
+        f"{payment.order_id}:ConfirmPaymentReceiptCommand:{payment.payment_id}:{payment.tx_hash}:{checked_at.isoformat()}"
+    )
 
 
 def _require_text(value: str, field_name: str) -> str:

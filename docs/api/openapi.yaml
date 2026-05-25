@@ -16,7 +16,7 @@ info:
 
     ### How this reference works
 
-    - **Route manifest parity** - every operation mirrors the 54 public routes
+    - **Route manifest parity** - every operation mirrors the 55 public routes
     from `app/token_payments/api/http.py`.
     - **Page groups** - high-level tags such as *Commerce*, *Merchant*, and
     *Operations* group related endpoint pages in GitBook.
@@ -1809,6 +1809,102 @@ paths:
       - status: 404
         codes:
         - CHECKOUT_NOT_FOUND
+  /payments:
+    get:
+      summary: List user payment history
+      description: |
+        Lists every payment owned by the authenticated user. The API filters by session user and never accepts another user's id in the request body.
+      tags:
+      - payments
+      operationId: listUserPayments
+      parameters:
+      - $ref: '#/components/parameters/XRequestIdHeader'
+      - $ref: '#/components/parameters/LocalUserIdHeader'
+      - name: status
+        in: query
+        required: false
+        description: Optional comma-separated payment status filter.
+        schema:
+          type: string
+          example: SUBMITTED,CONFIRMED
+      - name: limit
+        in: query
+        required: false
+        description: Bounded page size for payment history. Defaults to 50 and accepts 1 through 100.
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      responses:
+        '200':
+          description: Payment history owned by the authenticated user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentHistoryResponse'
+              example:
+                payments:
+                - paymentId: <payment-id>
+                  orderId: <order-id>
+                  trackingId: <tracking-id>
+                  status: SUBMITTED
+                  currentStep: RECEIPT_PENDING
+                  pendingAction: WAIT_FOR_RECEIPT
+                  amount:
+                    amount: '25.00'
+                    symbol: USDC
+                    chainId: 11155111
+                    tokenAddress: '0x3333333333333333333333333333333333333333'
+                    decimals: 6
+                  chain:
+                    chainId: 11155111
+                    name: Sepolia
+                  paymentAssetId: local-usdc
+                  txHash: <local-test-network-transaction-hash>
+                  receipt: null
+                  failureReason: null
+                  updatedAt: <timestamp>
+                pagination:
+                  limit: 50
+                  nextPageToken: null
+        '400':
+          description: 'Validation error, malformed JSON, missing required input, unsupported enum, or rejected request shape.
+            Possible error codes: VALIDATION_ERROR.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: VALIDATION_ERROR
+                  message: Validation error, malformed JSON, missing required input, unsupported enum, or rejected request
+                    shape.
+                  status: 400
+        '401':
+          description: 'Authentication is required or the supplied session is invalid. Possible error codes: AUTHENTICATION_REQUIRED.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: AUTHENTICATION_REQUIRED
+                  message: Authentication is required.
+                  status: 401
+      x-codeSamples:
+      - lang: cURL
+        label: CLI
+        source: |
+          curl -L 'http://127.0.0.1:8000/payments?status=SUBMITTED,CONFIRMED&limit=20' \
+            -H 'Cookie: access=SESSION_COOKIE'
+      x-errorCodes:
+      - status: 400
+        codes:
+        - VALIDATION_ERROR
+      - status: 401
+        codes:
+        - AUTHENTICATION_REQUIRED
   /payments/transaction-hashes:
     post:
       summary: Submit transaction hash
@@ -5518,6 +5614,153 @@ components:
               example: 400
               description: HTTP status code when available.
               x-gitbook-description-html: <p>HTTP status code when available.</p>
+    CryptoAmount:
+      type: object
+      required:
+      - amount
+      - symbol
+      - chainId
+      - decimals
+      properties:
+        amount:
+          type: string
+          description: Decimal amount rendered as a string to preserve precision.
+          example: '25.00'
+        symbol:
+          type: string
+          description: Currency or token symbol.
+          example: USDC
+        chainId:
+          type: integer
+          description: Chain id for this amount.
+          example: 11155111
+        tokenAddress:
+          type: string
+          nullable: true
+          description: Token contract address, or null for the native asset.
+          example: '0x3333333333333333333333333333333333333333'
+        decimals:
+          type: integer
+          description: Asset decimal precision.
+          example: 6
+    ChainSummary:
+      type: object
+      required:
+      - chainId
+      - name
+      properties:
+        chainId:
+          type: integer
+          description: Blockchain chain id.
+          example: 11155111
+        name:
+          type: string
+          description: Human-readable chain name.
+          example: Sepolia
+    PaymentReceipt:
+      type: object
+      required:
+      - transactionHash
+      - blockNumber
+      - gasUsed
+      properties:
+        transactionHash:
+          type: string
+          description: Confirmed blockchain transaction hash.
+        blockNumber:
+          type: integer
+          description: Block number where the transaction was included.
+        gasUsed:
+          type: integer
+          description: Gas used by the confirmed transaction.
+    PaymentHistoryItem:
+      type: object
+      required:
+      - paymentId
+      - orderId
+      - trackingId
+      - status
+      - currentStep
+      - amount
+      - chain
+      - updatedAt
+      properties:
+        paymentId:
+          type: string
+          description: Payment id visible to the authenticated owner for history and support.
+        orderId:
+          type: string
+          description: Order id visible in the authenticated owner's scope.
+        trackingId:
+          type: string
+          description: Customer-safe checkout tracking id.
+        status:
+          type: string
+          description: Persisted payment status.
+          enum:
+          - AWAITING_SIGNATURE
+          - SUBMITTED
+          - CONFIRMING
+          - CONFIRMED
+          - FAILED
+          - EXPIRED
+          - REFUNDED
+        currentStep:
+          type: string
+          description: UI-oriented checkout/payment step derived from status.
+        pendingAction:
+          type: string
+          nullable: true
+          description: Next expected user or system action, if any.
+        amount:
+          $ref: '#/components/schemas/CryptoAmount'
+        chain:
+          $ref: '#/components/schemas/ChainSummary'
+        paymentAssetId:
+          type: string
+          nullable: true
+          description: Registry payment asset id selected for the payment.
+        txHash:
+          type: string
+          nullable: true
+          description: Submitted blockchain transaction hash, if available.
+        receipt:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/PaymentReceipt'
+          description: Confirmed receipt summary, or null while pending.
+        failureReason:
+          type: string
+          nullable: true
+          description: Safe failure reason when the payment failed.
+        updatedAt:
+          type: string
+          format: date-time
+          description: Last payment update timestamp.
+    PaymentHistoryResponse:
+      type: object
+      required:
+      - payments
+      - pagination
+      properties:
+        payments:
+          type: array
+          description: Payment history entries sorted by most recently updated first.
+          items:
+            $ref: '#/components/schemas/PaymentHistoryItem'
+        pagination:
+          type: object
+          required:
+          - limit
+          - nextPageToken
+          properties:
+            limit:
+              type: integer
+              description: Applied page size.
+            nextPageToken:
+              type: string
+              nullable: true
+              description: Reserved for future cursor pagination; currently null.
     LoginChallengeRequest:
       type: object
       additionalProperties: false

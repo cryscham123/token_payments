@@ -37,13 +37,14 @@ EXPIRES_AT = NOW + timedelta(minutes=15)
 ORDER_ID = OrderId("018f33aa-9e6d-73d8-9dc3-47d6cdcc7101")
 TRACKING_ID = "018f33aa-9e6d-73d8-9dc3-47d6cdcc7102"
 ORDER_MESSAGE_ID = "018f33aa-9e6d-73d8-9dc3-47d6cdcc7103"
-PAYMENT_ID = PaymentId("018f33aa-9e6d-73d8-9dc3-47d6cdcc7104")
-PAYMENT_MESSAGE_ID = "018f33aa-9e6d-73d8-9dc3-47d6cdcc7105"
-CUSTOMER_ID = CustomerId("018f33aa-9e6d-73d8-9dc3-47d6cdcc7106")
-USER_ID = UserId("018f33aa-9e6d-73d8-9dc3-47d6cdcc7107")
-OWNER_USER_ID = UserId("018f33aa-9e6d-73d8-9dc3-47d6cdcc7108")
-STORE_ID = StoreId("018f33aa-9e6d-73d8-9dc3-47d6cdcc7109")
-PRODUCT_ID = ProductId("018f33aa-9e6d-73d8-9dc3-47d6cdcc710a")
+INVENTORY_MESSAGE_ID = "018f33aa-9e6d-73d8-9dc3-47d6cdcc7104"
+PAYMENT_ID = PaymentId("018f33aa-9e6d-73d8-9dc3-47d6cdcc7105")
+PAYMENT_MESSAGE_ID = "018f33aa-9e6d-73d8-9dc3-47d6cdcc7106"
+CUSTOMER_ID = CustomerId("018f33aa-9e6d-73d8-9dc3-47d6cdcc7107")
+USER_ID = UserId("018f33aa-9e6d-73d8-9dc3-47d6cdcc7108")
+OWNER_USER_ID = UserId("018f33aa-9e6d-73d8-9dc3-47d6cdcc7109")
+STORE_ID = StoreId("018f33aa-9e6d-73d8-9dc3-47d6cdcc710a")
+PRODUCT_ID = ProductId("018f33aa-9e6d-73d8-9dc3-47d6cdcc710b")
 CUSTOMER_WALLET = "0x1111111111111111111111111111111111111111"
 STORE_WALLET = "0x2222222222222222222222222222222222222222"
 TOKEN_ADDRESS = "0x3333333333333333333333333333333333333333"
@@ -105,7 +106,7 @@ def test_build_live_api_router_uses_route_registration_helpers_and_manifest_cont
     assert [(route.method, route.path_template, route.operation_id) for route in router.routes] == [
         (entry["method"], entry["path"], entry["operationId"]) for entry in http_route_manifest()
     ]
-    assert len(router.routes) == 54
+    assert len(router.routes) == 55
 
 
 def test_live_api_facade_wiring_dispatches_routes_through_injected_transactional_repositories() -> None:
@@ -147,9 +148,13 @@ def test_live_api_facade_wiring_dispatches_routes_through_injected_transactional
     assert create_payload["order"]["totalAmount"]["amount"] == "25.00"
     assert _transaction_sql(session, 1, "insert into orders")
     assert _transaction_sql(session, 1, "insert into outbox_messages")
+    assert _transaction_sql(session, 1, "insert into product_inventory")
+    assert _transaction_sql(session, 1, "insert into inventory_reservations")
     assert _transaction_sql(session, 1, "insert into payments")
     assert _transaction_sql(session, 1, "insert into payment_authorizations")
     assert _transaction_sql(session, 1, "insert into processed_commands")
+    assert session.inventory[(str(PRODUCT_ID), str(STORE_ID))]["available_stock"] == 23
+    assert session.inventory[(str(PRODUCT_ID), str(STORE_ID))]["reserved_stock"] == 2
 
     tracking = router.handle(
         "GET",
@@ -215,6 +220,20 @@ def test_live_api_facade_wiring_dispatches_routes_through_injected_transactional
     assert submit_tx_id is not None
     assert session.statement_tx("insert into payment_authorizations", after_tx=2) == submit_tx_id
     assert session.statement_tx("insert into processed_commands", after_tx=2) == submit_tx_id
+
+    payment_history = router.handle(
+        "GET",
+        "/payments",
+        query={"limit": 20},
+        headers=_customer_headers("req-payment-history"),
+        received_at=NOW,
+    )
+    assert payment_history.status_code == 200
+    payment_history_payload = _json(payment_history.body)
+    assert payment_history_payload["payments"][0]["orderId"] == str(ORDER_ID)
+    assert payment_history_payload["payments"][0]["trackingId"] == str(TRACKING_ID)
+    assert payment_history_payload["payments"][0]["status"] == "SUBMITTED"
+    assert payment_history_payload["payments"][0]["txHash"] == TX_HASH
 
     dashboard = router.handle(
         "GET",
@@ -300,7 +319,9 @@ def _dependencies(session: "FakePostgresSession") -> LiveRuntimeDependencies:
         wallet_signature_client=FakeWalletSignatureClient(),
         blockchain_client=FakeBlockchainClient(),
         clock=FakeClock(NOW),
-        id_generator=SequenceIdGenerator((str(ORDER_ID), TRACKING_ID, ORDER_MESSAGE_ID, str(PAYMENT_ID), PAYMENT_MESSAGE_ID)),
+        id_generator=SequenceIdGenerator(
+            (str(ORDER_ID), TRACKING_ID, ORDER_MESSAGE_ID, INVENTORY_MESSAGE_ID, str(PAYMENT_ID), PAYMENT_MESSAGE_ID)
+        ),
     )
 
 
@@ -453,6 +474,8 @@ class FakePostgresSession:
         self.products: dict[str, list[dict[str, Any]]] = {}
         self.orders: dict[str, dict[str, Any]] = {}
         self.order_items: dict[str, list[dict[str, Any]]] = {}
+        self.inventory: dict[tuple[str, str], dict[str, Any]] = {}
+        self.inventory_reservations: dict[str, dict[str, Any]] = {}
         self.payments: dict[str, dict[str, Any]] = {}
         self.payment_authorizations: dict[str, dict[str, Any]] = {}
         self.outbox: dict[tuple[str, str], dict[str, Any]] = {}
@@ -485,6 +508,35 @@ class FakePostgresSession:
             rows = [row for row in self.order_items[str(params["order_id"])] if row["order_item_id"] != params["order_item_id"]]
             rows.append(dict(params))
             self.order_items[str(params["order_id"])] = rows
+            return FakeResult(rowcount=1)
+        if "insert into product_inventory" in normalized:
+            row = dict(params)
+            row.setdefault("updated_at", NOW)
+            self.inventory[(str(params["product_id"]), str(params["store_id"]))] = row
+            return FakeResult(rowcount=1)
+        if "insert into inventory_reservations" in normalized:
+            row = dict(params)
+            row.setdefault("updated_at", NOW)
+            self.inventory_reservations[str(params["reservation_id"])] = row
+            return FakeResult(rowcount=1)
+        if "delete from inventory_reservations" in normalized:
+            if "reservation_ids" in params:
+                keep = {str(value) for value in params["reservation_ids"]}
+                self.inventory_reservations = {
+                    reservation_id: row
+                    for reservation_id, row in self.inventory_reservations.items()
+                    if (
+                        row["product_id"] != str(params["product_id"])
+                        or row["store_id"] != str(params["store_id"])
+                        or reservation_id in keep
+                    )
+                }
+            else:
+                self.inventory_reservations = {
+                    reservation_id: row
+                    for reservation_id, row in self.inventory_reservations.items()
+                    if row["product_id"] != str(params["product_id"]) or row["store_id"] != str(params["store_id"])
+                }
             return FakeResult(rowcount=1)
         if "insert into payments" in normalized:
             row = dict(params)
@@ -521,6 +573,15 @@ class FakePostgresSession:
             return _one(self.orders.get(str(params["order_id"])))
         if "from order_items" in normalized:
             return FakeResult([dict(row) for row in self.order_items.get(str(params["order_id"]), [])])
+        if "from product_inventory" in normalized and "where product_id" in normalized:
+            return _one(self.inventory.get((str(params["product_id"]), str(params["store_id"]))))
+        if "from inventory_reservations" in normalized:
+            rows = [
+                dict(row)
+                for row in self.inventory_reservations.values()
+                if row["product_id"] == str(params["product_id"]) and row["store_id"] == str(params["store_id"])
+            ]
+            return FakeResult(rows)
         if "from orders where tracking_id" in normalized:
             row = next((order for order in self.orders.values() if order["tracking_id"] == str(params["tracking_id"])), None)
             return _one(_tracking_order_row(row))
@@ -538,6 +599,8 @@ class FakePostgresSession:
             if row is not None and "authorization_updated_at" in normalized:
                 row = {**row, "authorization_updated_at": row.get("updated_at", NOW)}
             return _one(row)
+        if "from payments p join orders o" in normalized and "join order_customers c" in normalized:
+            return FakeResult(self._payment_history_rows(params))
         if "from outbox_messages where message_key" in normalized:
             rows = [
                 _outbox_status_row(row)
@@ -584,6 +647,15 @@ class FakePostgresSession:
                 "price_decimals": 6,
             }
         ]
+        self.inventory[(str(PRODUCT_ID), str(STORE_ID))] = {
+            "product_id": str(PRODUCT_ID),
+            "store_id": str(STORE_ID),
+            "available_stock": 25,
+            "reserved_stock": 0,
+            "total_stock": 25,
+            "sale_status": "ACTIVE",
+            "updated_at": NOW,
+        }
 
     def seed_awaiting_payment(self) -> None:
         self.payments[str(PAYMENT_ID)] = {
@@ -670,6 +742,24 @@ class FakePostgresSession:
             if params.get("order_id") is not None and payment["order_id"] != str(params["order_id"]):
                 continue
             rows.append(dict(payment))
+        return rows[: int(params.get("limit") or len(rows))]
+
+    def _payment_history_rows(self, params: Mapping[str, Any]) -> list[dict[str, Any]]:
+        statuses = set(params.get("statuses") or [])
+        rows = []
+        customer = self.customers.get(str(params["user_id"]))
+        if customer is None:
+            return rows
+        for payment in self.payments.values():
+            if payment["customer_id"] != customer["customer_id"]:
+                continue
+            if statuses and payment["status"] not in statuses:
+                continue
+            order = self.orders.get(payment["order_id"])
+            if order is None:
+                continue
+            rows.append({**payment, "tracking_id": order["tracking_id"]})
+        rows.sort(key=lambda row: (row.get("updated_at", NOW), row["payment_id"]), reverse=True)
         return rows[: int(params.get("limit") or len(rows))]
 
     def _operator_outbox_rows(self, params: Mapping[str, Any]) -> list[dict[str, Any]]:

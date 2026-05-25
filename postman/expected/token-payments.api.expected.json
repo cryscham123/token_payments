@@ -23,6 +23,7 @@
     "createOrder",
     "getCheckoutTrackingByTrackingId",
     "getCheckoutTrackingByOrderId",
+    "listUserPayments",
     "submitTransactionHash",
     "listPublicStores",
     "getStoreProfile",
@@ -569,6 +570,36 @@
       "body": {
         "orderId": "<order-id>",
         "status": "APPROVED"
+      }
+    },
+    {
+      "operationId": "listUserPayments",
+      "requestName": "List user payments",
+      "method": "GET",
+      "path": "/payments",
+      "status": 200,
+      "headers": {
+        "X-Request-Id": "postman-payment-history-001"
+      },
+      "body": {
+        "payments": [
+          {
+            "paymentId": "<payment-id>",
+            "orderId": "<order-id>",
+            "trackingId": "<tracking-id>",
+            "status": "SUBMITTED",
+            "currentStep": "RECEIPT_PENDING",
+            "pendingAction": "WAIT_FOR_RECEIPT",
+            "txHash": "<local-test-network-transaction-hash>",
+            "receipt": null,
+            "failureReason": null,
+            "updatedAt": "<timestamp>"
+          }
+        ],
+        "pagination": {
+          "limit": 20,
+          "nextPageToken": null
+        }
       }
     },
     {
@@ -1278,6 +1309,7 @@
         "createOrder",
         "getCheckoutTrackingByTrackingId",
         "submitTransactionHash",
+        "listUserPayments",
         "getCheckoutTrackingByOrderId"
       ],
       "finalOrderStatus": "APPROVED"

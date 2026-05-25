@@ -235,36 +235,40 @@ class StoreCatalogApplicationService:
         if existing is not None and existing.owner_user_id != command.owner_user_id:
             return _rejected("STORE_OWNER_CONFLICT", "store id is already owned by another user")
 
-        merchant_group_payload = self._ensure_merchant_group_owner(command)
-        group_id = _group_id(merchant_group_payload["groupId"]) if merchant_group_payload is not None else None
-        store = StoreProfile(
-            store_id=command.store_id,
-            public_store_id=existing.public_store_id if existing is not None else command.public_store_id,
-            owner_user_id=command.owner_user_id,
-            group_id=existing.group_id if existing is not None and existing.group_id is not None else group_id,
-            active=command.active,
-            display_name=command.display_name if existing is None else existing.display_name,
-            description=command.description if existing is None else existing.description,
-            support_email=command.support_email if existing is None else existing.support_email,
-            support_email_public=command.support_email_public if existing is None else existing.support_email_public,
-            business_registration_label=(
-                command.business_registration_label if existing is None else existing.business_registration_label
-            ),
-            created_at=existing.created_at if existing is not None else command.requested_at,
-            updated_at=command.requested_at,
-            payment_settings=StorePaymentSettings(
+        def build_store(group_id: Any | None) -> StoreProfile:
+            return StoreProfile(
                 store_id=command.store_id,
-                store_wallet=command.store_wallet,
-                supported_chain_ids=command.supported_chain_ids,
+                public_store_id=existing.public_store_id if existing is not None else command.public_store_id,
+                owner_user_id=command.owner_user_id,
+                group_id=existing.group_id if existing is not None and existing.group_id is not None else group_id,
                 active=command.active,
-            ),
-        )
+                display_name=command.display_name if existing is None else existing.display_name,
+                description=command.description if existing is None else existing.description,
+                support_email=command.support_email if existing is None else existing.support_email,
+                support_email_public=command.support_email_public if existing is None else existing.support_email_public,
+                business_registration_label=(
+                    command.business_registration_label if existing is None else existing.business_registration_label
+                ),
+                created_at=existing.created_at if existing is not None else command.requested_at,
+                updated_at=command.requested_at,
+                payment_settings=StorePaymentSettings(
+                    store_id=command.store_id,
+                    store_wallet=command.store_wallet,
+                    supported_chain_ids=command.supported_chain_ids,
+                    active=command.active,
+                ),
+            )
+
+        store = build_store(existing.group_id if existing is not None else None)
         display_name_conflict = self._store_display_name_conflict(store.display_name, current_store_id=store.store_id)
         if display_name_conflict is not None:
             return display_name_conflict
         previous_membership = self._repository.get_membership(command.store_id, command.owner_user_id)
         membership_created = previous_membership is None
         membership = StoreMembership.owner(command.store_id, command.owner_user_id, active=True)
+        merchant_group_payload = self._ensure_merchant_group_owner(command)
+        group_id = _group_id(merchant_group_payload["groupId"]) if merchant_group_payload is not None else None
+        store = build_store(group_id)
         self._repository.save_store(store)
         self._repository.save_membership(membership)
         self._repository.save_order_store_projection(store)
@@ -588,11 +592,11 @@ class StoreCatalogApplicationService:
             role_id="MERCHANT_OWNER",
             active=True,
         )
-        if not projected:
-            grant_owner = getattr(self._repository, "grant_group_membership", None)
-            if not callable(grant_owner):
-                return None
+        grant_owner = getattr(self._repository, "grant_group_membership", None)
+        if callable(grant_owner):
             grant_owner(group_id, command.owner_user_id, "MERCHANT_OWNER", active=True)
+        elif not projected:
+            return None
         payload = {
             "groupId": str(group_id),
             "ownerUserId": str(command.owner_user_id),
@@ -615,10 +619,10 @@ class StoreCatalogApplicationService:
             role_id=role_id,
             active=command.active,
         )
-        if not projected:
-            if not callable(grant_membership):
-                return None
+        if callable(grant_membership):
             grant_membership(group_id, command.user_id, role_id, active=command.active)
+        elif not projected:
+            return None
         payload = {
             "groupId": str(group_id),
             "userId": str(command.user_id),

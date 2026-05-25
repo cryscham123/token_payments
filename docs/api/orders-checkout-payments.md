@@ -1,16 +1,17 @@
 # 주문, 체크아웃, 결제
 
-주문과 결제 API는 public customer/browser surface다. 내부 `order_id`, `customer_id`, payment primary key를 public response에 노출하지 않고, checkout 추적과 결제 제출은 `trackingId`를 중심으로 연결한다.
+주문과 결제 API는 public customer/browser surface다. 내부 `customer_id`와 내부 store primary key를 public response에 노출하지 않고, checkout 추적과 결제 제출은 `trackingId`를 중심으로 연결한다. 결제 내역 조회는 authenticated user ownership으로 필터링한다.
 
 ## Route
 
-빠른 참조: `POST /orders`, `GET /checkouts/tracking/{trackingId}`, `GET /checkouts/orders/{orderId}`, `POST /payments/transaction-hashes`.
+빠른 참조: `POST /orders`, `GET /checkouts/tracking/{trackingId}`, `GET /checkouts/orders/{orderId}`, `GET /payments`, `POST /payments/transaction-hashes`.
 
 | 목적 | Method | Path | 요청 |
 | --- | --- | --- | --- |
 | 주문 생성 | `POST` | `/orders` | `publicStoreId`, item 목록, `paymentAssetId`, optional `walletId` |
 | tracking id로 checkout 조회 | `GET` | `/checkouts/tracking/{trackingId}` | active session owner scope |
 | order id로 checkout 조회 | `GET` | `/checkouts/orders/{orderId}` | 내부 호환 조회, owner scope |
+| 결제 내역 조회 | `GET` | `/payments` | optional `status`, `limit` query |
 | transaction hash 제출 | `POST` | `/payments/transaction-hashes` | `trackingId`, `txHash`, optional client metadata |
 
 ## 주문 생성
@@ -38,6 +39,10 @@
 
 결제 API는 session ownership을 먼저 확인한 뒤 내부 order/payment id를 resolution한다. 실패 응답은 validation, unauthorized, conflict, not found 범주로 제한한다.
 
+## 결제 내역 조회
+
+`GET /payments`는 로그인 사용자의 모든 결제 내역을 최신순으로 반환한다. Request body는 없고, `status` query는 comma-separated `PaymentStatus` 값으로 필터링하며 `limit`은 기본 `50`, 최대 `100`이다.
+
 ## Endpoint 상세
 
 | Endpoint | 인증/권한 | 요청 | 성공 응답 | 오류 |
@@ -45,6 +50,7 @@
 | `POST /orders` | active customer session | JSON body: `publicStoreId` 또는 호환 `storeId`, `deliveryAddress`, `items[]`, optional `paymentAssetId`, optional `walletId`; header `Idempotency-Key` 권장 | `201` `order` with `orderId`, `trackingId`, `publicStoreId`, `status`, `deliveryAddress`, `totalAmount`, `items[]`; `customerId`와 내부 `storeId`는 제외 | `400 VALIDATION_ERROR`, `404 CUSTOMER_NOT_FOUND`, `404 STORE_NOT_FOUND`, `409 INVENTORY_UNAVAILABLE`, `409 PAYMENT_ASSET_UNSUPPORTED` |
 | `GET /checkouts/tracking/{trackingId}` | active customer session, checkout owner | path `trackingId` | `200` `checkout` with `trackingId`, `status`, `currentStep`, `pendingAction`, optional `paymentRequest`, `gasEstimate`, `txHash`, `outboxStatus` | `400 VALIDATION_ERROR`, `401 AUTHENTICATION_REQUIRED`, `403 FORBIDDEN`, `404 CHECKOUT_NOT_FOUND` |
 | `GET /checkouts/orders/{orderId}` | active customer session, checkout owner | path `orderId`; 신규 client는 `trackingId` 조회 우선 | `200` same `checkout` envelope as tracking lookup | `400 VALIDATION_ERROR`, `401 AUTHENTICATION_REQUIRED`, `403 FORBIDDEN`, `404 CHECKOUT_NOT_FOUND` |
+| `GET /payments` | active customer session | no JSON body; query `status`, `limit`; header `X-Request-Id`; local dev `X-User-Id` fallback | `200` `payments[]` with `paymentId`, `orderId`, `trackingId`, `status`, `currentStep`, `pendingAction`, `amount`, `chain`, `paymentAssetId`, `txHash`, `receipt`, `failureReason`, `updatedAt`; `pagination.limit`, `pagination.nextPageToken` | `400 VALIDATION_ERROR`, `401 AUTHENTICATION_REQUIRED` |
 | `POST /payments/transaction-hashes` | active customer session, checkout owner | JSON body: `trackingId`, `txHash`; header `Idempotency-Key` 권장. `orderId`/`paymentId` body는 받지 않음 | `202` `payment` with `trackingId`, `status=TX_SUBMITTED`, `currentStep=RECEIPT_PENDING`, `pendingAction=WAIT_FOR_RECEIPT`, `txHash`, `updatedAt` | `400 VALIDATION_ERROR`, `403 FORBIDDEN`, `404 PAYMENT_NOT_FOUND`, `404 AUTHORIZATION_NOT_FOUND`, `409 INVALID_STATE` |
 
 ## 응답 예시

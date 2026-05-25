@@ -22,8 +22,10 @@ from token_payments.contexts.inventory.domain import (  # noqa: E402
 )
 from token_payments.contexts.payment.adapter import (  # noqa: E402
     PostgresPaymentAuthorizationRepository,
+    PostgresPaymentHistoryQuery,
     PostgresPaymentRepository,
 )
+from token_payments.contexts.order.domain import TrackingId  # noqa: E402
 from token_payments.contexts.payment.domain import (  # noqa: E402
     AuthorizationStatus,
     GasEstimate,
@@ -74,6 +76,7 @@ RESERVATION_ID = ReservationId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c27")
 MESSAGE_ID = MessageId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c28")
 ORDER_ID_2 = OrderId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c29")
 PAYMENT_ID_2 = PaymentId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c2a")
+TRACKING_ID = TrackingId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c2d")
 WALLET_FROM = WalletAddress("0x1111111111111111111111111111111111111111")
 WALLET_TO = WalletAddress("0x2222222222222222222222222222222222222222")
 TOKEN_ADDRESS = WalletAddress("0x3333333333333333333333333333333333333333")
@@ -136,6 +139,37 @@ def test_payment_repository_lists_unconfirmed_receipt_polling_candidates() -> No
     assert "status in ('submitted', 'confirming')" in normalized_sql
 
 
+def test_payment_history_query_lists_only_authenticated_users_payments() -> None:
+    connection = FakePostgresConnection()
+    payments = PostgresPaymentRepository(connection)
+    history = PostgresPaymentHistoryQuery(connection)
+    submitted = _submitted_payment()
+
+    connection.seed_order_customer(USER_ID, CUSTOMER_ID)
+    connection.seed_order(ORDER_ID, TRACKING_ID)
+    payments.save(submitted)
+    payments.save(
+        _submitted_payment(
+            payment_id=PAYMENT_ID_2,
+            order_id=ORDER_ID_2,
+            customer_id=CustomerId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c2e"),
+            tx_hash=TX_HASH_2,
+        )
+    )
+
+    items = history.list_for_user(USER_ID, statuses=(PaymentStatus.SUBMITTED,), limit=10)
+
+    assert len(items) == 1
+    assert items[0].payment_id == PAYMENT_ID
+    assert items[0].order_id == ORDER_ID
+    assert items[0].tracking_id == TRACKING_ID
+    assert items[0].status is PaymentStatus.SUBMITTED
+    assert items[0].tx_hash == TX_HASH
+    normalized_sql = _normalize_sql("\n".join(statement.sql for statement in connection.statements))
+    assert "join order_customers" in normalized_sql
+    assert "p.status = any" in normalized_sql
+
+
 def test_store_approval_repositories_round_trip_store_and_order_detail() -> None:
     connection = FakePostgresConnection()
     connection.seed_store(_store())
@@ -186,6 +220,7 @@ def test_context_adapter_public_contract_exports_postgres_repositories() -> None
     }
     assert set(payment_adapter.__all__) == {
         "PostgresPaymentAuthorizationRepository",
+        "PostgresPaymentHistoryQuery",
         "PostgresPaymentRepository",
     }
     assert set(store_approval_adapter.__all__) == {
@@ -249,11 +284,12 @@ def _awaiting_payment(
     *,
     payment_id: PaymentId = PAYMENT_ID,
     order_id: OrderId = ORDER_ID,
+    customer_id: CustomerId = CUSTOMER_ID,
 ) -> Payment:
     return Payment.initialize_payment(
         payment_id=payment_id,
         order_id=order_id,
-        customer_id=CUSTOMER_ID,
+        customer_id=customer_id,
         amount=_amount(),
         wallet_from=WALLET_FROM,
         wallet_to=WALLET_TO,
@@ -268,9 +304,10 @@ def _submitted_payment(
     *,
     payment_id: PaymentId = PAYMENT_ID,
     order_id: OrderId = ORDER_ID,
+    customer_id: CustomerId = CUSTOMER_ID,
     tx_hash: TransactionHash = TX_HASH,
 ) -> Payment:
-    return _awaiting_payment(payment_id=payment_id, order_id=order_id).submit_tx_hash(tx_hash)
+    return _awaiting_payment(payment_id=payment_id, order_id=order_id, customer_id=customer_id).submit_tx_hash(tx_hash)
 
 
 def _confirmed_payment(
@@ -428,6 +465,8 @@ class FakePostgresConnection:
         self.inventory_reservations: dict[str, dict[str, Any]] = {}
         self.payments: dict[str, dict[str, Any]] = {}
         self.payment_authorizations: dict[str, dict[str, Any]] = {}
+        self.order_customers: dict[str, dict[str, Any]] = {}
+        self.orders: dict[str, dict[str, Any]] = {}
         self.store_approval_stores: dict[str, dict[str, Any]] = {}
         self.store_approval_products: dict[tuple[str, str], dict[str, Any]] = {}
         self.store_approval_order_details: dict[str, dict[str, Any]] = {}
@@ -450,6 +489,8 @@ class FakePostgresConnection:
             return self._select_inventory_reservations(statement.params)
         if "insert into payments" in normalized_sql:
             return self._upsert_payment(statement.params)
+        if "from payments p" in normalized_sql and "join order_customers" in normalized_sql:
+            return self._select_payment_history(statement.params)
         if "from payments" in normalized_sql and "select" in normalized_sql:
             return self._select_payment(statement.params)
         if "insert into payment_authorizations" in normalized_sql:
@@ -488,6 +529,18 @@ class FakePostgresConnection:
                 "price_decimals": product.price.decimals,
                 "available": product.available,
             }
+
+    def seed_order_customer(self, user_id: UserId, customer_id: CustomerId) -> None:
+        self.order_customers[str(user_id)] = {
+            "user_id": str(user_id),
+            "customer_id": str(customer_id),
+        }
+
+    def seed_order(self, order_id: OrderId, tracking_id: TrackingId) -> None:
+        self.orders[str(order_id)] = {
+            "order_id": str(order_id),
+            "tracking_id": str(tracking_id),
+        }
 
     def _upsert_product_inventory(self, params: Mapping[str, Any]) -> FakeResult:
         key = (str(params["product_id"]), str(params["store_id"]))
@@ -542,6 +595,25 @@ class FakePostgresConnection:
             return FakeResult(rows=rows[:limit], rowcount=len(rows[:limit]))
         row = self.payments.get(str(params["payment_id"]))
         return FakeResult(rows=[dict(row)] if row is not None else [], rowcount=1 if row is not None else 0)
+
+    def _select_payment_history(self, params: Mapping[str, Any]) -> FakeResult:
+        customer = self.order_customers.get(str(params["user_id"]))
+        if customer is None:
+            return FakeResult()
+        statuses = set(params.get("statuses") or [])
+        rows = []
+        for row in self.payments.values():
+            if row["customer_id"] != customer["customer_id"]:
+                continue
+            if statuses and row["status"] not in statuses:
+                continue
+            order = self.orders.get(row["order_id"])
+            if order is None:
+                continue
+            rows.append({**row, "tracking_id": order["tracking_id"], "updated_at": row.get("updated_at", NOW)})
+        rows.sort(key=lambda row: (row["updated_at"], row["payment_id"]), reverse=True)
+        limit = int(params["limit"])
+        return FakeResult(rows=rows[:limit], rowcount=len(rows[:limit]))
 
     def _upsert_payment_authorization(self, params: Mapping[str, Any]) -> FakeResult:
         self.payment_authorizations[str(params["payment_id"])] = dict(params)

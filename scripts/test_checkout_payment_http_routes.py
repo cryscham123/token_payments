@@ -22,6 +22,7 @@ from token_payments.api import (  # noqa: E402
 from token_payments.contexts.order.application import CheckoutTrackingSnapshot  # noqa: E402
 from token_payments.contexts.order.domain import OrderStatus, TrackingId  # noqa: E402
 from token_payments.contexts.payment.application import (  # noqa: E402
+    PaymentHistoryItem,
     PaymentCommandResult,
     PaymentCommandStatus,
     SubmitTransactionHashCommand,
@@ -75,6 +76,9 @@ def test_checkout_payment_route_manifest_exposes_stable_methods_paths_and_operat
     assert PAYMENT_HTTP_ROUTES["submit_transaction_hash"].method == "POST"
     assert PAYMENT_HTTP_ROUTES["submit_transaction_hash"].path == "/payments/transaction-hashes"
     assert PAYMENT_HTTP_ROUTES["submit_transaction_hash"].operation_id == "submitTransactionHash"
+    assert PAYMENT_HTTP_ROUTES["list_payments"].method == "GET"
+    assert PAYMENT_HTTP_ROUTES["list_payments"].path == "/payments"
+    assert PAYMENT_HTTP_ROUTES["list_payments"].operation_id == "listUserPayments"
 
 
 def test_checkout_http_routes_call_tracking_facade_with_path_params() -> None:
@@ -144,9 +148,9 @@ def test_payment_http_route_submits_tx_hash_and_preserves_request_id_and_command
     router = HttpRouter()
     query = FakeCheckoutTrackingQuery(_tracking_snapshot())
 
-    routes = register_payment_routes(router, PaymentsApi(handler, tracking_query=query))
+    routes = register_payment_routes(router, PaymentsApi(handler, tracking_query=query, history_query=FakePaymentHistoryQuery()))
 
-    assert [route.operation_id for route in routes] == ["submitTransactionHash"]
+    assert [route.operation_id for route in routes] == ["listUserPayments", "submitTransactionHash"]
 
     response = router.handle(
         "POST",
@@ -190,6 +194,57 @@ def test_payment_http_route_submits_tx_hash_and_preserves_request_id_and_command
             causation_id="req-payment-submit",
         )
     ]
+
+
+def test_payment_http_route_lists_user_payment_history_without_request_body() -> None:
+    handler = CapturingPaymentCommandHandler()
+    history_query = FakePaymentHistoryQuery((_history_item(),))
+    router = HttpRouter()
+    register_payment_routes(
+        router,
+        PaymentsApi(handler, tracking_query=FakeCheckoutTrackingQuery(None), history_query=history_query),
+    )
+
+    response = router.handle(
+        "GET",
+        "/payments",
+        query={"status": "SUBMITTED,CONFIRMED", "limit": "20"},
+        headers={
+            "X-Request-Id": "req-payment-history",
+            "X-User-Id": str(USER_ID),
+        },
+        received_at=NOW,
+    )
+
+    assert response.status_code == 200
+    assert response.headers["X-Request-Id"] == "req-payment-history"
+    assert _json(response.body) == {
+        "payments": [
+            {
+                "amount": {
+                    "amount": "1.25",
+                    "chainId": 11155111,
+                    "decimals": 6,
+                    "symbol": "USDC",
+                    "tokenAddress": str(TOKEN_ADDRESS),
+                },
+                "chain": {"chainId": 11155111, "name": "Sepolia"},
+                "currentStep": "RECEIPT_PENDING",
+                "failureReason": None,
+                "orderId": str(ORDER_ID),
+                "paymentAssetId": "local-usdc",
+                "paymentId": str(PAYMENT_ID),
+                "pendingAction": "WAIT_FOR_RECEIPT",
+                "receipt": None,
+                "status": "SUBMITTED",
+                "trackingId": str(TRACKING_ID),
+                "txHash": str(TX_HASH),
+                "updatedAt": UPDATED_AT.isoformat(),
+            }
+        ],
+        "pagination": {"limit": 20, "nextPageToken": None},
+    }
+    assert history_query.calls == [(USER_ID, (PaymentStatus.SUBMITTED, PaymentStatus.CONFIRMED), 20)]
 
 
 def _json(body: bytes) -> dict[str, object]:
@@ -241,6 +296,24 @@ def _requested_authorization() -> PaymentAuthorization:
     )
 
 
+def _history_item() -> PaymentHistoryItem:
+    return PaymentHistoryItem(
+        payment_id=PAYMENT_ID,
+        order_id=ORDER_ID,
+        tracking_id=TRACKING_ID,
+        amount=_amount(),
+        wallet_from=WALLET_FROM,
+        wallet_to=WALLET_TO,
+        chain_network=CHAIN,
+        status=PaymentStatus.SUBMITTED,
+        tx_hash=TX_HASH,
+        receipt=None,
+        failure_reason=None,
+        payment_asset_id="local-usdc",
+        updated_at=UPDATED_AT,
+    )
+
+
 def _amount() -> Crypto:
     return Crypto(
         amount="1.25",
@@ -279,6 +352,22 @@ class FakeCheckoutTrackingQuery:
         if user_id != USER_ID:
             raise ValueError("authenticated user does not own the order")
         return self.snapshot.order_id, self.snapshot.payment.payment_id if self.snapshot.payment else PAYMENT_ID
+
+
+class FakePaymentHistoryQuery:
+    def __init__(self, items: tuple[PaymentHistoryItem, ...] = ()) -> None:
+        self.items = items
+        self.calls: list[tuple[UserId, tuple[PaymentStatus, ...] | None, int]] = []
+
+    def list_for_user(
+        self,
+        user_id: UserId,
+        *,
+        statuses: tuple[PaymentStatus, ...] | None = None,
+        limit: int = 50,
+    ) -> tuple[PaymentHistoryItem, ...]:
+        self.calls.append((user_id, statuses, limit))
+        return self.items
 
 
 class CapturingPaymentCommandHandler:

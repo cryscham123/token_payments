@@ -54,6 +54,11 @@ from token_payments.contexts.inventory.adapter import (
     PostgresInventoryRepository,
 )
 from token_payments.contexts.inventory.application import StoreOwnerInventoryCommandHandler
+from token_payments.contexts.inventory.application import (
+    InventoryCommandHandler,
+    InventoryCommandRejected,
+    ReserveInventoryCommand,
+)
 from token_payments.contexts.order.adapter import (
     PostgresCheckoutTrackingQuery,
     PostgresCustomerRepository,
@@ -70,6 +75,7 @@ from token_payments.contexts.order.domain import TrackingId
 from token_payments.contexts.payment.adapter.blockchain import ClientBlockchainAdapter
 from token_payments.contexts.payment.adapter.postgres import (
     PostgresPaymentAuthorizationRepository,
+    PostgresPaymentHistoryQuery,
     PostgresPaymentRepository,
 )
 from token_payments.contexts.payment.adapter.transaction_service import ClientTransactionService
@@ -1511,7 +1517,11 @@ def build_live_api_facades(
         auth=AuthApi(_TransactionalAuthUseCase(live_config, live_dependencies)),
         orders=OrdersApi(_TransactionalOrderUseCase(live_config, live_dependencies)),
         checkout=CheckoutApi(_TransactionalCheckoutTrackingQuery(live_dependencies)),
-        payments=PaymentsApi(payment_handler, tracking_query=_TransactionalCheckoutTrackingQuery(live_dependencies)),
+        payments=PaymentsApi(
+            payment_handler,
+            tracking_query=_TransactionalCheckoutTrackingQuery(live_dependencies),
+            history_query=_TransactionalPaymentHistoryQuery(live_dependencies),
+        ),
         catalog=StoreCatalogApi(
             _TransactionalStoreCatalogUseCase(live_dependencies),
             id_generator=live_dependencies.id_generator,
@@ -1759,8 +1769,38 @@ class _TransactionalOrderUseCase:
             wallets=PostgresUserWalletRepository(connection),
             payment_assets=_runtime_payment_asset_registry(self._config),
         ).createOrder(command)
+        self._reserve_inventory(connection, command, result)
         self._start_payment_request(connection, command, result)
         return result
+
+    def _reserve_inventory(self, connection: Any, command: CreateOrderCommand, result: Any) -> None:
+        inventory_handler = InventoryCommandHandler(
+            inventory_repository=PostgresInventoryRepository(connection),
+            processed_commands=PostgresProcessedCommandRepository(connection),
+            outbox_messages=PostgresOutboxMessageRepository(connection),
+        )
+        multi_item = len(result.order.items) > 1
+        for item in result.order.items:
+            try:
+                inventory_handler.reserve_inventory(
+                    ReserveInventoryCommand(
+                        command_id=_inventory_command_id(
+                            result.order.order_id,
+                            CheckoutCommandName.RESERVE_INVENTORY,
+                            item.product_snapshot.product_id,
+                            multi_item=multi_item,
+                        ),
+                        order_id=result.order.order_id,
+                        product_id=item.product_snapshot.product_id,
+                        store_id=result.order.store_id,
+                        quantity=item.quantity,
+                        requested_at=command.requested_at,
+                        causation_id=str(result.outbox_message.identity),
+                        event_message_id=MessageId(_new_id(self._dependencies.id_generator, "inventory_event_message_id")),
+                    )
+                )
+            except InventoryCommandRejected as exc:
+                raise ValueError(str(exc)) from exc
 
     def _start_payment_request(self, connection: Any, command: CreateOrderCommand, result: Any) -> None:
         payload = result.outbox_message.payload
@@ -1804,6 +1844,18 @@ def _chain_network_from_checkout_payload(payload: Mapping[str, Any], default_cha
     chain_id = chain.get("chainId") or chain.get("chain_id") or default_chain_id
     name = chain.get("name") or f"chain-{chain_id}"
     return ChainNetwork(chain_id=int(chain_id), name=str(name))
+
+
+def _inventory_command_id(
+    order_id: OrderId,
+    command_name: CheckoutCommandName,
+    product_id: Any,
+    *,
+    multi_item: bool,
+) -> CommandId:
+    if not multi_item:
+        return CommandId.for_order_action(order_id, command_name)
+    return CommandId(f"{order_id}:{command_name.value}:{product_id}")
 
 
 def _required_payload_text(payload: Mapping[str, Any], key: str) -> str:
@@ -1912,6 +1964,21 @@ class _TransactionalCheckoutTrackingQuery:
             return snapshot.order_id, snapshot.payment.payment_id
 
         return _with_transaction(self._dependencies, _execute)
+
+
+class _TransactionalPaymentHistoryQuery:
+    def __init__(self, dependencies: LiveRuntimeDependencies) -> None:
+        self._dependencies = dependencies
+
+    def list_for_user(self, user_id: UserId, *, statuses=None, limit: int = 50):
+        return _with_transaction(
+            self._dependencies,
+            lambda connection: PostgresPaymentHistoryQuery(connection).list_for_user(
+                user_id,
+                statuses=statuses,
+                limit=limit,
+            ),
+        )
 
 
 class _TransactionalPaymentCommandHandler:

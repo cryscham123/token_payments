@@ -1,6 +1,6 @@
 # 전체 Route Summary
 
-이 페이지는 `app/token_payments/api/http.py`의 현재 public HTTP route manifest 54개를 GitBook에서 검색하기 위한 전체 표다. 요청/응답/오류/권한은 각 도메인별 페이지를 기준으로 한다.
+이 페이지는 `app/token_payments/api/http.py`의 현재 public HTTP route manifest 55개를 GitBook에서 검색하기 위한 전체 표다. 요청/응답/오류/권한은 각 도메인별 페이지를 기준으로 한다.
 
 | Operation ID | Route | 영역 |
 | --- | --- | --- |
@@ -24,6 +24,7 @@
 | `createOrder` | `POST /orders` | 주문 |
 | `getCheckoutTrackingByTrackingId` | `GET /checkouts/tracking/{trackingId}` | 체크아웃 |
 | `getCheckoutTrackingByOrderId` | `GET /checkouts/orders/{orderId}` | 체크아웃 |
+| `listUserPayments` | `GET /payments` | 결제 |
 | `submitTransactionHash` | `POST /payments/transaction-hashes` | 결제 |
 | `getStoreProfile` | `GET /stores/{publicStoreId}` | 상점 |
 | `listPublicStores` | `GET /stores` | 상점 |

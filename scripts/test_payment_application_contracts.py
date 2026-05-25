@@ -20,6 +20,7 @@ from token_payments.contexts.payment.application import (  # noqa: E402
     PaymentAuthorizationRepository,
     PaymentCommandHandler,
     PaymentCommandStatus,
+    PaymentHistoryQueryPort,
     PaymentRepository,
     PaymentTimeoutScheduler,
     ProcessedCommandRepository,
@@ -200,10 +201,56 @@ def test_confirm_payment_receipt_saves_checkout_consumable_confirmed_event() -> 
     assert outbox.payload["occurredAt"] == CHECKED_AT.isoformat()
 
 
-def test_confirm_receipt_failure_emits_payment_failed_event_without_compensation_commands() -> None:
+def test_missing_receipt_marks_payment_confirming_without_failure_event_and_allows_retry() -> None:
     payment_repository = FakePaymentRepository(_submitted_payment())
     outbox_messages = FakeOutboxMessageRepository()
     blockchain = FakeBlockchainAdapter(receipt=None)
+    processed_commands = FakeProcessedCommandRepository()
+    handler = _handler(
+        payment_repository,
+        FakePaymentAuthorizationRepository(),
+        outbox_messages=outbox_messages,
+        blockchain=blockchain,
+        processed_commands=processed_commands,
+    )
+
+    first = handler.confirm_payment_receipt(_confirm_command(command_id=CommandId(f"{CONFIRM_COMMAND_ID}:attempt-1")))
+
+    assert first.status == PaymentCommandStatus.CONFIRMING
+    assert first.payment is not None
+    assert first.payment.status == PaymentStatus.CONFIRMING
+    assert first.payment.failure_reason is None
+    assert outbox_messages.saved == []
+    assert payment_repository.saved == [first.payment]
+    assert processed_commands.records == [
+        ProcessedCommand.record(
+            command_id=CommandId(f"{CONFIRM_COMMAND_ID}:attempt-1"),
+            handler=PaymentCommandHandler.HANDLER_NAME,
+            processed_at=CHECKED_AT,
+            order_id=ORDER_ID,
+        )
+    ]
+
+    blockchain.receipt = _receipt()
+    second = handler.confirm_payment_receipt(_confirm_command(command_id=CommandId(f"{CONFIRM_COMMAND_ID}:attempt-2")))
+
+    assert second.status == PaymentCommandStatus.CONFIRMED
+    assert second.payment is not None
+    assert second.payment.status == PaymentStatus.CONFIRMED
+    assert outbox_messages.saved[0].name == CheckoutEventName.PAYMENT_CONFIRMED.value
+
+
+def test_reverted_receipt_failure_emits_payment_failed_event_without_compensation_commands() -> None:
+    payment_repository = FakePaymentRepository(_submitted_payment())
+    outbox_messages = FakeOutboxMessageRepository()
+    blockchain = FakeBlockchainAdapter(
+        receipt={
+            "transactionHash": str(TX_HASH),
+            "blockNumber": 12345,
+            "gasUsed": 21000,
+            "status": False,
+        }
+    )
     handler = _handler(
         payment_repository,
         FakePaymentAuthorizationRepository(),
@@ -218,7 +265,7 @@ def test_confirm_receipt_failure_emits_payment_failed_event_without_compensation
     assert result.status == PaymentCommandStatus.FAILED
     assert result.payment is not None
     assert result.payment.status == PaymentStatus.FAILED
-    assert result.payment.failure_reason == "receipt reverted"
+    assert result.payment.failure_reason == "ERC20_TRANSFER_MISMATCH: REVERTED"
 
     outbox = outbox_messages.saved[0]
     assert outbox.kind == OutboxMessageKind.EVENT
@@ -226,7 +273,7 @@ def test_confirm_receipt_failure_emits_payment_failed_event_without_compensation
     assert outbox.key == str(ORDER_ID)
     assert outbox.payload["paymentId"] == str(PAYMENT_ID)
     assert outbox.payload["orderId"] == str(ORDER_ID)
-    assert outbox.payload["failureReason"] == "receipt reverted"
+    assert outbox.payload["failureReason"] == "ERC20_TRANSFER_MISMATCH: REVERTED"
     assert outbox.payload["occurredAt"] == CHECKED_AT.isoformat()
     assert outbox.name not in {
         CheckoutCommandName.RELEASE_INVENTORY.value,
@@ -338,6 +385,7 @@ def test_payment_application_public_contracts_are_protocols_and_exports() -> Non
         BlockchainAdapter,
         PaymentTimeoutScheduler,
         TransactionService,
+        PaymentHistoryQueryPort,
     ):
         assert getattr(port, "_is_protocol", False), f"{port.__name__} must be a Protocol"
 
@@ -353,6 +401,8 @@ def test_payment_application_public_contracts_are_protocols_and_exports() -> Non
         "PaymentAuthorizationRepository",
         "PaymentCommandHandler",
         "PaymentCommandStatus",
+        "PaymentHistoryItem",
+        "PaymentHistoryQueryPort",
         "PaymentRepository",
         "PaymentTimeoutScheduler",
         "ProcessedCommandRepository",
@@ -436,11 +486,12 @@ def _submit_command() -> SubmitTransactionHashCommand:
 
 def _confirm_command(
     *,
+    command_id: CommandId = CONFIRM_COMMAND_ID,
     event_message_id: MessageId = CONFIRM_EVENT_ID,
     failure_reason: str = "receipt not confirmed",
 ) -> ConfirmPaymentReceiptCommand:
     return ConfirmPaymentReceiptCommand(
-        command_id=CONFIRM_COMMAND_ID,
+        command_id=command_id,
         payment_id=PAYMENT_ID,
         order_id=ORDER_ID,
         checked_at=CHECKED_AT,
@@ -600,7 +651,7 @@ class FakeOutboxMessageRepository:
 
 
 class FakeBlockchainAdapter:
-    def __init__(self, receipt: TransactionReceipt | None = _receipt()) -> None:
+    def __init__(self, receipt: object | None = _receipt()) -> None:
         self.receipt = receipt
         self.estimate_gas_calls: list[tuple[Crypto, WalletAddress, WalletAddress, ChainNetwork]] = []
         self.receipt_calls: list[TransactionHash] = []
@@ -615,7 +666,7 @@ class FakeBlockchainAdapter:
         self.estimate_gas_calls.append((amount, wallet_from, wallet_to, chain_network))
         return _gas_estimate()
 
-    def get_transaction_receipt(self, tx_hash: TransactionHash) -> TransactionReceipt | None:
+    def get_transaction_receipt(self, tx_hash: TransactionHash) -> object | None:
         self.receipt_calls.append(tx_hash)
         return self.receipt
 

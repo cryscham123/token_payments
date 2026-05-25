@@ -89,7 +89,7 @@ def test_api_spec_is_gitbook_ready_without_losing_route_manifest_contract() -> N
     ):
         assert f"]({link})" in api_spec
 
-    assert "Public HTTP route surface is exactly the current 54-route manifest" in api_spec
+    assert "Public HTTP route surface is exactly the current 55-route manifest" in api_spec
     for entry in http_route_manifest():
         route_row = f"| `{entry['operationId']}` | `{entry['method']}` | `{entry['path']}` |"
         assert route_row in api_spec
@@ -315,6 +315,7 @@ def test_korean_gitbook_api_pages_cover_public_route_groups() -> None:
             "주문",
             "`POST /orders`",
             "`GET /checkouts/tracking/{trackingId}`",
+            "`GET /payments`",
             "`POST /payments/transaction-hashes`",
         ),
         "docs/api/catalog-inventory.md": (

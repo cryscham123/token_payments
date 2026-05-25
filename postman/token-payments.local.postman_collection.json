@@ -984,6 +984,30 @@
           }
         },
         {
+          "id": "listUserPayments",
+          "name": "List user payments",
+          "description": "Lists payment history owned by the authenticated user.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "payments"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
           "id": "submitTransactionHash",
           "name": "Submit transaction hash",
           "description": "Local Postman request skeleton for the API route manifest; authentication uses the Postman cookie jar.",

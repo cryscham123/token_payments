@@ -452,6 +452,18 @@ class Payment:
             raise ValueError("payment receipt hash must match submitted tx_hash")
         return replace(self, status=PaymentStatus.CONFIRMED, receipt=receipt)
 
+    def mark_confirming(self) -> Self:
+        if self.status is PaymentStatus.CONFIRMING:
+            return self
+        if self.status is PaymentStatus.CONFIRMED:
+            return self
+        if self.status in {PaymentStatus.FAILED, PaymentStatus.EXPIRED, PaymentStatus.REFUNDED}:
+            return self
+        self._ensure_status(PaymentStatus.SUBMITTED, "mark payment confirming")
+        if self.tx_hash is None:
+            raise ValueError("submitted payments require tx_hash before confirmation")
+        return replace(self, status=PaymentStatus.CONFIRMING)
+
     def fail_payment(self, failure_reason: str) -> Self:
         failure_reason = _require_text(failure_reason, "failure_reason")
         if self.status is PaymentStatus.FAILED:

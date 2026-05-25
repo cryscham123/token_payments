@@ -60,6 +60,7 @@ PAYMENT_REFUNDED_EVENT = "PaymentRefundedEvent"
 class PaymentCommandStatus(StrEnum):
     AWAITING_SIGNATURE = "AWAITING_SIGNATURE"
     TX_SUBMITTED = "TX_SUBMITTED"
+    CONFIRMING = "CONFIRMING"
     CONFIRMED = "CONFIRMED"
     FAILED = "FAILED"
     EXPIRED = "EXPIRED"
@@ -225,16 +226,15 @@ class PaymentCommandHandler:
         receipt_payload = self._blockchain_adapter.get_transaction_receipt(payment.tx_hash)
         try:
             if receipt_payload is None:
-                updated_payment = payment.fail_payment(command.failure_reason)
-                event = updated_payment.record_failed(created_at=command.checked_at)
-                outbox_message = _record_event(
-                    command=command,
-                    event_name=CheckoutEventName.PAYMENT_FAILED,
-                    aggregate_id=str(updated_payment.payment_id),
-                    occurred_at=event.created_at,
-                    payload=_failed_payload(event),
+                updated_payment = payment.mark_confirming()
+                self._payment_repository.save(updated_payment)
+                self._record_processed(command, command.checked_at)
+                return PaymentCommandResult(
+                    command_id=command.command_id,
+                    order_id=command.order_id,
+                    status=PaymentCommandStatus.CONFIRMING,
+                    payment=updated_payment,
                 )
-                status = PaymentCommandStatus.FAILED
             else:
                 authorization = self._authorization_repository.get(command.payment_id)
                 receipt, mismatch_reason = _verified_receipt_or_mismatch(payment, authorization, receipt_payload)
@@ -601,15 +601,15 @@ def _verified_receipt_or_mismatch(
     receipt_payload: TransactionReceipt | Mapping[str, Any] | object,
 ) -> tuple[TransactionReceipt, str | None]:
     receipt = _receipt_from_payload(receipt_payload, payment.tx_hash)
+    status = _receipt_status(receipt_payload)
+    if status is False:
+        return receipt, "REVERTED"
     if payment.amount.token_address is None:
         return receipt, None
     if payment.payment_asset_id is None and (authorization is None or authorization.payment_asset_id is None):
         return receipt, None
     if authorization is None:
         return receipt, "AUTHORIZATION_NOT_FOUND"
-    status = _receipt_status(receipt_payload)
-    if status is False:
-        return receipt, "REVERTED"
     verification = _verify_erc20_transfer(
         receipt_payload,
         token_address=payment.amount.token_address,

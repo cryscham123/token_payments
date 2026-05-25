@@ -35,7 +35,17 @@ def test_worker_live_dry_run() -> None:
     assert "liveWorkerPlan" in details
     plan = details["liveWorkerPlan"]
     assert "workers" in plan
-    assert len(plan["workers"]) == 5  # outbox relay + 4 consumers
+    assert {worker["name"] for worker in plan["workers"]} == {
+        "outbox-relay",
+        "checkout-process-manager",
+        "inventory-command-listener",
+        "payment-command-listener",
+        "store-approval-command-listener",
+        "order-command-listener",
+        "order-status-listener",
+        "auth-rbac-projector",
+        "payment-receipt-polling",
+    }
     assert "config" in plan
 
 

@@ -17,6 +17,7 @@ EXPECTED_DEPENDENCIES = {
     "postgres": "service_healthy",
     "kafka": "service_started",
     "test_network": "service_started",
+    "token_payments_live_worker": "service_started",
 }
 REQUIRED_API_ENV = {
     "PYTHONPATH": "/workspace/app",
@@ -79,6 +80,23 @@ def test_default_compose_api_service_waits_for_required_infrastructure_and_has_h
     assert _nested_scalar(service, "healthcheck", "retries") == "12"
     assert _nested_scalar(service, "healthcheck", "start_period") == "10s"
     assert "http://127.0.0.1:8000/healthz" in "\n".join(_nested_list(service, "healthcheck", "test"))
+
+
+def test_api_profile_starts_live_worker_for_async_kafka_processing() -> None:
+    services = _compose_services()
+    worker_service = services["token_payments_live_worker"]
+
+    assert _list_for_key(worker_service, "profiles") == ["runtime", "api"]
+    assert _json_list_for_key(worker_service, "command") == [
+        "python",
+        "-m",
+        "token_payments",
+        "worker",
+        "--live",
+        "--loop",
+        "--confirm-live-worker",
+    ]
+    assert _depends_on_conditions(services[API_SERVICE])["token_payments_live_worker"] == "service_started"
 
 
 def test_default_compose_config_services_resolves_api_without_profile_flag() -> None:

@@ -62,7 +62,7 @@ Docker smoke와 Postman 검증도 같은 public route manifest, readiness contra
 | `GET /healthz` | live system route | no body | `200` process/runtime health only | `503` if process health fails |
 | `GET /readyz` | live system route | no body | `200` when injected PostgreSQL/Kafka/Blockchain readiness probes are ready | `503` with bounded component details |
 
-`GET /healthz`와 `GET /readyz`는 public facade 54-route manifest에는 포함되지 않는다.
+`GET /healthz`와 `GET /readyz`는 public facade 55-route manifest에는 포함되지 않는다.
 
 ## 요청 예시
 

@@ -152,11 +152,35 @@ def test_payment_receipt_polling_worker_dispatches_confirm_commands_for_submitte
     assert [command.payment_id for command in handler.confirm_calls] == [PAYMENT_ID, PAYMENT_ID_2]
     assert [command.order_id for command in handler.confirm_calls] == [ORDER_ID, ORDER_ID_2]
     assert [command.command_id for command in handler.confirm_calls] == [
-        CommandId(f"{ORDER_ID}:ConfirmPaymentReceiptCommand"),
-        CommandId(f"{ORDER_ID_2}:ConfirmPaymentReceiptCommand"),
+        CommandId(f"{ORDER_ID}:ConfirmPaymentReceiptCommand:{PAYMENT_ID}:{TX_HASH}:{CHECKED_AT.isoformat()}"),
+        CommandId(f"{ORDER_ID_2}:ConfirmPaymentReceiptCommand:{PAYMENT_ID_2}:{TX_HASH_2}:{CHECKED_AT.isoformat()}"),
     ]
     assert all(command.checked_at == CHECKED_AT for command in handler.confirm_calls)
     assert all(command.failure_reason == "receipt not confirmed" for command in handler.confirm_calls)
+
+
+def test_payment_receipt_polling_worker_uses_attempt_specific_command_ids_for_retries() -> None:
+    submitted = _awaiting_payment(payment_id=PAYMENT_ID, order_id=ORDER_ID).submit_tx_hash(TX_HASH)
+    repository = FakeReceiptPollingRepository([submitted])
+    handler = FakePaymentCommandHandler()
+    first_checked_at = CHECKED_AT
+    second_checked_at = CHECKED_AT + timedelta(seconds=5)
+    worker = PaymentReceiptPollingWorker(
+        payment_repository=repository,
+        command_handler=handler,
+        clock=SequenceClock([first_checked_at, second_checked_at]),
+        options=WorkerLoopOptions(batch_size=10, poll_interval_seconds=0.1, receipt_poll_interval_seconds=1),
+    )
+
+    first = worker.run_once()
+    second = worker.run_once()
+
+    assert first.processed == 1
+    assert second.processed == 1
+    assert [command.command_id for command in handler.confirm_calls] == [
+        CommandId(f"{ORDER_ID}:ConfirmPaymentReceiptCommand:{PAYMENT_ID}:{TX_HASH}:{first_checked_at.isoformat()}"),
+        CommandId(f"{ORDER_ID}:ConfirmPaymentReceiptCommand:{PAYMENT_ID}:{TX_HASH}:{second_checked_at.isoformat()}"),
+    ]
 
 
 def test_payment_timeout_worker_dispatches_expire_only_for_expired_awaiting_signature_authorizations() -> None:
@@ -378,6 +402,16 @@ class FakeClock:
 
     def now(self) -> datetime:
         return self._now
+
+
+class SequenceClock:
+    def __init__(self, values: list[datetime]) -> None:
+        self._values = list(values)
+
+    def now(self) -> datetime:
+        if not self._values:
+            raise AssertionError("SequenceClock exhausted")
+        return self._values.pop(0)
 
 
 class FakeReceiptPollingRepository:

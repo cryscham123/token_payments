@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any, Mapping, Protocol
 
@@ -17,6 +18,7 @@ from token_payments.shared.adapter.messaging import MessageTopicResolver
 from token_payments.shared.domain import (
     CheckoutCommandName,
     CheckoutEventName,
+    CommandId,
     CommandMetadata,
     EventMetadata,
     IdempotencyDecision,
@@ -78,7 +80,11 @@ class CheckoutKafkaEventListener:
             )
 
         decisions = self._process_manager.handle(event)
-        outbox_messages = tuple(self._outbox_command(decision, payload, event.name) for decision in decisions)
+        outbox_messages = tuple(
+            message
+            for decision in decisions
+            for message in self._outbox_commands(decision, payload, event.name)
+        )
         for outbox_message in outbox_messages:
             self._outbox_messages.save(outbox_message)
 
@@ -96,14 +102,36 @@ class CheckoutKafkaEventListener:
             outbox_messages=outbox_messages,
         )
 
+    def _outbox_commands(
+        self,
+        decision: CheckoutCommandDecision,
+        source_payload: Mapping[str, Any],
+        source_event_name: CheckoutEventName,
+    ) -> tuple[OutboxMessage, ...]:
+        targets = _inventory_command_targets(decision.name, source_payload)
+        if not targets:
+            return (self._outbox_command(decision, source_payload, source_event_name),)
+
+        return tuple(
+            self._outbox_command(
+                _decision_for_target(decision, target, multi_target=len(targets) > 1),
+                source_payload,
+                source_event_name,
+                target=target,
+            )
+            for target in targets
+        )
+
     def _outbox_command(
         self,
         decision: CheckoutCommandDecision,
         source_payload: Mapping[str, Any],
         source_event_name: CheckoutEventName,
+        *,
+        target: Mapping[str, Any] | None = None,
     ) -> OutboxMessage:
         metadata = decision.metadata
-        payload = _command_payload(metadata, decision.order_id, source_payload, source_event_name)
+        payload = _command_payload(metadata, decision.order_id, source_payload, source_event_name, target=target)
         headers = {"correlationId": metadata.correlation_id}
         if metadata.causation_id is not None:
             headers["causationId"] = metadata.causation_id
@@ -150,6 +178,8 @@ def _command_payload(
     order_id: OrderId,
     source_payload: Mapping[str, Any],
     source_event_name: CheckoutEventName,
+    *,
+    target: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     payload = {
         key: value
@@ -165,9 +195,131 @@ def _command_payload(
             "sourceEventName": source_event_name.value,
         }
     )
+    if target is not None:
+        payload.update(target)
     if "productId" not in payload and isinstance(payload.get("productIds"), list) and payload["productIds"]:
         payload["productId"] = str(payload["productIds"][0])
     return payload
+
+
+def _decision_for_target(
+    decision: CheckoutCommandDecision,
+    target: Mapping[str, Any],
+    *,
+    multi_target: bool,
+) -> CheckoutCommandDecision:
+    if not multi_target:
+        return decision
+    product_id = _required_target_text(target, "productId")
+    metadata = replace(
+        decision.metadata,
+        command_id=CommandId(f"{decision.order_id}:{decision.name.value}:{product_id}"),
+        aggregate_id=f"{decision.order_id}:{product_id}",
+    )
+    return CheckoutCommandDecision(metadata=metadata, order_id=decision.order_id)
+
+
+def _inventory_command_targets(
+    command_name: CheckoutCommandName,
+    source_payload: Mapping[str, Any],
+) -> tuple[dict[str, Any], ...]:
+    if command_name not in {
+        CheckoutCommandName.RESERVE_INVENTORY,
+        CheckoutCommandName.RELEASE_INVENTORY,
+        CheckoutCommandName.CONFIRM_INVENTORY,
+    }:
+        return ()
+
+    store_id = _optional_payload_text(source_payload, "storeId", "store_id")
+    item_targets = _targets_from_items(command_name, source_payload, store_id)
+    if item_targets:
+        return item_targets
+
+    product_ids = source_payload.get("productIds") or source_payload.get("product_ids")
+    if isinstance(product_ids, list | tuple):
+        targets = tuple(
+            _target_payload(
+                product_id=str(product_id),
+                store_id=store_id,
+                quantity=None,
+                require_quantity=False,
+            )
+            for product_id in product_ids
+            if str(product_id).strip()
+        )
+        if targets:
+            return targets
+
+    product_id = _optional_payload_text(source_payload, "productId", "product_id")
+    if product_id is None:
+        return ()
+    return (
+        _target_payload(
+            product_id=product_id,
+            store_id=store_id,
+            quantity=source_payload.get("quantity"),
+            require_quantity=command_name is CheckoutCommandName.RESERVE_INVENTORY,
+        ),
+    )
+
+
+def _targets_from_items(
+    command_name: CheckoutCommandName,
+    source_payload: Mapping[str, Any],
+    fallback_store_id: str | None,
+) -> tuple[dict[str, Any], ...]:
+    items = source_payload.get("items")
+    if not isinstance(items, list | tuple):
+        return ()
+
+    targets: list[dict[str, Any]] = []
+    require_quantity = command_name is CheckoutCommandName.RESERVE_INVENTORY
+    for item in items:
+        if not isinstance(item, Mapping):
+            continue
+        product_id = _optional_payload_text(item, "productId", "product_id")
+        if product_id is None:
+            continue
+        targets.append(
+            _target_payload(
+                product_id=product_id,
+                store_id=_optional_payload_text(item, "storeId", "store_id") or fallback_store_id,
+                quantity=item.get("quantity"),
+                require_quantity=require_quantity,
+            )
+        )
+    return tuple(targets)
+
+
+def _target_payload(
+    *,
+    product_id: str,
+    store_id: str | None,
+    quantity: object,
+    require_quantity: bool,
+) -> dict[str, Any]:
+    target: dict[str, Any] = {"productId": _required_text(product_id, "productId")}
+    if store_id is not None:
+        target["storeId"] = store_id
+    if require_quantity or quantity is not None:
+        target["quantity"] = _positive_int(quantity, "quantity")
+    return target
+
+
+def _required_target_text(target: Mapping[str, Any], key: str) -> str:
+    return _required_text(str(target.get(key) or ""), key)
+
+
+def _positive_int(value: object, field_name: str) -> int:
+    if isinstance(value, bool):
+        raise MalformedKafkaMessage(f"{field_name} must be a positive integer")
+    try:
+        parsed = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError) as exc:
+        raise MalformedKafkaMessage(f"{field_name} must be a positive integer") from exc
+    if parsed <= 0:
+        raise MalformedKafkaMessage(f"{field_name} must be a positive integer")
+    return parsed
 
 
 def _event_name(value: str) -> CheckoutEventName:

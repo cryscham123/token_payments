@@ -80,6 +80,10 @@
 [OpenAPI gitbook-petstore](https://4401d86825a13bf607936cc3a9f3897a.r2.cloudflarestorage.com/gitbook-x-prod-openapi/raw/401dd8e0046e5852ecb9f0d12df8dbee58f1100d7b86e5a0cc75664ec983cc95.yaml?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=dce48141f43c0191a2ad043a6888781c%2F20260525%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20260525T002231Z&X-Amz-Expires=172800&X-Amz-Signature=1b4413b5cba224cd9d7f176417239035df04babef1f672a08963b7c5aa60d11a&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject)
 {% endopenapi-operation %}
 
+{% openapi-operation spec="gitbook-petstore" path="/payments" method="get" %}
+[OpenAPI gitbook-petstore](https://4401d86825a13bf607936cc3a9f3897a.r2.cloudflarestorage.com/gitbook-x-prod-openapi/raw/401dd8e0046e5852ecb9f0d12df8dbee58f1100d7b86e5a0cc75664ec983cc95.yaml?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=dce48141f43c0191a2ad043a6888781c%2F20260525%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20260525T002231Z&X-Amz-Expires=172800&X-Amz-Signature=1b4413b5cba224cd9d7f176417239035df04babef1f672a08963b7c5aa60d11a&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject)
+{% endopenapi-operation %}
+
 {% openapi-operation spec="gitbook-petstore" path="/payments/transaction-hashes" method="post" %}
 [OpenAPI gitbook-petstore](https://4401d86825a13bf607936cc3a9f3897a.r2.cloudflarestorage.com/gitbook-x-prod-openapi/raw/401dd8e0046e5852ecb9f0d12df8dbee58f1100d7b86e5a0cc75664ec983cc95.yaml?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=dce48141f43c0191a2ad043a6888781c%2F20260525%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20260525T002231Z&X-Amz-Expires=172800&X-Amz-Signature=1b4413b5cba224cd9d7f176417239035df04babef1f672a08963b7c5aa60d11a&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject)
 {% endopenapi-operation %}

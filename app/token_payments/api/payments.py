@@ -6,6 +6,8 @@ from datetime import datetime
 from typing import Any, Mapping
 
 from token_payments.contexts.payment.application import (
+    PaymentHistoryItem,
+    PaymentHistoryQueryPort,
     PaymentCommandHandler,
     PaymentCommandRejected,
     PaymentCommandRejectionReason,
@@ -13,6 +15,7 @@ from token_payments.contexts.payment.application import (
     PaymentCommandStatus,
     SubmitTransactionHashCommand,
 )
+from token_payments.contexts.payment.domain import PaymentStatus
 from token_payments.shared.domain import CommandId, OrderId, PaymentId, UserId
 from token_payments.contexts.order.domain import TrackingId
 
@@ -23,37 +26,58 @@ from .idempotency import IdempotencyKeyConflict, idempotency_conflict_response, 
 class PaymentsApi:
     """Payment API facade that delegates state changes to the payment application handler."""
 
-    def __init__(self, handler: PaymentCommandHandler, tracking_query: Any = None) -> None:
+    def __init__(
+        self,
+        handler: PaymentCommandHandler,
+        tracking_query: Any = None,
+        history_query: PaymentHistoryQueryPort | None = None,
+    ) -> None:
         self._handler = handler
         self._tracking_query = tracking_query
+        self._history_query = history_query
+
+    def list_payments(self, request: ApiRequest) -> ApiResponse:
+        try:
+            user_id = _user_id_from_request(request)
+            if user_id is None:
+                return _error_response(
+                    "AUTHENTICATION_REQUIRED",
+                    "authenticated session is required",
+                    401,
+                    request.request_id,
+                )
+            if self._history_query is None:
+                raise ValueError("payment history query is not configured")
+            limit = _query_limit(request.query.get("limit"))
+            statuses = _status_filter(request.query.get("status"))
+            items = self._history_query.list_for_user(user_id, statuses=statuses, limit=limit)
+            return json_response(
+                {
+                    "payments": [_history_item_payload(item) for item in items],
+                    "pagination": {"limit": limit, "nextPageToken": None},
+                },
+                request_id=request.request_id,
+            )
+        except ValueError as exc:
+            return _error_response("VALIDATION_ERROR", str(exc), 400, request.request_id)
 
     def submit_transaction_hash(self, request: ApiRequest) -> ApiResponse:
         try:
             body = _request_body(request)
             if "orderId" in body:
                 raise ValueError("orderId is not allowed in request body")
-            
-            tracking_id = TrackingId(_required_text(body, "trackingId"))
-            
-            user_id_str = None
-            if request.auth_context is not None and request.auth_context.user_id is not None:
-                user_id_str = request.auth_context.user_id
-            elif request.local_auth_fallback_enabled:
-                for key, value in request.headers.items():
-                    if key.lower() == "x-user-id" and value.strip():
-                        user_id_str = value.strip()
-                        break
 
-            if user_id_str is None:
+            tracking_id = TrackingId(_required_text(body, "trackingId"))
+
+            user_id = _user_id_from_request(request)
+            if user_id is None:
                 raise ValueError("authenticated session is required")
 
-            user_id = UserId(user_id_str)
-            
             if self._tracking_query is None:
                 raise ValueError("tracking query is not configured")
-                
+
             order_id, payment_id = self._tracking_query.resolve_and_verify(tracking_id, user_id)
-            
+
             command = SubmitTransactionHashCommand(
                 command_id=_command_id(request, body, tracking_id),
                 payment_id=payment_id,
@@ -90,6 +114,50 @@ def _required_text(body: Mapping[str, Any], key: str) -> str:
     return value.strip()
 
 
+def _user_id_from_request(request: ApiRequest) -> UserId | None:
+    if request.auth_context is not None and request.auth_context.user_id is not None:
+        return UserId(request.auth_context.user_id)
+    if request.local_auth_fallback_enabled:
+        for key, value in request.headers.items():
+            if key.lower() == "x-user-id" and value.strip():
+                return UserId(value.strip())
+    return None
+
+
+def _query_limit(value: object) -> int:
+    if value is None:
+        return 50
+    if isinstance(value, list | tuple):
+        if len(value) != 1:
+            raise ValueError("limit must be provided once")
+        value = value[0]
+    if isinstance(value, bool):
+        raise ValueError("limit must be a positive integer")
+    try:
+        limit = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError) as exc:
+        raise ValueError("limit must be a positive integer") from exc
+    if limit < 1 or limit > 100:
+        raise ValueError("limit must be between 1 and 100")
+    return limit
+
+
+def _status_filter(value: object) -> tuple[PaymentStatus, ...] | None:
+    if value is None or value == "":
+        return None
+    raw_values = value if isinstance(value, list | tuple) else (value,)
+    statuses: list[PaymentStatus] = []
+    for raw in raw_values:
+        for chunk in str(raw).split(","):
+            normalized = chunk.strip()
+            if not normalized:
+                continue
+            if normalized == "TX_SUBMITTED":
+                normalized = PaymentStatus.SUBMITTED.value
+            statuses.append(PaymentStatus(normalized))
+    return tuple(statuses) if statuses else None
+
+
 def _command_id(request: ApiRequest, body: Mapping[str, Any], tracking_id: TrackingId) -> CommandId:
     return CommandId(
         idempotency_key_from_request(
@@ -115,32 +183,91 @@ def _submit_payload(result: PaymentCommandResult, tracking_id: TrackingId, updat
     }
 
 
-def _current_step(status: PaymentCommandStatus) -> str:
-    if status is PaymentCommandStatus.TX_SUBMITTED:
+def _history_item_payload(item: PaymentHistoryItem) -> dict[str, Any]:
+    return {
+        "paymentId": str(item.payment_id),
+        "orderId": str(item.order_id),
+        "trackingId": str(item.tracking_id),
+        "status": item.status.value,
+        "currentStep": _current_step(item.status),
+        "pendingAction": _pending_action(item.status),
+        "amount": _crypto_payload(item.amount),
+        "chain": {"chainId": item.chain_network.chain_id, "name": item.chain_network.name},
+        "paymentAssetId": item.payment_asset_id,
+        "txHash": str(item.tx_hash) if item.tx_hash is not None else None,
+        "receipt": _receipt_payload(item.receipt),
+        "failureReason": item.failure_reason,
+        "updatedAt": item.updated_at.isoformat(),
+    }
+
+
+def _current_step(status: PaymentCommandStatus | PaymentStatus) -> str:
+    status_value = _status_value(status)
+    if status_value in {"TX_SUBMITTED", "SUBMITTED", "CONFIRMING"}:
         return "RECEIPT_PENDING"
-    if status is PaymentCommandStatus.AWAITING_SIGNATURE:
+    if status_value == "AWAITING_SIGNATURE":
         return "AWAITING_SIGNATURE"
-    if status is PaymentCommandStatus.CONFIRMED:
+    if status_value == "CONFIRMED":
         return "PAYMENT_CONFIRMED"
-    if status is PaymentCommandStatus.FAILED:
+    if status_value == "FAILED":
         return "PAYMENT_FAILED"
-    if status is PaymentCommandStatus.EXPIRED:
+    if status_value == "EXPIRED":
         return "PAYMENT_EXPIRED"
-    if status is PaymentCommandStatus.REFUNDED:
+    if status_value == "REFUNDED":
         return "PAYMENT_REFUNDED"
-    return status.value
+    return status_value
 
 
-def _pending_action(status: PaymentCommandStatus) -> str | None:
-    if status is PaymentCommandStatus.TX_SUBMITTED:
+def _pending_action(status: PaymentCommandStatus | PaymentStatus) -> str | None:
+    status_value = _status_value(status)
+    if status_value in {"TX_SUBMITTED", "SUBMITTED", "CONFIRMING"}:
         return "WAIT_FOR_RECEIPT"
-    if status is PaymentCommandStatus.AWAITING_SIGNATURE:
+    if status_value == "AWAITING_SIGNATURE":
         return "SIGN_PAYMENT"
-    if status is PaymentCommandStatus.CONFIRMED:
+    if status_value == "CONFIRMED":
         return "WAIT_FOR_STORE_APPROVAL"
-    if status in {PaymentCommandStatus.FAILED, PaymentCommandStatus.EXPIRED}:
+    if status_value in {"FAILED", "EXPIRED"}:
         return "WAIT_FOR_COMPENSATION"
     return None
+
+
+def _crypto_payload(value: Any) -> dict[str, Any]:
+    return {
+        "amount": format(value.amount, "f"),
+        "symbol": value.symbol,
+        "chainId": value.chain_id,
+        "tokenAddress": str(value.token_address) if value.token_address is not None else None,
+        "decimals": value.decimals,
+    }
+
+
+def _receipt_payload(receipt: Any | None) -> dict[str, Any] | None:
+    if receipt is None:
+        return None
+    return {
+        "transactionHash": str(_attribute_or_key(receipt, "hash")),
+        "blockNumber": int(_attribute_or_key(receipt, "block_number")),
+        "gasUsed": int(_attribute_or_key(receipt, "gas_used")),
+    }
+
+
+def _attribute_or_key(value: Any, key: str) -> Any:
+    if isinstance(value, Mapping):
+        if key in value:
+            return value[key]
+        camel_key = _camel_case(key)
+        return value[camel_key]
+    return getattr(value, key)
+
+
+def _camel_case(value: str) -> str:
+    head, *tail = value.split("_")
+    return head + "".join(part.capitalize() for part in tail)
+
+
+def _status_value(status: PaymentCommandStatus | PaymentStatus) -> str:
+    enum_value = getattr(status, "value", None)
+    return str(enum_value if enum_value is not None else status)
 
 
 def _payment_error_response(error: PaymentCommandRejected, request_id: str | None) -> ApiResponse:

@@ -8,14 +8,14 @@ description: Token Payments public HTTP API, OAuth, Postman 계약을 GitBook에
 
 Default `api`/`serve-api` commands keep the no-server-start preview boundary. Use `PYTHONPATH=app python3 -m token_payments serve-api --live --dry-run` for a bounded live server plan, and `PYTHONPATH=app python3 -m token_payments serve-api --live --confirm-live-api` only when an approved live environment is ready to start the long-running server.
 
-이 문서는 현재 로컬 backend API와 Phase 27 privacy-first identity contract를 기준으로 한다. Route surface는 현재 `app/token_payments/api/http.py`의 route manifest 54개를 기준으로 고정한다.
+이 문서는 현재 로컬 backend API와 Phase 27 privacy-first identity contract를 기준으로 한다. Route surface는 현재 `app/token_payments/api/http.py`의 route manifest 55개를 기준으로 고정한다.
 
 ## GitBook 탐색
 
 - [API 개요](api/README.md): base URL, 인증 방식, 공통 헤더와 오류 규약.
-- [OpenAPI Reference](api/openapi.yaml): GitBook OpenAPI import용 54-route interactive reference.
+- [OpenAPI Reference](api/openapi.yaml): GitBook OpenAPI import용 55-route interactive reference.
 - [공통 계약](api/runtime-contract.md): API evolution guardrail, route surface, runtime, header, cookie/CSRF, error, state, Postman 계약.
-- [전체 Route Summary](api/route-summary.md): 현재 54개 public HTTP route manifest의 GitBook용 전체 표.
+- [전체 Route Summary](api/route-summary.md): 현재 55개 public HTTP route manifest의 GitBook용 전체 표.
 - [인증과 OAuth](api/auth.md): SIWE, session, wallet link, user profile, provider-subject OAuth API.
 - [주문, 체크아웃, 결제](api/orders-checkout-payments.md): 주문 생성, checkout tracking, txHash 제출.
 - [상점과 상품 카탈로그](api/catalog-inventory.md): public store/product 읽기, merchant product 쓰기, store owner inventory.
@@ -36,14 +36,14 @@ Phase 26 hardens the public API and runtime architecture around externally safe 
 - Session, order creation, and payment submission responses do not expose `sessionId`, `refreshTokenHash`, internal `customerId`, or internal store primary keys on public customer/browser surfaces.
 - Inventory mutation requires `inventory:write` and canonical store membership (`OWNER` or `MANAGER`). Product registration requires `product:write` at the API boundary and canonical store membership in the service boundary. Both paths fail-closed when membership is missing, revoked, stale, or unavailable.
 - bounded contexts exchange ports, DTOs, ACLs, snapshots, or shared-kernel value objects. They do not serialize another bounded context domain object as their own persistence schema.
-- `store_catalog_store_memberships` is the canonical membership source. `auth_group_memberships` is an RBAC projection updated from a transactional outbox event. projection lag never authorizes writes; replay uses the same idempotent event handler for rebuild/replay.
+- `store_catalog_store_memberships` is the canonical membership source. `auth_group_memberships` is an RBAC projection updated synchronously during admin/merchant membership writes and reconciled through transactional outbox events. projection lag never authorizes writes; replay uses the same idempotent event handler for rebuild/replay.
 - runtime composition facade remains the public import path, while context-specific factories live in runtime composition modules and preserve the no-server-start dry-run boundary.
 
 ## Route Surface Contract
 
 ### Public HTTP route surface
 
-Public HTTP route surface is exactly the current 54-route manifest from `app/token_payments/api/http.py`. This manifest contains auth session routes, OAuth provider-subject login/link/list/revoke routes, authenticated wallet link/list/primary/revoke routes, current user display profile routes, order creation, checkout tracking, payment txHash submission, public store profile reads, merchant store profile listing/update routes, admin store catalog provisioning routes, store-owner product registration, store owner inventory query/mutation routes, merchant member/invitation routes, operator dashboard/detail reads, and cancel/retry/replay operator actions. It does not include store owner manual approval routes, role/permission full CRUD, platform group CRUD, personal group CRUD, owner transfer, settlement wallet mutation, or checkout saga command endpoints.
+Public HTTP route surface is exactly the current 55-route manifest from `app/token_payments/api/http.py`. This manifest contains auth session routes, OAuth provider-subject login/link/list/revoke routes, authenticated wallet link/list/primary/revoke routes, current user display profile routes, order creation, checkout tracking, customer payment history, payment txHash submission, public store profile reads, merchant store profile listing/update routes, admin store catalog provisioning routes, store-owner product registration, store owner inventory query/mutation routes, merchant member/invitation routes, operator dashboard/detail reads, and cancel/retry/replay operator actions. It does not include store owner manual approval routes, role/permission full CRUD, platform group CRUD, personal group CRUD, owner transfer, settlement wallet mutation, or checkout saga command endpoints.
 
 ### Message listener input surface
 
@@ -274,7 +274,7 @@ Request body size is bounded by `REQUEST_BODY_MAX_BYTES`. Exceeding it returns `
 
 ## Live System Routes And Observability
 
-`GET /healthz` and `GET /readyz` are live server-only system routes and are not part of the 54-route public facade manifest. `/healthz` reports process/runtime health only and must not open PostgreSQL, Kafka, Blockchain, Docker, or local `.env`. `/readyz` summarizes injected PostgreSQL/Kafka/Blockchain readiness probes; unavailable components return `503` with bounded component details.
+`GET /healthz` and `GET /readyz` are live server-only system routes and are not part of the 55-route public facade manifest. `/healthz` reports process/runtime health only and must not open PostgreSQL, Kafka, Blockchain, Docker, or local `.env`. `/readyz` summarizes injected PostgreSQL/Kafka/Blockchain readiness probes; unavailable components return `503` with bounded component details.
 
 All HTTP responses include `X-Request-Id` when a request id is known, and an incoming `X-Request-Id` is preserved. Live access log events include method, path template or route id, status, request id, duration, actor summary, and error code. Access logs must not record cookie values, signed tokens, authorization headers, private keys, signatures, or full request bodies.
 
@@ -327,6 +327,7 @@ Common status codes:
 | `createOrder` | `POST` | `/orders` |
 | `getCheckoutTrackingByTrackingId` | `GET` | `/checkouts/tracking/{trackingId}` |
 | `getCheckoutTrackingByOrderId` | `GET` | `/checkouts/orders/{orderId}` |
+| `listUserPayments` | `GET` | `/payments` |
 | `submitTransactionHash` | `POST` | `/payments/transaction-hashes` |
 | `getStoreProfile` | `GET` | `/stores/{publicStoreId}` |
 | `listPublicStores` | `GET` | `/stores` |
@@ -953,6 +954,41 @@ Errors: `400 VALIDATION_ERROR`, `404 CHECKOUT_NOT_FOUND`.
 
 ## Payments
 
+### `GET /payments`
+
+사용자가 결제한 전체 내역을 조회한다. 결제 내역은 authenticated user ownership으로 필터링되며 다른 사용자의 주문/결제는 보이지 않는다.
+
+Auth: customer user.
+
+Request: body 없음. Query `status`는 comma-separated `PaymentStatus` 값(`AWAITING_SIGNATURE`, `SUBMITTED`, `CONFIRMING`, `CONFIRMED`, `FAILED`, `EXPIRED`, `REFUNDED`)을 받는다. `limit`은 `1..100` 범위이며 기본값은 `50`이다. Header `X-Request-Id`를 사용할 수 있고, local dev에서는 `X-User-Id` fallback을 사용할 수 있다.
+
+Response `200`:
+
+```json
+{
+  "payments": [
+    {
+      "paymentId": "payment-001",
+      "orderId": "order-001",
+      "trackingId": "tracking-001",
+      "status": "SUBMITTED",
+      "currentStep": "RECEIPT_PENDING",
+      "pendingAction": "WAIT_FOR_RECEIPT",
+      "amount": {"amount": "25.00", "symbol": "USDC", "chainId": 11155111, "tokenAddress": "0x3333333333333333333333333333333333333333", "decimals": 6},
+      "chain": {"chainId": 11155111, "name": "Sepolia"},
+      "paymentAssetId": "local-usdc",
+      "txHash": "0xabababababababababababababababababababababababababababababababab",
+      "receipt": null,
+      "failureReason": null,
+      "updatedAt": "2026-05-17T10:02:00+09:00"
+    }
+  ],
+  "pagination": {"limit": 50, "nextPageToken": null}
+}
+```
+
+Errors: `400 VALIDATION_ERROR`, `401 AUTHENTICATION_REQUIRED`.
+
 ### `POST /payments/transaction-hashes`
 
 MetaMask가 전송한 transaction hash를 제출한다.
@@ -1265,7 +1301,7 @@ Default PostgreSQL bootstrap uses `app/postgres/init.d/002-token-payments-defaul
 
 Manual seed data for local Postman examples is still described by `postman/fixtures/token-payments.local.seed-plan.json`. It references demo customer/store/product/inventory/payment destination/test network ids using committed PostgreSQL schema table and column names, but it is fixture metadata rather than the default init path. Route-level expected response examples live in `postman/expected/token-payments.api.expected.json`; the fixture covers auth, cookie/CSRF headers, `Idempotency-Key`, `X-Request-Id`, happy-path checkout, compensation cancellation, and operator action recovery while keeping signed token and cookie values redacted.
 
-The Docker Compose API service is `token_payments_api`. Async checkout progress, including inventory reservation and payment receipt confirmation, also requires the runtime profile's `token_payments_live_worker`. After `cp .env.example .env`, `COMPOSE_PROFILES=runtime,smoke,api` makes both services part of plain `docker compose up`; automated checks use daemon-less compose config and smoke plans and do not start Docker. Daemon-less compose config validation does not start Docker:
+The Docker Compose API service is `token_payments_api`. Async checkout progress, including inventory reservation, auth RBAC projection, and payment receipt confirmation, is handled by `token_payments_live_worker`. The live worker belongs to both the `runtime` and `api` profiles, and the API service depends on it so API-profile local runs process outbox/Kafka work automatically. After `cp .env.example .env`, `COMPOSE_PROFILES=runtime,smoke,api` makes both services part of plain `docker compose up`; automated checks use daemon-less compose config and smoke plans and do not start Docker. Daemon-less compose config validation does not start Docker:
 
 ```bash
 docker compose --env-file .env.example config --services

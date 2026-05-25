@@ -363,7 +363,7 @@ python3 scripts/validate_phases.py
 
 ## Operator Action Endpoints 검증
 
-Operator action endpoints phase는 `cancel/retry/replay operator actions`를 bounded framework-neutral endpoint contract로 고정한다. `cancelOrder`, `retryOutboxMessage`, `replayMessage`는 public `ApiRequest`/`ApiResponse`, route manifest, register helper, ADMIN-only policy, idempotency, audit payload를 검증하지만 live Docker/Kafka publish is not started automatically.
+Operator action endpoints phase는 `cancel/retry/replay operator actions`를 bounded framework-neutral endpoint contract로 고정한다. `cancelOrder`, `retryOutboxMessage`, `replayMessage`는 public `ApiRequest`/`ApiResponse`, route manifest, register helper, ADMIN-only policy, idempotency, audit payload를 검증한다. Facade tests do not start live Docker/Kafka publish; the API compose profile starts `token_payments_live_worker` for runtime async processing.
 
 ```bash
 python3 -m pytest \
@@ -534,4 +534,4 @@ To execute in live mode:
 - Run once (single batch): `PYTHONPATH=app python3 -m token_payments worker --live --once`
 - Run loop (long-running daemon): `PYTHONPATH=app python3 -m token_payments worker --live --loop --confirm-live-worker`
 
-The Docker environment defines the `token_payments_live_worker` service in `docker-compose.yml` which executes the long-running daemon loops on confirmed startup.
+The Docker environment defines the `token_payments_live_worker` service in `docker-compose.yml` which executes the long-running daemon loops on confirmed startup. It belongs to both the `runtime` and `api` profiles, and `token_payments_api` depends on it so API-profile local runs process outbox/Kafka work automatically.

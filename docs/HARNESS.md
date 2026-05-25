@@ -137,4 +137,4 @@ Token Payments 라이브 워커(Outbox Relay, 7개의 Kafka Consumers, payment r
 - Run once (single batch): `PYTHONPATH=app python3 -m token_payments worker --live --once`
 - Run loop (long-running daemon): `PYTHONPATH=app python3 -m token_payments worker --live --loop --confirm-live-worker`
 
-또한, `docker-compose.yml` 내 `token_payments_live_worker` 서비스가 구성되어 있어 컨테이너 형태로 실행할 수도 있습니다.
+또한, `docker-compose.yml` 내 `token_payments_live_worker` 서비스가 구성되어 있어 컨테이너 형태로 실행할 수도 있습니다. 이 서비스는 `runtime`과 `api` profile에 모두 포함되고 `token_payments_api`가 의존하므로 API profile 실행 시 outbox/Kafka 처리가 함께 따라옵니다.

@@ -1,7 +1,7 @@
-# Table of contents
+# API 문서 목차
 
 * [API 개요](README.md)
-* [OpenAPI Reference](openapi-reference.md)
+* [OpenAPI Reference](openapi.yaml)
 * [공통 계약](runtime-contract.md)
 * [전체 Route Summary](route-summary.md)
 * [인증과 OAuth](auth.md)

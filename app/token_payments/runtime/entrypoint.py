@@ -56,6 +56,10 @@ class ContractRuntimeContainer:
                             {"name": "inventory-command-listener", "type": "kafka-consumer"},
                             {"name": "payment-command-listener", "type": "kafka-consumer"},
                             {"name": "store-approval-command-listener", "type": "kafka-consumer"},
+                            {"name": "order-command-listener", "type": "kafka-consumer"},
+                            {"name": "order-status-listener", "type": "kafka-consumer"},
+                            {"name": "auth-rbac-projector", "type": "kafka-consumer"},
+                            {"name": "payment-receipt-polling", "type": "polling-worker"},
                         ]
                     }
                     return CommandDispatchResult.succeeded(

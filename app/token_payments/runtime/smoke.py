@@ -151,6 +151,7 @@ POSTMAN_API_SERVICE: Mapping[str, Mapping[str, Any] | Sequence[Any] | str] = Map
             "postgres": "service_healthy",
             "kafka": "service_started",
             "test_network": "service_started",
+            "token_payments_live_worker": "service_started",
         },
     }
 )
@@ -1235,6 +1236,12 @@ def _run_payment_receipt_failure_compensation() -> dict[str, Any]:
 
     fixture = _build_compensation_fixture("7c")
     failed_tx_hash = TransactionHash("0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc")
+    fixture.blockchain_adapter.receipt = {
+        "transactionHash": str(failed_tx_hash),
+        "blockNumber": 123456,
+        "gasUsed": 21000,
+        "status": False,
+    }
     submit_result = fixture.payment_handler.submit_transaction_hash(
         SubmitTransactionHashCommand(
             command_id=CommandId(f"{fixture.order_id}:SubmitTransactionHashCommand"),
@@ -1528,6 +1535,7 @@ class _CompensationCheckoutFixture:
     topic_resolver: Any
     inventory_handler: Any
     payment_handler: Any
+    blockchain_adapter: Any
     approval_service: Any
     order_command_handler: Any
     order_status_projector: Any
@@ -1703,25 +1711,26 @@ def _build_compensation_fixture(marker: str) -> _CompensationCheckoutFixture:
         ),
         CheckoutCommandName.INITIATE_PAYMENT.value,
     )
+    blockchain_adapter = _InMemoryBlockchainAdapter(
+        receipt=TransactionReceipt(hash=confirmed_tx_hash, block_number=123456, gas_used=21000),
+        gas_estimate=GasEstimate(
+            estimated_fee=Crypto(
+                amount=Decimal("0.00042"),
+                symbol="ETH",
+                chain_id=chain.chain_id,
+                token_address=None,
+                decimals=18,
+            ),
+            gas_limit=21000,
+            buffer_rate=Decimal("0.20"),
+        ),
+    )
     payment_handler = PaymentCommandHandler(
         payment_repository=_InMemoryPaymentRepository(),
         authorization_repository=_InMemoryPaymentAuthorizationRepository(),
         processed_commands=payment_processed_commands,
         outbox_messages=outbox_messages,
-        blockchain_adapter=_InMemoryBlockchainAdapter(
-            receipt=TransactionReceipt(hash=confirmed_tx_hash, block_number=123456, gas_used=21000),
-            gas_estimate=GasEstimate(
-                estimated_fee=Crypto(
-                    amount=Decimal("0.00042"),
-                    symbol="ETH",
-                    chain_id=chain.chain_id,
-                    token_address=None,
-                    decimals=18,
-                ),
-                gas_limit=21000,
-                buffer_rate=Decimal("0.20"),
-            ),
-        ),
+        blockchain_adapter=blockchain_adapter,
         timeout_scheduler=_InMemoryPaymentTimeoutScheduler(),
         transaction_service=_InMemoryTransactionService(),
     )
@@ -1787,6 +1796,7 @@ def _build_compensation_fixture(marker: str) -> _CompensationCheckoutFixture:
         topic_resolver=topic_resolver,
         inventory_handler=inventory_handler,
         payment_handler=payment_handler,
+        blockchain_adapter=blockchain_adapter,
         approval_service=approval_service,
         order_command_handler=order_command_handler,
         order_status_projector=order_status_projector,
@@ -2769,7 +2779,8 @@ class _InMemoryBlockchainAdapter:
         return self.gas_estimate
 
     def get_transaction_receipt(self, tx_hash: Any) -> Any | None:
-        if str(tx_hash) == str(self.receipt.hash):
+        receipt_hash = self.receipt.get("transactionHash") if isinstance(self.receipt, Mapping) else self.receipt.hash
+        if str(tx_hash) == str(receipt_hash):
             return self.receipt
         return None
 
