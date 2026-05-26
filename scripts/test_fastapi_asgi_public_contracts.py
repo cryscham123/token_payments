@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import ast
 import builtins
-from html.parser import HTMLParser
 import json
 import os
 from pathlib import Path
-import re
 import socket
 import subprocess
 import sys
@@ -62,7 +60,7 @@ ASGI_FASTAPI_DOC_PHRASES = (
     "does not start a server",
     "no-server-start boundary",
     "manual production serve",
-    "python3 -m pytest scripts/test_fastapi_asgi_public_contracts.py scripts/test_fastapi_thin_adapter.py scripts/test_asgi_adapter_contract_foundation.py scripts/test_wsgi_runtime_preview.py scripts/test_api_worker_runtime_public_contracts.py scripts/test_browser_preview_public_contracts.py",
+    "python3 -m pytest scripts/test_fastapi_asgi_public_contracts.py scripts/test_fastapi_thin_adapter.py scripts/test_asgi_adapter_contract_foundation.py scripts/test_wsgi_runtime_preview.py scripts/test_api_worker_runtime_public_contracts.py scripts/test_backend_only_public_contracts.py",
     "PYTHONPATH=app python3 -m token_payments api",
     "PYTHONPATH=app python3 -m token_payments serve-api",
     "python3 scripts/validate_phases.py",
@@ -126,33 +124,6 @@ def test_api_and_serve_api_previews_include_asgi_fastapi_metadata_and_existing_m
             assert "pip install fastapi" in http["fastapiUnavailableReason"]
 
         assert {entry["operationId"] for entry in http["routes"][-3:]} == OPERATOR_ACTION_OPERATION_IDS
-
-
-def test_operator_ui_intents_still_match_route_manifest_endpoint_metadata() -> None:
-    from token_payments.api import OPERATOR_ACTION_HTTP_ROUTES, http_route_manifest
-    from token_payments.ui import render_ui_preview
-
-    manifest_by_operation = {entry["operationId"]: entry for entry in http_route_manifest()}
-    action_routes = {
-        route.operation_id: route
-        for route in OPERATOR_ACTION_HTTP_ROUTES.values()
-    }
-    controls = _operator_action_controls(str(render_ui_preview("operator")["html"]))
-
-    assert set(action_routes) == OPERATOR_ACTION_OPERATION_IDS
-    assert {control["data-operation-id"] for control in controls} == OPERATOR_ACTION_OPERATION_IDS
-
-    for control in controls:
-        operation_id = control["data-operation-id"]
-        route = action_routes[operation_id]
-        assert manifest_by_operation[operation_id] == {
-            "method": route.method,
-            "path": route.path,
-            "operationId": operation_id,
-        }
-        assert control["data-method"] == route.method
-        assert _matches_route_template(control["data-endpoint"], route.path)
-        assert json.loads(control["data-body-template"])["idempotencyKey"]
 
 
 def test_preview_reports_fastapi_unavailable_without_building_or_starting_an_app(
@@ -230,7 +201,7 @@ def test_runtime_preview_source_has_no_server_or_external_client_imports() -> No
 
 
 def test_readmes_document_asgi_fastapi_thin_adapter_scope_commands_and_next_candidates() -> None:
-    for path in (ROOT / "README.md", ROOT / "app" / "README.md"):
+    for path in (ROOT / "app" / "README.md",):
         section = _section(path.read_text(encoding="utf-8"), "## ASGI/FastAPI Thin Adapter")
 
         assert section, f"{path.relative_to(ROOT)} must document ASGI/FastAPI Thin Adapter"
@@ -262,31 +233,6 @@ def test_phase_13_metadata_closes_fastapi_asgi_public_contracts() -> None:
 
     assert phase13["status"] == "completed"
     assert phase13.get("completed_at")
-
-
-class _ActionControlParser(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__()
-        self.controls: list[dict[str, str]] = []
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        attributes = {key: value or "" for key, value in attrs}
-        if attributes.get("data-operation-id") in OPERATOR_ACTION_OPERATION_IDS:
-            self.controls.append(attributes)
-
-
-def _operator_action_controls(html: str) -> list[dict[str, str]]:
-    parser = _ActionControlParser()
-    parser.feed(html)
-    return parser.controls
-
-
-def _matches_route_template(endpoint: str, template: str) -> bool:
-    pattern = "^" + re.escape(template).replace(re.escape("{orderId}"), "[^/]+").replace(
-        re.escape("{messageId}"),
-        "[^/]+",
-    ) + "$"
-    return bool(re.match(pattern, endpoint))
 
 
 def _is_live_infrastructure_path(value: Any) -> bool:

@@ -17,7 +17,7 @@
 | 경로 | 역할 |
 | --- | --- |
 | `AGENTS.md` | 저장소 전체 실행 규칙 |
-| `docs/*.md` | 제품, 아키텍처, 도메인, UI, 하네스 가드레일 |
+| `docs/*.md` | 제품, 아키텍처, 도메인, API, 하네스 가드레일 |
 | `phases/index.json` | 실행 가능한 phase 목록 |
 | `phases/{phase}/index.json` | phase 내 step 상태 |
 | `phases/{phase}/step{N}.md` | 독립 실행 가능한 step 지시문 |

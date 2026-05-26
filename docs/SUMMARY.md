@@ -15,5 +15,4 @@
   * [머천트, 관리자, RBAC](api/merchant-admin-rbac.md)
   * [운영자와 런타임](api/operator-runtime.md)
 * [ADR](ADR.md)
-* [UI 가이드](UI_GUIDE.md)
 * [Harness Engineering](HARNESS.md)

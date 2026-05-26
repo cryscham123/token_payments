@@ -91,7 +91,7 @@ def test_live_smoke_runner_source_avoids_disallowed_execution_dependencies() -> 
 
 
 def test_readmes_document_live_smoke_runner_commands_and_refusal_behavior() -> None:
-    for path in (ROOT / "README.md", ROOT / "app" / "README.md"):
+    for path in (ROOT / "app" / "README.md",):
         text = path.read_text(encoding="utf-8")
 
         for command in DOCUMENTED_RUNNER_COMMANDS:

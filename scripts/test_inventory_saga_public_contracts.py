@@ -15,10 +15,9 @@ def test_docs_describe_inventory_reserve_release_confirm_saga_flow() -> None:
     sequences = (ROOT / "docs/SEQUENCES.md").read_text(encoding="utf-8")
     domain = (ROOT / "docs/DOMAIN_MODEL.md").read_text(encoding="utf-8")
     api_spec = (ROOT / "docs/API_SPEC.md").read_text(encoding="utf-8")
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
     app_readme = (ROOT / "app/README.md").read_text(encoding="utf-8")
 
-    for text in (sequences, domain, api_spec, readme, app_readme):
+    for text in (sequences, domain, api_spec, app_readme):
         assert "ConfirmInventoryCommand" in text
         assert "InventoryConfirmedEvent" in text
     assert "OrderApprovedEvent` | CheckoutProcessManager가 `ConfirmInventoryCommand`" in sequences

@@ -194,7 +194,7 @@ def test_retry_replay_reject_invalid_inputs_without_calling_ports(
     assert result.summary.startswith("Invalid operator outbox action request:")
 
 
-def test_retry_outbox_action_rejects_non_admin_without_calling_retry_port() -> None:
+def test_retry_outbox_action_rejects_missing_outbox_retry_permission_without_calling_retry_port() -> None:
     retry_port = RecordingRetryPort(OperatorOutboxActionStatus.RETRYABLE)
     executor = OperatorOutboxActionExecutor(
         retry_port=retry_port,
@@ -214,6 +214,7 @@ def test_retry_outbox_action_rejects_non_admin_without_calling_retry_port() -> N
 
     assert retry_port.requests == []
     assert result.status is OperatorActionResultStatus.REJECTED
+    assert result.summary == "operator:action and outbox:retry permissions are required to execute retryOutboxMessage"
     assert result.details["errorCode"] == "OPERATOR_FORBIDDEN"
     assert result.details["messageIdentity"] == OUTBOX_MESSAGE_ID
 

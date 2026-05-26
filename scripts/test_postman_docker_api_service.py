@@ -81,7 +81,8 @@ def test_compose_defines_postman_api_service_contract() -> None:
     assert _list_for_key(service, "profiles") == ["api"]
     assert _json_list_for_key(service, "command") == EXPECTED_API_COMMAND
     assert _scalar_for_key(service, "restart") == "unless-stopped"
-    assert _list_for_key(service, "ports") == ["8000:8000"]
+    assert _list_for_key(service, "ports") == []
+    assert _list_for_key(service, "expose") == ["8000"]
 
     assert environment["PYTHONPATH"] == "/workspace/app"
     assert environment["RUNTIME_API_HOST"] == "0.0.0.0"
@@ -108,8 +109,8 @@ def test_env_example_documents_postman_api_cookie_csrf_cors_and_session_placehol
     for key in REQUIRED_API_ENV_KEYS:
         assert key in env, f".env.example must document {key}"
 
-    assert env["LOCAL_API_ORIGIN"] == "http://localhost:8000"
-    assert env["API_PUBLIC_BASE_URL"] == "http://localhost:8000"
+    assert env["LOCAL_API_ORIGIN"] == "https://localhost"
+    assert env["API_PUBLIC_BASE_URL"] == "https://localhost"
     assert env["RUNTIME_API_HOST"] == "0.0.0.0"
     assert env["RUNTIME_API_PORT"] == "8000"
     assert env["COOKIE_SECURE"].lower() == "false"
@@ -143,7 +144,8 @@ def test_docker_runtime_smoke_exposes_postman_api_manual_sequence_without_starti
         "command": EXPECTED_API_COMMAND,
         "restart": "unless-stopped",
         "profiles": ["api"],
-        "ports": ["8000:8000"],
+        "ports": [],
+        "expose": ["8000"],
         "environmentKeys": ["PYTHONPATH", *sorted(REQUIRED_API_ENV_KEYS)],
         "dependsOn": EXPECTED_DEPENDENCIES,
     }
@@ -157,10 +159,10 @@ def test_docker_runtime_smoke_exposes_postman_api_manual_sequence_without_starti
     assert postman_api["manualLiveCommands"] == [
         "cp .env.example .env",
         "docker compose --env-file .env config --services",
-        "docker compose --env-file .env build token_payments_api",
+        "docker compose --env-file .env build token_payments_api nginx",
         "docker compose up -d",
-        "curl --fail http://localhost:8000/healthz",
-        "curl --fail http://localhost:8000/readyz",
+        "curl --fail --insecure https://localhost/healthz",
+        "curl --fail --insecure https://localhost/readyz",
         "docker compose down",
     ]
     json.dumps(result)

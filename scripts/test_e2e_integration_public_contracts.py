@@ -177,6 +177,9 @@ def test_readmes_document_e2e_smokes_manual_compose_and_next_phase_candidates() 
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     app_readme = (ROOT / "app/README.md").read_text(encoding="utf-8")
 
+    assert "app/README.md" in readme
+    assert "phase별 완료 로그" in readme
+
     for text in (
         "scripts/test_e2e_integration_public_contracts.py",
         "PYTHONPATH=app python3 -m token_payments smoke",
@@ -193,7 +196,6 @@ def test_readmes_document_e2e_smokes_manual_compose_and_next_phase_candidates() 
         "CancelOrderCommand",
         "order status update handler",
     ):
-        assert text in readme
         assert text in app_readme
 
 

@@ -63,8 +63,9 @@ def test_order_lifecycle_docs_are_current() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     app_readme = (ROOT / "app/README.md").read_text(encoding="utf-8")
 
-    for text in (readme, app_readme):
-        assert "Order Lifecycle Compensation" in text
-        assert "cancelOrderHandlerWired=true" in text
-        assert "scripts/test_order_lifecycle_public_contracts.py" in text
-        assert "HTTP framework adapter" in text
+    assert "app/README.md" in readme
+    assert "phase별 완료 로그" in readme
+    assert "Order Lifecycle Compensation" in app_readme
+    assert "cancelOrderHandlerWired=true" in app_readme
+    assert "scripts/test_order_lifecycle_public_contracts.py" in app_readme
+    assert "HTTP framework adapter" in app_readme

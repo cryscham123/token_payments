@@ -241,10 +241,11 @@ def test_runtime_env_and_readmes_document_contract_without_secrets() -> None:
 
     for text in (
         "PYTHONPATH=app .venv/bin/python -m token_payments health",
-        "scripts/test_runtime_contract_foundation.py",
     ):
         assert text in readme
         assert text in app_readme
+    assert "scripts/test_runtime_contract_foundation.py" in app_readme
+    assert "app/README.md" in readme
 
     for forbidden in ("PRIVATE_KEY", "SEED_PHRASE", "API_KEY"):
         assert f"RUNTIME_{forbidden}" not in env_example

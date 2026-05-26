@@ -44,7 +44,7 @@ def test_env_example_wires_api_postgres_kafka_blockchain_cors_csrf_and_seed_name
     seed = _read_json(SEED_PLAN_PATH)
 
     assert env["COMPOSE_PROFILES"] == "runtime,smoke,api"
-    assert env["LOCAL_API_ORIGIN"] == env["API_PUBLIC_BASE_URL"] == "http://localhost:8000"
+    assert env["LOCAL_API_ORIGIN"] == env["API_PUBLIC_BASE_URL"] == "https://localhost"
     assert env["RUNTIME_API_HOST"] == "0.0.0.0"
     assert env["RUNTIME_API_PORT"] == "8000"
     assert env["ADAPTER_KAFKA_BOOTSTRAP_SERVERS"] == "kafka:9092"
@@ -58,6 +58,7 @@ def test_env_example_wires_api_postgres_kafka_blockchain_cors_csrf_and_seed_name
     assert env["ADAPTER_BLOCKCHAIN_RPC_PORT"] == "8545"
     assert env["CSRF_COOKIE_NAME"] == "csrf_token"
     assert env["CSRF_HEADER_NAME"] == "X-CSRF-Token"
+    assert "https://localhost" in env["CORS_ALLOWED_ORIGINS"]
     assert "http://localhost:5173" in env["CORS_ALLOWED_ORIGINS"]
 
 

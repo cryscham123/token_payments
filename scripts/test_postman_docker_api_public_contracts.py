@@ -17,7 +17,7 @@ import docker_live_smoke
 
 COLLECTION_PATH = ROOT / "postman" / "token-payments.local.postman_collection.json"
 EXPECTED_RESPONSES_PATH = ROOT / "postman" / "expected" / "token-payments.api.expected.json"
-DOC_PATHS = (ROOT / "README.md", ROOT / "app" / "README.md", ROOT / "docs" / "API_SPEC.md")
+DOC_PATHS = (ROOT / "app" / "README.md", ROOT / "docs" / "API_SPEC.md")
 NEGATIVE_COLLECTION_IDS = {"expiredAccessTokenRejected", "invalidSignatureAccessTokenRejected"}
 REQUIRED_SECURITY_CASES = {
     "expired access token rejected",
@@ -45,7 +45,7 @@ REQUIRED_DOC_TERMS = (
 FINAL_LOCAL_ORDER = (
     "cp .env.example .env",
     "docker compose --env-file .env config --services",
-    "docker compose --env-file .env build token_payments_api",
+    "docker compose --env-file .env build token_payments_api nginx",
     "docker compose up -d",
     "postman/fixtures/token-payments.local.seed-plan.json",
     "postman/token-payments.local.postman_collection.json",

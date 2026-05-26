@@ -182,7 +182,7 @@ def test_postman_environment_uses_local_placeholders_without_committed_secrets()
     environment = _read_json(ENVIRONMENT_PATH)
     values = {entry["key"]: entry for entry in environment["values"]}
 
-    assert values["baseUrl"]["value"] == "http://localhost:8000"
+    assert values["baseUrl"]["value"] == "https://localhost"
     assert values["walletAddress"]["value"] == "0x1111111111111111111111111111111111111111"
     assert values["storeId"]["value"] == ""
     assert values["publicStoreId"]["value"] == ""

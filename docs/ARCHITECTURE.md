@@ -47,18 +47,20 @@ PostgreSQL is the source of truth for auth users, login challenges, and sessions
 ## Context 내부 레이어
 
 ```text
-context/
+contexts/{context}/
   domain/
-    model/             # Aggregate, Entity, Value Object
-    event/             # Domain Event
+    model.py           # Aggregate, Entity, Value Object, Domain Event
   application/
-    port/in/           # Use case input port
-    port/out/          # Repository, Publisher, External service port
-    service/           # Use case orchestration
-    process/           # CheckoutProcessManager 같은 saga
+    commands.py        # Use case command DTOs
+    queries.py         # Query DTOs where needed
+    ports.py           # Repository, publisher, external service ports
+    service.py         # Use case orchestration
+    handler.py         # Command/message handlers where needed
+    process_manager.py # Checkout saga/process manager
   adapter/
-    in/                # REST, message listener, scheduler
-    out/               # PostgreSQL, Kafka, RPC, MetaMask bridge
+    postgres.py        # PostgreSQL persistence adapters
+    kafka.py           # Kafka/message adapters
+    blockchain.py      # RPC boundary where needed
 ```
 
 도메인 레이어는 외부 기술에 의존하지 않는다. Application Service는 input/output port만 바라본다. Kafka, PostgreSQL, Blockchain RPC, MetaMask client는 adapter에서만 다룬다.

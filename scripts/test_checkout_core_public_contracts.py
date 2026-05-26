@@ -195,24 +195,28 @@ def test_checkout_core_message_names_are_ready_for_process_manager_and_adapters(
     )
 
 
-def test_readme_documents_checkout_core_contracts_and_adapter_phase_candidates() -> None:
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+def test_public_docs_document_checkout_core_contracts_and_adapter_boundaries() -> None:
+    docs = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (
+            ROOT / "docs" / "DOMAIN_MODEL.md",
+            ROOT / "docs" / "ARCHITECTURE.md",
+            ROOT / "app" / "README.md",
+        )
+    )
 
     for phrase in (
-        "Checkout Core 검증",
-        "scripts/test_inventory_domain_model.py",
-        "scripts/test_inventory_application_contracts.py",
-        "scripts/test_payment_domain_model.py",
-        "scripts/test_payment_application_contracts.py",
-        "scripts/test_store_approval_core.py",
-        "scripts/test_checkout_core_public_contracts.py",
-        "scripts/test_foundation_public_contracts.py",
-        "PostgreSQL repository",
+        "ProductInventory",
+        "PaymentAuthorization",
+        "StoreApprovalRequestListener",
+        "OutboxMessageRepository",
+        "PostgreSQL repositories",
         "outbox relay",
-        "Kafka publisher/listener",
-        "Blockchain RPC/MetaMask boundary",
+        "Kafka consumer",
+        "Blockchain RPC",
+        "MetaMask client",
     ):
-        assert phrase in readme
+        assert phrase in docs
 
 
 def _imported_modules(path: Path) -> set[str]:

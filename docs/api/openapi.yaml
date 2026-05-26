@@ -48,9 +48,9 @@ info:
 
     **Base URL**
 
-    `http://localhost:8000`
+    `https://localhost`
 
-    Use this from local tooling or Postman when Docker Compose exposes the API on the default host port.
+    Use this from local tooling or Postman when Docker Compose exposes the API through nginx.
 
     {% endtab %}
     {% endtabs %}
@@ -155,9 +155,9 @@ servers:
 - url: http://127.0.0.1:8000
   description: Local API server
   x-gitbook-description-html: <p>Local API server</p>
-- url: http://localhost:8000
-  description: Docker Compose local alias
-  x-gitbook-description-html: <p>Docker Compose local alias</p>
+- url: https://localhost
+  description: Docker Compose nginx local alias
+  x-gitbook-description-html: <p>Docker Compose nginx local alias</p>
 security:
 - cookieAuth: []
 - bearerAuth: []

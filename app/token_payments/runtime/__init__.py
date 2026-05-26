@@ -1,7 +1,5 @@
 """Runtime contracts for Token Payments API and worker entrypoints."""
 
-from importlib import import_module as _import_module
-
 from .composition import (
     LIVE_RUNTIME_DRIVER_CONFIGURATION_INVALID,
     LIVE_RUNTIME_DEPENDENCY_MISSING,
@@ -118,8 +116,6 @@ __all__ = [
     "AVAILABLE_SMOKE_SCENARIOS",
     "AccessLogEvent",
     "AuthCookiePair",
-    "BrowserPreviewHttpServer",
-    "BrowserPreviewRequestHandler",
     "BlockchainClient",
     "BlockchainReadinessProbe",
     "Clock",
@@ -130,8 +126,6 @@ __all__ = [
     "CookieSettings",
     "CorsPolicy",
     "CsrfTokenService",
-    "DEFAULT_BROWSER_PREVIEW_HOST",
-    "DEFAULT_BROWSER_PREVIEW_PORT",
     "EthAccountWalletSignatureClient",
     "HealthState",
     "HealthStatus",
@@ -199,7 +193,6 @@ __all__ = [
     "WorkerRunSummary",
     "WorkerRuntime",
     "build_live_asgi_application",
-    "build_browser_preview_server",
     "build_live_http_router",
     "build_live_api_facades",
     "build_live_api_router",
@@ -214,28 +207,6 @@ __all__ = [
     "dispatch_runtime_command",
     "evaluate_readiness",
     "live_worker_registry",
-    "render_browser_preview_document",
     "run_smoke_scenario",
     "run_live_api_server",
-    "serve_browser_preview",
 ]
-
-_BROWSER_PREVIEW_EXPORTS = frozenset(
-    {
-        "DEFAULT_BROWSER_PREVIEW_HOST",
-        "DEFAULT_BROWSER_PREVIEW_PORT",
-        "BrowserPreviewHttpServer",
-        "BrowserPreviewRequestHandler",
-        "build_browser_preview_server",
-        "render_browser_preview_document",
-        "serve_browser_preview",
-    }
-)
-
-
-def __getattr__(name: str):
-    if name in _BROWSER_PREVIEW_EXPORTS:
-        value = getattr(_import_module("token_payments.runtime.browser_preview"), name)
-        globals()[name] = value
-        return value
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

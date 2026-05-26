@@ -234,8 +234,8 @@ services:
     restart: unless-stopped
     profiles:
       - api
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2).read()"]
       interval: 5s
@@ -266,7 +266,12 @@ services:
     ports:
       - 443:443
       - 80:80
+    profiles:
+      - api
     restart: always
+    depends_on:
+      token_payments_api:
+        condition: service_healthy
 
   redis:
     container_name: redis

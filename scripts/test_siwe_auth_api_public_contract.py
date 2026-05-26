@@ -235,7 +235,7 @@ def test_cookie_csrf_cors_and_refresh_rotation_contracts_remain_cookie_first() -
 
 
 def test_readmes_state_supported_login_scope_and_future_wallet_work() -> None:
-    for path in (README_PATH, APP_README_PATH):
+    for path in (APP_README_PATH,):
         text = path.read_text(encoding="utf-8")
         assert "SIWE v1" in text
         assert "EOA" in text

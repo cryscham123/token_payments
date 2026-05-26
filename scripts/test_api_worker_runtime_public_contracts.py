@@ -181,6 +181,9 @@ def test_readmes_document_api_worker_runtime_commands_and_next_phase_candidates(
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     app_readme = (ROOT / "app/README.md").read_text(encoding="utf-8")
 
+    assert "app/README.md" in readme
+    assert "애플리케이션 런타임" in readme
+
     for text in (
         "scripts/test_api_worker_runtime_public_contracts.py",
         "PYTHONPATH=app .venv/bin/python -m token_payments health",
@@ -191,12 +194,11 @@ def test_readmes_document_api_worker_runtime_commands_and_next_phase_candidates(
         "PaymentsApi",
         "OperatorApi",
         "WorkerRuntime",
-        "customer checkout UI",
-        "operator status dashboard",
+        "Frontend client implementation is outside the active backend runtime contract",
+        "HTTP APIs, route manifests, and Postman/local smoke contracts",
         "docker compose integration smoke",
         "happy-path e2e checkout",
     ):
-        assert text in readme
         assert text in app_readme
 
 

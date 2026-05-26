@@ -6,7 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PHASE_DIR = "17-docker-compose-live-server"
-DOC_PATHS = (ROOT / "README.md", ROOT / "app" / "README.md", ROOT / "docs" / "API_SPEC.md")
+DOC_PATHS = (ROOT / "app" / "README.md", ROOT / "docs" / "API_SPEC.md")
 
 
 def test_docs_publish_plain_local_live_stack_path_without_profile_requirement() -> None:
@@ -28,8 +28,8 @@ def test_docs_publish_seed_postman_readiness_security_smoke_and_cleanup_order() 
         "token-payments.local.postman_environment.json",
         "python3 scripts/docker_live_smoke.py --api-readiness --plan",
         "python3 scripts/docker_live_smoke.py --api-readiness --execute --confirm-live-docker",
-        "curl --fail http://localhost:8000/healthz",
-        "curl --fail http://localhost:8000/readyz",
+        "curl --fail --insecure https://localhost/healthz",
+        "curl --fail --insecure https://localhost/readyz",
         "docker compose down",
     )
 

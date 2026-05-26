@@ -130,6 +130,9 @@ def describe_live_api_server_plan(
         redaction={
             "secretsRedacted": True,
             "tokenAddressesRedacted": True,
+            "clientIpLogged": False,
+            "forwardedClientIpHeaders": False,
+            "nonIpProxyMetadataAccepted": True,
         },
         readiness={
             "healthRoute": "/healthz",
@@ -261,8 +264,8 @@ def run_live_api_server(
 
 def _run_with_uvicorn(app: Any, *, host: str, port: int) -> Mapping[str, JsonValue]:
     uvicorn = importlib.import_module("uvicorn")
-    uvicorn.run(app, host=host, port=port)
-    return {"serverStarted": True, "runner": "uvicorn"}
+    uvicorn.run(app, host=host, port=port, access_log=False, proxy_headers=True, forwarded_allow_ips="*")
+    return {"serverStarted": True, "runner": "uvicorn", "accessLog": False}
 
 
 def _register_live_system_routes(

@@ -148,7 +148,7 @@ def test_operator_action_modules_avoid_web_framework_kafka_and_postgres_clients(
     assert violations == {}
 
 
-def test_existing_api_runtime_ui_and_e2e_public_contract_imports_still_resolve() -> None:
+def test_existing_api_runtime_and_e2e_public_contract_imports_still_resolve() -> None:
     modules = (
         "token_payments",
         "token_payments.api",
@@ -161,8 +161,6 @@ def test_existing_api_runtime_ui_and_e2e_public_contract_imports_still_resolve()
         "token_payments.api.payments",
         "token_payments.runtime",
         "token_payments.runtime.smoke",
-        "token_payments.ui",
-        "token_payments.ui.preview",
         "token_payments.contexts.order.application",
         "token_payments.contexts.order.adapter",
     )
@@ -176,6 +174,9 @@ def test_readmes_document_operator_action_endpoint_verification_and_phase_bounda
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     app_readme = (ROOT / "app/README.md").read_text(encoding="utf-8")
 
+    assert "operator:read" in readme
+    assert "operator:action" in readme
+
     for text in (
         "scripts/test_operator_action_public_contracts.py",
         "scripts/test_operator_action_http_routes.py",
@@ -185,9 +186,8 @@ def test_readmes_document_operator_action_endpoint_verification_and_phase_bounda
         "API compose profile starts `token_payments_live_worker`",
         "ASGI/FastAPI thin adapter",
         "live Docker compose integration",
-        "operator action UI wiring",
+        "live API runtime composition",
     ):
-        assert text in readme
         assert text in app_readme
 
 

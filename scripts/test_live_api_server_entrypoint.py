@@ -66,6 +66,9 @@ def test_live_dry_run_returns_server_plan_without_binding_network_port() -> None
     assert plan["redaction"] == {
         "secretsRedacted": True,
         "tokenAddressesRedacted": True,
+        "clientIpLogged": False,
+        "forwardedClientIpHeaders": False,
+        "nonIpProxyMetadataAccepted": True,
     }
     assert "postgres" in {group["name"] for group in plan["requiredDependencyGroups"]}
     assert "uvicornAvailable" in plan["optionalDependencies"]

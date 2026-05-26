@@ -89,6 +89,9 @@ def test_runtime_commands_keep_bounded_json_no_server_contracts() -> None:
     assert dry_run["details"]["liveApiServer"]["redaction"] == {
         "secretsRedacted": True,
         "tokenAddressesRedacted": True,
+        "clientIpLogged": False,
+        "forwardedClientIpHeaders": False,
+        "nonIpProxyMetadataAccepted": True,
     }
     assert "postgres" in {group["name"] for group in dry_run["details"]["liveApiServer"]["requiredDependencyGroups"]}
     assert refused["status"] == "FAILED"
@@ -146,7 +149,7 @@ def test_readmes_and_api_spec_document_live_runtime_boundaries_and_next_phase() 
         "Postman",
     )
 
-    for path in (ROOT / "README.md", ROOT / "app/README.md", ROOT / "docs/API_SPEC.md"):
+    for path in (ROOT / "app/README.md", ROOT / "docs/API_SPEC.md"):
         text = path.read_text(encoding="utf-8")
         for phrase in required_phrases:
             assert phrase in text, f"{path.relative_to(ROOT)} missing {phrase!r}"

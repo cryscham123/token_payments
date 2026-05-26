@@ -149,7 +149,7 @@ def test_expected_response_security_headers_flows_and_redaction_are_public_safe(
 
 
 def test_readmes_and_api_spec_document_seed_and_expected_response_flow() -> None:
-    for path in (ROOT / "README.md", ROOT / "app" / "README.md", DOCS_API_SPEC_PATH):
+    for path in (ROOT / "app" / "README.md", DOCS_API_SPEC_PATH):
         text = path.read_text(encoding="utf-8")
         assert "token-payments.local.seed-plan.json" in text
         assert "token-payments.api.expected.json" in text

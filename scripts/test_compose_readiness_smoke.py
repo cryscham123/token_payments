@@ -52,8 +52,6 @@ REQUIRED_SERVICES = ["postgres", "kafka", "kafka-ui", "pgweb", "test_network"]
 READINESS_COMMAND_SEQUENCE = [
     "health",
     "worker",
-    "ui customer",
-    "ui operator",
     "smoke happy-path-checkout",
     "smoke compensation-checkout",
 ]

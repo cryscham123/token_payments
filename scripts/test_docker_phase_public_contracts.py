@@ -146,7 +146,6 @@ def test_dockerfile_compose_and_public_docs_have_no_claude_specific_commands() -
 
 def test_readmes_document_docker_phase_public_verification_and_manual_live_order() -> None:
     readmes = (
-        ROOT / "README.md",
         ROOT / "app/README.md",
     )
 

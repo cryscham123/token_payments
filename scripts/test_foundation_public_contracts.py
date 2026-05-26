@@ -84,7 +84,7 @@ def test_foundation_public_contracts_are_exported_from_package_boundaries() -> N
         assert names <= exported, f"{module_name} is missing exports: {sorted(names - exported)}"
 
 
-def test_readme_lists_executable_foundation_commands_and_next_phase_candidates() -> None:
+def test_root_readme_lists_executable_workspace_entrypoint_commands_and_doc_owners() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
     for command in [
@@ -95,14 +95,16 @@ def test_readme_lists_executable_foundation_commands_and_next_phase_candidates()
         "python3 .githooks/pre_commit_check.py",
         "python3 scripts/execute.py <phase-dir>",
         "PYTHONPATH=app .venv/bin/python -m token_payments",
-        "docker compose --env-file .env up -d postgres kafka kafka-ui pgweb test_network",
     ]:
         assert command in readme
 
-    for candidate in [
-        "inventory",
-        "payment",
-        "store-approval",
-        "adapter",
+    for owner_doc in [
+        "docs/PRD.md",
+        "docs/ARCHITECTURE.md",
+        "docs/DOMAIN_MODEL.md",
+        "docs/API_SPEC.md",
+        "app/README.md",
+        "docs/HARNESS.md",
     ]:
-        assert candidate in readme
+        assert owner_doc in readme
+    assert "root README에는 phase별 완료 로그" in readme

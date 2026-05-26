@@ -113,8 +113,6 @@ class ContractRuntimeContainer:
             )
         if command_name in {"api", "serve-api"}:
             return self._dispatch_api_command(command_name, command_parts[1:])
-        if command_name == "ui":
-            return self._dispatch_ui_preview(command_parts[1] if len(command_parts) > 1 else None)
         if command_name == "smoke":
             return self._dispatch_smoke(command_parts[1] if len(command_parts) > 1 else None)
         return CommandDispatchResult.failed(
@@ -128,26 +126,6 @@ class ContractRuntimeContainer:
         if self._worker_runtime_factory is None:
             return WorkerRuntime([])
         return self._worker_runtime_factory(options)
-
-    def _dispatch_ui_preview(self, view: str | None) -> CommandDispatchResult:
-        from token_payments.ui.preview import UnknownUiPreviewView, render_ui_preview
-
-        try:
-            preview = render_ui_preview(view)
-        except UnknownUiPreviewView as exc:
-            return CommandDispatchResult.failed(
-                command="ui",
-                summary=f"unknown ui preview view: {exc.view}",
-                exit_code=64,
-                details={"error": exc.to_error()},
-            )
-
-        sample_count = len(preview.get("samples", ()))
-        return CommandDispatchResult.succeeded(
-            command="ui",
-            summary=f"rendered {preview['view']} ui preview with {sample_count} sample(s)",
-            details={"preview": preview},
-        )
 
     def _dispatch_api_command(self, command_name: str, args: Sequence[str]) -> CommandDispatchResult:
         if "--live" in args:
@@ -256,7 +234,7 @@ def _command_from_args(args: Sequence[str]) -> str:
     command = _normalize_command(args[0])
     if command in {"api", "serve-api", "worker", "run-worker"} and len(args) > 1:
         return " ".join([command, *(str(arg).strip() for arg in args[1:] if str(arg).strip())])
-    if command in {"ui", "smoke"} and len(args) > 1:
+    if command == "smoke" and len(args) > 1:
         selector = args[1].strip() if isinstance(args[1], str) else ""
         if selector:
             return f"{command} {selector}"

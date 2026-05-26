@@ -71,8 +71,6 @@ COMPOSE_READINESS_REQUIRED_SERVICES = ("postgres", "kafka", "kafka-ui", "pgweb",
 COMPOSE_READINESS_COMMAND_SEQUENCE = (
     "health",
     "worker",
-    "ui customer",
-    "ui operator",
     "smoke happy-path-checkout",
     "smoke compensation-checkout",
 )
@@ -145,7 +143,8 @@ POSTMAN_API_SERVICE: Mapping[str, Mapping[str, Any] | Sequence[Any] | str] = Map
         "command": list(POSTMAN_API_COMMAND),
         "restart": "unless-stopped",
         "profiles": ["api"],
-        "ports": ["8000:8000"],
+        "ports": [],
+        "expose": ["8000"],
         "environmentKeys": ["PYTHONPATH", *sorted(POSTMAN_API_REQUIRED_ENV_KEYS)],
         "dependsOn": {
             "postgres": "service_healthy",
@@ -156,14 +155,14 @@ POSTMAN_API_SERVICE: Mapping[str, Mapping[str, Any] | Sequence[Any] | str] = Map
     }
 )
 POSTMAN_API_COMPOSE_CONFIG_VALIDATION_COMMAND = "docker compose --env-file .env.example config --services"
-POSTMAN_API_BUILD_COMMAND = "docker compose --env-file .env build token_payments_api"
+POSTMAN_API_BUILD_COMMAND = "docker compose --env-file .env build token_payments_api nginx"
 POSTMAN_API_MANUAL_LIVE_COMMANDS = (
     "cp .env.example .env",
     "docker compose --env-file .env config --services",
     POSTMAN_API_BUILD_COMMAND,
     "docker compose up -d",
-    "curl --fail http://localhost:8000/healthz",
-    "curl --fail http://localhost:8000/readyz",
+    "curl --fail --insecure https://localhost/healthz",
+    "curl --fail --insecure https://localhost/readyz",
     "docker compose down",
 )
 POSTMAN_DOCKER_API_READINESS_CONTRACT = "token-payments.postman-docker-api-readiness.plan.v1"
@@ -2285,6 +2284,7 @@ def _postman_api_service_contract(block: tuple[str, ...]) -> dict[str, JsonValue
         "restart": _compose_scalar_for_key(block, "restart"),
         "profiles": _compose_list_for_key(block, "profiles"),
         "ports": _compose_list_for_key(block, "ports"),
+        "expose": _compose_list_for_key(block, "expose"),
         "environmentKeys": environment_keys,
         "dependsOn": _compose_depends_on_conditions(block),
     }

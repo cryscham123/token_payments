@@ -52,7 +52,7 @@ def test_api_readiness_plan_has_bounded_security_order_and_no_live_side_effects(
     assert payload["status"] == "planned"
     assert payload["dockerStarted"] is False
     assert payload["networkCalls"] is False
-    assert payload["requiredServices"] == ["postgres", "kafka", "test_network", "token_payments_api"]
+    assert payload["requiredServices"] == ["postgres", "kafka", "test_network", "token_payments_api", "nginx"]
 
     commands = payload["commandSequence"]
     assert [command["name"] for command in commands] == EXPECTED_API_READINESS_ORDER
@@ -87,7 +87,8 @@ def test_api_readiness_plan_has_bounded_security_order_and_no_live_side_effects(
     assert "X-User-Id: 11111111-1111-4111-8111-111111111111" in checkout_command["argv"]
     operator_command = next(command for command in commands if command["name"] == "operator-action-smoke")
     assert "Cookie: access_token=<operator-session-token>; csrf_token=<csrf-token>" not in operator_command["argv"]
-    assert "X-User-Role: ADMIN" in operator_command["argv"]
+    assert "X-User-Role: ADMIN" not in operator_command["argv"]
+    assert "X-User-Scopes: operator:read,operator:action" in operator_command["argv"]
     assert payload["redactionPolicy"]["rawSecretValuesCommitted"] is False
     assert {"session signing key", "signed session token", "cookie header", "CSRF token"} <= set(
         payload["redactionPolicy"]["redacts"]
@@ -241,7 +242,7 @@ def test_api_readiness_health_probe_retries_transient_connection_failure(
 
     result = docker_live_smoke._run_api_smoke_command(
         "healthz",
-        ("curl", "--fail-with-body", "http://localhost:8000/healthz"),
+        ("curl", "--fail-with-body", "--insecure", "https://localhost/healthz"),
         "http",
         tmp_path,
         (),
@@ -268,7 +269,7 @@ def test_api_readiness_expected_security_rejection_counts_as_success(
 
     result = docker_live_smoke._run_api_smoke_command(
         "expired-token-rejected",
-        ("curl", "--fail-with-body", "http://localhost:8000/auth/me"),
+        ("curl", "--fail-with-body", "--insecure", "https://localhost/auth/me"),
         "security",
         tmp_path,
         (),
@@ -310,7 +311,8 @@ def test_api_readiness_csrf_success_uses_cookie_jar_token_without_echoing_it(
             "curl",
             "--request",
             "POST",
-            "http://localhost:8000/auth/sessions/refresh",
+            "--insecure",
+            "https://localhost/auth/sessions/refresh",
             "--header",
             "Cookie: access_token=<valid-session-token>; refresh_token=<valid-refresh-token>; csrf_token=<csrf-token>",
             "--header",
@@ -358,7 +360,8 @@ def test_api_readiness_oversized_body_generates_runtime_payload_without_echoing_
             "curl",
             "--request",
             "POST",
-            "http://localhost:8000/orders",
+            "--insecure",
+            "https://localhost/orders",
             "--data-binary",
             "<oversized-body-generated-by-runner>",
         ),
@@ -396,7 +399,7 @@ def test_runtime_smoke_registry_exposes_postman_docker_api_readiness_plan() -> N
 
 
 def test_readmes_document_manual_docker_api_readiness_security_smoke_order() -> None:
-    for path in (ROOT / "README.md", ROOT / "app" / "README.md"):
+    for path in (ROOT / "app" / "README.md",):
         text = path.read_text(encoding="utf-8")
         assert "Postman Docker API readiness/security smoke" in text
         assert "python3 scripts/docker_live_smoke.py --api-readiness --plan" in text

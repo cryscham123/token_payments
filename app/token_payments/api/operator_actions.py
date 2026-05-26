@@ -794,7 +794,7 @@ class OperatorOutboxActionExecutor:
     ) -> OperatorActionResult:
         return self._rejected_result(
             action_command,
-            summary=f"operator ADMIN role is required to execute {action_command.action.value}",
+            summary=_operator_permission_summary(action_command.action),
             details={
                 "errorCode": "OPERATOR_FORBIDDEN",
                 "messageKind": message_kind.value,
@@ -1094,6 +1094,12 @@ def _operator_status_for_outbox_action(status: OperatorOutboxActionStatus) -> Op
     if status is OperatorOutboxActionStatus.REJECTED:
         return OperatorActionResultStatus.REJECTED
     return OperatorActionResultStatus.ACCEPTED
+
+
+def _operator_permission_summary(action: OperatorActionName) -> str:
+    if action is OperatorActionName.RETRY_OUTBOX_MESSAGE:
+        return "operator:action and outbox:retry permissions are required to execute retryOutboxMessage"
+    return f"operator:action permission is required to execute {action.value}"
 
 
 def _build_outbox_action_command(

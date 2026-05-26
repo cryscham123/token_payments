@@ -127,7 +127,7 @@ def test_http_route_manifest_includes_every_phase_7_route_family() -> None:
     }
 
 
-def test_existing_api_runtime_ui_and_e2e_public_contract_imports_still_resolve() -> None:
+def test_existing_api_runtime_and_e2e_public_contract_imports_still_resolve() -> None:
     modules = (
         "token_payments.api",
         "token_payments.api.auth",
@@ -137,7 +137,6 @@ def test_existing_api_runtime_ui_and_e2e_public_contract_imports_still_resolve()
         "token_payments.api.payments",
         "token_payments.runtime",
         "token_payments.runtime.smoke",
-        "token_payments.ui.preview",
     )
 
     for module_name in modules:
@@ -148,6 +147,9 @@ def test_existing_api_runtime_ui_and_e2e_public_contract_imports_still_resolve()
 def test_readmes_document_http_adapter_preview_and_next_phase_candidates() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     app_readme = (ROOT / "app/README.md").read_text(encoding="utf-8")
+
+    assert "app/README.md" in readme
+    assert "serve-api" in readme
 
     for text in (
         "scripts/test_wsgi_runtime_preview.py",
@@ -160,5 +162,4 @@ def test_readmes_document_http_adapter_preview_and_next_phase_candidates() -> No
         "ASGI/FastAPI thin adapter",
         "operator lifecycle action endpoints",
     ):
-        assert text in readme
         assert text in app_readme

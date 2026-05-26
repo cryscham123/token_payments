@@ -50,7 +50,7 @@ COMMAND_TIMEOUT_SECONDS = {
     "runtime-smoke": 120,
     "cleanup": 90,
 }
-API_REQUIRED_SERVICES = ("postgres", "kafka", "test_network", "token_payments_api")
+API_REQUIRED_SERVICES = ("postgres", "kafka", "test_network", "token_payments_api", "nginx")
 API_COMMAND_TIMEOUT_SECONDS = {
     "api-compose-config": 30,
     "build-api-service": 240,
@@ -138,7 +138,7 @@ def _build_command_sequence(env_file: str) -> tuple[tuple[str, tuple[str, ...]],
 
 
 def _build_api_readiness_command_sequence(env_file: str) -> tuple[tuple[str, tuple[str, ...], str], ...]:
-    base_url = "http://localhost:8000"
+    base_url = "https://localhost"
     wallet_address = "0x1111111111111111111111111111111111111111"
     user_id = "11111111-1111-4111-8111-111111111111"
     store_id = "44444444-4444-4444-8444-444444444444"
@@ -167,7 +167,7 @@ def _build_api_readiness_command_sequence(env_file: str) -> tuple[tuple[str, tup
         ),
         (
             "build-api-service",
-            ("docker", "compose", "--env-file", env_file, "build", "token_payments_api"),
+            ("docker", "compose", "--env-file", env_file, "build", "token_payments_api", "nginx"),
             "docker",
         ),
         (
@@ -177,7 +177,7 @@ def _build_api_readiness_command_sequence(env_file: str) -> tuple[tuple[str, tup
         ),
         (
             "start-api-service",
-            ("docker", "compose", "--env-file", env_file, "up", "-d", "token_payments_api"),
+            ("docker", "compose", "--env-file", env_file, "up", "-d", "token_payments_api", "nginx"),
             "docker",
         ),
         (
@@ -207,8 +207,8 @@ def _build_api_readiness_command_sequence(env_file: str) -> tuple[tuple[str, tup
             ("python3", "-m", "token_payments", "serve-api", "--live", "--dry-run"),
             "security",
         ),
-        ("healthz", _curl("--request", "GET", f"{base_url}/healthz"), "http"),
-        ("readyz", _curl("--request", "GET", f"{base_url}/readyz"), "http"),
+        ("healthz", _curl("--insecure", "--request", "GET", f"{base_url}/healthz"), "http"),
+        ("readyz", _curl("--insecure", "--request", "GET", f"{base_url}/readyz"), "http"),
         (
             "auth-cookie-flow",
             _curl(
@@ -218,6 +218,7 @@ def _build_api_readiness_command_sequence(env_file: str) -> tuple[tuple[str, tup
                 str(API_COOKIE_JAR_PATH),
                 "--request",
                 "POST",
+                "--insecure",
                 f"{base_url}/auth/challenges",
                 "--header",
                 "Content-Type: application/json",
@@ -239,6 +240,7 @@ def _build_api_readiness_command_sequence(env_file: str) -> tuple[tuple[str, tup
             _curl(
                 "--request",
                 "GET",
+                "--insecure",
                 f"{base_url}/auth/me",
                 "--header",
                 "Cookie: access_token=<expired-signed-session-token>",
@@ -250,6 +252,7 @@ def _build_api_readiness_command_sequence(env_file: str) -> tuple[tuple[str, tup
             _curl(
                 "--request",
                 "GET",
+                "--insecure",
                 f"{base_url}/auth/me",
                 "--header",
                 "Cookie: access_token=<invalid-signature-session-token>",
@@ -261,6 +264,7 @@ def _build_api_readiness_command_sequence(env_file: str) -> tuple[tuple[str, tup
             _curl(
                 "--request",
                 "POST",
+                "--insecure",
                 f"{base_url}/auth/sessions/refresh",
                 "--header",
                 "Cookie: access_token=<valid-session-token>; refresh_token=<valid-refresh-token>",
@@ -276,6 +280,7 @@ def _build_api_readiness_command_sequence(env_file: str) -> tuple[tuple[str, tup
             _curl(
                 "--request",
                 "POST",
+                "--insecure",
                 f"{base_url}/auth/sessions/refresh",
                 "--header",
                 "Cookie: access_token=<valid-session-token>; refresh_token=<valid-refresh-token>; csrf_token=<csrf-token>",
@@ -293,6 +298,7 @@ def _build_api_readiness_command_sequence(env_file: str) -> tuple[tuple[str, tup
             _curl(
                 "--request",
                 "OPTIONS",
+                "--insecure",
                 f"{base_url}/orders",
                 "--header",
                 "Origin: http://localhost:5173",
@@ -308,6 +314,7 @@ def _build_api_readiness_command_sequence(env_file: str) -> tuple[tuple[str, tup
             _curl(
                 "--request",
                 "POST",
+                "--insecure",
                 f"{base_url}/orders",
                 "--header",
                 "Content-Type: application/json",
@@ -323,6 +330,7 @@ def _build_api_readiness_command_sequence(env_file: str) -> tuple[tuple[str, tup
             _curl(
                 "--request",
                 "POST",
+                "--insecure",
                 f"{base_url}/orders",
                 "--header",
                 "Content-Type: application/json",
@@ -338,6 +346,7 @@ def _build_api_readiness_command_sequence(env_file: str) -> tuple[tuple[str, tup
             _curl(
                 "--request",
                 "POST",
+                "--insecure",
                 f"{base_url}/orders",
                 "--header",
                 "Content-Type: application/json",
@@ -357,6 +366,7 @@ def _build_api_readiness_command_sequence(env_file: str) -> tuple[tuple[str, tup
             _curl(
                 "--request",
                 "POST",
+                "--insecure",
                 f"{base_url}/orders",
                 "--header",
                 "Content-Type: application/json",
@@ -376,11 +386,10 @@ def _build_api_readiness_command_sequence(env_file: str) -> tuple[tuple[str, tup
             _curl(
                 "--request",
                 "GET",
+                "--insecure",
                 f"{base_url}/operator/dashboard",
                 "--header",
                 "X-User-Id: operator-1",
-                "--header",
-                "X-User-Role: ADMIN",
                 "--header",
                 "X-User-Scopes: operator:read,operator:action",
             ),

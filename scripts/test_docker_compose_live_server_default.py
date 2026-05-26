@@ -61,7 +61,8 @@ def test_default_compose_api_service_contract_is_live_and_env_backed() -> None:
     assert _list_for_key(service, "env_file") == [".env"]
     assert _json_list_for_key(service, "command") == EXPECTED_API_COMMAND
     assert _scalar_for_key(service, "restart") == "unless-stopped"
-    assert _list_for_key(service, "ports") == ["8000:8000"]
+    assert _list_for_key(service, "ports") == []
+    assert _list_for_key(service, "expose") == ["8000"]
 
     for key, expected in REQUIRED_API_ENV.items():
         assert environment[key] == expected

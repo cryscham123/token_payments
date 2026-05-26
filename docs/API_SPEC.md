@@ -97,7 +97,7 @@ OAuth/social identity is keyed by `provider` plus `providerSubject`, not by emai
 
 `PATCH /merchant/stores/{publicStoreId}/profile` updates only business profile fields: `displayName`, `description`, `supportEmail`, `supportEmailPublic`, and `businessRegistrationLabel`. It requires `store:write` for the scoped merchant group or explicit platform override. `store:manage` or platform approval flows are reserved for sensitive status/settings changes. Settlement wallet and supported chain changes are separate policy-gated payment settings flows and are not accepted by `updateStoreProfile`. Owner transfer, member invite/remove, and role/permission changes remain RBAC/membership provisioning responsibilities.
 
-Store profile input text is bounded data. `displayName`, `description`, and `businessRegistrationLabel` are Unicode-normalized, length-bounded, and reject control characters, null bytes, and log/CSV injection-prone prefixes. Store `displayName` is globally unique case-insensitively. `supportEmail` is length-bounded and email-shaped. SQL adapters use parameter binding for `public_store_id`, display fields, and contact fields; UI/rendering layers use escaped response fields such as `displayNameHtml` and `descriptionHtml`.
+Store profile input text is bounded data. `displayName`, `description`, and `businessRegistrationLabel` are Unicode-normalized, length-bounded, and reject control characters, null bytes, and log/CSV injection-prone prefixes. Store `displayName` is globally unique case-insensitively. `supportEmail` is length-bounded and email-shaped. SQL adapters use parameter binding for `public_store_id`, display fields, and contact fields; client rendering layers must use escaped response fields such as `displayNameHtml` and `descriptionHtml`.
 
 ### Store owner inventory API surface
 
@@ -171,7 +171,7 @@ Phase 23 separates user identity from user profile, store business profile from 
 
 Historical phase 21 note: description/category/search metadata is future scope; phase 23 has since implemented product description/category fields while search metadata remains future scope.
 
-All user-provided profile/catalog text fields are data, not executable fragments. APIs must validate bounded length, required/optional emptiness, control characters, null bytes, and normalization policy before persistence. User and store display names must remain unique outside product title search/display data. Product tags accept Unicode letters/numbers, including Korean, plus underscores and hyphens. SQL adapters must use parameter binding for values and whitelist any dynamic identifiers such as sort columns or directions. UI/rendering layers must HTML-escape display names, store descriptions, product titles, tags, and media labels before output. Query text and filter values must be parameterized; wildcard behavior for `ILIKE`/text search must be explicit and tested.
+All user-provided profile/catalog text fields are data, not executable fragments. APIs must validate bounded length, required/optional emptiness, control characters, null bytes, and normalization policy before persistence. User and store display names must remain unique outside product title search/display data. Product tags accept Unicode letters/numbers, including Korean, plus underscores and hyphens. SQL adapters must use parameter binding for values and whitelist any dynamic identifiers such as sort columns or directions. External client rendering layers must HTML-escape display names, store descriptions, product titles, tags, and media labels before output. Query text and filter values must be parameterized; wildcard behavior for `ILIKE`/text search must be explicit and tested.
 
 User-facing capability summary:
 
@@ -201,7 +201,7 @@ Current implementation coverage that phase 22/23 must preserve or close:
 
 ## Runtime Assumptions
 
-- Local base URL: `http://localhost:8000`
+- Local base URL: `https://localhost`
 - Content type: `application/json`
 - Response body는 JSON object다.
 - 모든 response는 가능하면 `X-Request-Id` header를 포함한다.
@@ -1301,7 +1301,7 @@ Default PostgreSQL bootstrap uses `app/postgres/init.d/002-token-payments-defaul
 
 Manual seed data for local Postman examples is still described by `postman/fixtures/token-payments.local.seed-plan.json`. It references demo customer/store/product/inventory/payment destination/test network ids using committed PostgreSQL schema table and column names, but it is fixture metadata rather than the default init path. Route-level expected response examples live in `postman/expected/token-payments.api.expected.json`; the fixture covers auth, cookie/CSRF headers, `Idempotency-Key`, `X-Request-Id`, happy-path checkout, compensation cancellation, and operator action recovery while keeping signed token and cookie values redacted.
 
-The Docker Compose API service is `token_payments_api`. Async checkout progress, including inventory reservation, auth RBAC projection, and payment receipt confirmation, is handled by `token_payments_live_worker`. The live worker belongs to both the `runtime` and `api` profiles, and the API service depends on it so API-profile local runs process outbox/Kafka work automatically. After `cp .env.example .env`, `COMPOSE_PROFILES=runtime,smoke,api` makes both services part of plain `docker compose up`; automated checks use daemon-less compose config and smoke plans and do not start Docker. Daemon-less compose config validation does not start Docker:
+The Docker Compose API service is `token_payments_api`. Public local traffic goes through `nginx` on ports 80/443; `token_payments_api` only exposes port 8000 inside the compose network and does not publish a host port. Nginx access logs are disabled, nginx does not forward client IP headers, and the token API disables uvicorn access logs so user IP addresses are not stored in nginx or token API logs. Async checkout progress, including inventory reservation, auth RBAC projection, and payment receipt confirmation, is handled by `token_payments_live_worker`. The live worker belongs to both the `runtime` and `api` profiles, and the API service depends on it so API-profile local runs process outbox/Kafka work automatically. After `cp .env.example .env`, `COMPOSE_PROFILES=runtime,smoke,api` makes both services part of plain `docker compose up`; automated checks use daemon-less compose config and smoke plans and do not start Docker. Daemon-less compose config validation does not start Docker:
 
 ```bash
 docker compose --env-file .env.example config --services
@@ -1316,10 +1316,10 @@ Final local backend order for Postman Docker API readiness:
 ```bash
 cp .env.example .env
 docker compose --env-file .env config --services
-docker compose --env-file .env build token_payments_api
+docker compose --env-file .env build token_payments_api nginx
 docker compose up -d
-curl --fail http://localhost:8000/healthz
-curl --fail http://localhost:8000/readyz
+curl --fail --insecure https://localhost/healthz
+curl --fail --insecure https://localhost/readyz
 # Default DB bootstrap runs idempotently through postgres_seed after postgres is healthy.
 # Optionally apply/review the manual Postman fixture plan in postman/fixtures/token-payments.local.seed-plan.json
 # Import postman/token-payments.local.postman_collection.json and postman/token-payments.local.postman_environment.json

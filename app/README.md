@@ -9,30 +9,11 @@ PYTHONPATH=app .venv/bin/python -m token_payments
 PYTHONPATH=app .venv/bin/python -m token_payments health
 PYTHONPATH=app .venv/bin/python -m token_payments worker
 PYTHONPATH=app .venv/bin/python -m token_payments api
-PYTHONPATH=app python3 -m token_payments ui
-PYTHONPATH=app python3 -m token_payments ui customer
-PYTHONPATH=app python3 -m token_payments ui operator
 ```
 
 Use `.env.example` as the template for local `.env` values. The local blockchain RPC points at `test_network` on chain id `1337`. Do not commit real private keys, API keys, seed phrases, or production credentials.
 
-## Browser Preview Runtime
-
-Browser Preview Runtime is a local-only preview fixture for opening the customer and operator UI previews in a real browser. It is not a production server or external integration smoke path, and it does not connect to DB, Kafka, Docker, Blockchain RPC, or local `.env`.
-
-```bash
-PYTHONPATH=app python3 scripts/browser_preview_server.py --host 127.0.0.1 --port 8765
-PYTHONPATH=app python3 scripts/browser_preview_smoke.py
-```
-
-Open these URLs in the browser:
-
-```text
-http://127.0.0.1:8765/customer
-http://127.0.0.1:8765/operator
-```
-
-The server binds a localhost port only when this explicit script is running. Stop it with `Ctrl-C` in the same terminal.
+Current application scope is backend-only. The app package does not expose a UI package, browser preview server, or `ui` runtime command; customer and operator clients should use the documented HTTP APIs.
 
 ## Docker Runtime Verification
 
@@ -71,14 +52,14 @@ docker compose --env-file .env --profile runtime run --rm token_payments_health
 docker compose --env-file .env --profile runtime run --rm token_payments_worker
 docker compose --env-file .env --profile smoke run --rm token_payments_smoke
 docker compose --env-file .env config --services
-docker compose --env-file .env build token_payments_api
+docker compose --env-file .env build token_payments_api nginx
 docker compose up -d
-curl --fail http://localhost:8000/healthz
-curl --fail http://localhost:8000/readyz
+curl --fail --insecure https://localhost/healthz
+curl --fail --insecure https://localhost/readyz
 docker compose down
 ```
 
-The Postman-local API service is `token_payments_api`; after `cp .env.example .env`, `COMPOSE_PROFILES=runtime,smoke,api` makes it part of plain `docker compose up`. It uses the root runtime image and the confirmed live command `python -m token_payments serve-api --live --confirm-live-api`. The committed `.env.example` session and CSRF signing values are local dev only; live/prod startup rejects committed local dev signing values, so replace them for any non-local environment. `SESSION_SIGNING_KEYS` supports active/previous key rotation: keep `SESSION_ACTIVE_KEY_ID` on the current active key and keep a previous key only for bounded local rotation verification.
+The Postman-local API service is `token_payments_api`; after `cp .env.example .env`, `COMPOSE_PROFILES=runtime,smoke,api` makes it part of plain `docker compose up`. Public HTTP/TLS traffic goes through `nginx` on ports 80/443, while `token_payments_api` only exposes port 8000 inside the compose network and does not publish a host port. The nginx config disables access logs, keeps non-IP proxy metadata such as `Host`, `X-Forwarded-Host`, and `X-Forwarded-Proto`, does not forward `X-Forwarded-For`/`X-Real-IP`, and the API server disables uvicorn access logs so user IP addresses are not stored in nginx or token API logs. It uses the root runtime image and the confirmed live command `python -m token_payments serve-api --live --confirm-live-api`. The committed `.env.example` session and CSRF signing values are local dev only; live/prod startup rejects committed local dev signing values, so replace them for any non-local environment. `SESSION_SIGNING_KEYS` supports active/previous key rotation: keep `SESSION_ACTIVE_KEY_ID` on the current active key and keep a previous key only for bounded local rotation verification.
 
 Postman-ready API roadmap:
 
@@ -126,26 +107,18 @@ PYTHONPATH=app .venv/bin/python -m token_payments health
 PYTHONPATH=app .venv/bin/python -m token_payments worker
 ```
 
-customer/operator UI phase preview verification:
+Backend-only scope verification:
 
 ```bash
-python3 -m pytest \
-  scripts/test_ui_contract_foundation.py \
-  scripts/test_customer_checkout_ui.py \
-  scripts/test_operator_dashboard_ui.py \
-  scripts/test_ui_runtime_preview.py \
-  scripts/test_ui_public_contracts.py
-PYTHONPATH=app python3 -m token_payments ui
-PYTHONPATH=app python3 -m token_payments ui customer
-PYTHONPATH=app python3 -m token_payments ui operator
+python3 -m pytest scripts/test_backend_only_public_contracts.py
+PYTHONPATH=app python3 -m token_payments api
+PYTHONPATH=app python3 -m token_payments smoke
 python3 scripts/validate_phases.py
 ```
 
-The `ui` runtime command returns bounded JSON and does not start an HTTP server. Rendered HTML lives under `CommandDispatchResult.details.preview`; this is a local preview contract, not an `ApiResponse`, DB seed, or production runtime configuration.
-
 Next phase candidates:
 
-- docker compose integration smoke: PostgreSQL, Kafka, test network, runtime health, worker, and UI preview from `.env.example`.
+- docker compose integration smoke: PostgreSQL, Kafka, test network, runtime health, and worker readiness from `.env.example`.
 - happy-path e2e checkout: order creation through inventory reservation, payment confirmation, store approval, `ConfirmInventoryCommand`, and `InventoryConfirmedEvent`.
 - compensation e2e checkout: payment failure, payment expiration, and store rejection compensation command idempotency.
 
@@ -176,8 +149,6 @@ PYTHONPATH=app python3 -m token_payments smoke compose-readiness
 docker compose --env-file .env up -d postgres kafka kafka-ui pgweb test_network
 PYTHONPATH=app python3 -m token_payments health
 PYTHONPATH=app python3 -m token_payments worker
-PYTHONPATH=app python3 -m token_payments ui customer
-PYTHONPATH=app python3 -m token_payments ui operator
 PYTHONPATH=app python3 -m token_payments smoke happy-path-checkout
 PYTHONPATH=app python3 -m token_payments smoke compensation-checkout
 docker compose --env-file .env down
@@ -238,7 +209,7 @@ Next phase candidates:
 
 ## Operator Action Endpoints
 
-The operator action endpoints phase closes the `cancel/retry/replay operator actions` surface as a bounded framework-neutral endpoint contract. `cancelOrder`, `retryOutboxMessage`, and `replayMessage` are verified through public `ApiRequest`/`ApiResponse` facades, route manifests, register helpers, ADMIN-only policy, idempotency, and audit payloads. Facade tests do not start live Docker/Kafka publish; the API compose profile starts `token_payments_live_worker` for runtime async processing.
+The operator action endpoints phase closes the `cancel/retry/replay operator actions` surface as a bounded framework-neutral endpoint contract. `cancelOrder`, `retryOutboxMessage`, and `replayMessage` are verified through public `ApiRequest`/`ApiResponse` facades, route manifests, register helpers, explicit operator permissions, idempotency, and audit payloads. Facade tests do not start live Docker/Kafka publish; the API compose profile starts `token_payments_live_worker` for runtime async processing.
 
 ```bash
 python3 -m pytest \
@@ -263,38 +234,6 @@ Next phase candidates:
 
 - ASGI/FastAPI thin adapter: add a thin production framework layer while keeping the current route manifest and `build_wsgi_app` contract stable.
 - live Docker compose integration: start the committed compose stack and verify DB schema, Kafka publish/consume, and bounded runtime smoke commands against live local infrastructure.
-- operator action UI wiring: connect dashboard cancel/retry/replay controls to the existing operator action endpoint contract and surface result/audit state.
-
-## Operator Action UI Wiring
-
-The operator action UI wiring phase exposes cancel/retry/replay controls as UI intents connected to the existing framework-neutral operator action endpoint contract. The cancel/retry/replay controls are UI intents, and they render endpoint metadata, operation ids, target ids, idempotency keys, confirmations, and body templates for operator review; they do not call action APIs from the preview.
-
-Use the browser preview to inspect the operator dashboard action controls:
-
-```bash
-PYTHONPATH=app python3 scripts/browser_preview_server.py --host 127.0.0.1 --port 8765
-PYTHONPATH=app python3 scripts/browser_preview_smoke.py
-```
-
-Open the operator preview at:
-
-```text
-http://127.0.0.1:8765/operator
-```
-
-This is a no live operator action execution boundary. The preview/UI does not open DB, Kafka, Docker, Blockchain RPC, or local `.env`, and it does not publish, replay, mutate orders, or start live infrastructure.
-
-Verification commands:
-
-```bash
-python3 -m pytest scripts/test_operator_action_ui_public_contracts.py scripts/test_operator_action_ui_controls.py scripts/test_operator_action_ui_intents.py scripts/test_operator_action_public_contracts.py scripts/test_browser_preview_public_contracts.py scripts/test_ui_public_contracts.py
-PYTHONPATH=app python3 scripts/browser_preview_smoke.py
-python3 scripts/validate_phases.py
-```
-
-Next phase candidates:
-
-- ASGI/FastAPI thin adapter: add a production framework adapter while preserving the current route manifest and UI intent endpoint metadata.
 - live API runtime composition: wire the real facades to PostgreSQL, Kafka, and test network adapters behind a long-running API entrypoint.
 - Postman Docker API readiness: add the compose API service, request examples, seed flow, and expected responses for local Postman verification.
 
@@ -337,7 +276,7 @@ Final local backend order for Postman Docker API readiness:
 ```bash
 cp .env.example .env
 docker compose --env-file .env config --services
-docker compose --env-file .env build token_payments_api
+docker compose --env-file .env build token_payments_api nginx
 docker compose up -d
 # Default DB bootstrap runs idempotently through postgres_seed after postgres is healthy.
 # Optionally apply/review the manual Postman fixture plan in postman/fixtures/token-payments.local.seed-plan.json
@@ -354,7 +293,7 @@ Verification commands:
 ```bash
 python3 -m pytest scripts/test_api_seed_expected_responses.py scripts/test_postman_cookie_auth_flow.py scripts/test_happy_path_checkout_e2e.py scripts/test_compensation_checkout_e2e.py
 python3 -m pytest scripts/test_postman_cookie_auth_flow.py scripts/test_cookie_session_transport.py scripts/test_csrf_cors_request_guard.py
-python3 -m pytest scripts/test_fastapi_asgi_public_contracts.py scripts/test_fastapi_thin_adapter.py scripts/test_asgi_adapter_contract_foundation.py scripts/test_wsgi_runtime_preview.py scripts/test_api_worker_runtime_public_contracts.py scripts/test_browser_preview_public_contracts.py
+python3 -m pytest scripts/test_fastapi_asgi_public_contracts.py scripts/test_fastapi_thin_adapter.py scripts/test_asgi_adapter_contract_foundation.py scripts/test_wsgi_runtime_preview.py scripts/test_api_worker_runtime_public_contracts.py scripts/test_backend_only_public_contracts.py
 PYTHONPATH=app python3 -m token_payments api
 PYTHONPATH=app python3 -m token_payments serve-api
 python3 scripts/validate_phases.py
@@ -398,7 +337,7 @@ Checkout Process is a separate saga/process context, not an order context submod
 
 PostgreSQL is the source of truth for auth users, login challenges, and sessions. Refresh reuse detection uses the PostgreSQL session repository hash/salt/rotation model. Redis is optional cache-aside/TTL optimization, not a live required dependency. Local runs must copy `.env.example` to `.env`; live/prod startup rejects committed local dev signing values, so replace session and CSRF signing material for non-local environments.
 
-Public HTTP route surface stays bound to the current 55-route manifest, including auth wallet link/list/primary/revoke APIs, OAuth provider-subject login/link/list/revoke APIs, current user display profile APIs, public/merchant store profile APIs, public/merchant product catalog reads, admin store catalog provisioning, customer payment history, merchant member/invitation APIs, merchant product catalog writes, and the store owner inventory API. User profile stores optional `displayName` only; user email, email hash, locale, and timezone are not persisted. OAuth identity is provider-subject based and does not use email matching. Initial `ADMIN` bootstrap is local/manual seed only, implemented as a local DB init seed controlled by `.env` `BOOTSTRAP_ADMIN_WALLET_ADDRESS`; public customer login never grants a global `STORE_OWNER` role. Store management authorization uses merchant group membership and permission scopes, not a global STORE_OWNER account role, so an existing customer wallet is reused as the same `auth_users.user_id` and checkout history is preserved. Store business profile uses stable `publicStoreId`; store wallet, supported chains, and accepted payment assets remain separate payment settings. Product reads, registration, and detail updates use `publicStoreId`/`publicProductId`, are allowed according to public/merchant scope, and keep product catalog status separate from inventory sale status. Product search engine integration, DID, permit, gas sponsorship, and swap are future scope; email account recovery is unsupported because user email is not stored. Stock intake, target stock correction, sale pause, and sale resume are audited, idempotent inventory commands. `approveOrder`/`request_store_approval` are Kafka/message listener inputs, and store owner manual order approval HTTP API is not in current scope. manual order approval HTTP API is not an active roadmap item. UI implementation remains a separate phase. Multi-wallet accounts and registry-driven native/USDC/USDT stablecoin payments are implemented for local runtime contracts.
+Public HTTP route surface stays bound to the current 55-route manifest, including auth wallet link/list/primary/revoke APIs, OAuth provider-subject login/link/list/revoke APIs, current user display profile APIs, public/merchant store profile APIs, public/merchant product catalog reads, admin store catalog provisioning, customer payment history, merchant member/invitation APIs, merchant product catalog writes, and the store owner inventory API. User profile stores optional `displayName` only; user email, email hash, locale, and timezone are not persisted. OAuth identity is provider-subject based and does not use email matching. Initial `ADMIN` bootstrap is local/manual seed only, implemented as a local DB init seed controlled by `.env` `BOOTSTRAP_ADMIN_WALLET_ADDRESS`; public customer login never grants a global `STORE_OWNER` role. Store management authorization uses merchant group membership and permission scopes, not a global STORE_OWNER account role, so an existing customer wallet is reused as the same `auth_users.user_id` and checkout history is preserved. Store business profile uses stable `publicStoreId`; store wallet, supported chains, and accepted payment assets remain separate payment settings. Product reads, registration, and detail updates use `publicStoreId`/`publicProductId`, are allowed according to public/merchant scope, and keep product catalog status separate from inventory sale status. Product search engine integration, DID, permit, gas sponsorship, and swap are future scope; email account recovery is unsupported because user email is not stored. Stock intake, target stock correction, sale pause, and sale resume are audited, idempotent inventory commands. `approveOrder`/`request_store_approval` are Kafka/message listener inputs, and store owner manual order approval HTTP API is not in current scope. manual order approval HTTP API is not an active roadmap item. The active application scope is backend-only; UI preview packages, browser preview scripts, and the `ui` runtime command are not part of the current runtime contract. Multi-wallet accounts and registry-driven native/USDC/USDT stablecoin payments are implemented for local runtime contracts.
 
 Next phase candidates:
 
@@ -412,10 +351,7 @@ The API layer exposes framework-neutral facades: `AuthApi`, `OrdersApi`, `Checko
 
 The runtime layer exposes `RuntimeConfig`, `RuntimeContainer`, `ContractRuntimeContainer`, `dispatch_runtime_command`, and `WorkerRuntime`. Worker exports cover outbox relay, Kafka consumer, payment receipt polling, and payment timeout batches. Current CLI commands return bounded JSON results and do not start a long-running API server or daemon worker in this phase.
 
-Previous API/worker runtime phase candidates now covered by the UI phase:
-
-- customer checkout UI: wallet connect, signature wait, txHash submission, and checkout tracking.
-- operator status dashboard: order/payment/outbox/worker/error status table and detail panel.
+Frontend client implementation is outside the active backend runtime contract. Customer checkout and operator recovery workflows are exposed through HTTP APIs, route manifests, and Postman/local smoke contracts.
 
 ## Package Layout
 
