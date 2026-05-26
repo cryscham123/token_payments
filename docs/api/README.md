@@ -4,17 +4,17 @@ Token Payments API는 로컬 backend의 public HTTP surface를 설명한다. 이
 
 ## 기본 정보
 
-| 항목 | 값 |
-| --- | --- |
-| Base URL | `http://127.0.0.1:8000` 또는 live runtime에서 노출한 host |
-| 데이터 형식 | JSON |
-| 인증 | SIWE session cookie 또는 bearer-style local session context |
-| CSRF | browser cookie auth write 요청은 `X-CSRF-Token` 필요 |
-| Idempotency | write 요청 중 주문/결제/재고/운영자 action은 `Idempotency-Key` 사용 |
+| 항목          | 값                                                         |
+| ----------- | --------------------------------------------------------- |
+| Base URL    | `http://127.0.0.1:8000` 또는 live runtime에서 노출한 host        |
+| 데이터 형식      | JSON                                                      |
+| 인증          | SIWE session cookie 또는 bearer-style local session context |
+| CSRF        | browser cookie auth write 요청은 `X-CSRF-Token` 필요           |
+| Idempotency | write 요청 중 주문/결제/재고/운영자 action은 `Idempotency-Key` 사용      |
 
 ## GitBook에서 읽는 순서
 
-1. [OpenAPI Reference](openapi.yaml)를 GitBook OpenAPI import 대상으로 사용해 endpoint별 Try it, schema, code sample을 확인한다.
+1. [OpenAPI Reference](/broken/pages/e3654cef83f93e1a090c18963388887b664af40d)를 GitBook OpenAPI import 대상으로 사용해 endpoint별 Try it, schema, code sample을 확인한다.
 2. [인증과 OAuth](auth.md)에서 session 생성과 wallet/OAuth identity 연결 규약을 확인한다.
 3. [상점과 상품 카탈로그](catalog-inventory.md)에서 public read와 merchant write의 identifier 차이를 확인한다.
 4. [주문, 체크아웃, 결제](orders-checkout-payments.md)에서 `trackingId` 중심 결제 흐름을 확인한다.
@@ -32,11 +32,11 @@ Token Payments API는 로컬 backend의 public HTTP surface를 설명한다. 이
 
 ## 공통 요청 규칙
 
-- 모든 JSON 요청은 `Content-Type: application/json`을 사용한다.
-- Browser cookie auth를 쓰는 write 요청은 `X-CSRF-Token`을 보낸다.
-- 재시도 가능한 write 요청은 `Idempotency-Key`를 보낸다.
-- 응답의 `X-Request-Id`는 장애 분석과 문의에 사용한다.
-- public customer/browser API는 내부 UUID, provider subject, provider token, signed cookie 값을 노출하지 않는다.
+* 모든 JSON 요청은 `Content-Type: application/json`을 사용한다.
+* Browser cookie auth를 쓰는 write 요청은 `X-CSRF-Token`을 보낸다.
+* 재시도 가능한 write 요청은 `Idempotency-Key`를 보낸다.
+* 응답의 `X-Request-Id`는 장애 분석과 문의에 사용한다.
+* public customer/browser API는 내부 UUID, provider subject, provider token, signed cookie 값을 노출하지 않는다.
 
 ## 공통 응답 규약
 
