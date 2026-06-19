@@ -47,8 +47,33 @@ export default function ProductDetail({ publicProductId }) {
 
   useEffect(() => {
     let active = true;
-    apiJson(`/stores/st_demo_store_001/products/${publicProductId}`)
-      .then((res) => {
+
+    const fetchProductDetail = async () => {
+      try {
+        let storeId = "st_demo_store_001";
+        const LIMIT = 50;
+        let currentOffset = 0;
+        let found = false;
+
+        while (!found && active) {
+          const listRes = await apiJson(`/products?limit=${LIMIT}&offset=${currentOffset}`);
+          if (!active) return;
+          const rawProducts = listRes?.products || [];
+          if (rawProducts.length === 0) {
+            break;
+          }
+          const matched = rawProducts.find(p => p.publicProductId === publicProductId);
+          if (matched) {
+            storeId = matched.publicStoreId || matched.storePublicId || matched.store?.publicStoreId || "st_demo_store_001";
+            found = true;
+            break;
+          }
+          currentOffset += LIMIT;
+        }
+
+        if (!active) return;
+
+        const res = await apiJson(`/stores/${storeId}/products/${publicProductId}`);
         if (active && res && res.product) {
           const p = res.product;
           const galleryImages = mediaGalleryFromProduct(p);
@@ -92,12 +117,17 @@ export default function ProductDetail({ publicProductId }) {
           setMainImage(galleryImages[0]);
           setLoading(false);
         }
-      })
-      .catch((err) => {
+      } catch (err) {
         console.error(err);
         if (active) setLoading(false);
-      });
-    return () => { active = false; };
+      }
+    };
+
+    fetchProductDetail();
+
+    return () => {
+      active = false;
+    };
   }, [publicProductId]);
 
   useEffect(() => {
@@ -579,10 +609,11 @@ function productMediaUrl(ref) {
 }
 
 function optionChoicesFromProduct(product) {
+  if (!product) return [];
   const options = Array.isArray(product.options) ? product.options : [];
   if (options.length > 0) {
     return options.map((option) => ({
-      key: option.key,
+      key: option.optionKey || option.key,
       displayName: option.displayName || option.key,
       required: option.required !== false,
       selectionType: option.selectionType || "SINGLE",
@@ -590,14 +621,7 @@ function optionChoicesFromProduct(product) {
       values: Array.isArray(option.values) ? option.values : []
     }));
   }
-  return attributeOptions(product.attributes).map((option) => ({
-    key: option.value,
-    displayName: option.label,
-    required: true,
-    selectionType: "SINGLE",
-    optionType: "VARIANT",
-    values: [{ value: option.value, displayValue: option.label }]
-  }));
+  return [];
 }
 
 function previousOptionsSelected(options, optionIndex, selectedValues) {
@@ -670,7 +694,8 @@ function matchingVariantsForSelection(product, selectedValues) {
 }
 
 function selectionComplete(options, selectedValues) {
-  return options.length > 0 && options.every((option) => selectedValues[option.key]);
+  if (options.length === 0) return true;
+  return options.every((option) => selectedValues[option.key]);
 }
 
 function requiredVariantOptions(product) {
@@ -699,13 +724,28 @@ function variantDisplayPrice(variant, selectedPriceOption, product) {
   if (!variant) return null;
   const displayPrice = normalizePriceOption(variant.displayPrice || {});
   if (displayPrice && (!selectedPriceOption || samePaymentAsset(displayPrice, selectedPriceOption))) return displayPrice;
-  return null;
+  const basePriceOpt = basePriceOption(product, selectedPriceOption);
+  if (basePriceOpt && variant.priceDelta) {
+    const delta = normalizePriceOption(variant.priceDelta);
+    if (delta) {
+      return {
+        ...basePriceOpt,
+        amount: (Number.parseFloat(basePriceOpt.amount || "0") + Number.parseFloat(delta.amount || "0")).toString()
+      };
+    }
+  }
+  return displayPrice;
 }
 
 function basePriceOption(product, selectedPriceOption) {
   if (!product) return null;
   const basePrice = normalizePriceOption(product.basePrice || {});
   if (basePrice && (!selectedPriceOption || samePaymentAsset(basePrice, selectedPriceOption))) return basePrice;
+  if (selectedPriceOption && product.assetPrices) {
+    const explicitPrices = explicitAssetPrices(product);
+    const matchedPrice = explicitPrices.find((candidate) => samePaymentAsset(candidate, selectedPriceOption));
+    if (matchedPrice) return matchedPrice;
+  }
   return displayPriceOption(product);
 }
 

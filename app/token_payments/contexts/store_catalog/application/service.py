@@ -53,9 +53,16 @@ class StoreCatalogApplicationService:
     UPDATE_STORE_PROFILE_HANDLER = "updateStoreProfile"
     UPDATE_PRODUCT_HANDLER = "updateStoreProduct"
 
-    def __init__(self, *, repository: CatalogWriteRepository, user_id_generator: Any | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        repository: CatalogWriteRepository,
+        user_id_generator: Any | None = None,
+        payment_assets: Any | None = None,
+    ) -> None:
         self._repository = repository
         self._user_id_generator = user_id_generator
+        self._payment_assets = payment_assets
 
     def create_or_reuse_store_user(self, command: CreateOrReuseStoreUserCommand) -> StoreCatalogCommandResult:
         return self._idempotent(
@@ -69,7 +76,15 @@ class StoreCatalogApplicationService:
 
     def get_store_profile(self, query: GetStoreProfileQuery) -> Mapping[str, Any] | None:
         store = self._repository.get_store_by_public_id(query.public_store_id)
-        return _public_store_payload(store, include_payment_capability=True) if store is not None else None
+        return (
+            _public_store_payload(
+                store,
+                include_payment_capability=True,
+                asset_registry=self._payment_assets,
+            )
+            if store is not None
+            else None
+        )
 
     def list_merchant_stores(self, query: ListMerchantStoresQuery) -> tuple[Mapping[str, Any], ...]:
         return tuple(_public_store_payload(store) for store in self._repository.list_stores_for_member(query.actor_user_id))
@@ -77,9 +92,106 @@ class StoreCatalogApplicationService:
     def list_public_stores(self, *, limit: int, offset: int) -> Mapping[str, Any]:
         stores = self._stores_for_public_listing(limit=limit, offset=offset)
         return {
-            "stores": [_public_store_payload(store, include_payment_capability=True) for store in stores],
+            "stores": [
+                _public_store_payload(
+                    store,
+                    include_payment_capability=True,
+                    asset_registry=self._payment_assets,
+                )
+                for store in stores
+            ],
             "pagination": _pagination(limit=limit, offset=offset, count=len(stores)),
         }
+
+    def list_all_public_products(self, *, filters: Mapping[str, Any]) -> Mapping[str, Any]:
+        list_all = getattr(self._repository, "list_all_public_products", None)
+        if callable(list_all):
+            products = tuple(
+                list_all(
+                    category=filters.get("category"),
+                    tag=filters.get("tag"),
+                    query=filters.get("query"),
+                    sort_by=str(filters.get("sort_by") or "title"),
+                    sort_direction=str(filters.get("sort_direction") or "asc"),
+                    limit=int(filters["limit"]),
+                    offset=int(filters["offset"]),
+                )
+            )
+        else:
+            # In-memory fallback: gather all active/public products across all stores
+            all_products = tuple(
+                product
+                for product in getattr(self._repository, "products", {}).values()
+                if isinstance(product, StoreProduct)
+                and product.status is ProductStatus.ACTIVE
+                and product.visibility is ProductVisibility.PUBLIC
+                and product.active
+            )
+            products = self._apply_product_filters(all_products, filters)
+        store_ids = {p.store_id for p in products}
+        stores_by_id: dict[Any, StoreProfile] = {}
+        for store_id in store_ids:
+            store = self._repository.get_store(store_id)
+            if store is not None:
+                stores_by_id[store_id] = store
+        result = []
+        for product in products:
+            store = stores_by_id.get(product.store_id)
+            if store is None:
+                continue
+            result.append(
+                _public_product_payload(
+                    store,
+                    product,
+                    self._availability(product),
+                    options=self._options_for_product(product),
+                    option_values=self._option_values_for_product(product),
+                    variants=self._variants_for_product(product),
+                    variant_availability=self._variant_availability_for_product(product),
+                    asset_registry=self._payment_assets,
+                )
+            )
+        return {
+            "products": result,
+            "pagination": _pagination(
+                limit=int(filters["limit"]),
+                offset=int(filters["offset"]),
+                count=len(result),
+            ),
+        }
+
+    def _apply_product_filters(
+        self, products: tuple[StoreProduct, ...], filters: Mapping[str, Any]
+    ) -> tuple[StoreProduct, ...]:
+        category = filters.get("category")
+        tag = filters.get("tag")
+        query = filters.get("query")
+        limit = int(filters["limit"])
+        offset = int(filters["offset"])
+        sort_by = str(filters.get("sort_by") or "title")
+        sort_direction = str(filters.get("sort_direction") or "asc")
+        if category is not None:
+            products = tuple(p for p in products if p.category == category)
+        if tag is not None:
+            products = tuple(p for p in products if tag in p.tags)
+        if query is not None:
+            query_lower = query.lower()
+            products = tuple(
+                p
+                for p in products
+                if query_lower in p.title.lower()
+                or (p.description is not None and query_lower in p.description.lower())
+            )
+        reverse = sort_direction == "desc"
+        key_map = {
+            "title": lambda p: p.title.lower(),
+            "createdAt": lambda p: p.created_at,
+            "updatedAt": lambda p: p.updated_at,
+            "price": lambda p: p.price.amount,
+        }
+        if sort_by in key_map:
+            products = tuple(sorted(products, key=key_map[sort_by], reverse=reverse))
+        return products[offset : offset + limit]
 
     def list_public_products(
         self,
@@ -103,7 +215,11 @@ class StoreCatalogApplicationService:
             offset=int(filters["offset"]),
         )
         return {
-            "store": _public_store_payload(store, include_payment_capability=True),
+            "store": _public_store_payload(
+                store,
+                include_payment_capability=True,
+                asset_registry=self._payment_assets,
+            ),
             "products": [
                 _public_product_payload(
                     store,
@@ -113,6 +229,7 @@ class StoreCatalogApplicationService:
                     option_values=self._option_values_for_product(product),
                     variants=self._variants_for_product(product),
                     variant_availability=self._variant_availability_for_product(product),
+                    asset_registry=self._payment_assets,
                 )
                 for product in products
             ],
@@ -132,7 +249,11 @@ class StoreCatalogApplicationService:
         if product is None or product.status is not ProductStatus.ACTIVE or product.visibility is not ProductVisibility.PUBLIC:
             return None
         return {
-            "store": _public_store_payload(store, include_payment_capability=True),
+            "store": _public_store_payload(
+                store,
+                include_payment_capability=True,
+                asset_registry=self._payment_assets,
+            ),
             "product": _public_product_payload(
                 store,
                 product,
@@ -142,6 +263,7 @@ class StoreCatalogApplicationService:
                 option_values=self._option_values_for_product(product),
                 variants=self._variants_for_product(product),
                 variant_availability=self._variant_availability_for_product(product),
+                asset_registry=self._payment_assets,
             ),
         }
 
@@ -863,7 +985,12 @@ def _store_payload(store: StoreProfile | None) -> dict[str, Any] | None:
     }
 
 
-def _public_store_payload(store: StoreProfile | None, *, include_payment_capability: bool = False) -> dict[str, Any] | None:
+def _public_store_payload(
+    store: StoreProfile | None,
+    *,
+    include_payment_capability: bool = False,
+    asset_registry: Any | None = None,
+) -> dict[str, Any] | None:
     if store is None:
         return None
     payload: dict[str, Any] = {
@@ -877,7 +1004,7 @@ def _public_store_payload(store: StoreProfile | None, *, include_payment_capabil
     if store.support_email_public and store.support_email is not None:
         payload["supportEmail"] = store.support_email
     if include_payment_capability:
-        payload["paymentCapability"] = _payment_capability_payload(store)
+        payload["paymentCapability"] = _payment_capability_payload(store, asset_registry=asset_registry)
     return payload
 
 
@@ -968,13 +1095,35 @@ def _public_product_payload(
     option_values: Mapping[str, tuple[ProductOptionValue, ...]] | None = None,
     variants: tuple[ProductVariant, ...] = (),
     variant_availability: Mapping[str, Mapping[str, Any]] | None = None,
+    asset_registry: Any | None = None,
 ) -> dict[str, Any]:
     option_values = option_values or {}
     variant_availability = variant_availability or {}
     display_price = _display_price_payload(product, variants, variant_availability)
     display_availability = _aggregate_availability(availability, variants, variant_availability)
+    
+    asset_prices = {}
+    if asset_registry is not None:
+        chain_ids = set(store.supported_chain_ids)
+        configured_asset_ids = set(store.supported_payment_asset_ids)
+        for asset in asset_registry.assets:
+            if (
+                asset.enabled
+                and asset.chain_id in chain_ids
+                and (not configured_asset_ids or asset.asset_id in configured_asset_ids)
+            ):
+                asset_prices[asset.asset_id] = {
+                    "assetId": asset.asset_id,
+                    "chainId": asset.chain_id,
+                    "symbol": asset.symbol,
+                    "amount": format(product.price.amount, "f"),
+                    "decimals": asset.decimals,
+                    "tokenAddress": str(asset.contract_address) if asset.contract_address is not None else None,
+                }
+
     payload: dict[str, Any] = {
         "publicStoreId": str(product.public_store_id),
+        "storeDisplayName": store.display_name,
         "publicProductId": str(product.public_product_id),
         "title": product.title,
         "titleHtml": escape(product.title),
@@ -988,7 +1137,8 @@ def _public_product_payload(
         "basePrice": _crypto_payload(product.price),
         "displayPrice": display_price,
         "availability": display_availability,
-        "paymentCapability": _payment_capability_payload(store, product.price),
+        "paymentCapability": _payment_capability_payload(store, product.price, asset_registry=asset_registry),
+        "assetPrices": asset_prices,
         "options": [_public_option_payload(option, option_values.get(option.option_id, ())) for option in options if option.active],
         "variants": [
             _public_variant_payload(product, variant, variant_availability.get(str(variant.public_variant_id)))
