@@ -29,8 +29,8 @@ from token_payments.contexts.auth.application import (  # noqa: E402
     RevokeOAuthIdentityCommand,
 )
 from token_payments.contexts.auth.domain import AuthSession, IssuedToken, OAuthIdentity, OAuthIdentityId, RefreshTokenHash, SessionId, User  # noqa: E402
-from token_payments.contexts.auth.domain.wallet import WalletId  # noqa: E402
-from token_payments.shared.domain import UserId  # noqa: E402
+from token_payments.contexts.auth.domain.wallet import UserWallet, WalletId, WalletType, WalletVerificationStatus  # noqa: E402
+from token_payments.shared.domain import UserId, WalletAddress  # noqa: E402
 
 
 NOW = datetime(2026, 5, 24, 3, 0, tzinfo=UTC)
@@ -467,3 +467,70 @@ def _oauth_identity(*, revoked_at: datetime | None = None) -> OAuthIdentity:
         linked_at=NOW,
         revoked_at=revoked_at,
     )
+
+
+def test_complete_oauth_session_registers_wallet_if_wallets_configured() -> None:
+    class FakeUserWalletRepository:
+        def __init__(self) -> None:
+            self.wallets: list[UserWallet] = []
+        def save(self, wallet: UserWallet) -> None:
+            self.wallets.append(wallet)
+        def get_active_by_address(self, chain_id: int, wallet: WalletAddress) -> UserWallet | None:
+            return next((w for w in self.wallets if w.chain_id == chain_id and w.address == wallet and w.is_active()), None)
+        def list_for_user(self, user_id: UserId) -> tuple[UserWallet, ...]:
+            return tuple(w for w in self.wallets if w.user_id == user_id)
+
+    oauth_identities = FakeOAuthIdentityRepository()
+    sessions = FakeSessionRepository()
+    wallets = FakeUserWalletRepository()
+
+    class FakeNewUserRepository(FakeUserRepository):
+        def __init__(self) -> None:
+            super().__init__()
+            self.user_to_return = None
+        def get_by_wallet(self, _wallet: object) -> User | None:
+            return self.user_to_return
+        def save(self, user: User) -> None:
+            self.user_to_return = user
+
+    new_users = FakeNewUserRepository()
+
+    service = AuthApplicationService(
+        clock=StaticClock(),
+        nonce_generator=SequenceIds("state-route"),
+        user_id_generator=SequenceIds(USER_ID),
+        session_id_generator=SequenceIds(SESSION_ID),
+        users=new_users,
+        login_challenges=UnusedRepository(),
+        sessions=sessions,
+        signature_verifier=UnusedVerifier(),
+        token_issuer=FakeTokenIssuer(),
+        event_publisher=UnusedPublisher(),
+        oauth_identities=oauth_identities,
+        oauth_provider=FakeOAuthProvider(),
+        wallets=wallets,
+    )
+
+    session = service.completeOAuthSession(
+        CompleteOAuthSessionCommand(
+            provider="google",
+            code="oauth-code",
+            state="state-route",
+            redirect_uri="https://token-payments.local/oauth/callback",
+            device_id="browser-1",
+            requested_at=NOW,
+        )
+    )
+
+    # Verify that the user has wallets saved in the repository
+    assert len(wallets.wallets) == 2
+    
+    # Verify that they are verified, primary, and set up for both chain IDs 1337 and 11155111
+    chains = {w.chain_id for w in wallets.wallets}
+    assert chains == {1337, 11155111}
+    for wallet in wallets.wallets:
+        assert wallet.address == WalletAddress("0x2222222222222222222222222222222222222222")
+        assert wallet.user_id == UserId(USER_ID)
+        assert wallet.primary is True
+        assert wallet.verification_status == WalletVerificationStatus.VERIFIED
+

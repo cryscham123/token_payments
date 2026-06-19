@@ -351,6 +351,27 @@ class AuthApplicationService:
                 self._users.save(user)
                 self._ensure_personal_membership(user, now)
                 registered = True
+                
+                if self._wallets is not None:
+                    for chain_id in [1337, 11155111]:
+                        existing = self._wallets.get_active_by_address(chain_id, wallet_addr)
+                        if existing is None:
+                            active_same_chain = [
+                                item
+                                for item in self._wallets.list_for_user(user.user_id)
+                                if item.chain_id == chain_id and item.is_active()
+                            ]
+                            wallet = UserWallet(
+                                wallet_id=WalletId.new(),
+                                user_id=user.user_id,
+                                address=wallet_addr,
+                                chain_id=chain_id,
+                                wallet_type=WalletType.EOA,
+                                verification_status=WalletVerificationStatus.VERIFIED,
+                                primary=not active_same_chain,
+                                linked_at=now,
+                            )
+                            self._wallets.save(wallet)
             
             identity = OAuthIdentity(
                 oauth_identity_id=OAuthIdentityId.new(),

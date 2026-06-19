@@ -36,7 +36,7 @@ import { ensureChain } from "@/lib/checkout-client";
 import { isActiveWallet } from "@/lib/payment-options";
 
 export default function Profile() {
-  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(undefined);
   const [profile, setProfile] = useState(null);
   const [stores, setStores] = useState([]);
   const [wallets, setWallets] = useState([]);
@@ -60,23 +60,23 @@ export default function Profile() {
     setErrorMsg("");
     setSuccessMsg("");
     try {
-      let userPayload = null;
-      try {
-        userPayload = await getCurrentUser();
-      } catch (err) {
-        console.log("User session not found or expired:", err);
-      }
+      let activeUser = currentUser;
+      if (!activeUser) {
+        let userPayload = null;
+        try {
+          userPayload = await getCurrentUser();
+        } catch (err) {
+          console.log("User session not found or expired:", err);
+        }
 
-      if (!userPayload?.user) {
-        setLoading(false);
-        return;
-      }
+        if (!userPayload?.user) {
+          setCurrentUser(null);
+          setLoading(false);
+          return;
+        }
 
-      if (userPayload?.user) {
-        setCurrentUser((prev) => {
-          if (prev?.userId === userPayload.user.userId) return prev;
-          return userPayload.user;
-        });
+        activeUser = userPayload.user;
+        setCurrentUser(activeUser);
       }
 
       const [profileRes, storesRes, walletsRes, oauthRes] = await Promise.all([
@@ -124,15 +124,17 @@ export default function Profile() {
   };
 
   useEffect(() => {
-    if (!currentUser) {
+    if (currentUser === undefined) {
+      loadProfileData();
+    } else if (currentUser === null) {
       setProfile(null);
       setDisplayNameInput("");
       setStores([]);
       setWallets([]);
       setLoading(false);
-      return;
+    } else {
+      loadProfileData();
     }
-    loadProfileData();
   }, [currentUser]);
 
   const reloadWallets = async () => {

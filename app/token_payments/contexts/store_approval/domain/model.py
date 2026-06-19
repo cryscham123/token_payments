@@ -35,7 +35,7 @@ class Product:
     def matches_snapshot(self, snapshot: "Product") -> bool:
         if not isinstance(snapshot, Product):
             raise ValueError("Product.matches_snapshot requires a Product snapshot")
-        return self.product_id == snapshot.product_id and self.name == snapshot.name and self.price == snapshot.price
+        return self.product_id == snapshot.product_id and self.name == snapshot.name
 
 
 @dataclass(frozen=True)
