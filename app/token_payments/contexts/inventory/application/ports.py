@@ -84,7 +84,7 @@ class InventoryAuditRecord:
 
 
 class InventoryRepository(Protocol):
-    def get(self, product_id: ProductId, store_id: StoreId) -> ProductInventory | None:
+    def get(self, product_id: ProductId, store_id: StoreId, public_variant_id: str | None = None) -> ProductInventory | None:
         ...
 
     def save(self, inventory: ProductInventory) -> None:

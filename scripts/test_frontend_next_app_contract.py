@@ -1,0 +1,304 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+FRONTEND = ROOT / "frontend"
+
+
+def test_frontend_scaffold_uses_next_react_tailwind_outside_nginx_directory() -> None:
+    package = json.loads((FRONTEND / "package.json").read_text(encoding="utf-8"))
+
+    assert package["name"] == "token-payments-web"
+    assert package["scripts"] == {"dev": "next dev", "build": "next build", "start": "next start"}
+    assert {"next", "react", "react-dom", "lucide-react"} <= set(package["dependencies"])
+    assert {"tailwindcss", "postcss", "autoprefixer"} <= set(package["devDependencies"])
+    assert (FRONTEND / "package-lock.json").exists()
+    assert "RUN npm ci" in (FRONTEND / "Dockerfile").read_text(encoding="utf-8")
+    assert (FRONTEND / "app" / "page.jsx").exists()
+    assert (FRONTEND / "tailwind.config.js").exists()
+    assert not (ROOT / "app" / "nginx" / "package.json").exists()
+    assert not (ROOT / "app" / "nginx" / "app").exists()
+
+
+def test_frontend_keeps_imported_ethercommerce_flow_and_demo_seed_ids() -> None:
+    readme = (FRONTEND / "README.md").read_text(encoding="utf-8")
+    data = (FRONTEND / "lib" / "demo-data.js").read_text(encoding="utf-8")
+    component_names = {path.name for path in (FRONTEND / "components").glob("*.jsx")}
+
+    assert "https://github.com/joonistaa/ethercommerce" in readme
+    assert "69596a5ef735d2c84739ac58d4ce747bc1996cf0" in readme
+    assert {
+        "Home.jsx",
+        "ProductDetail.jsx",
+        "Cart.jsx",
+        "PayModal.jsx",
+        "PaymentComplete.jsx",
+        "OrderHistory.jsx",
+        "StoreDetail.jsx",
+    } <= component_names
+    assert "st_demo_store_001" in data
+    assert "prd_local_hoodie_001" in data
+    assert "55555555-5555-4555-8555-555555555555" in data
+
+
+def test_frontend_wallet_login_uses_cookie_first_siwe_api_flow() -> None:
+    auth_client = (FRONTEND / "lib" / "auth-client.js").read_text(encoding="utf-8")
+    modal = (FRONTEND / "components" / "WalletConnectModal.jsx").read_text(encoding="utf-8")
+    header = (FRONTEND / "components" / "SiteHeader.jsx").read_text(encoding="utf-8")
+    oauth_callback = (FRONTEND / "components" / "OAuthCallback.jsx").read_text(encoding="utf-8")
+    combined = "\n".join((auth_client, modal, header))
+
+    assert '"/auth/challenges"' in auth_client
+    assert '"/auth/sessions"' in auth_client
+    assert '"/auth/me"' in auth_client
+    assert "/auth/oauth/" in auth_client
+    assert 'credentials: "include"' in auth_client
+    assert "eth_requestAccounts" in modal
+    assert "eth_chainId" in modal
+    assert "personal_sign" in modal
+    assert "challenge.signingMessage" in modal
+    assert "loginWithMetaMask" in modal
+    assert "requestOAuthAuthorization" in modal
+    assert "Google로 계속하기" in modal
+    assert "window.location.assign" in modal
+    assert "completeOAuthSession" in oauth_callback
+    assert (FRONTEND / "app" / "oauth" / "callback" / "page.jsx").exists()
+    assert "getCurrentUser" in header
+    assert "localStorage" not in combined
+    assert "sessionStorage" not in combined
+    assert '"Authorization"' not in combined
+    assert "headers.Authorization" not in combined
+
+
+def test_frontend_checkout_starts_with_empty_cart_and_uses_real_payment_api_flow() -> None:
+    data = (FRONTEND / "lib" / "demo-data.js").read_text(encoding="utf-8")
+    cart = (FRONTEND / "lib" / "cart.js").read_text(encoding="utf-8")
+    checkout_client = (FRONTEND / "lib" / "checkout-client.js").read_text(encoding="utf-8")
+    product_detail = (FRONTEND / "components" / "ProductDetail.jsx").read_text(encoding="utf-8")
+    cart_page = (FRONTEND / "components" / "Cart.jsx").read_text(encoding="utf-8")
+    pay_modal = (FRONTEND / "components" / "PayModal.jsx").read_text(encoding="utf-8")
+    home = (FRONTEND / "components" / "Home.jsx").read_text(encoding="utf-8")
+    complete = (FRONTEND / "components" / "PaymentComplete.jsx").read_text(encoding="utf-8")
+    combined = "\n".join((data, cart, checkout_client, product_detail, cart_page, pay_modal, home, complete))
+
+    assert "TPAY" not in combined
+    assert "cartSeed" not in combined
+    assert "tokenAmount" not in combined
+    assert "tokenSymbol" not in combined
+    assert 'cryptoSymbol: "ETH"' in data
+    assert "loadCart()" in cart_page
+    assert "localStorage" in cart
+    assert "addCartItem" in product_detail
+    assert '"/orders"' in checkout_client
+    assert "/checkouts/tracking/" in checkout_client
+    assert '"/payments/transaction-hashes"' in checkout_client
+    assert "eth_sendTransaction" in checkout_client
+    assert "createOrder" in cart_page
+    assert "/pay?trackingId=" in cart_page
+    assert "submitTransactionHash" in pay_modal
+    assert "clearCart" in pay_modal
+
+
+def test_frontend_checkout_supports_server_payment_options_and_expiry_sync() -> None:
+    auth_client = (FRONTEND / "lib" / "auth-client.js").read_text(encoding="utf-8")
+    checkout_client = (FRONTEND / "lib" / "checkout-client.js").read_text(encoding="utf-8")
+    cart_page = (FRONTEND / "components" / "Cart.jsx").read_text(encoding="utf-8")
+    pay_modal = (FRONTEND / "components" / "PayModal.jsx").read_text(encoding="utf-8")
+    product_detail = (FRONTEND / "components" / "ProductDetail.jsx").read_text(encoding="utf-8")
+
+    assert '"/auth/wallets"' in auth_client
+    assert "listWallets" in auth_client
+    assert "paymentAssetId" in checkout_client
+    assert "walletId" in checkout_client
+    assert "ERC20_TRANSFER" in checkout_client
+    assert "amountMinorUnits" in checkout_client
+    assert "tokenAddress" in checkout_client
+    assert "paymentCapability" in product_detail
+    assert "paymentOptions" in cart_page
+    assert "selectedPaymentAssetId" in cart_page
+    assert "selectedWalletId" in cart_page
+    assert "walletId: selectedWalletId" in cart_page
+    assert "paymentAssetId: selectedPaymentAssetId" in cart_page
+    assert "paymentRequest?.expiresAt" in pay_modal
+    assert "Date.parse" in pay_modal
+    assert "max-w-4xl" in pay_modal
+    assert "lg:grid-cols-[0.9fr_1.1fr]" in pay_modal
+    assert "compactPaymentFacts" in pay_modal
+    assert "15 * 60" not in pay_modal
+    assert "결제 요청 만들기" not in pay_modal
+
+
+def test_frontend_checkout_sends_order_uuid_product_ids_not_public_catalog_ids() -> None:
+    checkout_client = (FRONTEND / "lib" / "checkout-client.js").read_text(encoding="utf-8")
+    product_detail = (FRONTEND / "components" / "ProductDetail.jsx").read_text(encoding="utf-8")
+    home = (FRONTEND / "components" / "Home.jsx").read_text(encoding="utf-8")
+
+    assert "demoProductIdForPublicId" in checkout_client
+    assert "checkoutProductId(item)" in checkout_client
+    assert "productId: checkoutProductId(item)" in checkout_client
+    assert "publicVariantId: item.publicVariantId" in checkout_client
+    assert "selectedOptions: item.selectedOptions" in checkout_client
+    assert "orderProductId" in product_detail
+    assert "orderProductId" in home
+    assert "p.publicProductId" in product_detail
+
+
+def test_frontend_product_detail_surfaces_store_and_catalog_detail_context() -> None:
+    product_detail = (FRONTEND / "components" / "ProductDetail.jsx").read_text(encoding="utf-8")
+    store_detail = (FRONTEND / "components" / "StoreDetail.jsx").read_text(encoding="utf-8")
+
+    assert (FRONTEND / "app" / "stores" / "[publicStoreId]" / "page.jsx").exists()
+    assert "setStoreProfile" in product_detail
+    assert "product.tags" in product_detail
+    assert "p.media" in product_detail
+    assert "basePrice: p.basePrice" in product_detail
+    assert "product.galleryImages" in product_detail
+    assert "product.variants" in product_detail
+    assert "requiredOptions" in product_detail
+    assert "optionalOptions" in product_detail
+    assert "displayedUnitPrice" in product_detail
+    assert "selectedPaymentAssetKey" in product_detail
+    assert "priceOptionsFromProduct(product)" in product_detail
+    assert "optionChoicesFromProduct(product)" in product_detail
+    assert "selectedOptionValues" in product_detail
+    assert "selectedVariant" in product_detail
+    assert "changeOptionValue" in product_detail
+    assert "changeMultiOptionValue" in product_detail
+    assert "option.selectionType === \"MULTI\"" in product_detail
+    assert "type=\"checkbox\"" in product_detail
+    assert "optionValueLabel(product, option, optionIndex, value, selectedOptionValues)" in product_detail
+    assert "variantAvailability(selectedVariant)" in product_detail
+    assert "variantDisplayPrice(selectedVariant, selectedPriceOption, product)" in product_detail
+    assert "selectedAddOnDelta" in product_detail
+    assert "selectedOptions: selectedOptionValues" in product_detail
+    assert "requiredOptions.every" in product_detail
+    assert "purchaseUnavailable(product, productRemainingQty)" in product_detail
+    assert "총 상품 금액" in product_detail
+    assert "구매 불가" in product_detail
+    assert "주문 시 확정" not in product_detail
+    assert "추가금 없음" not in product_detail
+    assert "visibleStoreProfile" in product_detail
+    assert "href={`/stores/${visibleStoreProfile.publicStoreId}`}" in product_detail
+    assert "`/stores/${publicStoreId}`" in store_detail
+    assert "`/stores/${publicStoreId}/products`" in store_detail
+    assert "paymentCapabilitySummary(store?.paymentCapability)" in store_detail
+    assert "supportEmail" in store_detail
+
+
+def test_frontend_home_product_cards_show_catalog_context_without_fake_discounts() -> None:
+    home = (FRONTEND / "components" / "Home.jsx").read_text(encoding="utf-8")
+
+    assert "category: p.category" in home
+    assert "setStoreProfile(res?.store || null)" in home
+    assert "homeStoreLabel(storeProfile)" in home
+    assert "fromPriceLabel(product)" in home
+    assert "homePaymentSummary(product.paymentCapability)" in home
+    assert "15%" not in home
+    assert "특가" not in home
+
+
+def test_frontend_cart_items_link_back_to_product_detail() -> None:
+    cart_page = (FRONTEND / "components" / "Cart.jsx").read_text(encoding="utf-8")
+
+    assert 'href={`/products/${item.publicProductId}`}' in cart_page
+    assert "상품 정보 보기" in cart_page
+
+
+def test_compose_exposes_next_web_service_only_behind_nginx() -> None:
+    services = _compose_services()
+    web = services["token_payments_web"]
+    nginx = services["nginx"]
+
+    assert _scalar_for_key(web, "image") == "token_payments_web"
+    assert _nested_scalar(web, "build", "context") == "frontend"
+    assert _list_for_key(web, "profiles") == ["api"]
+    assert _list_for_key(web, "ports") == []
+    assert _list_for_key(web, "expose") == ["3000"]
+    assert "NEXT_PUBLIC_API_BASE_URL=${API_PUBLIC_BASE_URL}" in "\n".join(web)
+    assert "token_payments_web:" in "\n".join(nginx)
+
+
+def test_nginx_routes_frontend_root_and_api_paths_separately() -> None:
+    config = (ROOT / "app" / "nginx" / "default.conf").read_text(encoding="utf-8")
+
+    assert "upstream token_payments_web" in config
+    assert "server token_payments_web:3000;" in config
+    assert "location ~ ^/(auth|checkouts?|payments|stores|merchant|admin|operator|healthz|readyz)(/|$)" in config
+    assert "location ~ ^/orders(/|$)" in config
+    assert "proxy_pass http://token_payments_api;" in config
+    assert "proxy_pass http://token_payments_web;" in config
+
+
+def _compose_services() -> dict[str, tuple[str, ...]]:
+    services: dict[str, list[str]] = {}
+    current_service: str | None = None
+    in_services = False
+    for raw_line in (ROOT / "docker-compose.yml").read_text(encoding="utf-8").splitlines():
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = _indent_width(raw_line)
+        if indent == 0 and stripped == "services:":
+            in_services = True
+            continue
+        if not in_services:
+            continue
+        if indent == 0:
+            break
+        if indent == 2 and stripped.endswith(":") and not stripped.startswith("- "):
+            current_service = stripped[:-1]
+            services[current_service] = []
+            continue
+        if current_service is not None:
+            services[current_service].append(raw_line)
+    return {name: tuple(block) for name, block in services.items()}
+
+
+def _list_for_key(block: tuple[str, ...], key: str) -> list[str]:
+    values: list[str] = []
+    in_key = False
+    key_indent = -1
+    for raw_line in block:
+        stripped = raw_line.strip()
+        indent = _indent_width(raw_line)
+        if stripped == f"{key}:":
+            in_key = True
+            key_indent = indent
+            continue
+        if in_key and indent <= key_indent and not stripped.startswith("- "):
+            break
+        if in_key and stripped.startswith("- "):
+            values.append(stripped[2:].strip().strip('"'))
+    return values
+
+
+def _scalar_for_key(block: tuple[str, ...], key: str) -> str | None:
+    for raw_line in block:
+        stripped = raw_line.strip()
+        if stripped.startswith(f"{key}:"):
+            return stripped.split(":", 1)[1].strip().strip('"')
+    return None
+
+
+def _nested_scalar(block: tuple[str, ...], section: str, key: str) -> str | None:
+    in_section = False
+    section_indent = -1
+    for raw_line in block:
+        stripped = raw_line.strip()
+        indent = _indent_width(raw_line)
+        if stripped == f"{section}:":
+            in_section = True
+            section_indent = indent
+            continue
+        if in_section and indent <= section_indent:
+            break
+        if in_section and stripped.startswith(f"{key}:"):
+            return stripped.split(":", 1)[1].strip().strip('"')
+    return None
+
+
+def _indent_width(line: str) -> int:
+    return len(line) - len(line.lstrip(" "))

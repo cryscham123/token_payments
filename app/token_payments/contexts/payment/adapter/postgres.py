@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+import json
 from typing import Any, Mapping
 
 from token_payments.contexts.payment.domain import (
@@ -60,6 +61,7 @@ SELECT
     refund_tx_hash,
     refund_block_number,
     refund_gas_used,
+    items,
     expires_at
 FROM payments
 WHERE payment_id = %(payment_id)s
@@ -96,6 +98,7 @@ SELECT
     refund_tx_hash,
     refund_block_number,
     refund_gas_used,
+    items,
     expires_at
 FROM payments
 WHERE status IN ('SUBMITTED', 'CONFIRMING')
@@ -138,7 +141,26 @@ SELECT
     p.refund_block_number,
     p.refund_gas_used,
     p.expires_at,
-    p.updated_at
+    p.updated_at,
+    (
+        SELECT COALESCE(json_agg(json_build_object(
+            'productId', oi.product_id,
+            'publicProductId', sp.public_product_id,
+            'publicVariantId', oi.public_variant_id,
+            'name', oi.product_snapshot_name,
+            'title', COALESCE(sp.title, oi.product_snapshot_name),
+            'selectedOptions', oi.selected_options,
+            'quantity', oi.quantity,
+            'unitPrice', json_build_object(
+                'amount', oi.unit_price_numeric::text,
+                'symbol', oi.unit_price_symbol,
+                'decimals', oi.unit_price_decimals
+            )
+        )), '[]'::json)
+        FROM order_items oi
+        LEFT JOIN store_catalog_products sp ON sp.product_id = oi.product_id AND sp.store_id = o.store_id
+        WHERE oi.order_id = p.order_id
+    ) AS items
 FROM payments p
 JOIN orders o ON o.order_id = p.order_id
 JOIN order_customers c ON c.customer_id = p.customer_id
@@ -180,7 +202,26 @@ SELECT
     p.refund_block_number,
     p.refund_gas_used,
     p.expires_at,
-    p.updated_at
+    p.updated_at,
+    (
+        SELECT COALESCE(json_agg(json_build_object(
+            'productId', oi.product_id,
+            'publicProductId', sp.public_product_id,
+            'publicVariantId', oi.public_variant_id,
+            'name', oi.product_snapshot_name,
+            'title', COALESCE(sp.title, oi.product_snapshot_name),
+            'selectedOptions', oi.selected_options,
+            'quantity', oi.quantity,
+            'unitPrice', json_build_object(
+                'amount', oi.unit_price_numeric::text,
+                'symbol', oi.unit_price_symbol,
+                'decimals', oi.unit_price_decimals
+            )
+        )), '[]'::json)
+        FROM order_items oi
+        LEFT JOIN store_catalog_products sp ON sp.product_id = oi.product_id AND sp.store_id = o.store_id
+        WHERE oi.order_id = p.order_id
+    ) AS items
 FROM payments p
 JOIN orders o ON o.order_id = p.order_id
 JOIN order_customers c ON c.customer_id = p.customer_id
@@ -221,6 +262,7 @@ INSERT INTO payments (
     refund_tx_hash,
     refund_block_number,
     refund_gas_used,
+    items,
     expires_at
 ) VALUES (
     %(payment_id)s,
@@ -252,6 +294,7 @@ INSERT INTO payments (
     %(refund_tx_hash)s,
     %(refund_block_number)s,
     %(refund_gas_used)s,
+    %(items)s::jsonb,
     %(expires_at)s
 )
 ON CONFLICT (payment_id) DO UPDATE SET
@@ -283,6 +326,7 @@ ON CONFLICT (payment_id) DO UPDATE SET
     refund_tx_hash = EXCLUDED.refund_tx_hash,
     refund_block_number = EXCLUDED.refund_block_number,
     refund_gas_used = EXCLUDED.refund_gas_used,
+    items = EXCLUDED.items,
     expires_at = EXCLUDED.expires_at,
     updated_at = now()
 """
@@ -419,6 +463,7 @@ class PostgresPaymentRepository:
                 payment.refund_receipt.block_number if payment.refund_receipt is not None else None
             ),
             "refund_gas_used": payment.refund_receipt.gas_used if payment.refund_receipt is not None else None,
+            "items": json.dumps([dict(item) for item in payment.items]),
             "expires_at": payment.expires_at,
         }
         self._connection.execute(UPSERT_PAYMENT_SQL, params)
@@ -537,6 +582,7 @@ def _row_to_payment(row: Mapping[str, Any] | object) -> Payment:
         refund_receipt=_receipt_from_row(row, "refund_tx_hash", "refund_block_number", "refund_gas_used"),
         payer_wallet_id=_optional_row_value(row, "payer_wallet_id"),
         payment_asset_id=_optional_row_value(row, "payment_asset_id"),
+        items=_json_items(_optional_json_row_value(row, "items")),
     )
 
 
@@ -555,6 +601,7 @@ def _history_item_from_row(row: Mapping[str, Any] | object) -> PaymentHistoryIte
         failure_reason=_row_value(row, "failure_reason"),
         payment_asset_id=_optional_row_value(row, "payment_asset_id"),
         updated_at=_row_value(row, "updated_at"),
+        items=_json_items(_optional_json_row_value(row, "items")),
     )
 
 
@@ -674,6 +721,27 @@ def _optional_int_row_value(row: Mapping[str, Any] | object, key: str) -> int | 
     else:
         value = getattr(row, key, None)
     return int(value) if value is not None else None
+
+
+def _optional_json_row_value(row: Mapping[str, Any] | object, key: str) -> Any:
+    if isinstance(row, Mapping):
+        return row.get(key)
+    return getattr(row, key, None)
+
+
+def _json_items(value: Any) -> tuple[dict[str, Any], ...]:
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        value = json.loads(value)
+    if not isinstance(value, list | tuple):
+        raise ValueError("payment items row must be a JSON array")
+    items: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            raise ValueError("payment items row must contain JSON objects")
+        items.append(dict(item))
+    return tuple(items)
 
 
 def _fetch_one(result: Any) -> Any:

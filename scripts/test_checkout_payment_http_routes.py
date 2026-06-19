@@ -240,6 +240,7 @@ def test_payment_http_route_lists_user_payment_history_without_request_body() ->
                 "trackingId": str(TRACKING_ID),
                 "txHash": str(TX_HASH),
                 "updatedAt": UPDATED_AT.isoformat(),
+                "items": [],
             }
         ],
         "pagination": {"limit": 20, "nextPageToken": None},

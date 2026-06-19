@@ -367,7 +367,18 @@ class RequestGuard:
                 request_id=request_id,
             )
 
+        path = str(getattr(request, "path", ""))
         method = str(getattr(request, "method", "GET")).upper()
+        if (
+            path == "/auth/challenges"
+            or (path == "/auth/sessions" and method == "POST")
+            or (
+                "/auth/oauth/" in path
+                and (path.endswith("/sessions") or path.endswith("/links") or path.endswith("/authorize"))
+            )
+        ):
+            return None
+
         if method in SAFE_METHODS or not self._has_auth_cookie(getattr(request, "headers", {})):
             return None
 

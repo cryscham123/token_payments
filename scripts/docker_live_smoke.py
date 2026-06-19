@@ -50,7 +50,7 @@ COMMAND_TIMEOUT_SECONDS = {
     "runtime-smoke": 120,
     "cleanup": 90,
 }
-API_REQUIRED_SERVICES = ("postgres", "kafka", "test_network", "token_payments_api", "nginx")
+API_REQUIRED_SERVICES = ("postgres", "kafka", "test_network", "token_payments_api", "token_payments_web", "nginx")
 API_COMMAND_TIMEOUT_SECONDS = {
     "api-compose-config": 30,
     "build-api-service": 240,
@@ -167,7 +167,7 @@ def _build_api_readiness_command_sequence(env_file: str) -> tuple[tuple[str, tup
         ),
         (
             "build-api-service",
-            ("docker", "compose", "--env-file", env_file, "build", "token_payments_api", "nginx"),
+            ("docker", "compose", "--env-file", env_file, "build", "token_payments_api", "token_payments_web", "nginx"),
             "docker",
         ),
         (
@@ -177,7 +177,7 @@ def _build_api_readiness_command_sequence(env_file: str) -> tuple[tuple[str, tup
         ),
         (
             "start-api-service",
-            ("docker", "compose", "--env-file", env_file, "up", "-d", "token_payments_api", "nginx"),
+            ("docker", "compose", "--env-file", env_file, "up", "-d", "token_payments_api", "token_payments_web", "nginx"),
             "docker",
         ),
         (

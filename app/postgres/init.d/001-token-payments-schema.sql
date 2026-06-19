@@ -429,6 +429,84 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_store_catalog_products_public_store_produc
 CREATE INDEX IF NOT EXISTS idx_store_catalog_products_store_status_visibility
     ON store_catalog_products (store_id, status, visibility);
 
+CREATE TABLE IF NOT EXISTS store_catalog_product_options (
+    store_id UUID NOT NULL,
+    product_id UUID NOT NULL,
+    option_id TEXT NOT NULL,
+    option_key TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0 CHECK (sort_order >= 0),
+    required BOOLEAN NOT NULL DEFAULT true,
+    selection_type TEXT NOT NULL DEFAULT 'SINGLE' CHECK (selection_type IN ('SINGLE', 'MULTI')),
+    option_type TEXT NOT NULL DEFAULT 'VARIANT' CHECK (option_type IN ('VARIANT', 'ADD_ON')),
+    active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (store_id, product_id, option_id),
+    FOREIGN KEY (store_id, product_id) REFERENCES store_catalog_products (store_id, product_id),
+    UNIQUE (store_id, product_id, option_key)
+);
+
+CREATE TABLE IF NOT EXISTS store_catalog_product_option_values (
+    store_id UUID NOT NULL,
+    product_id UUID NOT NULL,
+    option_id TEXT NOT NULL,
+    option_value_id TEXT NOT NULL,
+    value_key TEXT NOT NULL,
+    display_value TEXT NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0 CHECK (sort_order >= 0),
+    price_delta_numeric NUMERIC(38, 18) CHECK (price_delta_numeric IS NULL OR price_delta_numeric >= 0),
+    price_delta_symbol TEXT,
+    price_delta_chain_id INTEGER CHECK (price_delta_chain_id IS NULL OR price_delta_chain_id > 0),
+    price_delta_token_address TEXT,
+    price_delta_decimals INTEGER CHECK (price_delta_decimals IS NULL OR price_delta_decimals >= 0),
+    active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (store_id, product_id, option_id, option_value_id),
+    FOREIGN KEY (store_id, product_id, option_id)
+        REFERENCES store_catalog_product_options (store_id, product_id, option_id),
+    UNIQUE (store_id, product_id, option_id, value_key)
+);
+
+CREATE TABLE IF NOT EXISTS store_catalog_product_variants (
+    store_id UUID NOT NULL,
+    product_id UUID NOT NULL,
+    public_variant_id TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    option_values JSONB NOT NULL DEFAULT '{}'::jsonb,
+    sku TEXT,
+    status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'INACTIVE', 'ARCHIVED')),
+    active BOOLEAN NOT NULL DEFAULT true,
+    sort_order INTEGER NOT NULL DEFAULT 0 CHECK (sort_order >= 0),
+    price_delta_numeric NUMERIC(38, 18) NOT NULL CHECK (price_delta_numeric >= 0),
+    price_delta_symbol TEXT NOT NULL,
+    price_delta_chain_id INTEGER NOT NULL CHECK (price_delta_chain_id > 0),
+    price_delta_token_address TEXT,
+    price_delta_decimals INTEGER NOT NULL CHECK (price_delta_decimals >= 0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (store_id, product_id, public_variant_id),
+    FOREIGN KEY (store_id, product_id) REFERENCES store_catalog_products (store_id, product_id)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_store_catalog_product_variants_public
+    ON store_catalog_product_variants (public_variant_id);
+
+CREATE TABLE IF NOT EXISTS store_catalog_product_variant_option_values (
+    store_id UUID NOT NULL,
+    product_id UUID NOT NULL,
+    public_variant_id TEXT NOT NULL,
+    option_id TEXT NOT NULL,
+    option_value_id TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (store_id, product_id, public_variant_id, option_id),
+    FOREIGN KEY (store_id, product_id, public_variant_id)
+        REFERENCES store_catalog_product_variants (store_id, product_id, public_variant_id),
+    FOREIGN KEY (store_id, product_id, option_id, option_value_id)
+        REFERENCES store_catalog_product_option_values (store_id, product_id, option_id, option_value_id)
+);
+
 CREATE TABLE IF NOT EXISTS store_catalog_idempotency (
     handler TEXT NOT NULL,
     idempotency_key TEXT NOT NULL,
@@ -543,6 +621,9 @@ CREATE TABLE IF NOT EXISTS order_items (
     product_id UUID NOT NULL,
     product_snapshot_created_at TIMESTAMPTZ NOT NULL,
     product_snapshot_name TEXT NOT NULL,
+    public_variant_id TEXT,
+    selected_options JSONB NOT NULL DEFAULT '{}'::jsonb,
+    line_key TEXT NOT NULL DEFAULT '',
     unit_price_numeric NUMERIC(38, 18) NOT NULL CHECK (unit_price_numeric >= 0),
     unit_price_symbol TEXT NOT NULL,
     unit_price_chain_id INTEGER NOT NULL CHECK (unit_price_chain_id > 0),
@@ -578,19 +659,44 @@ CREATE TABLE IF NOT EXISTS product_inventory (
 CREATE INDEX IF NOT EXISTS idx_product_inventory_store_id
     ON product_inventory (store_id);
 
+CREATE TABLE IF NOT EXISTS product_variant_inventory (
+    public_variant_id TEXT PRIMARY KEY,
+    product_id UUID NOT NULL,
+    store_id UUID NOT NULL,
+    available_stock INTEGER NOT NULL CHECK (available_stock >= 0),
+    reserved_stock INTEGER NOT NULL DEFAULT 0 CHECK (reserved_stock >= 0),
+    total_stock INTEGER NOT NULL CHECK (total_stock >= 0),
+    sale_status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (sale_status IN ('ACTIVE', 'PAUSED')),
+    version INTEGER NOT NULL DEFAULT 0 CHECK (version >= 0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (product_id, store_id, public_variant_id),
+    CHECK (available_stock + reserved_stock = total_stock),
+    FOREIGN KEY (product_id, store_id)
+        REFERENCES product_inventory (product_id, store_id),
+    FOREIGN KEY (store_id, product_id, public_variant_id)
+        REFERENCES store_catalog_product_variants (store_id, product_id, public_variant_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_product_variant_inventory_store_product
+    ON product_variant_inventory (store_id, product_id);
+
 CREATE TABLE IF NOT EXISTS inventory_reservations (
     reservation_id UUID PRIMARY KEY,
     product_id UUID NOT NULL,
     store_id UUID NOT NULL,
+    public_variant_id TEXT,
     order_id UUID NOT NULL,
     reserved_qty INTEGER NOT NULL CHECK (reserved_qty > 0),
     status TEXT NOT NULL CHECK (status IN ('PENDING', 'CONFIRMED', 'CANCELLED')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (product_id, store_id, order_id),
     FOREIGN KEY (product_id, store_id)
         REFERENCES product_inventory (product_id, store_id)
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_reservations_order_inventory_target
+    ON inventory_reservations (product_id, store_id, order_id, COALESCE(public_variant_id, ''));
 
 CREATE INDEX IF NOT EXISTS idx_inventory_reservations_order_id
     ON inventory_reservations (order_id);
@@ -708,6 +814,7 @@ CREATE TABLE IF NOT EXISTS payments (
     refund_tx_hash TEXT,
     refund_block_number INTEGER CHECK (refund_block_number IS NULL OR refund_block_number >= 0),
     refund_gas_used INTEGER CHECK (refund_gas_used IS NULL OR refund_gas_used > 0),
+    items JSONB NOT NULL DEFAULT '[]'::jsonb,
     expires_at TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import StrEnum
+import json
+from types import MappingProxyType
 from typing import Mapping, Self, TypeAlias
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
@@ -63,6 +65,15 @@ class OrderItemId:
             raise ValueError("OrderItemId.for_order_product requires a ProductId")
         return cls(uuid5(NAMESPACE_URL, f"token-payments/order-item/{order_id}/{product_id}"))
 
+    @classmethod
+    def for_order_line(cls, order_id: OrderId, product_id: ProductId, line_key: str) -> Self:
+        if not isinstance(order_id, OrderId):
+            raise ValueError("OrderItemId.for_order_line requires an OrderId")
+        if not isinstance(product_id, ProductId):
+            raise ValueError("OrderItemId.for_order_line requires a ProductId")
+        line_key = _require_text(line_key, "line_key")
+        return cls(uuid5(NAMESPACE_URL, f"token-payments/order-item/{order_id}/{product_id}/{line_key}"))
+
     def __str__(self) -> str:
         return str(self.value)
 
@@ -83,6 +94,8 @@ class ProductSnapshot:
     created_date: datetime
     name: str
     price: Crypto
+    public_variant_id: str | None = None
+    selected_options: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not isinstance(self.product_id, ProductId):
@@ -95,6 +108,60 @@ class ProductSnapshot:
         object.__setattr__(self, "name", _require_text(self.name, "ProductSnapshot.name"))
         if not isinstance(self.price, Crypto):
             raise ValueError("ProductSnapshot.price must be a Crypto value")
+        if self.public_variant_id is not None:
+            object.__setattr__(self, "public_variant_id", _require_text(self.public_variant_id, "ProductSnapshot.public_variant_id"))
+        object.__setattr__(
+            self,
+            "selected_options",
+            MappingProxyType(_canonical_selected_options(self.selected_options)),
+        )
+
+
+@dataclass(frozen=True)
+class ProductVariantPrice:
+    public_variant_id: str
+    option_values: Mapping[str, str]
+    price_delta: Crypto
+    active: bool = True
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "public_variant_id", _require_text(self.public_variant_id, "ProductVariantPrice.public_variant_id"))
+        if not isinstance(self.option_values, Mapping):
+            raise ValueError("ProductVariantPrice.option_values must be a mapping")
+        object.__setattr__(
+            self,
+            "option_values",
+            MappingProxyType({
+                _require_text(str(key), "ProductVariantPrice.option_values key"): _require_text(str(value), "ProductVariantPrice.option_values value")
+                for key, value in self.option_values.items()
+            }),
+        )
+        if not isinstance(self.price_delta, Crypto):
+            raise ValueError("ProductVariantPrice.price_delta must be a Crypto value")
+        if not isinstance(self.active, bool):
+            raise ValueError("ProductVariantPrice.active must be a bool")
+
+
+@dataclass(frozen=True)
+class ProductOptionValuePrice:
+    option_key: str
+    value_key: str
+    display_value: str
+    option_type: str
+    price_delta: Crypto | None = None
+    selection_type: str = "SINGLE"
+    active: bool = True
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "option_key", _require_text(self.option_key, "ProductOptionValuePrice.option_key"))
+        object.__setattr__(self, "value_key", _require_text(self.value_key, "ProductOptionValuePrice.value_key"))
+        object.__setattr__(self, "display_value", _require_text(self.display_value, "ProductOptionValuePrice.display_value"))
+        object.__setattr__(self, "option_type", _option_type(self.option_type))
+        object.__setattr__(self, "selection_type", _selection_type(self.selection_type))
+        if self.price_delta is not None and not isinstance(self.price_delta, Crypto):
+            raise ValueError("ProductOptionValuePrice.price_delta must be a Crypto value or None")
+        if not isinstance(self.active, bool):
+            raise ValueError("ProductOptionValuePrice.active must be a bool")
 
 
 @dataclass(frozen=True)
@@ -103,6 +170,8 @@ class Product:
     name: str
     price: Crypto
     asset_prices: Mapping[str, Crypto] | None = None
+    variants: Mapping[str, ProductVariantPrice] | None = None
+    option_values: Mapping[str, ProductOptionValuePrice] | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.product_id, ProductId):
@@ -121,6 +190,28 @@ class Product:
                     for asset_id, price in self.asset_prices.items()
                 },
             )
+        if self.variants is not None:
+            if not isinstance(self.variants, Mapping):
+                raise ValueError("Product.variants must be a mapping")
+            object.__setattr__(
+                self,
+                "variants",
+                {
+                    _require_text(str(variant_id), "Product.variants key"): _require_variant_price(variant)
+                    for variant_id, variant in self.variants.items()
+                },
+            )
+        if self.option_values is not None:
+            if not isinstance(self.option_values, Mapping):
+                raise ValueError("Product.option_values must be a mapping")
+            object.__setattr__(
+                self,
+                "option_values",
+                {
+                    _require_text(str(option_value_key), "Product.option_values key"): _require_option_value_price(value)
+                    for option_value_key, value in self.option_values.items()
+                },
+            )
 
     def snapshot(self, created_date: datetime | None = None) -> ProductSnapshot:
         return ProductSnapshot(
@@ -130,12 +221,25 @@ class Product:
             price=self.price,
         )
 
-    def snapshot_for_asset(self, payment_asset_id: str | None, created_date: datetime | None = None) -> ProductSnapshot:
+    def snapshot_for_asset(
+        self,
+        payment_asset_id: str | None,
+        created_date: datetime | None = None,
+        *,
+        public_variant_id: str | None = None,
+        selected_options: Mapping[str, object] | None = None,
+    ) -> ProductSnapshot:
         return ProductSnapshot(
             product_id=self.product_id,
             created_date=created_date or datetime.now(UTC),
             name=self.name,
-            price=self.price_for_asset(payment_asset_id),
+            price=self.price_for_selection(
+                payment_asset_id,
+                public_variant_id=public_variant_id,
+                selected_options=selected_options or {},
+            ),
+            public_variant_id=public_variant_id,
+            selected_options=selected_options or {},
         )
 
     def price_for_asset(self, payment_asset_id: str | None) -> Crypto:
@@ -146,6 +250,69 @@ class Product:
         if not isinstance(prices, Mapping) or payment_asset_id not in prices:
             raise ValueError(f"payment asset {payment_asset_id} is not supported by product {self.product_id}")
         return _require_crypto(prices[payment_asset_id])
+
+    def price_for_selection(
+        self,
+        payment_asset_id: str | None,
+        *,
+        public_variant_id: str | None = None,
+        selected_options: Mapping[str, object] | None = None,
+    ) -> Crypto:
+        base_price = self.price_for_asset(payment_asset_id)
+        selected_options = _canonical_selected_options(selected_options or {})
+        unit_price = base_price
+        variant = self._variant_for_selection(public_variant_id, selected_options)
+        if variant is not None:
+            unit_price = _add_crypto(unit_price, variant.price_delta, "variant priceDelta")
+        for value in self._selected_add_on_values(selected_options):
+            if value.price_delta is not None:
+                unit_price = _add_crypto(unit_price, value.price_delta, "add-on priceDelta")
+        return unit_price
+
+    def _variant_for_selection(
+        self,
+        public_variant_id: str | None,
+        selected_options: Mapping[str, object],
+    ) -> ProductVariantPrice | None:
+        variants = self.variants if self.variants is not None else getattr(self, "_variants", None)
+        if not isinstance(variants, Mapping) or not variants:
+            if public_variant_id is not None:
+                raise ValueError(f"product {self.product_id} does not define variants")
+            return None
+        if public_variant_id is None:
+            raise ValueError(f"publicVariantId is required for product {self.product_id}")
+        public_variant_id = _require_text(public_variant_id, "publicVariantId")
+        variant = variants.get(public_variant_id)
+        if not isinstance(variant, ProductVariantPrice):
+            raise ValueError(f"publicVariantId {public_variant_id} is not valid for product {self.product_id}")
+        if not variant.active:
+            raise ValueError(f"publicVariantId {public_variant_id} is not active")
+        for option_key, expected_value in variant.option_values.items():
+            selected_value = selected_options.get(option_key)
+            if selected_value is not None and str(selected_value) != expected_value:
+                raise ValueError(f"selected option {option_key} does not match variant {public_variant_id}")
+        return variant
+
+    def _selected_add_on_values(self, selected_options: Mapping[str, object]) -> tuple[ProductOptionValuePrice, ...]:
+        values = self.option_values if self.option_values is not None else getattr(self, "_option_values", None)
+        if not isinstance(values, Mapping):
+            return ()
+        selected: list[ProductOptionValuePrice] = []
+        for option_key, raw_value in selected_options.items():
+            option_values = tuple(raw_value) if isinstance(raw_value, list | tuple) else (raw_value,)
+            for value_key in option_values:
+                value = values.get(f"{option_key}:{value_key}")
+                if value is None:
+                    continue
+                if not isinstance(value, ProductOptionValuePrice):
+                    raise ValueError("Product.option_values must contain ProductOptionValuePrice values")
+                if not value.active:
+                    raise ValueError(f"selected option {option_key}:{value_key} is not active")
+                if value.selection_type == "SINGLE" and isinstance(raw_value, list | tuple) and len(raw_value) > 1:
+                    raise ValueError(f"selected option {option_key} does not allow multiple values")
+                if value.option_type == "ADD_ON":
+                    selected.append(value)
+        return tuple(selected)
 
 
 @dataclass(frozen=True)
@@ -212,6 +379,7 @@ class OrderItem:
     product_snapshot: ProductSnapshot
     quantity: int
     sub_total: Crypto
+    line_key: str = ""
 
     def __post_init__(self) -> None:
         if not isinstance(self.order_item_id, OrderItemId):
@@ -223,6 +391,11 @@ class OrderItem:
         object.__setattr__(self, "quantity", _coerce_positive_int(self.quantity, "OrderItem.quantity"))
         if not isinstance(self.sub_total, Crypto):
             raise ValueError("OrderItem.sub_total must be a Crypto value")
+        object.__setattr__(self, "line_key", _require_text(self.line_key or _order_line_key(
+            self.product_snapshot.product_id,
+            self.product_snapshot.public_variant_id,
+            self.product_snapshot.selected_options,
+        ), "OrderItem.line_key"))
 
     @classmethod
     def from_product(
@@ -233,19 +406,29 @@ class OrderItem:
         snapshotted_at: datetime | None = None,
         order_item_id: OrderItemId | None = None,
         payment_asset_id: str | None = None,
+        public_variant_id: str | None = None,
+        selected_options: Mapping[str, object] | None = None,
     ) -> Self:
         if not isinstance(order_id, OrderId):
             raise ValueError("OrderItem.from_product requires an OrderId")
         if not isinstance(product, Product):
             raise ValueError("OrderItem.from_product requires a Product")
         quantity = _coerce_positive_int(quantity, "quantity")
-        snapshot = product.snapshot_for_asset(payment_asset_id, snapshotted_at)
+        selected_options = selected_options or {}
+        snapshot = product.snapshot_for_asset(
+            payment_asset_id,
+            snapshotted_at,
+            public_variant_id=public_variant_id,
+            selected_options=selected_options,
+        )
+        line_key = _order_line_key(product.product_id, public_variant_id, selected_options)
         return cls(
-            order_item_id=order_item_id or OrderItemId.for_order_product(order_id, product.product_id),
+            order_item_id=order_item_id or OrderItemId.for_order_line(order_id, product.product_id, line_key),
             order_id=order_id,
             product_snapshot=snapshot,
             quantity=quantity,
             sub_total=_multiply_crypto(snapshot.price, quantity),
+            line_key=line_key,
         )
 
 
@@ -294,7 +477,8 @@ class Order:
         customer: Customer,
         store: Store,
         delivery_address: Address,
-        product_quantities: dict[ProductId, int],
+        product_quantities: dict[ProductId, int] | None = None,
+        item_requests: tuple[object, ...] | None = None,
         created_at: datetime | None = None,
         tracking_id: TrackingId | None = None,
         payment_asset_id: str | None = None,
@@ -307,18 +491,44 @@ class Order:
             raise ValueError("inactive stores cannot accept orders")
         if not isinstance(delivery_address, Address):
             raise ValueError("Order.initialize_order requires an Address")
-        if not product_quantities:
+        if not product_quantities and not item_requests:
             raise ValueError("Order.initialize_order requires at least one product")
 
         snapshotted_at = created_at or datetime.now(UTC)
         snapshotted_at = _require_aware_datetime(snapshotted_at, "created_at")
         items: list[OrderItem] = []
-        for product_id, quantity in product_quantities.items():
-            product = store.require_product(product_id)
-            price = product.price_for_asset(payment_asset_id)
-            if not store.supports_chain(price.chain_id):
-                raise ValueError(f"store {store.store_id} does not support chain {price.chain_id}")
-            items.append(OrderItem.from_product(order_id, product, quantity, snapshotted_at, payment_asset_id=payment_asset_id))
+        if item_requests:
+            for item_request in item_requests:
+                product_id = getattr(item_request, "product_id")
+                quantity = getattr(item_request, "quantity")
+                public_variant_id = getattr(item_request, "public_variant_id", None)
+                selected_options = getattr(item_request, "selected_options", {})
+                product = store.require_product(product_id)
+                price = product.price_for_selection(
+                    payment_asset_id,
+                    public_variant_id=public_variant_id,
+                    selected_options=selected_options,
+                )
+                if not store.supports_chain(price.chain_id):
+                    raise ValueError(f"store {store.store_id} does not support chain {price.chain_id}")
+                items.append(
+                    OrderItem.from_product(
+                        order_id,
+                        product,
+                        quantity,
+                        snapshotted_at,
+                        payment_asset_id=payment_asset_id,
+                        public_variant_id=public_variant_id,
+                        selected_options=selected_options,
+                    )
+                )
+        else:
+            for product_id, quantity in (product_quantities or {}).items():
+                product = store.require_product(product_id)
+                price = product.price_for_asset(payment_asset_id)
+                if not store.supports_chain(price.chain_id):
+                    raise ValueError(f"store {store.store_id} does not support chain {price.chain_id}")
+                items.append(OrderItem.from_product(order_id, product, quantity, snapshotted_at, payment_asset_id=payment_asset_id))
 
         return cls(
             order_id=order_id,
@@ -437,6 +647,71 @@ def _multiply_crypto(value: Crypto, quantity: int) -> Crypto:
         token_address=value.token_address,
         decimals=value.decimals,
     )
+
+
+def _add_crypto(left: Crypto, right: Crypto, label: str) -> Crypto:
+    if (
+        left.symbol != right.symbol
+        or left.chain_id != right.chain_id
+        or left.token_address != right.token_address
+        or left.decimals != right.decimals
+    ):
+        raise ValueError(f"{label} asset must match product price asset")
+    return Crypto(
+        amount=left.amount + right.amount,
+        symbol=left.symbol,
+        chain_id=left.chain_id,
+        token_address=left.token_address,
+        decimals=left.decimals,
+    )
+
+
+def _order_line_key(product_id: ProductId, public_variant_id: str | None, selected_options: Mapping[str, object]) -> str:
+    payload = {
+        "productId": str(product_id),
+        "publicVariantId": public_variant_id,
+        "selectedOptions": _canonical_selected_options(selected_options),
+    }
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"))
+
+
+def _canonical_selected_options(values: Mapping[str, object]) -> dict[str, object]:
+    if not isinstance(values, Mapping):
+        raise ValueError("selected_options must be a mapping")
+    normalized: dict[str, object] = {}
+    for key, value in values.items():
+        option_key = _require_text(str(key), "selected_options key")
+        if isinstance(value, list | tuple):
+            normalized[option_key] = [_require_text(str(item), f"selected_options.{option_key}") for item in value if str(item).strip()]
+        elif value is not None and str(value).strip():
+            normalized[option_key] = _require_text(str(value), f"selected_options.{option_key}")
+    return dict(sorted(normalized.items()))
+
+
+def _require_variant_price(value: object) -> ProductVariantPrice:
+    if not isinstance(value, ProductVariantPrice):
+        raise ValueError("Product.variants must contain ProductVariantPrice values")
+    return value
+
+
+def _require_option_value_price(value: object) -> ProductOptionValuePrice:
+    if not isinstance(value, ProductOptionValuePrice):
+        raise ValueError("Product.option_values must contain ProductOptionValuePrice values")
+    return value
+
+
+def _option_type(value: str) -> str:
+    normalized = _require_text(str(value), "option_type").upper()
+    if normalized not in {"VARIANT", "ADD_ON"}:
+        raise ValueError("option_type must be VARIANT or ADD_ON")
+    return normalized
+
+
+def _selection_type(value: str) -> str:
+    normalized = _require_text(str(value), "selection_type").upper()
+    if normalized not in {"SINGLE", "MULTI"}:
+        raise ValueError("selection_type must be SINGLE or MULTI")
+    return normalized
 
 
 def _coerce_wallet(value: WalletAddress | str) -> WalletAddress:

@@ -23,6 +23,9 @@ from token_payments.contexts.store_catalog.domain import (  # noqa: E402
     ProductVisibility,
     PublicProductId,
     PublicStoreId,
+    ProductOption,
+    ProductOptionValue,
+    ProductVariant,
     StoreMembership,
     StoreMembershipRole,
     StoreProduct,
@@ -46,9 +49,9 @@ STORE_WALLET = WalletAddress("0x4444444444444444444444444444444444444444")
 TOKEN_ADDRESS = WalletAddress("0x5555555555555555555555555555555555555555")
 
 
-def price(*, chain_id: int = 11155111) -> Crypto:
+def price(*, amount: str = "12.50", chain_id: int = 11155111) -> Crypto:
     return Crypto(
-        amount=Decimal("12.50"),
+        amount=Decimal(amount),
         symbol="USDC",
         chain_id=chain_id,
         token_address=TOKEN_ADDRESS,
@@ -121,6 +124,10 @@ class FakeStoreCatalogRepository:
         self.order_products: dict[tuple[StoreId, ProductId], StoreProduct] = {}
         self.store_approval_products: dict[tuple[StoreId, ProductId], StoreProduct] = {}
         self.inventory: dict[tuple[StoreId, ProductId], int] = {}
+        self.product_options: dict[tuple[StoreId, ProductId], tuple[ProductOption, ...]] = {}
+        self.product_option_values: dict[str, tuple[ProductOptionValue, ...]] = {}
+        self.product_variants: dict[tuple[StoreId, ProductId], tuple[ProductVariant, ...]] = {}
+        self.variant_inventory: dict[str, int] = {}
         self.audit_records: list[CatalogAuditRecord] = []
 
     def seed_user(
@@ -274,6 +281,28 @@ class FakeStoreCatalogRepository:
 
     def get_product_availability(self, store_id: StoreId, product_id: ProductId) -> Mapping[str, Any] | None:
         available_stock = self.inventory.get((store_id, product_id))
+        if available_stock is None:
+            return None
+        return {
+            "availableStock": available_stock,
+            "saleStatus": "ACTIVE" if available_stock > 0 else "UNAVAILABLE",
+        }
+
+    def list_product_options(self, store_id: StoreId, product_id: ProductId) -> tuple[ProductOption, ...]:
+        return self.product_options.get((store_id, product_id), ())
+
+    def list_product_option_values(self, store_id: StoreId, product_id: ProductId, option_id: str) -> tuple[ProductOptionValue, ...]:
+        return tuple(
+            value
+            for value in self.product_option_values.get(option_id, ())
+            if value.store_id == store_id and value.product_id == product_id
+        )
+
+    def list_product_variants(self, store_id: StoreId, product_id: ProductId) -> tuple[ProductVariant, ...]:
+        return self.product_variants.get((store_id, product_id), ())
+
+    def get_variant_availability(self, store_id: StoreId, product_id: ProductId, public_variant_id) -> Mapping[str, Any] | None:
+        available_stock = self.variant_inventory.get(str(public_variant_id))
         if available_stock is None:
             return None
         return {

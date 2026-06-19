@@ -108,6 +108,7 @@ def test_initiate_payment_saves_payment_authorization_timeout_outbox_and_process
     assert result.payment is not None
     assert result.payment.status == PaymentStatus.AWAITING_SIGNATURE
     assert result.payment.gas_estimate == _gas_estimate().apply_buffer()
+    assert result.payment.items == _inventory_items()
     assert result.authorization is not None
     assert result.authorization.status == AuthorizationStatus.REQUESTED
     assert result.payment_request == transaction_service.signature_request
@@ -134,6 +135,7 @@ def test_initiate_payment_saves_payment_authorization_timeout_outbox_and_process
     assert outbox.payload["status"] == PaymentStatus.AWAITING_SIGNATURE.value
     assert outbox.payload["signatureRequest"]["requestId"] == "payment-request-123"
     assert outbox.payload["gasEstimate"]["maxFee"]["amount"] == "0.011000"
+    assert outbox.payload["items"] == list(_inventory_items())
     assert outbox.payload["occurredAt"] == NOW.isoformat()
 
     assert processed_commands.records == [
@@ -167,7 +169,7 @@ def test_submit_transaction_hash_authorizes_request_without_outbox_event() -> No
 
 
 def test_confirm_payment_receipt_saves_checkout_consumable_confirmed_event() -> None:
-    payment_repository = FakePaymentRepository(_submitted_payment())
+    payment_repository = FakePaymentRepository(_submitted_payment(items=_inventory_items()))
     outbox_messages = FakeOutboxMessageRepository()
     blockchain = FakeBlockchainAdapter(receipt=_receipt())
     timeout_scheduler = FakePaymentTimeoutScheduler()
@@ -198,6 +200,7 @@ def test_confirm_payment_receipt_saves_checkout_consumable_confirmed_event() -> 
     assert outbox.payload["orderId"] == str(ORDER_ID)
     assert outbox.payload["txHash"] == str(TX_HASH)
     assert outbox.payload["receipt"]["blockNumber"] == 12345
+    assert outbox.payload["items"] == list(_inventory_items())
     assert outbox.payload["occurredAt"] == CHECKED_AT.isoformat()
 
 
@@ -241,7 +244,7 @@ def test_missing_receipt_marks_payment_confirming_without_failure_event_and_allo
 
 
 def test_reverted_receipt_failure_emits_payment_failed_event_without_compensation_commands() -> None:
-    payment_repository = FakePaymentRepository(_submitted_payment())
+    payment_repository = FakePaymentRepository(_submitted_payment(items=_inventory_items()))
     outbox_messages = FakeOutboxMessageRepository()
     blockchain = FakeBlockchainAdapter(
         receipt={
@@ -274,6 +277,7 @@ def test_reverted_receipt_failure_emits_payment_failed_event_without_compensatio
     assert outbox.payload["paymentId"] == str(PAYMENT_ID)
     assert outbox.payload["orderId"] == str(ORDER_ID)
     assert outbox.payload["failureReason"] == "ERC20_TRANSFER_MISMATCH: REVERTED"
+    assert outbox.payload["items"] == list(_inventory_items())
     assert outbox.payload["occurredAt"] == CHECKED_AT.isoformat()
     assert outbox.name not in {
         CheckoutCommandName.RELEASE_INVENTORY.value,
@@ -282,7 +286,7 @@ def test_reverted_receipt_failure_emits_payment_failed_event_without_compensatio
 
 
 def test_expire_awaiting_signature_saves_expired_payment_authorization_and_event() -> None:
-    payment_repository = FakePaymentRepository(_awaiting_payment())
+    payment_repository = FakePaymentRepository(_awaiting_payment(items=_inventory_items()))
     authorization_repository = FakePaymentAuthorizationRepository(_requested_authorization())
     outbox_messages = FakeOutboxMessageRepository()
     handler = _handler(payment_repository, authorization_repository, outbox_messages=outbox_messages)
@@ -303,6 +307,7 @@ def test_expire_awaiting_signature_saves_expired_payment_authorization_and_event
     assert outbox.payload["paymentId"] == str(PAYMENT_ID)
     assert outbox.payload["orderId"] == str(ORDER_ID)
     assert outbox.payload["reason"] == "signature timeout"
+    assert outbox.payload["items"] == list(_inventory_items())
     assert outbox.payload["expiredAt"] == EXPIRES_AT.isoformat()
 
 
@@ -471,6 +476,7 @@ def _initiate_command() -> InitiatePaymentCommand:
         requested_at=NOW,
         causation_id="inventory-reserved-message",
         event_message_id=INITIATE_EVENT_ID,
+        items=_inventory_items(),
     )
 
 
@@ -521,7 +527,7 @@ def _refund_command() -> RefundPaymentCommand:
     )
 
 
-def _awaiting_payment() -> Payment:
+def _awaiting_payment(*, items: tuple[dict[str, object], ...] = ()) -> Payment:
     return Payment.initialize_payment(
         payment_id=PAYMENT_ID,
         order_id=ORDER_ID,
@@ -533,11 +539,12 @@ def _awaiting_payment() -> Payment:
         gas_estimate=_gas_estimate().apply_buffer(),
         expires_at=EXPIRES_AT,
         status=PaymentStatus.AWAITING_SIGNATURE,
+        items=items,
     )
 
 
-def _submitted_payment() -> Payment:
-    return _awaiting_payment().submit_tx_hash(TX_HASH)
+def _submitted_payment(*, items: tuple[dict[str, object], ...] = ()) -> Payment:
+    return _awaiting_payment(items=items).submit_tx_hash(TX_HASH)
 
 
 def _confirmed_payment() -> Payment:
@@ -593,6 +600,18 @@ def _receipt() -> TransactionReceipt:
 
 def _refund_receipt() -> TransactionReceipt:
     return TransactionReceipt(hash=REFUND_TX_HASH, block_number=12355, gas_used=31000)
+
+
+def _inventory_items() -> tuple[dict[str, object], ...]:
+    return (
+        {
+            "productId": "018f33aa-9e6d-73d8-9dc3-47d6cdcc6c30",
+            "storeId": "018f33aa-9e6d-73d8-9dc3-47d6cdcc6c31",
+            "publicVariantId": "mug-red-large",
+            "orderLineKey": "018f33aa-9e6d-73d8-9dc3-47d6cdcc6c30:mug-red-large",
+            "quantity": 2,
+        },
+    )
 
 
 class FakePaymentRepository:

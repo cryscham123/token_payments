@@ -6,7 +6,7 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
-from typing import Self, TypeAlias
+from typing import Any, Mapping, Self, TypeAlias
 
 from token_payments.contexts.auth.domain.wallet import WalletId
 from token_payments.shared.domain import (
@@ -345,6 +345,7 @@ class Payment:
     refund_receipt: TransactionReceipt | None = None
     payer_wallet_id: WalletId | str | None = None
     payment_asset_id: str | None = None
+    items: tuple[Mapping[str, Any], ...] | list[Mapping[str, Any]] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.payment_id, PaymentId):
@@ -380,6 +381,7 @@ class Payment:
             object.__setattr__(self, "payer_wallet_id", WalletId(str(self.payer_wallet_id)))
         if self.payment_asset_id is not None:
             object.__setattr__(self, "payment_asset_id", _require_text(self.payment_asset_id, "Payment.payment_asset_id"))
+        object.__setattr__(self, "items", _coerce_items(self.items, "Payment.items"))
         self._validate_status_shape()
 
     @classmethod
@@ -397,6 +399,7 @@ class Payment:
         status: PaymentStatus | str = PaymentStatus.INITIATED,
         payer_wallet_id: WalletId | str | None = None,
         payment_asset_id: str | None = None,
+        items: tuple[Mapping[str, Any], ...] | list[Mapping[str, Any]] = (),
     ) -> Self:
         status = _coerce_payment_status(status)
         if status not in {PaymentStatus.INITIATED, PaymentStatus.AWAITING_SIGNATURE}:
@@ -414,6 +417,7 @@ class Payment:
             status=status,
             payer_wallet_id=payer_wallet_id,
             payment_asset_id=payment_asset_id,
+            items=items,
         )
 
     def mark_awaiting_signature(self) -> Self:
@@ -930,6 +934,22 @@ def _require_text(value: str, field_name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field_name} must be a non-empty string")
     return value.strip()
+
+
+def _coerce_items(
+    values: tuple[Mapping[str, Any], ...] | list[Mapping[str, Any]],
+    field_name: str,
+) -> tuple[dict[str, Any], ...]:
+    if isinstance(values, list):
+        values = tuple(values)
+    if not isinstance(values, tuple):
+        raise ValueError(f"{field_name} must be a tuple")
+    items: list[dict[str, Any]] = []
+    for item in values:
+        if not isinstance(item, Mapping):
+            raise ValueError(f"{field_name} must contain JSON objects")
+        items.append(dict(item))
+    return tuple(items)
 
 
 def _crypto_minor_units(value: Crypto) -> int:

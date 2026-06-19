@@ -183,6 +183,7 @@ def test_command_listeners_deserialize_and_dispatch_supported_context_commands()
                 "storeId": str(STORE_ID),
                 "quantity": 3,
                 "requestedAt": NOW.isoformat(),
+                "items": list(_inventory_items()),
             },
         )
     )
@@ -238,6 +239,7 @@ def test_command_listeners_deserialize_and_dispatch_supported_context_commands()
                 "chain": {"chainId": CHAIN.chain_id, "name": CHAIN.name},
                 "expiresAt": EXPIRES_AT.isoformat(),
                 "requestedAt": NOW.isoformat(),
+                "items": list(_inventory_items()),
             },
         )
     )
@@ -269,6 +271,7 @@ def test_command_listeners_deserialize_and_dispatch_supported_context_commands()
                 "storeId": str(STORE_ID),
                 "ownerUserId": str(OWNER_USER_ID),
                 "requestedAt": NOW.isoformat(),
+                "items": list(_inventory_items()),
             },
         )
     )
@@ -281,6 +284,7 @@ def test_command_listeners_deserialize_and_dispatch_supported_context_commands()
     assert reserve_command.store_id == STORE_ID
     assert reserve_command.quantity.value == 3
     assert reserve_command.causation_id == str(MESSAGE_ID)
+    assert reserve_command.items == _inventory_items()
 
     release_command = inventory_handler.release_calls[0]
     assert isinstance(release_command, ReleaseInventoryCommand)
@@ -311,6 +315,7 @@ def test_command_listeners_deserialize_and_dispatch_supported_context_commands()
     assert initiate_command.wallet_to == WALLET_TO
     assert initiate_command.chain_network == CHAIN
     assert initiate_command.expires_at == EXPIRES_AT
+    assert initiate_command.items == _inventory_items()
 
     refund_command = payment_handler.refund_calls[0]
     assert isinstance(refund_command, RefundPaymentCommand)
@@ -322,6 +327,7 @@ def test_command_listeners_deserialize_and_dispatch_supported_context_commands()
     assert approval_command.command_id == approval_id
     assert approval_command.store_id == STORE_ID
     assert approval_command.owner_user_id == OWNER_USER_ID
+    assert approval_command.items == _inventory_items()
 
     order_handler = FakeOrderCommandHandler()
     cancel_id = CommandId.for_order_action(ORDER_ID, CheckoutCommandName.CANCEL_ORDER)
@@ -344,6 +350,45 @@ def test_command_listeners_deserialize_and_dispatch_supported_context_commands()
     assert cancel_command.order_id == ORDER_ID
     assert cancel_command.reason == "payment expired before signature"
     assert cancel_command.causation_id == str(MESSAGE_ID)
+
+
+def test_payment_command_listener_derives_inventory_item_from_reserved_inventory_payload() -> None:
+    payment_handler = FakePaymentCommandHandler()
+    initiate_id = CommandId.for_order_action(ORDER_ID, CheckoutCommandName.INITIATE_PAYMENT)
+
+    PaymentKafkaCommandListener(
+        command_handler=payment_handler,
+        processed_commands=FakeProcessedCommandRepository(),
+    ).handle(
+        _command_message(
+            CheckoutCommandName.INITIATE_PAYMENT,
+            initiate_id,
+            {
+                "paymentId": str(PAYMENT_ID),
+                "customerId": str(CUSTOMER_ID),
+                "userId": str(USER_ID),
+                "amount": _amount_payload(),
+                "walletFrom": str(WALLET_FROM),
+                "walletTo": str(WALLET_TO),
+                "chain": {"chainId": CHAIN.chain_id, "name": CHAIN.name},
+                "expiresAt": EXPIRES_AT.isoformat(),
+                "requestedAt": NOW.isoformat(),
+                "productId": str(PRODUCT_ID),
+                "storeId": str(STORE_ID),
+                "publicVariantId": "mug-red-large",
+                "reservedQuantity": 2,
+            },
+        )
+    )
+
+    assert payment_handler.initiate_calls[0].items == (
+        {
+            "productId": str(PRODUCT_ID),
+            "storeId": str(STORE_ID),
+            "publicVariantId": "mug-red-large",
+            "quantity": 2,
+        },
+    )
 
 
 def test_order_status_event_listener_projects_payment_and_store_events() -> None:
@@ -527,6 +572,18 @@ def _amount_payload() -> dict[str, Any]:
         "tokenAddress": str(TOKEN_ADDRESS),
         "decimals": 6,
     }
+
+
+def _inventory_items() -> tuple[dict[str, object], ...]:
+    return (
+        {
+            "productId": str(PRODUCT_ID),
+            "storeId": str(STORE_ID),
+            "publicVariantId": "mug-red-large",
+            "orderLineKey": f"{PRODUCT_ID}:mug-red-large",
+            "quantity": 2,
+        },
+    )
 
 
 @dataclass(frozen=True)

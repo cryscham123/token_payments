@@ -20,6 +20,7 @@ from token_payments.shared.domain import Crypto, ProductId, StoreId, UserId, Wal
 
 _PUBLIC_STORE_ID_RE = re.compile(r"^[a-z][a-z0-9_-]{7,63}$")
 _PUBLIC_PRODUCT_ID_RE = re.compile(r"^[a-z][a-z0-9_-]{7,63}$")
+_PUBLIC_VARIANT_ID_RE = re.compile(r"^[a-z][a-z0-9_-]{7,63}$")
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _TAG_RE = re.compile(r"^(?=.{1,40}$)[^\W_][\w-]*$")
 _OBJECT_KEY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$")
@@ -80,6 +81,25 @@ class PublicProductId:
             raise ValueError("PublicProductId.for_product_id product_id must be a ProductId")
         digest = hashlib.blake2s(str(product_id).encode("ascii"), digest_size=10).hexdigest()
         return cls(f"prd_{digest}")
+
+    def __str__(self) -> str:
+        return self.value
+
+
+@dataclass(frozen=True)
+class PublicVariantId:
+    value: str
+
+    def __post_init__(self) -> None:
+        value = _public_variant_id(self.value, "PublicVariantId.value")
+        object.__setattr__(self, "value", value)
+
+    @classmethod
+    def for_variant_key(cls, product_id: ProductId, variant_key: str) -> Self:
+        if not isinstance(product_id, ProductId):
+            raise ValueError("PublicVariantId.for_variant_key product_id must be a ProductId")
+        digest = hashlib.blake2s(f"{product_id}:{variant_key}".encode("utf-8"), digest_size=10).hexdigest()
+        return cls(f"var_{digest}")
 
     def __str__(self) -> str:
         return self.value
@@ -401,6 +421,110 @@ class StoreProduct:
 
 
 @dataclass(frozen=True)
+class ProductOption:
+    store_id: StoreId
+    product_id: ProductId
+    option_key: str
+    display_name: str
+    sort_order: int = 0
+    option_id: str | None = None
+    required: bool = True
+    selection_type: str = "SINGLE"
+    option_type: str = "VARIANT"
+    active: bool = True
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.store_id, StoreId):
+            raise ValueError("ProductOption.store_id must be a StoreId")
+        if not isinstance(self.product_id, ProductId):
+            raise ValueError("ProductOption.product_id must be a ProductId")
+        option_key = _bounded_text(self.option_key, "ProductOption.option_key", max_length=60)
+        object.__setattr__(self, "option_key", option_key)
+        object.__setattr__(self, "display_name", _bounded_text(self.display_name, "ProductOption.display_name", max_length=80))
+        object.__setattr__(self, "sort_order", _non_negative_int(self.sort_order, "ProductOption.sort_order"))
+        if self.option_id is None:
+            object.__setattr__(self, "option_id", f"opt_{option_key.casefold()}")
+        else:
+            object.__setattr__(self, "option_id", _bounded_text(self.option_id, "ProductOption.option_id", max_length=120))
+        if not isinstance(self.required, bool):
+            raise ValueError("ProductOption.required must be a bool")
+        object.__setattr__(self, "selection_type", _option_selection_type(self.selection_type))
+        object.__setattr__(self, "option_type", _product_option_type(self.option_type))
+        if not isinstance(self.active, bool):
+            raise ValueError("ProductOption.active must be a bool")
+
+
+@dataclass(frozen=True)
+class ProductOptionValue:
+    store_id: StoreId
+    product_id: ProductId
+    option_id: str
+    value_key: str
+    display_value: str
+    sort_order: int = 0
+    option_value_id: str | None = None
+    price_delta: Crypto | None = None
+    active: bool = True
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.store_id, StoreId):
+            raise ValueError("ProductOptionValue.store_id must be a StoreId")
+        if not isinstance(self.product_id, ProductId):
+            raise ValueError("ProductOptionValue.product_id must be a ProductId")
+        object.__setattr__(self, "option_id", _bounded_text(self.option_id, "ProductOptionValue.option_id", max_length=120))
+        value_key = _bounded_text(self.value_key, "ProductOptionValue.value_key", max_length=80)
+        object.__setattr__(self, "value_key", value_key)
+        object.__setattr__(self, "display_value", _bounded_text(self.display_value, "ProductOptionValue.display_value", max_length=120))
+        object.__setattr__(self, "sort_order", _non_negative_int(self.sort_order, "ProductOptionValue.sort_order"))
+        if self.option_value_id is None:
+            object.__setattr__(self, "option_value_id", f"val_{value_key.casefold()}")
+        else:
+            object.__setattr__(self, "option_value_id", _bounded_text(self.option_value_id, "ProductOptionValue.option_value_id", max_length=120))
+        if self.price_delta is not None and not isinstance(self.price_delta, Crypto):
+            raise ValueError("ProductOptionValue.price_delta must be a Crypto or None")
+        if not isinstance(self.active, bool):
+            raise ValueError("ProductOptionValue.active must be a bool")
+
+
+@dataclass(frozen=True)
+class ProductVariant:
+    store_id: StoreId
+    product_id: ProductId
+    public_variant_id: PublicVariantId
+    display_name: str
+    option_values: Mapping[str, Any]
+    price_delta: Crypto
+    status: ProductStatus | str = ProductStatus.ACTIVE
+    active: bool = True
+    sku: str | None = None
+    sort_order: int = 0
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.store_id, StoreId):
+            raise ValueError("ProductVariant.store_id must be a StoreId")
+        if not isinstance(self.product_id, ProductId):
+            raise ValueError("ProductVariant.product_id must be a ProductId")
+        if not isinstance(self.public_variant_id, PublicVariantId):
+            object.__setattr__(self, "public_variant_id", PublicVariantId(str(self.public_variant_id)))
+        object.__setattr__(self, "display_name", _bounded_text(self.display_name, "ProductVariant.display_name", max_length=160))
+        if not isinstance(self.option_values, Mapping):
+            raise ValueError("ProductVariant.option_values must be a JSON object")
+        object.__setattr__(self, "option_values", MappingProxyType(_variant_option_values(self.option_values)))
+        if not isinstance(self.price_delta, Crypto):
+            raise ValueError("ProductVariant.price_delta must be a Crypto")
+        object.__setattr__(self, "status", _product_status(self.status))
+        if not isinstance(self.active, bool):
+            raise ValueError("ProductVariant.active must be a bool")
+        if self.sku is not None:
+            object.__setattr__(self, "sku", _bounded_text(self.sku, "ProductVariant.sku", max_length=120))
+        object.__setattr__(self, "sort_order", _non_negative_int(self.sort_order, "ProductVariant.sort_order"))
+
+    @property
+    def saleable(self) -> bool:
+        return self.active and self.status is ProductStatus.ACTIVE
+
+
+@dataclass(frozen=True)
 class StoreCatalog:
     store: StoreProfile
     products: tuple[StoreProduct, ...]
@@ -447,6 +571,12 @@ def _positive_int(value: int, field_name: str) -> int:
     return value
 
 
+def _non_negative_int(value: int, field_name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"{field_name} must be a non-negative integer")
+    return value
+
+
 def _text(value: str, field_name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field_name} must be a non-empty string")
@@ -481,6 +611,23 @@ def _public_product_id(value: str, field_name: str) -> str:
     if value.isdigit():
         raise ValueError(f"{field_name} must not be a sequential numeric id")
     if not _PUBLIC_PRODUCT_ID_RE.fullmatch(value):
+        raise ValueError(f"{field_name} must be 8-64 lowercase letters, numbers, underscores, or hyphens")
+    if _has_unsafe_text(value):
+        raise ValueError(f"{field_name} contains unsafe characters")
+    return value
+
+
+def _public_variant_id(value: str, field_name: str) -> str:
+    value = _text(value, field_name).lower()
+    try:
+        UUID(value)
+    except ValueError:
+        pass
+    else:
+        raise ValueError(f"{field_name} must not be an internal UUID")
+    if value.isdigit():
+        raise ValueError(f"{field_name} must not be a sequential numeric id")
+    if not _PUBLIC_VARIANT_ID_RE.fullmatch(value):
         raise ValueError(f"{field_name} must be 8-64 lowercase letters, numbers, underscores, or hyphens")
     if _has_unsafe_text(value):
         raise ValueError(f"{field_name} contains unsafe characters")
@@ -558,6 +705,32 @@ def _attributes(value: Mapping[str, Any]) -> dict[str, Any]:
     if len(encoded.encode("utf-8")) > 8192:
         raise ValueError("StoreProduct.attributes serialized size must be at most 8192 bytes")
     return attributes
+
+
+def _variant_option_values(value: Mapping[str, Any]) -> dict[str, str]:
+    if len(value) > 12:
+        raise ValueError("ProductVariant.option_values contains too many keys")
+    result: dict[str, str] = {}
+    for raw_key, raw_value in value.items():
+        key = _bounded_text(str(raw_key), "ProductVariant.option_values.key", max_length=60)
+        result[key] = _bounded_text(str(raw_value), f"ProductVariant.option_values.{key}", max_length=120)
+    if not result:
+        raise ValueError("ProductVariant.option_values must not be empty")
+    return result
+
+
+def _option_selection_type(value: str) -> str:
+    normalized = _bounded_text(str(value), "ProductOption.selection_type", max_length=20).upper()
+    if normalized not in {"SINGLE", "MULTI"}:
+        raise ValueError("ProductOption.selection_type must be SINGLE or MULTI")
+    return normalized
+
+
+def _product_option_type(value: str) -> str:
+    normalized = _bounded_text(str(value), "ProductOption.option_type", max_length=20).upper()
+    if normalized not in {"VARIANT", "ADD_ON"}:
+        raise ValueError("ProductOption.option_type must be VARIANT or ADD_ON")
+    return normalized
 
 
 def _json_object(value: Mapping[str, Any], field_name: str, *, depth: int) -> dict[str, Any]:

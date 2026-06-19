@@ -252,7 +252,7 @@ class InventoryCommandHandler:
             event_name=CheckoutEventName.INVENTORY_RESERVED,
             aggregate_id=_aggregate_id(updated),
             occurred_at=event.created_at,
-            payload=_reserved_payload(event),
+            payload=_reserved_payload(event, command.items),
         )
         return self._commit_success(command, updated, outbox_message, InventoryCommandStatus.RESERVED)
 
@@ -272,7 +272,7 @@ class InventoryCommandHandler:
             event_name="InventoryReleasedEvent",
             aggregate_id=_aggregate_id(updated),
             occurred_at=event.created_at,
-            payload=_reservation_state_payload(event),
+            payload=_reservation_state_payload(event, command.items),
         )
         return self._commit_success(command, updated, outbox_message, InventoryCommandStatus.RELEASED)
 
@@ -292,7 +292,7 @@ class InventoryCommandHandler:
             event_name=CheckoutEventName.INVENTORY_CONFIRMED,
             aggregate_id=_aggregate_id(updated),
             occurred_at=event.created_at,
-            payload=_reservation_state_payload(event),
+            payload=_reservation_state_payload(event, command.items),
         )
         return self._commit_success(command, updated, outbox_message, InventoryCommandStatus.CONFIRMED)
 
@@ -311,7 +311,12 @@ class InventoryCommandHandler:
         self,
         command: ReserveInventoryCommand | ReleaseInventoryCommand | ConfirmInventoryCommand,
     ) -> ProductInventory:
-        inventory = self._inventory_repository.get(command.product_id, command.store_id)
+        inventory = _get_inventory(
+            self._inventory_repository,
+            command.product_id,
+            command.store_id,
+            command.public_variant_id,
+        )
         if inventory is None:
             raise InventoryCommandRejected(
                 reason=InventoryCommandRejectionReason.INVENTORY_NOT_FOUND,
@@ -363,6 +368,15 @@ class InventoryCommandHandler:
         )
 
 
+def _get_inventory(repository: InventoryRepository, product_id: Any, store_id: Any, public_variant_id: str | None) -> ProductInventory | None:
+    try:
+        return repository.get(product_id, store_id, public_variant_id)
+    except TypeError:
+        if public_variant_id is not None:
+            raise
+        return repository.get(product_id, store_id)
+
+
 def _record_event(
     command: ReserveInventoryCommand | ReleaseInventoryCommand | ConfirmInventoryCommand,
     event_name: CheckoutEventName | str,
@@ -398,33 +412,40 @@ def _record_event(
     )
 
 
-def _reserved_payload(event: InventoryReservedEvent) -> dict[str, Any]:
+def _reserved_payload(event: InventoryReservedEvent, items: tuple[Mapping[str, Any], ...]) -> dict[str, Any]:
     reservation = _reservation_for_order(event.inventory, event.order_id)
-    return _base_payload(event.inventory, event.order_id, event.created_at.isoformat()) | {
+    payload = _base_payload(event.inventory, event.order_id, event.created_at.isoformat()) | {
         "eventName": CheckoutEventName.INVENTORY_RESERVED.value,
         "reservationId": str(reservation.reservation_id),
         "reservedQuantity": reservation.reserved_qty.value,
         "reservationStatus": reservation.status.value,
     }
+    _add_items_payload(payload, items)
+    return payload
 
 
-def _reservation_state_payload(event: InventoryConfirmedEvent | InventoryReleasedEvent) -> dict[str, Any]:
+def _reservation_state_payload(
+    event: InventoryConfirmedEvent | InventoryReleasedEvent,
+    items: tuple[Mapping[str, Any], ...],
+) -> dict[str, Any]:
     reservation = _reservation_for_order(event.inventory, event.order_id)
     event_name = (
         CheckoutEventName.INVENTORY_CONFIRMED.value
         if isinstance(event, InventoryConfirmedEvent)
         else type(event).__name__
     )
-    return _base_payload(event.inventory, event.order_id, event.created_at.isoformat()) | {
+    payload = _base_payload(event.inventory, event.order_id, event.created_at.isoformat()) | {
         "eventName": event_name,
         "reservationId": str(reservation.reservation_id),
         "reservedQuantity": reservation.reserved_qty.value,
         "reservationStatus": reservation.status.value,
     }
+    _add_items_payload(payload, items)
+    return payload
 
 
 def _base_payload(inventory: ProductInventory, order_id: OrderId, occurred_at: str) -> dict[str, Any]:
-    return {
+    payload = {
         "orderId": str(order_id),
         "productId": str(inventory.product_id),
         "storeId": str(inventory.store_id),
@@ -433,6 +454,14 @@ def _base_payload(inventory: ProductInventory, order_id: OrderId, occurred_at: s
         "totalStock": inventory.total_stock.value,
         "occurredAt": occurred_at,
     }
+    if inventory.public_variant_id is not None:
+        payload["publicVariantId"] = inventory.public_variant_id
+    return payload
+
+
+def _add_items_payload(payload: dict[str, Any], items: tuple[Mapping[str, Any], ...]) -> None:
+    if items:
+        payload["items"] = [dict(item) for item in items]
 
 
 def _reservation_for_order(inventory: ProductInventory, order_id: OrderId) -> InventoryReservation:
@@ -443,6 +472,8 @@ def _reservation_for_order(inventory: ProductInventory, order_id: OrderId) -> In
 
 
 def _aggregate_id(inventory: ProductInventory) -> str:
+    if inventory.public_variant_id is not None:
+        return f"{inventory.store_id}:{inventory.product_id}:{inventory.public_variant_id}"
     return f"{inventory.store_id}:{inventory.product_id}"
 
 

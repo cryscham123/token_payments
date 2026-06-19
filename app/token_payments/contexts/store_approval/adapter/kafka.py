@@ -67,17 +67,42 @@ class StoreApprovalKafkaCommandListener:
         if command_name is not CheckoutCommandName.REQUEST_STORE_APPROVAL:
             raise MalformedKafkaMessage(f"unsupported store approval commandName `{command_name.value}`")
 
+        store_id_str = _optional_payload_text(payload, "storeId", "store_id")
+        owner_user_id_str = _optional_payload_text(payload, "ownerUserId", "owner_user_id")
+
+        if store_id_str is None or owner_user_id_str is None:
+            order_detail = self._service._order_detail_repository.get(order_id)
+            if order_detail is not None:
+                if store_id_str is None:
+                    store_id_str = str(order_detail.store_id)
+                if owner_user_id_str is None:
+                    store = self._service._store_repository.get(order_detail.store_id)
+                    if store is not None:
+                        owner_user_id_str = str(store.owner_user_id)
+
+        if store_id_str is None or owner_user_id_str is None:
+            import logging
+            logger = logging.getLogger("store_approval")
+            logger.warning(
+                f"Ignoring RequestStoreApprovalCommand for order {order_id} because "
+                f"storeId or ownerUserId could not be resolved (stale/missing order or wiped database)."
+            )
+            return StoreApprovalKafkaListenerResult(
+                command_id=command_id,
+                order_id=order_id,
+                duplicate_decision=IdempotencyDecision.IGNORE_DUPLICATE,
+            )
+
         command = RequestStoreApprovalCommand(
             command_id=command_id,
             order_id=order_id,
-            store_id=_store_id(_required_payload_text(payload, "storeId", "store_id", field_name="storeId")),
-            owner_user_id=_user_id(
-                _required_payload_text(payload, "ownerUserId", "owner_user_id", field_name="ownerUserId")
-            ),
+            store_id=_store_id(_required_text(store_id_str, "storeId")),
+            owner_user_id=_user_id(_required_text(owner_user_id_str, "ownerUserId")),
             requested_at=_command_time(payload),
             rejection_reason=_optional_payload_text(payload, "rejectionReason", "rejection_reason"),
             causation_id=_causation_id(message, payload),
             event_message_id=_event_message_id(payload),
+            items=_optional_items(payload),
         )
         handler_result = self._service.request_store_approval(command)
         return StoreApprovalKafkaListenerResult(command_id=command_id, order_id=order_id, handler_result=handler_result)
@@ -170,6 +195,20 @@ def _optional_payload_text(payload: Mapping[str, Any], *names: str) -> str | Non
         if value is not None and str(value).strip():
             return str(value).strip()
     return None
+
+
+def _optional_items(payload: Mapping[str, Any]) -> tuple[dict[str, Any], ...]:
+    value = payload.get("items")
+    if value is None:
+        return ()
+    if not isinstance(value, list | tuple):
+        raise MalformedKafkaMessage("items must be a JSON array")
+    items: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            raise MalformedKafkaMessage("items must contain JSON objects")
+        items.append(dict(item))
+    return tuple(items)
 
 
 def _required_text(value: str | None, field_name: str) -> str:

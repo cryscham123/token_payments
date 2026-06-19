@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Any, Mapping
 
 from token_payments.contexts.auth.domain.wallet import WalletId
 from token_payments.shared.domain import (
@@ -37,6 +38,7 @@ class InitiatePaymentCommand:
     event_message_id: MessageId = field(default_factory=MessageId.new)
     payer_wallet_id: WalletId | str | None = None
     payment_asset_id: str | None = None
+    items: tuple[Mapping[str, Any], ...] | list[Mapping[str, Any]] = ()
 
     def __post_init__(self) -> None:
         _validate_command_identity(self)
@@ -70,6 +72,7 @@ class InitiatePaymentCommand:
                 "payment_asset_id",
                 _require_text(self.payment_asset_id, "InitiatePaymentCommand.payment_asset_id"),
             )
+        object.__setattr__(self, "items", _coerce_items(self.items, "InitiatePaymentCommand.items"))
         _validate_optional_causation(self)
         _validate_event_message_id(self)
 
@@ -222,3 +225,19 @@ def _require_text(value: str, field_name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field_name} must be a non-empty string")
     return value.strip()
+
+
+def _coerce_items(
+    values: tuple[Mapping[str, Any], ...] | list[Mapping[str, Any]],
+    field_name: str,
+) -> tuple[dict[str, Any], ...]:
+    if isinstance(values, list):
+        values = tuple(values)
+    if not isinstance(values, tuple):
+        raise ValueError(f"{field_name} must be a tuple")
+    items: list[dict[str, Any]] = []
+    for item in values:
+        if not isinstance(item, Mapping):
+            raise ValueError(f"{field_name} must contain JSON objects")
+        items.append(dict(item))
+    return tuple(items)

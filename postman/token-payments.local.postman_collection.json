@@ -1439,7 +1439,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"Local Hoodie\",\n  \"description\": \"Local checkout test hoodie\",\n  \"category\": \"apparel\",\n  \"tags\": [\"demo\", \"hoodie\"],\n  \"media\": [\"products/local-hoodie.png\"],\n  \"attributes\": {\"size\": \"M\"},\n  \"status\": \"ACTIVE\",\n  \"visibility\": \"PUBLIC\",\n  \"price\": {\n    \"amount\": \"10.000000000000000000\",\n    \"symbol\": \"TPAY\",\n    \"chainId\": {{chainId}},\n    \"tokenAddress\": \"{{paymentTokenAddress}}\",\n    \"decimals\": 18\n  },\n  \"initialTotalStock\": 25,\n  \"active\": true\n}"
+              "raw": "{\n  \"title\": \"Local Hoodie\",\n  \"description\": \"Local checkout test hoodie\",\n  \"category\": \"apparel\",\n  \"tags\": [\"demo\", \"hoodie\"],\n  \"media\": [\"products/local-hoodie.png\"],\n  \"attributes\": {\"size\": \"M\"},\n  \"status\": \"ACTIVE\",\n  \"visibility\": \"PUBLIC\",\n  \"price\": {\n    \"amount\": \"0.010000000000000000\",\n    \"symbol\": \"ETH\",\n    \"chainId\": {{chainId}},\n    \"tokenAddress\": null,\n    \"decimals\": 18\n  },\n  \"initialTotalStock\": 25,\n  \"active\": true\n}"
             }
           },
           "event": [

@@ -112,7 +112,7 @@ class StoreApprovalService:
             event_name=event_name,
             aggregate_id=str(event.order.order_id),
             occurred_at=event.created_at,
-            payload=_approval_payload(event, command.owner_user_id),
+            payload=_approval_payload(event, command.owner_user_id, command.items),
         )
 
         self._order_detail_repository.save(event.order)
@@ -195,7 +195,11 @@ def _record_event(
     )
 
 
-def _approval_payload(event: StoreApprovalEvent, owner_user_id: object) -> dict[str, Any]:
+def _approval_payload(
+    event: StoreApprovalEvent,
+    owner_user_id: object,
+    items: tuple[Mapping[str, Any], ...],
+) -> dict[str, Any]:
     order = event.order
     payload: dict[str, Any] = {
         "orderId": str(order.order_id),
@@ -207,6 +211,8 @@ def _approval_payload(event: StoreApprovalEvent, owner_user_id: object) -> dict[
         "productIds": [str(product.product_id) for product in order.products],
         "occurredAt": event.created_at.isoformat(),
     }
+    if items:
+        payload["items"] = [dict(item) for item in items]
     if order.approval_status is ApprovalStatus.REJECTED:
         payload["rejectionReasons"] = list(order.rejection_reasons)
     return payload

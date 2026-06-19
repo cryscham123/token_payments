@@ -159,7 +159,7 @@ def test_docker_runtime_smoke_exposes_postman_api_manual_sequence_without_starti
     assert postman_api["manualLiveCommands"] == [
         "cp .env.example .env",
         "docker compose --env-file .env config --services",
-        "docker compose --env-file .env build token_payments_api nginx",
+        "docker compose --env-file .env build token_payments_api token_payments_web nginx",
         "docker compose up -d",
         "curl --fail --insecure https://localhost/healthz",
         "curl --fail --insecure https://localhost/readyz",

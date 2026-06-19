@@ -198,6 +198,23 @@ def _history_item_payload(item: PaymentHistoryItem) -> dict[str, Any]:
         "receipt": _receipt_payload(item.receipt),
         "failureReason": item.failure_reason,
         "updatedAt": item.updated_at.isoformat(),
+        "items": [
+            {
+                "productId": str(x.get("productId")),
+                "publicProductId": x.get("publicProductId"),
+                "publicVariantId": x.get("publicVariantId"),
+                "name": x.get("name"),
+                "title": x.get("title"),
+                "selectedOptions": dict(x.get("selectedOptions") or {}),
+                "quantity": x.get("quantity"),
+                "unitPrice": {
+                    "amount": str(x.get("unitPrice", {}).get("amount", "0")),
+                    "symbol": x.get("unitPrice", {}).get("symbol", "ETH"),
+                    "decimals": int(x.get("unitPrice", {}).get("decimals", 18)),
+                } if x.get("unitPrice") else None,
+            }
+            for x in item.items
+        ]
     }
 
 

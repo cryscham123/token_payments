@@ -8,7 +8,10 @@ from typing import Any, Mapping
 from uuid import NAMESPACE_URL, uuid5
 
 from token_payments.contexts.store_catalog.domain import (
+    ProductOption,
+    ProductOptionValue,
     ProductStatus,
+    ProductVariant,
     ProductVisibility,
     PublicProductId,
     PublicStoreId,
@@ -18,7 +21,7 @@ from token_payments.contexts.store_catalog.domain import (
     StoreProduct,
     StoreProfile,
 )
-from token_payments.shared.domain import EventMetadata, MessageId, OutboxMessage, UserId
+from token_payments.shared.domain import Crypto, EventMetadata, MessageId, OutboxMessage, UserId
 
 from .commands import (
     CreateOrReuseStoreUserCommand,
@@ -101,7 +104,18 @@ class StoreCatalogApplicationService:
         )
         return {
             "store": _public_store_payload(store, include_payment_capability=True),
-            "products": [_public_product_payload(store, product, self._availability(product)) for product in products],
+            "products": [
+                _public_product_payload(
+                    store,
+                    product,
+                    self._availability(product),
+                    options=self._options_for_product(product),
+                    option_values=self._option_values_for_product(product),
+                    variants=self._variants_for_product(product),
+                    variant_availability=self._variant_availability_for_product(product),
+                )
+                for product in products
+            ],
             "pagination": _pagination(limit=int(filters["limit"]), offset=int(filters["offset"]), count=len(products)),
         }
 
@@ -119,7 +133,16 @@ class StoreCatalogApplicationService:
             return None
         return {
             "store": _public_store_payload(store, include_payment_capability=True),
-            "product": _public_product_payload(store, product, self._availability(product), include_detail=True),
+            "product": _public_product_payload(
+                store,
+                product,
+                self._availability(product),
+                include_detail=True,
+                options=self._options_for_product(product),
+                option_values=self._option_values_for_product(product),
+                variants=self._variants_for_product(product),
+                variant_availability=self._variant_availability_for_product(product),
+            ),
         }
 
     def list_merchant_products(
@@ -769,6 +792,52 @@ class StoreCatalogApplicationService:
             "saleStatus": "ACTIVE" if product.active and available_stock > 0 else "UNAVAILABLE",
         }
 
+    def _options_for_product(self, product: StoreProduct) -> tuple[ProductOption, ...]:
+        list_options = getattr(self._repository, "list_product_options", None)
+        if callable(list_options):
+            return tuple(list_options(product.store_id, product.product_id))
+        return tuple(getattr(self._repository, "product_options", {}).get((product.store_id, product.product_id), ()))
+
+    def _option_values_for_product(self, product: StoreProduct) -> Mapping[str, tuple[ProductOptionValue, ...]]:
+        list_values = getattr(self._repository, "list_product_option_values", None)
+        if callable(list_values):
+            return {
+                option.option_id: tuple(list_values(product.store_id, product.product_id, option.option_id))
+                for option in self._options_for_product(product)
+            }
+        values = getattr(self._repository, "product_option_values", {})
+        return {
+            option.option_id: tuple(values.get(option.option_id, ()))
+            for option in self._options_for_product(product)
+        }
+
+    def _variants_for_product(self, product: StoreProduct) -> tuple[ProductVariant, ...]:
+        list_variants = getattr(self._repository, "list_product_variants", None)
+        if callable(list_variants):
+            return tuple(list_variants(product.store_id, product.product_id))
+        return tuple(getattr(self._repository, "product_variants", {}).get((product.store_id, product.product_id), ()))
+
+    def _variant_availability_for_product(self, product: StoreProduct) -> Mapping[str, Mapping[str, Any]]:
+        variants = self._variants_for_product(product)
+        if not variants:
+            return {}
+        get_availability = getattr(self._repository, "get_variant_availability", None)
+        availability: dict[str, Mapping[str, Any]] = {}
+        for variant in variants:
+            public_variant_id = str(variant.public_variant_id)
+            if callable(get_availability):
+                current = get_availability(product.store_id, product.product_id, variant.public_variant_id)
+                if current is not None:
+                    availability[public_variant_id] = dict(current)
+                    continue
+            stock = getattr(self._repository, "variant_inventory", {}).get(public_variant_id)
+            available_stock = int(stock or 0)
+            availability[public_variant_id] = {
+                "availableStock": available_stock,
+                "saleStatus": "ACTIVE" if variant.saleable and available_stock > 0 else "UNAVAILABLE",
+            }
+        return availability
+
 
 def _rejected(code: str, message: str) -> Mapping[str, Any]:
     return {"error": {"code": code, "message": message}}
@@ -895,7 +964,15 @@ def _public_product_payload(
     availability: Mapping[str, Any],
     *,
     include_detail: bool = False,
+    options: tuple[ProductOption, ...] = (),
+    option_values: Mapping[str, tuple[ProductOptionValue, ...]] | None = None,
+    variants: tuple[ProductVariant, ...] = (),
+    variant_availability: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    option_values = option_values or {}
+    variant_availability = variant_availability or {}
+    display_price = _display_price_payload(product, variants, variant_availability)
+    display_availability = _aggregate_availability(availability, variants, variant_availability)
     payload: dict[str, Any] = {
         "publicStoreId": str(product.public_store_id),
         "publicProductId": str(product.public_product_id),
@@ -908,9 +985,15 @@ def _public_product_payload(
         "media": list(product.media),
         "status": product.status.value,
         "visibility": product.visibility.value,
-        "displayPrice": _crypto_payload(product.price),
-        "availability": dict(availability),
+        "basePrice": _crypto_payload(product.price),
+        "displayPrice": display_price,
+        "availability": display_availability,
         "paymentCapability": _payment_capability_payload(store, product.price),
+        "options": [_public_option_payload(option, option_values.get(option.option_id, ())) for option in options if option.active],
+        "variants": [
+            _public_variant_payload(product, variant, variant_availability.get(str(variant.public_variant_id)))
+            for variant in variants
+        ],
     }
     if include_detail:
         payload["attributes"] = dict(product.attributes)
@@ -929,6 +1012,110 @@ def _merchant_product_payload(
         payload["productId"] = str(product.product_id)
         payload["storeId"] = str(product.store_id)
     return payload
+
+
+def _public_option_payload(option: ProductOption, values: tuple[ProductOptionValue, ...]) -> dict[str, Any]:
+    return {
+        "key": option.option_key,
+        "displayName": option.display_name,
+        "sortOrder": option.sort_order,
+        "required": option.required,
+        "selectionType": option.selection_type,
+        "optionType": option.option_type,
+        "values": [
+            {
+                "value": value.value_key,
+                "displayValue": value.display_value,
+                "sortOrder": value.sort_order,
+                "priceDelta": _crypto_payload(value.price_delta) if value.price_delta is not None else None,
+            }
+            for value in sorted(values, key=lambda value: value.sort_order)
+            if value.active
+        ],
+    }
+
+
+def _public_variant_payload(
+    product: StoreProduct,
+    variant: ProductVariant,
+    availability: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    return {
+        "publicVariantId": str(variant.public_variant_id),
+        "displayName": variant.display_name,
+        "optionValues": dict(variant.option_values),
+        "priceDelta": _crypto_payload(variant.price_delta),
+        "displayPrice": _crypto_payload(_variant_display_price(product, variant)),
+        "availability": dict(availability or {"availableStock": 0, "saleStatus": "UNAVAILABLE"}),
+        "status": variant.status.value,
+        "active": variant.saleable,
+        "sku": variant.sku,
+        "sortOrder": variant.sort_order,
+    }
+
+
+def _display_price_payload(
+    product: StoreProduct,
+    variants: tuple[ProductVariant, ...],
+    variant_availability: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    saleable_variants = [
+        variant
+        for variant in variants
+        if _variant_is_available(variant, variant_availability.get(str(variant.public_variant_id), {}))
+    ]
+    if not saleable_variants:
+        return _crypto_payload(product.price)
+    lowest = min(saleable_variants, key=lambda variant: _variant_display_price(product, variant).amount)
+    payload = _crypto_payload(_variant_display_price(product, lowest))
+    payload["priceLabel"] = "from"
+    payload["publicVariantId"] = str(lowest.public_variant_id)
+    return payload
+
+
+def _aggregate_availability(
+    availability: Mapping[str, Any],
+    variants: tuple[ProductVariant, ...],
+    variant_availability: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    if not variants:
+        return dict(availability)
+    total = sum(_variant_available_stock(variant, variant_availability.get(str(variant.public_variant_id), {})) for variant in variants)
+    return {
+        "availableStock": total,
+        "saleStatus": "ACTIVE" if total > 0 and any(variant.saleable for variant in variants) else "UNAVAILABLE",
+    }
+
+
+def _variant_is_available(variant: ProductVariant, availability: Mapping[str, Any]) -> bool:
+    return variant.saleable and _variant_available_stock(variant, availability) > 0
+
+
+def _variant_available_stock(variant: ProductVariant, availability: Mapping[str, Any]) -> int:
+    if not variant.saleable or str(availability.get("saleStatus", "ACTIVE")) != "ACTIVE":
+        return 0
+    return int(availability.get("availableStock", 0))
+
+
+def _variant_display_price(product: StoreProduct, variant: ProductVariant) -> Crypto:
+    if not _same_crypto_asset(product.price, variant.price_delta):
+        raise ValueError("variant priceDelta asset must match product base price asset")
+    return Crypto(
+        amount=product.price.amount + variant.price_delta.amount,
+        symbol=product.price.symbol,
+        chain_id=product.price.chain_id,
+        token_address=product.price.token_address,
+        decimals=product.price.decimals,
+    )
+
+
+def _same_crypto_asset(left: Crypto, right: Crypto) -> bool:
+    return (
+        left.symbol == right.symbol
+        and left.chain_id == right.chain_id
+        and left.token_address == right.token_address
+        and left.decimals == right.decimals
+    )
 
 
 def _payment_capability_payload(

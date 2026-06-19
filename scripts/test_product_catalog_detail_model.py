@@ -20,6 +20,10 @@ from token_payments.contexts.store_catalog.application import StoreCatalogApplic
 from token_payments.contexts.store_catalog.domain import (  # noqa: E402
     ProductStatus,
     ProductVisibility,
+    ProductOption,
+    ProductOptionValue,
+    ProductVariant,
+    PublicVariantId,
     PublicProductId,
     PublicStoreId,
     StoreMembership,
@@ -103,6 +107,44 @@ def test_public_product_id_rejects_internal_uuid_sequential_and_untrusted_values
 def test_product_catalog_fields_are_bounded_untrusted_data(kwargs: dict[str, Any]) -> None:
     with pytest.raises(ValueError):
         _product(**kwargs)
+
+
+def test_product_variant_model_normalizes_option_values_price_and_public_identity() -> None:
+    option = ProductOption(
+        store_id=STORE_ID,
+        product_id=PRODUCT_ID,
+        option_key="capacityMl",
+        display_name="용량",
+        sort_order=1,
+    )
+    value = ProductOptionValue(
+        store_id=STORE_ID,
+        product_id=PRODUCT_ID,
+        option_id=option.option_id,
+        value_key="350",
+        display_value="350ml",
+        sort_order=1,
+    )
+    variant = ProductVariant(
+        store_id=STORE_ID,
+        product_id=PRODUCT_ID,
+        public_variant_id=PublicVariantId("var_ledger_mug_350"),
+        display_name="350ml",
+        option_values={"capacityMl": "350"},
+        price_delta=price(amount="2.50"),
+        active=True,
+        sort_order=1,
+    )
+
+    assert option.option_key == "capacityMl"
+    assert option.required is True
+    assert option.selection_type == "SINGLE"
+    assert option.option_type == "VARIANT"
+    assert value.display_value == "350ml"
+    assert variant.public_variant_id == PublicVariantId("var_ledger_mug_350")
+    assert variant.option_values == {"capacityMl": "350"}
+    assert variant.price_delta.amount == price(amount="2.50").amount
+    assert variant.active is True
 
 
 def test_product_tags_accept_korean_unicode_tokens() -> None:
@@ -211,6 +253,14 @@ def test_product_repository_uses_parameter_binding_json_safe_metadata_and_public
     assert connection.statements[-1].params["title"] == "<Ledger & Mug>"
     assert connection.statements[-1].params["attributes"].startswith("{")
     assert "public_product_id TEXT NOT NULL" in schema
+    assert "CREATE TABLE IF NOT EXISTS store_catalog_product_options" in schema
+    assert "required BOOLEAN NOT NULL DEFAULT true" in schema
+    assert "selection_type TEXT NOT NULL DEFAULT 'SINGLE'" in schema
+    assert "option_type TEXT NOT NULL DEFAULT 'VARIANT'" in schema
+    assert "CREATE TABLE IF NOT EXISTS store_catalog_product_option_values" in schema
+    assert "CREATE TABLE IF NOT EXISTS store_catalog_product_variants" in schema
+    assert "price_delta_numeric NUMERIC" in schema
+    assert "CREATE TABLE IF NOT EXISTS product_variant_inventory" in schema
     assert "CREATE UNIQUE INDEX IF NOT EXISTS idx_store_catalog_products_public_store_product" in schema
     assert "public_product_id" in (ROOT / "docs/API_SPEC.md").read_text(encoding="utf-8")
     assert {"registerStoreProduct", "updateStoreProduct"} <= {route["operationId"] for route in http_route_manifest()}

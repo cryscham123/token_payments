@@ -21,6 +21,7 @@ SELECT_INVENTORY_SQL = """
 SELECT
     product_id,
     store_id,
+    NULL::text AS public_variant_id,
     available_stock,
     reserved_stock,
     total_stock,
@@ -28,6 +29,21 @@ SELECT
 FROM product_inventory
 WHERE product_id = %(product_id)s
   AND store_id = %(store_id)s
+"""
+
+SELECT_VARIANT_INVENTORY_SQL = """
+SELECT
+    product_id,
+    store_id,
+    public_variant_id,
+    available_stock,
+    reserved_stock,
+    total_stock,
+    sale_status
+FROM product_variant_inventory
+WHERE product_id = %(product_id)s
+  AND store_id = %(store_id)s
+  AND public_variant_id = %(public_variant_id)s
 """
 
 SELECT_INVENTORY_SNAPSHOTS_SQL = """
@@ -45,6 +61,7 @@ LEFT JOIN (
     SELECT product_id, store_id, SUM(reserved_qty) AS confirmed_stock
     FROM inventory_reservations
     WHERE status = 'CONFIRMED'
+      AND public_variant_id IS NULL
     GROUP BY product_id, store_id
 ) confirmed
   ON confirmed.product_id = inv.product_id
@@ -71,6 +88,7 @@ LEFT JOIN (
     SELECT product_id, store_id, SUM(reserved_qty) AS confirmed_stock
     FROM inventory_reservations
     WHERE status = 'CONFIRMED'
+      AND public_variant_id IS NULL
     GROUP BY product_id, store_id
 ) confirmed
   ON confirmed.product_id = inv.product_id
@@ -106,6 +124,10 @@ SELECT
 FROM inventory_reservations
 WHERE product_id = %(product_id)s
   AND store_id = %(store_id)s
+  AND (
+      (%(public_variant_id)s::text IS NULL AND public_variant_id IS NULL)
+      OR public_variant_id = %(public_variant_id)s::text
+  )
 ORDER BY created_at, reservation_id
 """
 
@@ -131,6 +153,35 @@ ON CONFLICT (product_id, store_id) DO UPDATE SET
     total_stock = EXCLUDED.total_stock,
     sale_status = EXCLUDED.sale_status,
     version = product_inventory.version + 1,
+    updated_at = now()
+"""
+
+UPSERT_VARIANT_INVENTORY_SQL = """
+INSERT INTO product_variant_inventory (
+    public_variant_id,
+    product_id,
+    store_id,
+    available_stock,
+    reserved_stock,
+    total_stock,
+    sale_status
+) VALUES (
+    %(public_variant_id)s,
+    %(product_id)s,
+    %(store_id)s,
+    %(available_stock)s,
+    %(reserved_stock)s,
+    %(total_stock)s,
+    %(sale_status)s
+)
+ON CONFLICT (public_variant_id) DO UPDATE SET
+    product_id = EXCLUDED.product_id,
+    store_id = EXCLUDED.store_id,
+    available_stock = EXCLUDED.available_stock,
+    reserved_stock = EXCLUDED.reserved_stock,
+    total_stock = EXCLUDED.total_stock,
+    sale_status = EXCLUDED.sale_status,
+    version = product_variant_inventory.version + 1,
     updated_at = now()
 """
 
@@ -183,6 +234,7 @@ INSERT INTO inventory_reservations (
     reservation_id,
     product_id,
     store_id,
+    public_variant_id,
     order_id,
     reserved_qty,
     status,
@@ -191,6 +243,7 @@ INSERT INTO inventory_reservations (
     %(reservation_id)s,
     %(product_id)s,
     %(store_id)s,
+    %(public_variant_id)s,
     %(order_id)s,
     %(reserved_qty)s,
     %(status)s,
@@ -199,6 +252,7 @@ INSERT INTO inventory_reservations (
 ON CONFLICT (reservation_id) DO UPDATE SET
     product_id = EXCLUDED.product_id,
     store_id = EXCLUDED.store_id,
+    public_variant_id = EXCLUDED.public_variant_id,
     order_id = EXCLUDED.order_id,
     reserved_qty = EXCLUDED.reserved_qty,
     status = EXCLUDED.status,
@@ -209,6 +263,10 @@ DELETE_STALE_RESERVATIONS_SQL = """
 DELETE FROM inventory_reservations
 WHERE product_id = %(product_id)s
   AND store_id = %(store_id)s
+  AND (
+      (%(public_variant_id)s::text IS NULL AND public_variant_id IS NULL)
+      OR public_variant_id = %(public_variant_id)s::text
+  )
   AND NOT (reservation_id = ANY(%(reservation_ids)s))
 """
 
@@ -216,6 +274,10 @@ DELETE_ALL_RESERVATIONS_SQL = """
 DELETE FROM inventory_reservations
 WHERE product_id = %(product_id)s
   AND store_id = %(store_id)s
+  AND (
+      (%(public_variant_id)s::text IS NULL AND public_variant_id IS NULL)
+      OR public_variant_id = %(public_variant_id)s::text
+  )
 """
 
 
@@ -225,18 +287,21 @@ class PostgresInventoryRepository:
     def __init__(self, connection: PostgresConnection) -> None:
         self._connection = connection
 
-    def get(self, product_id: ProductId, store_id: StoreId) -> ProductInventory | None:
+    def get(self, product_id: ProductId, store_id: StoreId, public_variant_id: str | None = None) -> ProductInventory | None:
         if not isinstance(product_id, ProductId):
             raise ValueError("PostgresInventoryRepository.get requires a ProductId")
         if not isinstance(store_id, StoreId):
             raise ValueError("PostgresInventoryRepository.get requires a StoreId")
+        if public_variant_id is not None:
+            public_variant_id = _require_text(public_variant_id, "public_variant_id")
 
         inventory_row = _fetch_one(
             self._connection.execute(
-                SELECT_INVENTORY_SQL,
+                SELECT_VARIANT_INVENTORY_SQL if public_variant_id is not None else SELECT_INVENTORY_SQL,
                 {
                     "product_id": str(product_id),
                     "store_id": str(store_id),
+                    "public_variant_id": public_variant_id,
                 },
             )
         )
@@ -249,12 +314,14 @@ class PostgresInventoryRepository:
                 {
                     "product_id": str(product_id),
                     "store_id": str(store_id),
+                    "public_variant_id": public_variant_id,
                 },
             )
         )
         return ProductInventory(
             product_id=ProductId(_row_value(inventory_row, "product_id")),
             store_id=StoreId(_row_value(inventory_row, "store_id")),
+            public_variant_id=_optional_row_value(inventory_row, "public_variant_id"),
             available_stock=Quantity(int(_row_value(inventory_row, "available_stock"))),
             reserved_stock=Quantity(int(_row_value(inventory_row, "reserved_stock"))),
             total_stock=Quantity(int(_row_value(inventory_row, "total_stock"))),
@@ -268,11 +335,13 @@ class PostgresInventoryRepository:
 
         product_id = str(inventory.product_id)
         store_id = str(inventory.store_id)
+        public_variant_id = inventory.public_variant_id
         self._connection.execute(
-            UPSERT_INVENTORY_SQL,
+            UPSERT_VARIANT_INVENTORY_SQL if public_variant_id is not None else UPSERT_INVENTORY_SQL,
             {
                 "product_id": product_id,
                 "store_id": store_id,
+                "public_variant_id": public_variant_id,
                 "available_stock": inventory.available_stock.value,
                 "reserved_stock": inventory.reserved_stock.value,
                 "total_stock": inventory.total_stock.value,
@@ -280,7 +349,7 @@ class PostgresInventoryRepository:
             },
         )
 
-        reservation_ids = tuple(str(reservation.reservation_id) for reservation in inventory.reservations)
+        reservation_ids = [str(reservation.reservation_id) for reservation in inventory.reservations]
         for reservation in inventory.reservations:
             self._connection.execute(
                 UPSERT_RESERVATION_SQL,
@@ -288,6 +357,7 @@ class PostgresInventoryRepository:
                     "reservation_id": str(reservation.reservation_id),
                     "product_id": product_id,
                     "store_id": store_id,
+                    "public_variant_id": public_variant_id,
                     "order_id": str(reservation.order_id),
                     "reserved_qty": reservation.reserved_qty.value,
                     "status": reservation.status.value,
@@ -301,6 +371,7 @@ class PostgresInventoryRepository:
                 {
                     "product_id": product_id,
                     "store_id": store_id,
+                    "public_variant_id": public_variant_id,
                     "reservation_ids": reservation_ids,
                 },
             )
@@ -310,6 +381,7 @@ class PostgresInventoryRepository:
                 {
                     "product_id": product_id,
                     "store_id": store_id,
+                    "public_variant_id": public_variant_id,
                 },
             )
 
@@ -463,7 +535,19 @@ def _row_value(row: Mapping[str, Any] | object, key: str) -> Any:
     return getattr(row, key)
 
 
+def _optional_row_value(row: Mapping[str, Any] | object, key: str) -> Any:
+    if isinstance(row, Mapping):
+        return row.get(key)
+    return getattr(row, key, None)
+
+
 def _row_value_or_default(row: Mapping[str, Any] | object, key: str, default: Any) -> Any:
     if isinstance(row, Mapping):
         return row.get(key, default)
     return getattr(row, key, default)
+
+
+def _require_text(value: str, field_name: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field_name} must be a non-empty string")
+    return value.strip()

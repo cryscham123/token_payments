@@ -8,10 +8,14 @@ from typing import Any, Mapping
 from token_payments.contexts.auth.domain import Group, GroupId, GroupType, User, UserRole
 from token_payments.contexts.store_catalog.application import CatalogAuditRecord, CatalogIdempotencyRecord
 from token_payments.contexts.store_catalog.domain import (
+    ProductOption,
+    ProductOptionValue,
     ProductStatus,
+    ProductVariant,
     ProductVisibility,
     PublicProductId,
     PublicStoreId,
+    PublicVariantId,
     StoreMembership,
     StoreMembershipRole,
     StorePaymentSettings,
@@ -421,6 +425,76 @@ SELECT available_stock, total_stock, sale_status
 FROM product_inventory
 WHERE store_id = %(store_id)s
   AND product_id = %(product_id)s
+"""
+
+SELECT_PRODUCT_OPTIONS_SQL = """
+SELECT
+    store_id,
+    product_id,
+    option_id,
+    option_key,
+    display_name,
+    sort_order,
+    required,
+    selection_type,
+    option_type,
+    active
+FROM store_catalog_product_options
+WHERE store_id = %(store_id)s
+  AND product_id = %(product_id)s
+ORDER BY sort_order ASC, option_key ASC
+"""
+
+SELECT_PRODUCT_OPTION_VALUES_SQL = """
+SELECT
+    store_id,
+    product_id,
+    option_id,
+    option_value_id,
+    value_key,
+    display_value,
+    sort_order,
+    price_delta_numeric,
+    price_delta_symbol,
+    price_delta_chain_id,
+    price_delta_token_address,
+    price_delta_decimals,
+    active
+FROM store_catalog_product_option_values
+WHERE store_id = %(store_id)s
+  AND product_id = %(product_id)s
+  AND option_id = %(option_id)s
+ORDER BY sort_order ASC, value_key ASC
+"""
+
+SELECT_PRODUCT_VARIANTS_SQL = """
+SELECT
+    store_id,
+    product_id,
+    public_variant_id,
+    display_name,
+    option_values,
+    sku,
+    status,
+    active,
+    sort_order,
+    price_delta_numeric,
+    price_delta_symbol,
+    price_delta_chain_id,
+    price_delta_token_address,
+    price_delta_decimals
+FROM store_catalog_product_variants
+WHERE store_id = %(store_id)s
+  AND product_id = %(product_id)s
+ORDER BY sort_order ASC, public_variant_id ASC
+"""
+
+SELECT_PRODUCT_VARIANT_AVAILABILITY_SQL = """
+SELECT available_stock, total_stock, sale_status
+FROM product_variant_inventory
+WHERE store_id = %(store_id)s
+  AND product_id = %(product_id)s
+  AND public_variant_id = %(public_variant_id)s
 """
 
 PRODUCT_LIST_SELECT_SQL = """
@@ -876,6 +950,56 @@ class PostgresStoreCatalogRepository:
             "saleStatus": str(_row_value(row, "sale_status")),
         }
 
+    def list_product_options(self, store_id: StoreId, product_id: ProductId) -> tuple[ProductOption, ...]:
+        result = self._connection.execute(
+            SELECT_PRODUCT_OPTIONS_SQL,
+            {"store_id": str(store_id), "product_id": str(product_id)},
+        )
+        return tuple(_row_to_product_option(row) for row in result)
+
+    def list_product_option_values(
+        self,
+        store_id: StoreId,
+        product_id: ProductId,
+        option_id: str,
+    ) -> tuple[ProductOptionValue, ...]:
+        result = self._connection.execute(
+            SELECT_PRODUCT_OPTION_VALUES_SQL,
+            {"store_id": str(store_id), "product_id": str(product_id), "option_id": option_id},
+        )
+        return tuple(_row_to_product_option_value(row) for row in result)
+
+    def list_product_variants(self, store_id: StoreId, product_id: ProductId) -> tuple[ProductVariant, ...]:
+        result = self._connection.execute(
+            SELECT_PRODUCT_VARIANTS_SQL,
+            {"store_id": str(store_id), "product_id": str(product_id)},
+        )
+        return tuple(_row_to_product_variant(row) for row in result)
+
+    def get_variant_availability(
+        self,
+        store_id: StoreId,
+        product_id: ProductId,
+        public_variant_id: PublicVariantId,
+    ) -> Mapping[str, Any] | None:
+        row = _fetch_one(
+            self._connection.execute(
+                SELECT_PRODUCT_VARIANT_AVAILABILITY_SQL,
+                {
+                    "store_id": str(store_id),
+                    "product_id": str(product_id),
+                    "public_variant_id": str(public_variant_id),
+                },
+            )
+        )
+        if row is None:
+            return None
+        return {
+            "availableStock": int(_row_value(row, "available_stock")),
+            "totalStock": int(_row_value(row, "total_stock")),
+            "saleStatus": str(_row_value(row, "sale_status")),
+        }
+
     def save_product(self, product: StoreProduct) -> None:
         self._connection.execute(UPSERT_PRODUCT_SQL, _product_params(product))
 
@@ -1021,6 +1145,56 @@ def _row_to_product(row: Mapping[str, Any] | object) -> StoreProduct:
     )
 
 
+def _row_to_product_option(row: Mapping[str, Any] | object) -> ProductOption:
+    return ProductOption(
+        store_id=StoreId(_row_value(row, "store_id")),
+        product_id=ProductId(_row_value(row, "product_id")),
+        option_id=str(_row_value(row, "option_id")),
+        option_key=str(_row_value(row, "option_key")),
+        display_name=str(_row_value(row, "display_name")),
+        sort_order=int(_row_value(row, "sort_order")),
+        required=bool(_row_value(row, "required")),
+        selection_type=str(_row_value(row, "selection_type")),
+        option_type=str(_row_value(row, "option_type")),
+        active=bool(_row_value(row, "active")),
+    )
+
+
+def _row_to_product_option_value(row: Mapping[str, Any] | object) -> ProductOptionValue:
+    return ProductOptionValue(
+        store_id=StoreId(_row_value(row, "store_id")),
+        product_id=ProductId(_row_value(row, "product_id")),
+        option_id=str(_row_value(row, "option_id")),
+        option_value_id=str(_row_value(row, "option_value_id")),
+        value_key=str(_row_value(row, "value_key")),
+        display_value=str(_row_value(row, "display_value")),
+        sort_order=int(_row_value(row, "sort_order")),
+        price_delta=_optional_crypto_from_row(row, "price_delta"),
+        active=bool(_row_value(row, "active")),
+    )
+
+
+def _row_to_product_variant(row: Mapping[str, Any] | object) -> ProductVariant:
+    return ProductVariant(
+        store_id=StoreId(_row_value(row, "store_id")),
+        product_id=ProductId(_row_value(row, "product_id")),
+        public_variant_id=PublicVariantId(str(_row_value(row, "public_variant_id"))),
+        display_name=str(_row_value(row, "display_name")),
+        option_values=_json_mapping(_row_value(row, "option_values")),
+        sku=_optional_row_value(row, "sku"),
+        status=ProductStatus(str(_row_value(row, "status"))),
+        active=bool(_row_value(row, "active")),
+        sort_order=int(_row_value(row, "sort_order")),
+        price_delta=Crypto(
+            amount=_row_value(row, "price_delta_numeric"),
+            symbol=str(_row_value(row, "price_delta_symbol")),
+            chain_id=int(_row_value(row, "price_delta_chain_id")),
+            token_address=_optional_row_value(row, "price_delta_token_address"),
+            decimals=int(_row_value(row, "price_delta_decimals")),
+        ),
+    )
+
+
 def _store_params(store: StoreProfile) -> dict[str, Any]:
     return {
         "store_id": str(store.store_id),
@@ -1101,6 +1275,19 @@ def _json_mapping(value: Any) -> Mapping[str, Any]:
     if isinstance(value, Mapping):
         return value
     raise ValueError("JSON object column must be a mapping")
+
+
+def _optional_crypto_from_row(row: Mapping[str, Any] | object, prefix: str) -> Crypto | None:
+    amount = _optional_row_value(row, f"{prefix}_numeric")
+    if amount is None:
+        return None
+    return Crypto(
+        amount=amount,
+        symbol=str(_row_value(row, f"{prefix}_symbol")),
+        chain_id=int(_row_value(row, f"{prefix}_chain_id")),
+        token_address=_optional_row_value(row, f"{prefix}_token_address"),
+        decimals=int(_row_value(row, f"{prefix}_decimals")),
+    )
 
 
 def _search_pattern(value: str) -> str:

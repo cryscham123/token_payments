@@ -72,7 +72,7 @@ def _order_creation_payload(result: OrderCreationResult) -> dict[str, Any]:
 
 def _item_payload(item: OrderItem) -> dict[str, Any]:
     snapshot = item.product_snapshot
-    return {
+    payload = {
         "orderItemId": str(item.order_item_id),
         "productId": str(snapshot.product_id),
         "name": snapshot.name,
@@ -80,6 +80,13 @@ def _item_payload(item: OrderItem) -> dict[str, Any]:
         "unitPrice": _crypto_payload(snapshot.price),
         "subTotal": _crypto_payload(item.sub_total),
     }
+    public_variant_id = getattr(snapshot, "public_variant_id", None)
+    selected_options = getattr(snapshot, "selected_options", None)
+    if public_variant_id is not None:
+        payload["publicVariantId"] = public_variant_id
+    if selected_options:
+        payload["selectedOptions"] = dict(selected_options)
+    return payload
 
 
 def _crypto_payload(value: Crypto) -> dict[str, Any]:
@@ -127,6 +134,8 @@ def _items_from_body(body: Mapping[str, Any]) -> tuple[CreateOrderItem, ...]:
             CreateOrderItem(
                 product_id=_required_text(raw_item, "productId"),
                 quantity=_required_int(raw_item, "quantity"),
+                public_variant_id=_optional_text(raw_item, "publicVariantId") or _optional_text(raw_item, "public_variant_id"),
+                selected_options=_optional_mapping(raw_item, "selectedOptions") or _optional_mapping(raw_item, "selected_options") or {},
             )
         )
     return tuple(items)
@@ -134,6 +143,15 @@ def _items_from_body(body: Mapping[str, Any]) -> tuple[CreateOrderItem, ...]:
 
 def _required_mapping(body: Mapping[str, Any], key: str) -> Mapping[str, Any]:
     value = body.get(key)
+    if not isinstance(value, Mapping):
+        raise OrderApplicationError(OrderErrorCode.VALIDATION_ERROR, f"{key} must be an object")
+    return value
+
+
+def _optional_mapping(body: Mapping[str, Any], key: str) -> Mapping[str, Any] | None:
+    value = body.get(key)
+    if value is None:
+        return None
     if not isinstance(value, Mapping):
         raise OrderApplicationError(OrderErrorCode.VALIDATION_ERROR, f"{key} must be an object")
     return value

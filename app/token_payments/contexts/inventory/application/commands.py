@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Any, Mapping
 
 from token_payments.contexts.inventory.domain import Quantity
 from token_payments.shared.domain import CommandId, MessageId, OrderId, ProductId, StoreId, UserId
@@ -16,9 +17,11 @@ class ReserveInventoryCommand:
     product_id: ProductId
     store_id: StoreId
     quantity: Quantity | int
+    public_variant_id: str | None = None
     requested_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     causation_id: str | None = None
     event_message_id: MessageId = field(default_factory=MessageId.new)
+    items: tuple[Mapping[str, Any], ...] | list[Mapping[str, Any]] = ()
 
     def __post_init__(self) -> None:
         _validate_common_command(self)
@@ -34,9 +37,11 @@ class ReleaseInventoryCommand:
     order_id: OrderId
     product_id: ProductId
     store_id: StoreId
+    public_variant_id: str | None = None
     requested_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     causation_id: str | None = None
     event_message_id: MessageId = field(default_factory=MessageId.new)
+    items: tuple[Mapping[str, Any], ...] | list[Mapping[str, Any]] = ()
 
     def __post_init__(self) -> None:
         _validate_common_command(self)
@@ -48,9 +53,11 @@ class ConfirmInventoryCommand:
     order_id: OrderId
     product_id: ProductId
     store_id: StoreId
+    public_variant_id: str | None = None
     requested_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     causation_id: str | None = None
     event_message_id: MessageId = field(default_factory=MessageId.new)
+    items: tuple[Mapping[str, Any], ...] | list[Mapping[str, Any]] = ()
 
     def __post_init__(self) -> None:
         _validate_common_command(self)
@@ -138,6 +145,13 @@ def _validate_common_command(
         raise ValueError(f"{type(command).__name__}.product_id must be a ProductId")
     if not isinstance(command.store_id, StoreId):
         raise ValueError(f"{type(command).__name__}.store_id must be a StoreId")
+    if command.public_variant_id is not None:
+        object.__setattr__(
+            command,
+            "public_variant_id",
+            _require_text(command.public_variant_id, f"{type(command).__name__}.public_variant_id"),
+        )
+    object.__setattr__(command, "items", _coerce_items(command.items, f"{type(command).__name__}.items"))
     object.__setattr__(
         command,
         "requested_at",
@@ -201,3 +215,19 @@ def _require_text(value: str, field_name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field_name} must be a non-empty string")
     return value.strip()
+
+
+def _coerce_items(
+    values: tuple[Mapping[str, Any], ...] | list[Mapping[str, Any]],
+    field_name: str,
+) -> tuple[dict[str, Any], ...]:
+    if isinstance(values, list):
+        values = tuple(values)
+    if not isinstance(values, tuple):
+        raise ValueError(f"{field_name} must be a tuple")
+    items: list[dict[str, Any]] = []
+    for item in values:
+        if not isinstance(item, Mapping):
+            raise ValueError(f"{field_name} must contain JSON objects")
+        items.append(dict(item))
+    return tuple(items)

@@ -102,6 +102,7 @@ class PaymentKafkaCommandListener:
                 event_message_id=_event_message_id(payload),
                 payer_wallet_id=_optional_payload_text(payload, "payerWalletId", "payer_wallet_id"),
                 payment_asset_id=_optional_payload_text(payload, "paymentAssetId", "payment_asset_id"),
+                items=_optional_items(payload),
             )
             handler_result = self._command_handler.initiate_payment(command)
         elif command_name is CheckoutCommandName.REFUND_PAYMENT:
@@ -269,6 +270,40 @@ def _required_mapping(payload: Mapping[str, Any], *names: str) -> Mapping[str, A
     raise MalformedKafkaMessage(f"payload missing {names[0]}")
 
 
+def _optional_items(payload: Mapping[str, Any]) -> tuple[dict[str, Any], ...]:
+    value = payload.get("items")
+    if value is None:
+        return _single_item_from_inventory_payload(payload)
+    if not isinstance(value, list | tuple):
+        raise MalformedKafkaMessage("items must be a JSON array")
+    items: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            raise MalformedKafkaMessage("items must contain JSON objects")
+        items.append(dict(item))
+    return tuple(items)
+
+
+def _single_item_from_inventory_payload(payload: Mapping[str, Any]) -> tuple[dict[str, Any], ...]:
+    product_id = _optional_payload_text(payload, "productId", "product_id")
+    if product_id is None:
+        return ()
+    item: dict[str, Any] = {"productId": product_id}
+    store_id = _optional_payload_text(payload, "storeId", "store_id")
+    if store_id is not None:
+        item["storeId"] = store_id
+    public_variant_id = _optional_payload_text(payload, "publicVariantId", "public_variant_id")
+    if public_variant_id is not None:
+        item["publicVariantId"] = public_variant_id
+    order_line_key = _optional_payload_text(payload, "orderLineKey", "order_line_key")
+    if order_line_key is not None:
+        item["orderLineKey"] = order_line_key
+    quantity = _optional_payload_value(payload, "quantity", "reservedQuantity", "reserved_qty")
+    if quantity is not None:
+        item["quantity"] = _positive_int(quantity, "quantity")
+    return (item,)
+
+
 def _required_payload_text(payload: Mapping[str, Any], *names: str, field_name: str) -> str:
     return _required_text(_optional_payload_text(payload, *names), field_name)
 
@@ -278,6 +313,13 @@ def _required_payload_value(payload: Mapping[str, Any], *names: str) -> object:
         if name in payload and payload[name] is not None:
             return payload[name]
     raise MalformedKafkaMessage(f"payload missing {names[0]}")
+
+
+def _optional_payload_value(payload: Mapping[str, Any], *names: str) -> object | None:
+    for name in names:
+        if name in payload and payload[name] is not None:
+            return payload[name]
+    return None
 
 
 def _optional_payload_text(payload: Mapping[str, Any], *names: str) -> str | None:

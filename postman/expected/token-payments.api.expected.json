@@ -514,7 +514,7 @@
           },
           "totalAmount": {
             "amount": "<amount>",
-            "symbol": "TPAY",
+            "symbol": "ETH",
             "chainId": 1337,
             "tokenAddress": null,
             "decimals": 18
@@ -527,14 +527,14 @@
               "quantity": 1,
               "unitPrice": {
                 "amount": "<amount>",
-                "symbol": "TPAY",
+                "symbol": "ETH",
                 "chainId": 1337,
                 "tokenAddress": null,
                 "decimals": 18
               },
               "subTotal": {
                 "amount": "<amount>",
-                "symbol": "TPAY",
+                "symbol": "ETH",
                 "chainId": 1337,
                 "tokenAddress": null,
                 "decimals": 18
@@ -692,7 +692,7 @@
             "publicProductId": "prd_local_hoodie_001",
             "title": "Local Hoodie",
             "displayPrice": {
-              "symbol": "TPAY",
+              "symbol": "ETH",
               "chainId": 1337
             },
             "availability": {

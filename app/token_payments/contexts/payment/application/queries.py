@@ -26,6 +26,7 @@ class PaymentHistoryItem:
     failure_reason: str | None
     payment_asset_id: str | None
     updated_at: datetime
+    items: tuple[dict[str, Any], ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.payment_id, PaymentId):
