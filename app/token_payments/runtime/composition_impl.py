@@ -91,6 +91,7 @@ from token_payments.contexts.payment.application import (
 )
 from token_payments.contexts.payment.domain import PaymentAsset, PaymentAssetRegistry, PaymentChain
 from token_payments.contexts.store_catalog.adapter import PostgresStoreCatalogRepository
+from token_payments.contexts.store_catalog.domain import PublicProductId, PublicStoreId
 from token_payments.contexts.store_catalog.application import StoreCatalogApplicationService
 from token_payments.shared.domain import (
     CheckoutCommandName,
@@ -1505,7 +1506,10 @@ def build_live_api_facades(
 
     return LiveApiFacades(
         auth=AuthApi(_TransactionalAuthUseCase(live_config, live_dependencies)),
-        orders=OrdersApi(_TransactionalOrderUseCase(live_config, live_dependencies)),
+        orders=OrdersApi(
+            _TransactionalOrderUseCase(live_config, live_dependencies),
+            target_resolver=_TransactionalOrderTargetResolver(live_dependencies),
+        ),
         checkout=CheckoutApi(_TransactionalCheckoutTrackingQuery(live_dependencies)),
         payments=PaymentsApi(
             payment_handler,
@@ -1818,6 +1822,33 @@ class _TransactionalAuthUseCase:
             event_publisher=_NoopAuthEventPublisher(),
             challenge_ttl=timedelta(minutes=5),
         )
+
+
+class _TransactionalOrderTargetResolver:
+    """Resolve public store/product ids to internal UUIDs for order creation. Internal UUIDs are
+    redacted from public catalog reads, so the storefront only carries public ids; resolution
+    happens server-side against the catalog read model in a single read transaction."""
+
+    def __init__(self, dependencies: LiveRuntimeDependencies) -> None:
+        self._dependencies = dependencies
+
+    def resolve(self, public_store_id: str, public_product_ids: Sequence[str]) -> tuple[str | None, dict[str, str]]:
+        return _with_transaction(
+            self._dependencies,
+            lambda connection: self._resolve(connection, public_store_id, tuple(public_product_ids)),
+        )
+
+    def _resolve(self, connection: Any, public_store_id: str, public_product_ids: tuple[str, ...]) -> tuple[str | None, dict[str, str]]:
+        repository = PostgresStoreCatalogRepository(connection)
+        store = repository.get_store_by_public_id(PublicStoreId(public_store_id))
+        if store is None:
+            return None, {}
+        product_ids: dict[str, str] = {}
+        for public_product_id in public_product_ids:
+            product = repository.get_product_by_public_id(store.store_id, PublicProductId(public_product_id))
+            if product is not None:
+                product_ids[public_product_id] = str(product.product_id)
+        return str(store.store_id), product_ids
 
 
 class _TransactionalOrderUseCase:

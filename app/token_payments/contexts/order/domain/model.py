@@ -346,6 +346,7 @@ class Store:
     store_address: Address | None = None
     store_wallet: WalletAddress | None = None
     supported_chain_ids: tuple[int, ...] = ()
+    supported_payment_asset_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.store_id, StoreId):
@@ -363,6 +364,11 @@ class Store:
             self,
             "supported_chain_ids",
             tuple(_coerce_positive_int(chain_id, "Store.supported_chain_ids") for chain_id in self.supported_chain_ids),
+        )
+        object.__setattr__(
+            self,
+            "supported_payment_asset_ids",
+            tuple(str(asset_id) for asset_id in self.supported_payment_asset_ids),
         )
 
     def require_product(self, product_id: ProductId) -> Product:

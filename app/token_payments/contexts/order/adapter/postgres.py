@@ -68,7 +68,8 @@ SELECT
     store_address_id,
     store_address_street,
     store_wallet_address,
-    supported_chain_ids
+    supported_chain_ids,
+    supported_payment_asset_ids
 FROM order_stores
 WHERE store_id = %(store_id)s
 """
@@ -432,6 +433,7 @@ class PostgresStoreRepository:
             ),
             store_wallet=_optional_wallet(_row_value(store_row, "store_wallet_address")),
             supported_chain_ids=_supported_chain_ids(_row_value(store_row, "supported_chain_ids")),
+            supported_payment_asset_ids=_supported_payment_asset_ids(_row_value_or_default(store_row, "supported_payment_asset_ids", None)),
         )
 
     def _row_to_product(self, row: Mapping[str, Any] | object) -> Product:
@@ -678,6 +680,14 @@ def _supported_chain_ids(value: Any) -> tuple[int, ...]:
     if not isinstance(value, list | tuple):
         raise ValueError("order store supported_chain_ids must be a list")
     return tuple(int(item) for item in value)
+
+
+def _supported_payment_asset_ids(value: Any) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list | tuple):
+        raise ValueError("order store supported_payment_asset_ids must be a list")
+    return tuple(str(item) for item in value)
 
 
 def _failure_messages(value: Any) -> tuple[str, ...]:

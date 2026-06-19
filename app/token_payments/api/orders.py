@@ -25,18 +25,20 @@ from .idempotency import IdempotencyKeyConflict, idempotency_conflict_response, 
 class OrdersApi:
     """Order API facade that can be adapted by any HTTP framework."""
 
-    def __init__(self, use_case: OrderUseCase) -> None:
+    def __init__(self, use_case: OrderUseCase, *, target_resolver: Any | None = None) -> None:
         self._use_case = use_case
+        self._target_resolver = target_resolver
 
     def create_order(self, request: ApiRequest) -> ApiResponse:
         try:
             body = _request_body(request)
+            store_id, items = self._resolve_order_targets(body)
             result = self._use_case.createOrder(
                 CreateOrderCommand(
                     authenticated_user_id=_authenticated_user_id(request),
-                    store_id=_required_text(body, "storeId"),
+                    store_id=store_id,
                     delivery_address=_address_from_body(_required_mapping(body, "deliveryAddress")),
-                    items=_items_from_body(body),
+                    items=items,
                     requested_at=request.received_at,
                     causation_id=idempotency_key_from_request(request, body, fallback=request.request_id),
                     wallet_id=_optional_wallet_id(body, "walletId"),
@@ -48,6 +50,50 @@ class OrdersApi:
             return idempotency_conflict_response(exc, request.request_id)
         except (OrderApplicationError, ValueError) as exc:
             return _error_response(_coerce_order_error(exc), request.request_id)
+
+    def _resolve_order_targets(self, body: Mapping[str, Any]) -> tuple[str, tuple[CreateOrderItem, ...]]:
+        """Resolve internal store/product UUIDs, accepting public ids that the public catalog
+        exposes (internal UUIDs are redacted from public reads, so the client only knows the
+        public ids). Explicit UUIDs are used as-is for backward compatibility."""
+        explicit_store = _optional_text(body, "storeId")
+        public_store = _optional_text(body, "publicStoreId")
+        raw_items = _raw_order_items(body)
+        public_product_ids = [
+            public_id
+            for raw_item in raw_items
+            if not _optional_text(raw_item, "productId") and (public_id := _optional_text(raw_item, "publicProductId"))
+        ]
+
+        resolved_store_id: str | None = None
+        resolved_products: Mapping[str, str] = {}
+        if public_store is not None and (explicit_store is None or public_product_ids):
+            if self._target_resolver is None:
+                raise OrderApplicationError(OrderErrorCode.VALIDATION_ERROR, "public id resolution is not available")
+            resolved_store_id, resolved_products = self._target_resolver.resolve(public_store, public_product_ids)
+
+        store_id = explicit_store or resolved_store_id
+        if not store_id:
+            raise OrderApplicationError(OrderErrorCode.VALIDATION_ERROR, "storeId or publicStoreId is required")
+
+        items: list[CreateOrderItem] = []
+        for raw_item in raw_items:
+            explicit_product = _optional_text(raw_item, "productId")
+            public_product = _optional_text(raw_item, "publicProductId")
+            product_id = explicit_product or (resolved_products.get(public_product) if public_product else None)
+            if not product_id:
+                raise OrderApplicationError(
+                    OrderErrorCode.VALIDATION_ERROR,
+                    "each item requires productId or a resolvable publicProductId",
+                )
+            items.append(
+                CreateOrderItem(
+                    product_id=product_id,
+                    quantity=_required_int(raw_item, "quantity"),
+                    public_variant_id=_optional_text(raw_item, "publicVariantId") or _optional_text(raw_item, "public_variant_id"),
+                    selected_options=_optional_mapping(raw_item, "selectedOptions") or _optional_mapping(raw_item, "selected_options") or {},
+                )
+            )
+        return store_id, tuple(items)
 
 
 def _order_creation_payload(result: OrderCreationResult) -> dict[str, Any]:
@@ -122,23 +168,14 @@ def _address_from_body(body: Mapping[str, Any]) -> Address:
     )
 
 
-def _items_from_body(body: Mapping[str, Any]) -> tuple[CreateOrderItem, ...]:
+def _raw_order_items(body: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
     raw_items = body.get("items")
     if not isinstance(raw_items, list) or not raw_items:
         raise OrderApplicationError(OrderErrorCode.VALIDATION_ERROR, "items must contain at least one item")
-    items: list[CreateOrderItem] = []
     for raw_item in raw_items:
         if not isinstance(raw_item, Mapping):
             raise OrderApplicationError(OrderErrorCode.VALIDATION_ERROR, "items must contain objects")
-        items.append(
-            CreateOrderItem(
-                product_id=_required_text(raw_item, "productId"),
-                quantity=_required_int(raw_item, "quantity"),
-                public_variant_id=_optional_text(raw_item, "publicVariantId") or _optional_text(raw_item, "public_variant_id"),
-                selected_options=_optional_mapping(raw_item, "selectedOptions") or _optional_mapping(raw_item, "selected_options") or {},
-            )
-        )
-    return tuple(items)
+    return tuple(raw_items)
 
 
 def _required_mapping(body: Mapping[str, Any], key: str) -> Mapping[str, Any]:

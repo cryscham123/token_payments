@@ -40,6 +40,7 @@ STORE_ID = StoreId("018f33aa-9e6d-73d8-9dc3-47d6cdcc8001")
 PRODUCT_ID = ProductId("018f33aa-9e6d-73d8-9dc3-47d6cdcc8002")
 ACTOR_ID = UserId("018f33aa-9e6d-73d8-9dc3-47d6cdcc8003")
 ORDER_ID = OrderId("018f33aa-9e6d-73d8-9dc3-47d6cdcc8004")
+VARIANT_ID = "var_0123456789abcdef0123"
 
 
 def test_stock_intake_command_increases_total_and_available_stock_with_audit() -> None:
@@ -139,7 +140,23 @@ def test_command_result_distinguishes_accepted_rejected_and_duplicate_statuses()
     assert duplicate_fixture.audit_records == []
 
 
-def _increase_command(*, quantity: int, reason: str = "warehouse intake") -> StoreOwnerIncreaseStockCommand:
+def test_increase_command_with_explicit_variant_targets_variant_and_records_it_in_audit() -> None:
+    fixture = HandlerFixture(_inventory(available=5, public_variant_id=VARIANT_ID))
+
+    result = fixture.handler.increase_stock(_increase_command(quantity=3, public_variant_id=VARIANT_ID))
+
+    assert result.status == StoreOwnerInventoryCommandStatus.ACCEPTED
+    assert fixture.inventory_repository.get_calls == [(PRODUCT_ID, STORE_ID, VARIANT_ID)]
+    assert result.inventory is not None
+    assert result.inventory.public_variant_id == VARIANT_ID
+    assert result.inventory.available_stock == Quantity(8)
+    assert len(fixture.audit_records) == 1
+    assert fixture.audit_records[0].public_variant_id == VARIANT_ID
+
+
+def _increase_command(
+    *, quantity: int, reason: str = "warehouse intake", public_variant_id: str | None = None
+) -> StoreOwnerIncreaseStockCommand:
     return StoreOwnerIncreaseStockCommand(
         command_id=CommandId("stock-intake-001"),
         store_id=STORE_ID,
@@ -150,6 +167,7 @@ def _increase_command(*, quantity: int, reason: str = "warehouse intake") -> Sto
         reason=reason,
         requested_at=NOW,
         request_id="req-stock-increase",
+        public_variant_id=public_variant_id,
     )
 
 
@@ -193,13 +211,14 @@ def _resume_command() -> ResumeProductSalesCommand:
     )
 
 
-def _inventory(*, available: int) -> ProductInventory:
+def _inventory(*, available: int, public_variant_id: str | None = None) -> ProductInventory:
     return ProductInventory(
         product_id=PRODUCT_ID,
         store_id=STORE_ID,
         available_stock=Quantity(available),
         reserved_stock=Quantity(0),
         total_stock=Quantity(available),
+        public_variant_id=public_variant_id,
     )
 
 
@@ -226,8 +245,10 @@ class FakeInventoryRepository:
         if inventory is not None:
             self.inventories[(inventory.product_id, inventory.store_id)] = inventory
         self.saved: list[ProductInventory] = []
+        self.get_calls: list[tuple[ProductId, StoreId, str | None]] = []
 
     def get(self, product_id: ProductId, store_id: StoreId, public_variant_id: str | None = None) -> ProductInventory | None:
+        self.get_calls.append((product_id, store_id, public_variant_id))
         return self.inventories.get((product_id, store_id))
 
     def save(self, inventory: ProductInventory) -> None:

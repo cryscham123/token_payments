@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from enum import StrEnum
 from typing import Any
 
 from token_payments.contexts.auth.domain.wallet import UserWallet, WalletId
-from token_payments.contexts.order.domain import Customer, Order, OrderCancelledEvent, OrderItem, OrderStatus, Store
+from token_payments.contexts.order.domain import Customer, Order, OrderCancelledEvent, OrderItem, OrderStatus, Product, Store
 from token_payments.contexts.payment.domain import PaymentAsset, PaymentAssetRegistry
 from token_payments.shared.domain import (
     CheckoutEventName,
@@ -187,6 +187,11 @@ class OrderApplicationService:
 
         try:
             selected_asset = _selected_asset(self._payment_assets, command.payment_asset_id)
+            # Inject asset_prices into products so price_for_asset can resolve
+            # ERC20 payment assets. The order DB adapter does not store per-asset
+            # prices, so we derive them at order-creation time from the registry.
+            if selected_asset is not None:
+                store = _store_with_asset_prices(store, selected_asset)
             selected_wallet = self._resolve_wallet(command, selected_asset)
             order = Order.initialize_order(
                 order_id=command.order_id,
@@ -649,6 +654,30 @@ def _crypto_payload(value: Crypto, *, asset_id: str | None = None) -> dict[str, 
 
 def _chain_payload(value: Crypto) -> dict[str, Any]:
     return {"chainId": value.chain_id, "name": f"chain-{value.chain_id}"}
+
+
+def _store_with_asset_prices(store: Store, asset: PaymentAsset) -> Store:
+    """Return a copy of *store* whose products carry *asset_prices* for the selected asset.
+
+    The order-context DB adapter does not persist per-asset price mappings.
+    When a buyer selects an ERC-20 payment asset (e.g. ``local-usdc``), the
+    domain ``Product.price_for_asset`` needs an ``asset_prices`` entry to
+    resolve the price.  We derive it here from the product's base price
+    amount and the asset's on-chain metadata (symbol, decimals,
+    contract_address, chain_id).
+
+    If the store has configured ``supported_payment_asset_ids``, the selected
+    asset must be in that list; otherwise the request is rejected early.
+    """
+    if store.supported_payment_asset_ids and asset.asset_id not in store.supported_payment_asset_ids:
+        raise ValueError(f"payment asset {asset.asset_id} is not supported by store {store.store_id}")
+    enriched_products: list[Product] = []
+    for product in store.products:
+        existing = dict(product.asset_prices) if product.asset_prices else {}
+        if asset.asset_id not in existing:
+            existing[asset.asset_id] = asset.crypto(product.price.amount)
+        enriched_products.append(replace(product, asset_prices=existing))
+    return replace(store, products=tuple(enriched_products))
 
 
 def _selected_asset(registry: PaymentAssetRegistry | None, payment_asset_id: str | None) -> PaymentAsset | None:
