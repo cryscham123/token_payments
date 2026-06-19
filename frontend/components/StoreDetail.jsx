@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import SiteHeader from "./SiteHeader";
 import { apiJson, getCurrentUser } from "@/lib/auth-client";
 import { formatCryptoAmount } from "@/lib/demo-data";
-import { getS3Url } from "@/lib/s3";
+import { productImageFromMedia, PRODUCT_IMAGE_PLACEHOLDER, getCategoryFallback } from "@/lib/product-image";
 
 export default function StoreDetail({ publicStoreId }) {
   const [store, setStore] = useState(null);
@@ -118,7 +118,7 @@ export default function StoreDetail({ publicStoreId }) {
                       className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                       onError={(e) => {
                         e.target.onerror = null;
-                        e.target.src = "https://images.unsplash.com/photo-1523381210434-271e8be1f52b?auto=format&fit=crop&q=80&w=900";
+                        e.target.src = getCategoryFallback(product.category);
                       }}
                     />
                   </div>
@@ -160,24 +160,6 @@ function fromPriceLabel(product) {
   return product.displayPrice?.priceLabel === "from" ? "" : "";
 }
 
-function productImageFromMedia(media = [], width = 500) {
-  const imageFile = (media || []).find((file) => /\.(png|jpe?g|webp|gif)$/i.test(file)) || media[0];
-  if (!imageFile) return fallbackProductImage(width);
-  if (/^https?:\/\//.test(imageFile)) return imageFile;
-  const s3Url = getS3Url(imageFile);
-  if (s3Url) return s3Url;
-  return PRODUCT_MEDIA_FALLBACKS[imageFile] || fallbackProductImage(width);
-}
-
-function fallbackProductImage(width) {
-  return `https://images.unsplash.com/photo-1523381210434-271e8be1f52b?auto=format&fit=crop&q=80&w=${width}`;
-}
-
-const PRODUCT_MEDIA_FALLBACKS = {
-  "products/local-hoodie.png": fallbackProductImage(900),
-  "products/local-hoodie-back.png": "https://images.unsplash.com/photo-1512436991641-6745cdb1723f?auto=format&fit=crop&q=80&w=900",
-  "products/local-hoodie-detail.png": "https://images.unsplash.com/photo-1489987707025-afc232f7ea0f?auto=format&fit=crop&q=80&w=900"
-};
 
 // Test asserts compatibility:
 // `/stores/${publicStoreId}`

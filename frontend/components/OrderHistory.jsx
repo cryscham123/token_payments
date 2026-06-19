@@ -6,6 +6,7 @@ import SiteHeader from "./SiteHeader";
 import { useEffect, useState } from "react";
 import { apiJson, getCurrentUser } from "@/lib/auth-client";
 import { formatCryptoAmount } from "@/lib/demo-data";
+import { productImageFromMedia, PRODUCT_IMAGE_PLACEHOLDER, getCategoryFallback } from "@/lib/product-image";
 
 export default function OrderHistory() {
   const [payments, setPayments] = useState([]);
@@ -50,7 +51,8 @@ export default function OrderHistory() {
           title: p.title,
           cryptoAmount: p.displayPrice?.amount || "0",
           cryptoSymbol: p.displayPrice?.symbol || "ETH",
-          thumb: "https://images.unsplash.com/photo-1523381210434-271e8be1f52b?auto=format&fit=crop&q=80&w=300"
+          thumb: productImageFromMedia(p.media),
+          category: p.category || ""
         }));
 
         setProducts(mappedProducts);
@@ -103,7 +105,7 @@ export default function OrderHistory() {
       (p) => Number.parseFloat(p.cryptoAmount) === Number.parseFloat(payment.amount?.amount)
     ) || products[0] || {
       title: "데모 상품",
-      thumb: "https://images.unsplash.com/photo-1523381210434-271e8be1f52b?auto=format&fit=crop&q=80&w=300"
+      thumb: PRODUCT_IMAGE_PLACEHOLDER
     };
 
     const orderItems = (payment.items && payment.items.length > 0)
@@ -115,7 +117,8 @@ export default function OrderHistory() {
             title: item.title || item.name || fallbackProduct.title,
             quantity: item.quantity || 1,
             selectedOptions: item.selectedOptions || {},
-            thumb: catalogProd?.thumb || fallbackProduct.thumb || "https://images.unsplash.com/photo-1523381210434-271e8be1f52b?auto=format&fit=crop&q=80&w=300"
+            thumb: catalogProd?.thumb || fallbackProduct.thumb || PRODUCT_IMAGE_PLACEHOLDER,
+            category: catalogProd?.category || fallbackProduct.category || ""
           };
         })
       : [{
@@ -124,7 +127,8 @@ export default function OrderHistory() {
           title: fallbackProduct.title,
           quantity: 1,
           selectedOptions: {},
-          thumb: fallbackProduct.thumb
+          thumb: fallbackProduct.thumb,
+          category: fallbackProduct.category || ""
         }];
 
     const formattedDate = payment.updatedAt
@@ -221,11 +225,11 @@ export default function OrderHistory() {
                     <div key={idx} className="flex flex-col items-center gap-6 p-6 md:flex-row">
                       {item.publicProductId ? (
                         <Link href={`/products/${item.publicProductId}`} className="h-24 w-24 shrink-0 overflow-hidden rounded-xl bg-slate-100 hover:opacity-85 transition-opacity">
-                          <img src={item.thumb} alt={item.title} className="h-full w-full object-cover" />
+                          <img src={item.thumb} alt={item.title} className="h-full w-full object-cover" onError={(e) => { e.target.onerror = null; e.target.src = getCategoryFallback(item.category); }} />
                         </Link>
                       ) : (
                         <div className="h-24 w-24 shrink-0 overflow-hidden rounded-xl bg-slate-100">
-                          <img src={item.thumb} alt={item.title} className="h-full w-full object-cover" />
+                          <img src={item.thumb} alt={item.title} className="h-full w-full object-cover" onError={(e) => { e.target.onerror = null; e.target.src = getCategoryFallback(item.category); }} />
                         </div>
                       )}
                       <div className="flex-1 min-w-0 w-full">
