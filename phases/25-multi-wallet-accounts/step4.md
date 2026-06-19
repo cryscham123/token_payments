@@ -50,10 +50,10 @@ Native coin 전용 결제 모델을 asset-aware payment model로 확장하고, U
    - Ganache 시작 직후 실행되는 `deploy.js` (Node.js) 스크립트를 작성한다. `ganache` npm 패키지가 이미 설치된 이미지에서 실행 가능해야 한다.
    - 최소 ERC-20 컨트랙트(USDC-like, symbol `USDC`, decimals 6)와 (USDT-like, symbol `USDT`, decimals 6) 두 개를 배포한다. Solidity 컴파일 없이 배포할 수 있도록 미리 컴파일된 ERC-20 bytecode를 사용한다.
    - 배포 계정은 `TEST_NETWORK_PRIVATE_KEY` 환경 변수로 주어진 Ganache 계정을 사용한다.
-   - 배포된 USDC/USDT contract address를 `/var/chainDB/deployed_contracts.json` 파일에 저장한다. 이후 런타임에서 이 파일을 읽어 `ADAPTER_BLOCKCHAIN_TOKEN_ADDRESS`를 동적으로 설정하거나, compose 환경에서 해당 주소를 확인할 수 있어야 한다.
+   - 배포된 USDC/USDT contract address를 `/var/chainDB/deployed_contracts.json` 파일에 저장한다. 이후 seed/sync 경로가 이 파일을 읽어 `payment_assets` registry를 갱신하고, compose 환경에서 해당 주소를 확인할 수 있어야 한다.
    - `app/test_network/Dockerfile`을 수정해 Ganache와 함께 `deploy.js`가 실행되도록 entrypoint를 갱신한다.
-   - `.env.example`의 `ADAPTER_BLOCKCHAIN_TOKEN_ADDRESS` 주석에 이 배포 파일 경로를 참조하도록 안내를 추가한다.
-   - `payment_assets` registry seed는 placeholder `0x333...` 주소 대신 `deployed_contracts.json`에서 읽은 실제 배포 주소를 참조하거나, `.env`에 명시된 주소를 사용해야 한다. placeholder 주소를 source of truth로 사용하지 않는다.
+   - `.env.example`에는 단일 토큰 주소가 아니라 `ADAPTER_BLOCKCHAIN_DEPLOYED_CONTRACTS_PATH`를 추가한다.
+   - `payment_assets` registry seed는 placeholder `0x333...` 주소 대신 `deployed_contracts.json`에서 읽은 실제 배포 주소를 참조해야 한다. placeholder 주소나 단일 토큰 env 값을 source of truth로 사용하지 않는다.
 
 ## Acceptance Criteria
 

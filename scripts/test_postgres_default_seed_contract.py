@@ -75,10 +75,14 @@ def test_compose_runs_idempotent_default_seed_service_after_postgres_is_healthy(
     assert "postgres_seed:" in compose
     assert "container_name: postgres_seed" in compose
     assert "BOOTSTRAP_POSTGRES_HOST=postgres" in compose
+    assert "test_network_data:${TEST_NETWORK_DB_PATH}:ro" in compose
+    assert "ADAPTER_BLOCKCHAIN_DEPLOYED_CONTRACTS_PATH=/var/chainDB/deployed_contracts.json" in compose
     assert "sh /docker-entrypoint-initdb.d/002-token-payments-default-seed.sh" in compose
     assert "sh /docker-entrypoint-initdb.d/003-token-payments-demo-seed.sh" in compose
     assert "&&" in compose
     assert "condition: service_healthy" in compose
+    assert "test_network:" in compose
+    assert "condition: service_started" in compose
 
 
 def test_default_postgres_seed_bootstraps_only_rbac_catalog_and_platform_admin() -> None:
@@ -150,6 +154,23 @@ def test_demo_postgres_seed_does_not_commit_secret_material_or_private_keys() ->
     assert "mnemonic" not in demo_seed.lower()
     assert "refresh_token_hash" not in demo_seed
     assert not re.search(r"\b0x[a-fA-F0-9]{64}\b", demo_seed)
+
+
+def test_demo_postgres_seed_uses_deployed_token_contracts_instead_of_legacy_placeholders() -> None:
+    demo_seed = DEMO_SEED_SCRIPT_PATH.read_text(encoding="utf-8")
+    env_example = ENV_EXAMPLE_PATH.read_text(encoding="utf-8")
+
+    assert "ADAPTER_BLOCKCHAIN_DEPLOYED_CONTRACTS_PATH=/var/chainDB/deployed_contracts.json" in env_example
+    assert "ADAPTER_BLOCKCHAIN_TOKEN_ADDRESS" not in env_example
+    assert "0x4444444444444444444444444444444444444444" not in demo_seed
+    assert "0x5555555555555555555555555555555555555555" not in demo_seed
+    assert "0x6666666666666666666666666666666666666666" not in demo_seed
+    assert "LOCAL_USDC_CONTRACT_ADDRESS" in demo_seed
+    assert "LOCAL_USDT_CONTRACT_ADDRESS" in demo_seed
+    assert "deployed_contracts.json" in demo_seed
+    assert ":'local_usdc_contract_address'" in demo_seed
+    assert ":'local_usdt_contract_address'" in demo_seed
+    assert "local-disabled-dai" not in demo_seed
 
 
 def _env_values() -> dict[str, str]:

@@ -79,7 +79,6 @@ def test_live_runtime_config_from_env_parses_api_and_adapter_settings_with_redac
     assert config.blockchain_chain_id == 1337
     assert config.blockchain_native_symbol == "ETH"
     assert config.blockchain_native_decimals == 18
-    assert config.blockchain_token_address == env_values["ADAPTER_BLOCKCHAIN_TOKEN_ADDRESS"]
     assert str(config.blockchain_gas_buffer_rate) == "0.10"
     assert config.cookie_secure is False
     assert config.cookie_samesite == "Lax"
@@ -90,12 +89,10 @@ def test_live_runtime_config_from_env_parses_api_and_adapter_settings_with_redac
     encoded = json.dumps(debug_payload, ensure_ascii=True, sort_keys=True)
 
     assert "replace_with_local_dev_only_password" not in encoded
-    assert "replace_with_local_dev_only_token_address" not in encoded
     assert env_values["ADAPTER_POSTGRES_DSN"] not in encoded
-    assert env_values["ADAPTER_BLOCKCHAIN_TOKEN_ADDRESS"] not in encoded
     assert debug_payload["adapters"]["postgres"]["dsn"].endswith("@postgres:5432/token_payments")
     assert debug_payload["adapters"]["postgres"]["dsn"].count("<redacted>") == 1
-    assert debug_payload["adapters"]["blockchain"]["tokenAddress"] == "<redacted>"
+    assert "tokenAddress" not in debug_payload["adapters"]["blockchain"]
 
 
 def test_live_dependency_description_is_json_safe_redacted_and_reports_missing_dependencies() -> None:
@@ -111,7 +108,6 @@ def test_live_dependency_description_is_json_safe_redacted_and_reports_missing_d
     assert set(description["dependencies"]["missing"]) == REQUIRED_DEPENDENCIES
     assert description["dependencies"]["valid"] is False
     assert "replace_with_local_dev_only_password" not in encoded
-    assert "replace_with_local_dev_only_token_address" not in encoded
     assert "private_key" not in encoded.lower()
     assert "seed_phrase" not in encoded.lower()
 

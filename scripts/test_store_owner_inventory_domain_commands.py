@@ -227,7 +227,7 @@ class FakeInventoryRepository:
             self.inventories[(inventory.product_id, inventory.store_id)] = inventory
         self.saved: list[ProductInventory] = []
 
-    def get(self, product_id: ProductId, store_id: StoreId) -> ProductInventory | None:
+    def get(self, product_id: ProductId, store_id: StoreId, public_variant_id: str | None = None) -> ProductInventory | None:
         return self.inventories.get((product_id, store_id))
 
     def save(self, inventory: ProductInventory) -> None:

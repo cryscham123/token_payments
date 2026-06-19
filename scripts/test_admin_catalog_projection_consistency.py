@@ -242,7 +242,7 @@ class FakeInventoryRepository:
     def __init__(self, inventory: ProductInventory) -> None:
         self.inventory = inventory
 
-    def get(self, product_id: ProductId, store_id: StoreId) -> ProductInventory | None:
+    def get(self, product_id: ProductId, store_id: StoreId, public_variant_id: str | None = None) -> ProductInventory | None:
         return self.inventory if (product_id, store_id) == (PRODUCT_ID, STORE_ID) else None
 
     def save(self, inventory: ProductInventory) -> None:

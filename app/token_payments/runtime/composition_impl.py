@@ -158,7 +158,6 @@ DEFAULT_BLOCKCHAIN_RPC_URL = "http://localhost:8545"
 DEFAULT_BLOCKCHAIN_CHAIN_ID = 1337
 DEFAULT_BLOCKCHAIN_NATIVE_SYMBOL = "ETH"
 DEFAULT_BLOCKCHAIN_NATIVE_DECIMALS = 18
-DEFAULT_BLOCKCHAIN_TOKEN_ADDRESS = None
 DEFAULT_BLOCKCHAIN_GAS_BUFFER_RATE = Decimal("0.10")
 
 REQUIRED_LIVE_DEPENDENCIES = (
@@ -226,7 +225,6 @@ class LiveRuntimeConfig:
     blockchain_chain_id: int = DEFAULT_BLOCKCHAIN_CHAIN_ID
     blockchain_native_symbol: str = DEFAULT_BLOCKCHAIN_NATIVE_SYMBOL
     blockchain_native_decimals: int = DEFAULT_BLOCKCHAIN_NATIVE_DECIMALS
-    blockchain_token_address: str | None = field(default=DEFAULT_BLOCKCHAIN_TOKEN_ADDRESS, repr=False)
     blockchain_gas_buffer_rate: Decimal | str | int | float = DEFAULT_BLOCKCHAIN_GAS_BUFFER_RATE
     session_key_ring: SessionKeyRing | None = field(default=None, repr=False)
     session_access_ttl_seconds: int = DEFAULT_SESSION_ACCESS_TTL_SECONDS
@@ -325,11 +323,6 @@ class LiveRuntimeConfig:
             self,
             "blockchain_native_decimals",
             _require_positive_int(self.blockchain_native_decimals, "ADAPTER_BLOCKCHAIN_NATIVE_DECIMALS"),
-        )
-        object.__setattr__(
-            self,
-            "blockchain_token_address",
-            _optional_text(self.blockchain_token_address, "ADAPTER_BLOCKCHAIN_TOKEN_ADDRESS"),
         )
         object.__setattr__(
             self,
@@ -470,10 +463,6 @@ class LiveRuntimeConfig:
                 "ADAPTER_BLOCKCHAIN_NATIVE_DECIMALS",
                 DEFAULT_BLOCKCHAIN_NATIVE_DECIMALS,
             ),
-            blockchain_token_address=source.get(
-                "ADAPTER_BLOCKCHAIN_TOKEN_ADDRESS",
-                DEFAULT_BLOCKCHAIN_TOKEN_ADDRESS,
-            ),
             blockchain_gas_buffer_rate=_parse_decimal(
                 source,
                 "ADAPTER_BLOCKCHAIN_GAS_BUFFER_RATE",
@@ -582,7 +571,6 @@ class LiveRuntimeConfig:
                     "chainId": self.blockchain_chain_id,
                     "nativeSymbol": self.blockchain_native_symbol,
                     "nativeDecimals": self.blockchain_native_decimals,
-                    "tokenAddress": "<redacted>" if self.blockchain_token_address else None,
                     "gasBufferRate": str(self.blockchain_gas_buffer_rate),
                     "clientInjectedExternally": True,
                 },
@@ -1525,7 +1513,7 @@ def build_live_api_facades(
             history_query=_TransactionalPaymentHistoryQuery(live_dependencies),
         ),
         catalog=StoreCatalogApi(
-            _TransactionalStoreCatalogUseCase(live_dependencies),
+            _TransactionalStoreCatalogUseCase(live_config, live_dependencies),
             id_generator=live_dependencies.id_generator,
         ),
         inventory=StoreOwnerInventoryApi(
@@ -1864,7 +1852,7 @@ class _TransactionalOrderUseCase:
             orders=PostgresOrderRepository(connection),
             outbox_messages=outbox,
             wallets=PostgresUserWalletRepository(connection),
-            payment_assets=_runtime_payment_asset_registry(self._config),
+            payment_assets=_payment_asset_registry_for_connection(connection, self._config),
         ).createOrder(command)
         self._reserve_inventory(connection, command, result)
         self._start_payment_request(connection, command, result)
@@ -1876,24 +1864,28 @@ class _TransactionalOrderUseCase:
             processed_commands=PostgresProcessedCommandRepository(connection),
             outbox_messages=PostgresOutboxMessageRepository(connection),
         )
+        items_payload = _checkout_items_payload(result.outbox_message.payload)
         multi_item = len(result.order.items) > 1
         for item in result.order.items:
+            public_variant_id = item.product_snapshot.public_variant_id
             try:
                 inventory_handler.reserve_inventory(
                     ReserveInventoryCommand(
                         command_id=_inventory_command_id(
                             result.order.order_id,
                             CheckoutCommandName.RESERVE_INVENTORY,
-                            item.product_snapshot.product_id,
+                            item.line_key or public_variant_id or item.product_snapshot.product_id,
                             multi_item=multi_item,
                         ),
                         order_id=result.order.order_id,
                         product_id=item.product_snapshot.product_id,
                         store_id=result.order.store_id,
                         quantity=item.quantity,
+                        public_variant_id=public_variant_id,
                         requested_at=command.requested_at,
                         causation_id=str(result.outbox_message.identity),
                         event_message_id=MessageId(_new_id(self._dependencies.id_generator, "inventory_event_message_id")),
+                        items=items_payload,
                     )
                 )
             except InventoryCommandRejected as exc:
@@ -1930,6 +1922,7 @@ class _TransactionalOrderUseCase:
                 event_message_id=MessageId(_new_id(self._dependencies.id_generator, "payment_event_message_id")),
                 payer_wallet_id=_optional_payload_text(payload, "payerWalletId"),
                 payment_asset_id=_optional_payload_text(payload, "paymentAssetId"),
+                items=_checkout_items_payload(payload),
             )
         )
 
@@ -1946,13 +1939,20 @@ def _chain_network_from_checkout_payload(payload: Mapping[str, Any], default_cha
 def _inventory_command_id(
     order_id: OrderId,
     command_name: CheckoutCommandName,
-    product_id: Any,
+    target_identity: Any,
     *,
     multi_item: bool,
 ) -> CommandId:
     if not multi_item:
         return CommandId.for_order_action(order_id, command_name)
-    return CommandId(f"{order_id}:{command_name.value}:{product_id}")
+    return CommandId(f"{order_id}:{command_name.value}:{target_identity}")
+
+
+def _checkout_items_payload(payload: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
+    items = payload.get("items")
+    if not isinstance(items, list | tuple):
+        return ()
+    return tuple(dict(item) for item in items if isinstance(item, Mapping))
 
 
 def _required_payload_text(payload: Mapping[str, Any], key: str) -> str:
@@ -1971,12 +1971,100 @@ def _optional_payload_text(payload: Mapping[str, Any], key: str) -> str | None:
     return value.strip()
 
 
+def _payment_asset_registry_for_connection(connection: Any, config: LiveRuntimeConfig) -> PaymentAssetRegistry:
+    registry = _postgres_payment_asset_registry(connection)
+    if registry is not None:
+        return registry
+    return _runtime_payment_asset_registry(config)
+
+
+def _postgres_payment_asset_registry(connection: Any) -> PaymentAssetRegistry | None:
+    try:
+        result = connection.execute(
+            """
+            SELECT
+                c.chain_id,
+                c.display_name AS chain_display_name,
+                c.native_symbol AS chain_native_symbol,
+                c.enabled AS chain_enabled,
+                a.asset_id,
+                a.asset_type,
+                a.symbol AS asset_symbol,
+                a.decimals AS asset_decimals,
+                a.contract_address,
+                a.enabled AS asset_enabled
+            FROM chains c
+            LEFT JOIN payment_assets a
+              ON a.chain_id = c.chain_id
+             AND a.enabled = true
+            WHERE c.enabled = true
+            ORDER BY c.chain_id, a.asset_id
+            """
+        )
+    except Exception:
+        return None
+    rows = _fetch_all_runtime_rows(result)
+    if not rows:
+        return None
+
+    chains_by_id: dict[int, PaymentChain] = {}
+    assets: list[PaymentAsset] = []
+    for raw_row in rows:
+        row = dict(raw_row)
+        chain_id = int(row["chain_id"])
+        chains_by_id.setdefault(
+            chain_id,
+            PaymentChain(
+                chain_id=chain_id,
+                display_name=str(row["chain_display_name"]),
+                native_symbol=str(row["chain_native_symbol"]),
+                enabled=bool(row.get("chain_enabled", True)),
+            ),
+        )
+        asset_id = row.get("asset_id")
+        if asset_id is None:
+            continue
+        asset_type = str(row["asset_type"])
+        if asset_type == "NATIVE":
+            assets.append(
+                PaymentAsset.native(
+                    str(asset_id),
+                    chain_id,
+                    str(row["asset_symbol"]),
+                    int(row["asset_decimals"]),
+                    enabled=bool(row.get("asset_enabled", True)),
+                )
+            )
+        elif asset_type == "ERC20":
+            assets.append(
+                PaymentAsset.erc20(
+                    str(asset_id),
+                    chain_id,
+                    str(row["asset_symbol"]),
+                    int(row["asset_decimals"]),
+                    str(row["contract_address"]),
+                    enabled=bool(row.get("asset_enabled", True)),
+                )
+            )
+    if not chains_by_id or not assets:
+        return None
+    return PaymentAssetRegistry(chains=tuple(chains_by_id.values()), assets=tuple(assets))
+
+
+def _fetch_all_runtime_rows(result: Any) -> tuple[Mapping[str, Any], ...]:
+    fetchall = getattr(result, "fetchall", None)
+    if callable(fetchall):
+        return tuple(fetchall())
+    mappings = getattr(result, "mappings", None)
+    if callable(mappings):
+        all_rows = getattr(mappings(), "all", None)
+        if callable(all_rows):
+            return tuple(all_rows())
+    return ()
+
+
 def _runtime_payment_asset_registry(config: LiveRuntimeConfig) -> PaymentAssetRegistry:
     token_assets = list(_deployed_stablecoin_assets(config))
-    if not token_assets and config.blockchain_token_address:
-        token_assets.append(
-            PaymentAsset.erc20("local-usdc", config.blockchain_chain_id, "USDC", 6, config.blockchain_token_address)
-        )
     return PaymentAssetRegistry(
         chains=(
             PaymentChain(
@@ -2164,7 +2252,8 @@ class _TransactionalInventoryQuery:
 
 
 class _TransactionalStoreCatalogUseCase:
-    def __init__(self, dependencies: LiveRuntimeDependencies) -> None:
+    def __init__(self, config: LiveRuntimeConfig, dependencies: LiveRuntimeDependencies) -> None:
+        self._config = config
         self._dependencies = dependencies
 
     def create_or_reuse_store_user(self, command):
@@ -2188,6 +2277,11 @@ class _TransactionalStoreCatalogUseCase:
                 public_store_id=public_store_id,
                 filters=filters,
             )
+        )
+
+    def list_all_public_products(self, *, filters):
+        return self._execute(
+            lambda service: service.list_all_public_products(filters=filters)
         )
 
     def get_public_product(self, *, public_store_id, public_product_id):
@@ -2237,6 +2331,7 @@ class _TransactionalStoreCatalogUseCase:
                 StoreCatalogApplicationService(
                     repository=PostgresStoreCatalogRepository(connection),
                     user_id_generator=self._dependencies.id_generator,
+                    payment_assets=_payment_asset_registry_for_connection(connection, self._config),
                 )
             ),
         )

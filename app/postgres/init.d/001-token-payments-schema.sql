@@ -642,18 +642,18 @@ CREATE TABLE IF NOT EXISTS order_items (
 CREATE INDEX IF NOT EXISTS idx_order_items_order_id
     ON order_items (order_id);
 
+-- product_inventory is a per-(product, store) registry only. Stock is tracked
+-- exclusively in product_variant_inventory at the variant (required-option) unit;
+-- option-less products get a hidden default variant. This table remains because
+-- product_variant_inventory and inventory_reservations FK-reference it.
 CREATE TABLE IF NOT EXISTS product_inventory (
     product_id UUID NOT NULL,
     store_id UUID NOT NULL,
-    available_stock INTEGER NOT NULL CHECK (available_stock >= 0),
-    reserved_stock INTEGER NOT NULL DEFAULT 0 CHECK (reserved_stock >= 0),
-    total_stock INTEGER NOT NULL CHECK (total_stock >= 0),
     sale_status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (sale_status IN ('ACTIVE', 'PAUSED')),
     version INTEGER NOT NULL DEFAULT 0 CHECK (version >= 0),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (product_id, store_id),
-    CHECK (available_stock + reserved_stock = total_stock)
+    PRIMARY KEY (product_id, store_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_product_inventory_store_id
@@ -710,6 +710,7 @@ CREATE TABLE IF NOT EXISTS inventory_audit_log (
     actor_role TEXT NOT NULL CHECK (actor_role IN ('CUSTOMER', 'STORE_OWNER', 'ADMIN')),
     store_id UUID NOT NULL,
     product_id UUID NOT NULL,
+    public_variant_id TEXT,
     action TEXT NOT NULL CHECK (action IN ('increaseStock', 'correctStock', 'pauseSales', 'resumeSales')),
     before_available_stock INTEGER NOT NULL CHECK (before_available_stock >= 0),
     before_reserved_stock INTEGER NOT NULL CHECK (before_reserved_stock >= 0),

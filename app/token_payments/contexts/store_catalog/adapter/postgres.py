@@ -25,7 +25,15 @@ from token_payments.contexts.store_catalog.domain import (
 )
 from token_payments.shared.adapter.postgres import PostgresConnection
 from token_payments.shared.adapter.postgres import PostgresOutboxMessageRepository
-from token_payments.shared.domain import Crypto, OutboxMessage, ProductId, StoreId, UserId, WalletAddress
+from token_payments.shared.domain import (
+    Crypto,
+    OutboxMessage,
+    ProductId,
+    StoreId,
+    UserId,
+    WalletAddress,
+    default_public_variant_id,
+)
 
 
 SELECT_USER_BY_ID_SQL = """
@@ -167,6 +175,37 @@ JOIN store_catalog_store_memberships m ON m.store_id = s.store_id
 WHERE m.user_id = %(user_id)s
   AND m.active = true
 ORDER BY s.display_name ASC, s.public_store_id ASC
+"""
+
+SELECT_ALL_PUBLIC_PRODUCTS_SQL = """
+SELECT
+    p.store_id,
+    p.product_id,
+    p.public_product_id,
+    p.public_store_id,
+    p.title,
+    p.description,
+    p.category,
+    p.tags,
+    p.media,
+    p.attributes,
+    p.status,
+    p.visibility,
+    p.price_numeric,
+    p.price_symbol,
+    p.price_chain_id,
+    p.price_token_address,
+    p.price_decimals,
+    p.active,
+    p.created_at,
+    p.updated_at
+FROM store_catalog_products p
+JOIN store_catalog_stores s ON s.store_id = p.store_id
+WHERE p.status = 'ACTIVE'
+  AND p.visibility = 'PUBLIC'
+  AND p.active = true
+  AND s.status = 'ACTIVE'
+  AND s.active = true
 """
 
 SELECT_PUBLIC_STORES_SQL = """
@@ -420,11 +459,20 @@ WHERE store_id = %(store_id)s
   AND public_product_id = %(public_product_id)s
 """
 
+# Product-level availability is the sum of its variant inventory rows
+# (stock is tracked per variant; option-less products use a default variant).
 SELECT_PRODUCT_AVAILABILITY_SQL = """
-SELECT available_stock, total_stock, sale_status
-FROM product_inventory
-WHERE store_id = %(store_id)s
-  AND product_id = %(product_id)s
+SELECT
+    COALESCE(SUM(piv.available_stock), 0) AS available_stock,
+    COALESCE(SUM(piv.total_stock), 0) AS total_stock,
+    pi.sale_status AS sale_status
+FROM product_inventory pi
+LEFT JOIN product_variant_inventory piv
+  ON piv.product_id = pi.product_id
+ AND piv.store_id = pi.store_id
+WHERE pi.store_id = %(store_id)s
+  AND pi.product_id = %(product_id)s
+GROUP BY pi.sale_status
 """
 
 SELECT_PRODUCT_OPTIONS_SQL = """
@@ -648,8 +696,58 @@ ON CONFLICT (store_id, product_id) DO UPDATE SET
     updated_at = now()
 """
 
+# product_inventory is a registry only; stock is seeded on the default variant below.
 INSERT_INITIAL_INVENTORY_SQL = """
 INSERT INTO product_inventory (
+    product_id,
+    store_id,
+    sale_status
+) VALUES (
+    %(product_id)s,
+    %(store_id)s,
+    'ACTIVE'
+)
+ON CONFLICT (product_id, store_id) DO NOTHING
+"""
+
+# Newly registered products are option-less, so they get a hidden default variant
+# that carries the product's stock (stock is tracked per variant).
+INSERT_DEFAULT_VARIANT_SQL = """
+INSERT INTO store_catalog_product_variants (
+    store_id,
+    product_id,
+    public_variant_id,
+    display_name,
+    option_values,
+    status,
+    active,
+    sort_order,
+    price_delta_numeric,
+    price_delta_symbol,
+    price_delta_chain_id,
+    price_delta_token_address,
+    price_delta_decimals
+) VALUES (
+    %(store_id)s,
+    %(product_id)s,
+    %(public_variant_id)s,
+    'Default',
+    '{}'::jsonb,
+    'ACTIVE',
+    true,
+    0,
+    0,
+    %(price_symbol)s,
+    %(price_chain_id)s,
+    %(price_token_address)s,
+    %(price_decimals)s
+)
+ON CONFLICT (store_id, product_id, public_variant_id) DO NOTHING
+"""
+
+INSERT_DEFAULT_VARIANT_INVENTORY_SQL = """
+INSERT INTO product_variant_inventory (
+    public_variant_id,
     product_id,
     store_id,
     available_stock,
@@ -657,6 +755,7 @@ INSERT INTO product_inventory (
     total_stock,
     sale_status
 ) VALUES (
+    %(public_variant_id)s,
     %(product_id)s,
     %(store_id)s,
     %(available_stock)s,
@@ -664,7 +763,7 @@ INSERT INTO product_inventory (
     %(total_stock)s,
     'ACTIVE'
 )
-ON CONFLICT (product_id, store_id) DO NOTHING
+ON CONFLICT (public_variant_id) DO NOTHING
 """
 
 INSERT_AUDIT_SQL = """
@@ -782,6 +881,51 @@ class PostgresStoreCatalogRepository:
     def list_public_stores(self, *, limit: int, offset: int) -> tuple[StoreProfile, ...]:
         result = self._connection.execute(SELECT_PUBLIC_STORES_SQL, {"limit": int(limit), "offset": int(offset)})
         return tuple(_row_to_store(row) for row in result)
+
+    def list_all_public_products(
+        self,
+        *,
+        category: str | None,
+        tag: str | None,
+        query: str | None,
+        sort_by: str,
+        sort_direction: str,
+        limit: int,
+        offset: int,
+    ) -> tuple[StoreProduct, ...]:
+        order_columns = {
+            "title": "p.title",
+            "createdAt": "p.created_at",
+            "updatedAt": "p.updated_at",
+            "price": "p.price_numeric",
+        }
+        if sort_by not in order_columns:
+            raise ValueError("sort_by is not allowed")
+        if sort_direction not in {"asc", "desc"}:
+            raise ValueError("sort_direction is not allowed")
+        params: dict[str, Any] = {"limit": int(limit), "offset": int(offset)}
+        extra_filters: list[str] = []
+        if category is not None:
+            extra_filters.append("p.category = %(category)s")
+            params["category"] = category
+        if tag is not None:
+            extra_filters.append("p.tags ? %(tag)s")
+            params["tag"] = tag
+        if query is not None:
+            extra_filters.append("(p.title ILIKE %(query)s ESCAPE '\\' OR p.description ILIKE %(query)s ESCAPE '\\')")
+            params["query"] = _search_pattern(query)
+        where_clause = ""
+        if extra_filters:
+            where_clause = "AND " + " AND ".join(extra_filters) + "\n"
+        order_column = order_columns[sort_by]
+        order_direction = sort_direction.upper()
+        sql = (
+            SELECT_ALL_PUBLIC_PRODUCTS_SQL
+            + where_clause
+            + f"ORDER BY {order_column} {order_direction}, p.public_product_id ASC\nLIMIT %(limit)s OFFSET %(offset)s"
+        )
+        result = self._connection.execute(sql, params)
+        return tuple(_row_to_product(row) for row in result)
 
     def merchant_group_for_store(self, store_id: StoreId) -> Group | None:
         row = _fetch_one(
@@ -1012,11 +1156,32 @@ class PostgresStoreCatalogRepository:
         self._connection.execute(UPSERT_APPROVAL_PRODUCT_SQL, params)
 
     def save_inventory_projection(self, product: StoreProduct, initial_total_stock: int) -> None:
+        product_id = str(product.product_id)
+        store_id = str(product.store_id)
+        # Registry row, then a hidden default variant that carries the stock.
         self._connection.execute(
             INSERT_INITIAL_INVENTORY_SQL,
+            {"product_id": product_id, "store_id": store_id},
+        )
+        default_variant_id = default_public_variant_id(product.product_id)
+        self._connection.execute(
+            INSERT_DEFAULT_VARIANT_SQL,
             {
-                "product_id": str(product.product_id),
-                "store_id": str(product.store_id),
+                "store_id": store_id,
+                "product_id": product_id,
+                "public_variant_id": default_variant_id,
+                "price_symbol": product.price.symbol,
+                "price_chain_id": product.price.chain_id,
+                "price_token_address": str(product.price.token_address) if product.price.token_address is not None else None,
+                "price_decimals": product.price.decimals,
+            },
+        )
+        self._connection.execute(
+            INSERT_DEFAULT_VARIANT_INVENTORY_SQL,
+            {
+                "public_variant_id": default_variant_id,
+                "product_id": product_id,
+                "store_id": store_id,
                 "available_stock": initial_total_stock,
                 "total_stock": initial_total_stock,
             },

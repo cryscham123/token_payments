@@ -38,6 +38,7 @@ def test_frontend_keeps_imported_ethercommerce_flow_and_demo_seed_ids() -> None:
         "PaymentComplete.jsx",
         "OrderHistory.jsx",
         "StoreDetail.jsx",
+        "StoreList.jsx",
     } <= component_names
     assert "st_demo_store_001" in data
     assert "prd_local_hoodie_001" in data
@@ -131,6 +132,23 @@ def test_frontend_checkout_supports_server_payment_options_and_expiry_sync() -> 
     assert "결제 요청 만들기" not in pay_modal
 
 
+def test_frontend_testnet_faucet_uses_registry_assets_for_claim_and_metamask_watch() -> None:
+    profile = (FRONTEND / "components" / "Profile.jsx").read_text(encoding="utf-8")
+    auth_client = (FRONTEND / "lib" / "auth-client.js").read_text(encoding="utf-8")
+
+    assert "listPublicStores" in auth_client
+    assert 'apiJson("/stores"' in auth_client
+    assert "loadTestnetAssets" in profile
+    assert "wallet_watchAsset" in profile
+    assert "handleWatchAsset" in profile
+    assert "tokenAssets.usdc?.tokenAddress" in profile
+    assert "tokenAssets.usdt?.tokenAddress" in profile
+    assert "USDC 지갑에 추가" in profile
+    assert "USDT 지갑에 추가" in profile
+    assert "0x4444444444444444444444444444444444444444" not in profile
+    assert "0x5555555555555555555555555555555555555555" not in profile
+
+
 def test_frontend_checkout_sends_order_uuid_product_ids_not_public_catalog_ids() -> None:
     checkout_client = (FRONTEND / "lib" / "checkout-client.js").read_text(encoding="utf-8")
     product_detail = (FRONTEND / "components" / "ProductDetail.jsx").read_text(encoding="utf-8")
@@ -169,7 +187,7 @@ def test_frontend_product_detail_surfaces_store_and_catalog_detail_context() -> 
     assert "changeMultiOptionValue" in product_detail
     assert "option.selectionType === \"MULTI\"" in product_detail
     assert "type=\"checkbox\"" in product_detail
-    assert "optionValueLabel(product, option, optionIndex, value, selectedOptionValues)" in product_detail
+    assert "optionValueLabel(product, option, optionIndex, value, selectedOptionValues, selectedPriceOption)" in product_detail
     assert "variantAvailability(selectedVariant)" in product_detail
     assert "variantDisplayPrice(selectedVariant, selectedPriceOption, product)" in product_detail
     assert "selectedAddOnDelta" in product_detail
@@ -192,12 +210,41 @@ def test_frontend_home_product_cards_show_catalog_context_without_fake_discounts
     home = (FRONTEND / "components" / "Home.jsx").read_text(encoding="utf-8")
 
     assert "category: p.category" in home
-    assert "setStoreProfile(res?.store || null)" in home
-    assert "homeStoreLabel(storeProfile)" in home
     assert "fromPriceLabel(product)" in home
     assert "homePaymentSummary(product.paymentCapability)" in home
     assert "15%" not in home
     assert "특가" not in home
+
+
+def test_frontend_header_product_nav_only_shows_real_destinations() -> None:
+    header = (FRONTEND / "components" / "SiteHeader.jsx").read_text(encoding="utf-8")
+
+    assert "전체 상품" in header
+    assert "신상품" in header
+    assert "가게" in header
+    assert 'href="/#products"' in header
+    assert 'href="/#new-products"' in header
+    assert 'href="/stores"' in header
+    assert "상품명이나 가게를 검색해보세요" in header
+
+    assert "카테고리" not in header
+    assert "로컬 상품" not in header
+    assert "식품/과일" not in header
+    assert "패션의류" not in header
+    assert "크립토 결제" not in header
+    assert "신선식품" not in header
+
+
+def test_frontend_store_nav_opens_public_store_list_before_store_detail() -> None:
+    header = (FRONTEND / "components" / "SiteHeader.jsx").read_text(encoding="utf-8")
+    store_list = (FRONTEND / "components" / "StoreList.jsx").read_text(encoding="utf-8")
+
+    assert (FRONTEND / "app" / "stores" / "page.jsx").exists()
+    assert 'href="/stores"' in header
+    assert 'apiJson("/stores")' in store_list
+    assert 'href={`/stores/${store.publicStoreId}`}' in store_list
+    assert "가게 목록" in store_list
+    assert "paymentCapabilitySummary(store.paymentCapability)" in store_list
 
 
 def test_frontend_cart_items_link_back_to_product_detail() -> None:

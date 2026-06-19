@@ -1072,6 +1072,34 @@
           }
         },
         {
+          "id": "listAllPublicProducts",
+          "name": "List all public products",
+          "description": "Lists public products across all active stores with query filters.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "products"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            }
+          }
+        },
+        {
           "id": "getStoreProfile",
           "name": "Get public store profile",
           "description": "Reads the public store profile by stable publicStoreId without exposing internal store ids or payment settings.",

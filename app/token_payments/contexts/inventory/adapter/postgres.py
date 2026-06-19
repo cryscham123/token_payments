@@ -14,22 +14,8 @@ from token_payments.contexts.inventory.domain import (
 )
 from token_payments.contexts.inventory.application import InventoryAuditRecord, InventorySnapshot
 from token_payments.shared.adapter.postgres import PostgresConnection
-from token_payments.shared.domain import OrderId, ProductId, StoreId, UserId
+from token_payments.shared.domain import OrderId, ProductId, StoreId, UserId, default_public_variant_id
 
-
-SELECT_INVENTORY_SQL = """
-SELECT
-    product_id,
-    store_id,
-    NULL::text AS public_variant_id,
-    available_stock,
-    reserved_stock,
-    total_stock,
-    sale_status
-FROM product_inventory
-WHERE product_id = %(product_id)s
-  AND store_id = %(store_id)s
-"""
 
 SELECT_VARIANT_INVENTORY_SQL = """
 SELECT
@@ -46,56 +32,62 @@ WHERE product_id = %(product_id)s
   AND public_variant_id = %(public_variant_id)s
 """
 
+# Stock snapshots are per variant (required-option unit). Each row is one
+# product_variant_inventory row; confirmed_stock joins on the variant key.
 SELECT_INVENTORY_SNAPSHOTS_SQL = """
 SELECT
     inv.product_id,
     inv.store_id,
+    inv.public_variant_id,
     inv.available_stock,
     inv.reserved_stock,
     COALESCE(confirmed.confirmed_stock, 0) AS confirmed_stock,
     inv.total_stock,
     inv.sale_status,
     inv.updated_at
-FROM product_inventory inv
+FROM product_variant_inventory inv
 LEFT JOIN (
-    SELECT product_id, store_id, SUM(reserved_qty) AS confirmed_stock
+    SELECT product_id, store_id, public_variant_id, SUM(reserved_qty) AS confirmed_stock
     FROM inventory_reservations
     WHERE status = 'CONFIRMED'
-      AND public_variant_id IS NULL
-    GROUP BY product_id, store_id
+      AND public_variant_id IS NOT NULL
+    GROUP BY product_id, store_id, public_variant_id
 ) confirmed
   ON confirmed.product_id = inv.product_id
  AND confirmed.store_id = inv.store_id
+ AND confirmed.public_variant_id = inv.public_variant_id
 WHERE (%(store_id)s::uuid IS NULL OR inv.store_id = %(store_id)s::uuid)
-ORDER BY inv.store_id, inv.product_id
+ORDER BY inv.store_id, inv.product_id, inv.public_variant_id
 """
 
 SELECT_OWNER_INVENTORY_SNAPSHOTS_SQL = """
 SELECT
     inv.product_id,
     inv.store_id,
+    inv.public_variant_id,
     inv.available_stock,
     inv.reserved_stock,
     COALESCE(confirmed.confirmed_stock, 0) AS confirmed_stock,
     inv.total_stock,
     inv.sale_status,
     inv.updated_at
-FROM product_inventory inv
+FROM product_variant_inventory inv
 JOIN store_catalog_store_memberships memberships
   ON memberships.store_id = inv.store_id
  AND memberships.active = true
 LEFT JOIN (
-    SELECT product_id, store_id, SUM(reserved_qty) AS confirmed_stock
+    SELECT product_id, store_id, public_variant_id, SUM(reserved_qty) AS confirmed_stock
     FROM inventory_reservations
     WHERE status = 'CONFIRMED'
-      AND public_variant_id IS NULL
-    GROUP BY product_id, store_id
+      AND public_variant_id IS NOT NULL
+    GROUP BY product_id, store_id, public_variant_id
 ) confirmed
   ON confirmed.product_id = inv.product_id
  AND confirmed.store_id = inv.store_id
+ AND confirmed.public_variant_id = inv.public_variant_id
 WHERE memberships.user_id = %(owner_user_id)s::uuid
   AND (%(store_id)s::uuid IS NULL OR inv.store_id = %(store_id)s::uuid)
-ORDER BY inv.store_id, inv.product_id
+ORDER BY inv.store_id, inv.product_id, inv.public_variant_id
 """
 
 SELECT_STORE_OWNER_SQL = """
@@ -129,31 +121,6 @@ WHERE product_id = %(product_id)s
       OR public_variant_id = %(public_variant_id)s::text
   )
 ORDER BY created_at, reservation_id
-"""
-
-UPSERT_INVENTORY_SQL = """
-INSERT INTO product_inventory (
-    product_id,
-    store_id,
-    available_stock,
-    reserved_stock,
-    total_stock,
-    sale_status
-) VALUES (
-    %(product_id)s,
-    %(store_id)s,
-    %(available_stock)s,
-    %(reserved_stock)s,
-    %(total_stock)s,
-    %(sale_status)s
-)
-ON CONFLICT (product_id, store_id) DO UPDATE SET
-    available_stock = EXCLUDED.available_stock,
-    reserved_stock = EXCLUDED.reserved_stock,
-    total_stock = EXCLUDED.total_stock,
-    sale_status = EXCLUDED.sale_status,
-    version = product_inventory.version + 1,
-    updated_at = now()
 """
 
 UPSERT_VARIANT_INVENTORY_SQL = """
@@ -191,6 +158,7 @@ INSERT INTO inventory_audit_log (
     actor_role,
     store_id,
     product_id,
+    public_variant_id,
     action,
     before_available_stock,
     before_reserved_stock,
@@ -210,6 +178,7 @@ INSERT INTO inventory_audit_log (
     %(actor_role)s,
     %(store_id)s,
     %(product_id)s,
+    %(public_variant_id)s,
     %(action)s,
     %(before_available_stock)s,
     %(before_reserved_stock)s,
@@ -292,12 +261,16 @@ class PostgresInventoryRepository:
             raise ValueError("PostgresInventoryRepository.get requires a ProductId")
         if not isinstance(store_id, StoreId):
             raise ValueError("PostgresInventoryRepository.get requires a StoreId")
-        if public_variant_id is not None:
-            public_variant_id = _require_text(public_variant_id, "public_variant_id")
+        # Stock is tracked per variant; option-less items resolve to the hidden default variant.
+        public_variant_id = (
+            _require_text(public_variant_id, "public_variant_id")
+            if public_variant_id is not None
+            else default_public_variant_id(product_id)
+        )
 
         inventory_row = _fetch_one(
             self._connection.execute(
-                SELECT_VARIANT_INVENTORY_SQL if public_variant_id is not None else SELECT_INVENTORY_SQL,
+                SELECT_VARIANT_INVENTORY_SQL,
                 {
                     "product_id": str(product_id),
                     "store_id": str(store_id),
@@ -336,8 +309,10 @@ class PostgresInventoryRepository:
         product_id = str(inventory.product_id)
         store_id = str(inventory.store_id)
         public_variant_id = inventory.public_variant_id
+        if public_variant_id is None:
+            raise ValueError("PostgresInventoryRepository.save requires inventory.public_variant_id")
         self._connection.execute(
-            UPSERT_VARIANT_INVENTORY_SQL if public_variant_id is not None else UPSERT_INVENTORY_SQL,
+            UPSERT_VARIANT_INVENTORY_SQL,
             {
                 "product_id": product_id,
                 "store_id": store_id,
@@ -467,6 +442,7 @@ class PostgresInventoryAuditRepository:
                     "actor_role": audit_record.actor_role.value,
                     "store_id": str(audit_record.store_id),
                     "product_id": str(audit_record.product_id),
+                    "public_variant_id": audit_record.public_variant_id,
                     "action": audit_record.action,
                     "before_available_stock": audit_record.before_available_stock,
                     "before_reserved_stock": audit_record.before_reserved_stock,
@@ -501,6 +477,7 @@ def _row_to_snapshot(row: Mapping[str, Any] | object) -> InventorySnapshot:
     return InventorySnapshot(
         product_id=ProductId(_row_value(row, "product_id")),
         store_id=StoreId(_row_value(row, "store_id")),
+        public_variant_id=_optional_row_value(row, "public_variant_id"),
         available_stock=int(_row_value(row, "available_stock")),
         reserved_stock=int(_row_value(row, "reserved_stock")),
         confirmed_stock=int(_row_value(row, "confirmed_stock")),

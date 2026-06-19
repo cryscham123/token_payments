@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Mapping
@@ -36,6 +36,7 @@ from token_payments.shared.domain import (  # noqa: E402
     ProcessedCommand,
     ProductId,
     StoreId,
+    default_public_variant_id,
 )
 
 
@@ -104,7 +105,8 @@ def test_duplicate_confirm_command_does_not_mutate_inventory_or_create_outbox() 
 def test_repository_roundtrip_preserves_confirmed_and_cancelled_reservation_statuses() -> None:
     connection = FakePostgresConnection()
     repository = PostgresInventoryRepository(connection)
-    confirmed = _inventory(available=10).reserve_inventory(ORDER_ID, Quantity(3)).confirm_reservation(ORDER_ID)
+    base = replace(_inventory(available=10), public_variant_id=default_public_variant_id(PRODUCT_ID))
+    confirmed = base.reserve_inventory(ORDER_ID, Quantity(3)).confirm_reservation(ORDER_ID)
     released = confirmed.reserve_inventory(_other_order_id(), Quantity(2)).release_reservation(_other_order_id())
 
     repository.save(released)
@@ -261,29 +263,36 @@ class FakeResult:
 class FakePostgresConnection:
     def __init__(self) -> None:
         self.statements: list[ExecutedStatement] = []
-        self.product_inventory: dict[tuple[str, str], dict[str, Any]] = {}
+        self.product_variant_inventory: dict[tuple[str, str, str], dict[str, Any]] = {}
         self.inventory_reservations: dict[str, dict[str, Any]] = {}
 
     def execute(self, sql: str, params: Mapping[str, Any] | None = None) -> FakeResult:
         params = dict(params or {})
         self.statements.append(ExecutedStatement(sql=sql, params=params))
         normalized = " ".join(sql.lower().split())
-        if "insert into product_inventory" in normalized:
-            self.product_inventory[(str(params["product_id"]), str(params["store_id"]))] = params
+        if "insert into product_variant_inventory" in normalized:
+            self.product_variant_inventory[
+                (str(params["product_id"]), str(params["store_id"]), str(params["public_variant_id"]))
+            ] = params
             return FakeResult()
         if "insert into inventory_reservations" in normalized:
             self.inventory_reservations[str(params["reservation_id"])] = params
             return FakeResult()
         if "delete from inventory_reservations" in normalized:
             return FakeResult()
-        if "from product_inventory" in normalized and "select" in normalized:
-            row = self.product_inventory.get((str(params["product_id"]), str(params["store_id"])))
+        if "from product_variant_inventory" in normalized and "select" in normalized:
+            row = self.product_variant_inventory.get(
+                (str(params["product_id"]), str(params["store_id"]), str(params["public_variant_id"]))
+            )
             return FakeResult([dict(row)] if row is not None else [])
         if "from inventory_reservations" in normalized and "select" in normalized:
+            requested_variant = params.get("public_variant_id")
             rows = [
                 dict(row)
                 for row in self.inventory_reservations.values()
-                if row["product_id"] == str(params["product_id"]) and row["store_id"] == str(params["store_id"])
+                if row["product_id"] == str(params["product_id"])
+                and row["store_id"] == str(params["store_id"])
+                and row.get("public_variant_id") == requested_variant
             ]
             rows.sort(key=lambda row: (row["created_at"], row["reservation_id"]))
             return FakeResult(rows)

@@ -29,6 +29,7 @@ from token_payments.shared.domain import (  # noqa: E402
     ProductId,
     StoreId,
     UserId,
+    default_public_variant_id,
 )
 
 
@@ -45,6 +46,7 @@ USER_ID = UserId("018f33aa-9e6d-73d8-9dc3-47d6cdcc7108")
 OWNER_USER_ID = UserId("018f33aa-9e6d-73d8-9dc3-47d6cdcc7109")
 STORE_ID = StoreId("018f33aa-9e6d-73d8-9dc3-47d6cdcc710a")
 PRODUCT_ID = ProductId("018f33aa-9e6d-73d8-9dc3-47d6cdcc710b")
+VARIANT_ID = "hoodie-l"
 CUSTOMER_WALLET = "0x1111111111111111111111111111111111111111"
 STORE_WALLET = "0x2222222222222222222222222222222222222222"
 TOKEN_ADDRESS = "0x3333333333333333333333333333333333333333"
@@ -106,7 +108,7 @@ def test_build_live_api_router_uses_route_registration_helpers_and_manifest_cont
     assert [(route.method, route.path_template, route.operation_id) for route in router.routes] == [
         (entry["method"], entry["path"], entry["operationId"]) for entry in http_route_manifest()
     ]
-    assert len(router.routes) == 55
+    assert len(router.routes) == 56
 
 
 def test_live_api_facade_wiring_dispatches_routes_through_injected_transactional_repositories() -> None:
@@ -148,13 +150,19 @@ def test_live_api_facade_wiring_dispatches_routes_through_injected_transactional
     assert create_payload["order"]["totalAmount"]["amount"] == "25.00"
     assert _transaction_sql(session, 1, "insert into orders")
     assert _transaction_sql(session, 1, "insert into outbox_messages")
-    assert _transaction_sql(session, 1, "insert into product_inventory")
+    assert _transaction_sql(session, 1, "insert into product_variant_inventory")
     assert _transaction_sql(session, 1, "insert into inventory_reservations")
     assert _transaction_sql(session, 1, "insert into payments")
     assert _transaction_sql(session, 1, "insert into payment_authorizations")
     assert _transaction_sql(session, 1, "insert into processed_commands")
-    assert session.inventory[(str(PRODUCT_ID), str(STORE_ID))]["available_stock"] == 23
-    assert session.inventory[(str(PRODUCT_ID), str(STORE_ID))]["reserved_stock"] == 2
+    default_variant_id = default_public_variant_id(PRODUCT_ID)
+    assert session.variant_inventory[(str(PRODUCT_ID), str(STORE_ID), default_variant_id)]["available_stock"] == 23
+    assert session.variant_inventory[(str(PRODUCT_ID), str(STORE_ID), default_variant_id)]["reserved_stock"] == 2
+    payment_items = json.loads(session.payments[str(PAYMENT_ID)]["items"])
+    assert len(payment_items) == 1
+    assert payment_items[0]["productId"] == str(PRODUCT_ID)
+    assert payment_items[0]["quantity"] == 2
+    assert payment_items[0]["unitPrice"]["amount"] == "12.50"
 
     tracking = router.handle(
         "GET",
@@ -295,6 +303,51 @@ def test_live_api_facade_wiring_dispatches_routes_through_injected_transactional
     assert session.begin_count >= 7
     assert session.rollback_count == 0
     assert session.commit_count >= 5
+
+
+def test_live_order_start_targets_variant_inventory_and_persists_payment_items() -> None:
+    session = FakePostgresSession()
+    session.seed_variant_catalog()
+    dependencies = _dependencies(session)
+    router = build_live_api_router(config=_config(), dependencies=dependencies)
+
+    create_order = router.handle(
+        "POST",
+        "/orders",
+        headers=_customer_headers("req-create-order-variant"),
+        body=_json_body(
+            {
+                "storeId": str(STORE_ID),
+                "deliveryAddress": {"id": "ship-to", "street": "2 River Rd"},
+                "items": [
+                    {
+                        "productId": str(PRODUCT_ID),
+                        "quantity": 2,
+                        "publicVariantId": VARIANT_ID,
+                        "selectedOptions": {"size": "L"},
+                    }
+                ],
+            }
+        ),
+        received_at=NOW,
+    )
+
+    create_payload = _json(create_order.body)
+    assert create_order.status_code == 201
+    assert create_payload["order"]["totalAmount"]["amount"] == "29.00"
+    # Stock is tracked only on the selected variant; the base row holds no stock.
+    assert "available_stock" not in session.inventory[(str(PRODUCT_ID), str(STORE_ID))]
+    assert session.variant_inventory[(str(PRODUCT_ID), str(STORE_ID), VARIANT_ID)]["available_stock"] == 3
+    assert session.variant_inventory[(str(PRODUCT_ID), str(STORE_ID), VARIANT_ID)]["reserved_stock"] == 2
+    assert next(iter(session.inventory_reservations.values()))["public_variant_id"] == VARIANT_ID
+
+    payment_items = json.loads(session.payments[str(PAYMENT_ID)]["items"])
+    assert len(payment_items) == 1
+    assert payment_items[0]["productId"] == str(PRODUCT_ID)
+    assert payment_items[0]["publicVariantId"] == VARIANT_ID
+    assert payment_items[0]["selectedOptions"] == {"size": "L"}
+    assert payment_items[0]["quantity"] == 2
+    assert payment_items[0]["unitPrice"]["amount"] == "14.50"
 
 
 def test_live_api_facade_wiring_source_avoids_frameworks_drivers_sockets_and_docker() -> None:
@@ -472,9 +525,12 @@ class FakePostgresSession:
         self.customers: dict[str, dict[str, Any]] = {}
         self.stores: dict[str, dict[str, Any]] = {}
         self.products: dict[str, list[dict[str, Any]]] = {}
+        self.product_variants: dict[tuple[str, str], list[dict[str, Any]]] = {}
+        self.product_option_values: dict[tuple[str, str], list[dict[str, Any]]] = {}
         self.orders: dict[str, dict[str, Any]] = {}
         self.order_items: dict[str, list[dict[str, Any]]] = {}
         self.inventory: dict[tuple[str, str], dict[str, Any]] = {}
+        self.variant_inventory: dict[tuple[str, str, str], dict[str, Any]] = {}
         self.inventory_reservations: dict[str, dict[str, Any]] = {}
         self.payments: dict[str, dict[str, Any]] = {}
         self.payment_authorizations: dict[str, dict[str, Any]] = {}
@@ -514,6 +570,13 @@ class FakePostgresSession:
             row.setdefault("updated_at", NOW)
             self.inventory[(str(params["product_id"]), str(params["store_id"]))] = row
             return FakeResult(rowcount=1)
+        if "insert into product_variant_inventory" in normalized:
+            row = dict(params)
+            row.setdefault("updated_at", NOW)
+            self.variant_inventory[
+                (str(params["product_id"]), str(params["store_id"]), str(params["public_variant_id"]))
+            ] = row
+            return FakeResult(rowcount=1)
         if "insert into inventory_reservations" in normalized:
             row = dict(params)
             row.setdefault("updated_at", NOW)
@@ -526,8 +589,7 @@ class FakePostgresSession:
                     reservation_id: row
                     for reservation_id, row in self.inventory_reservations.items()
                     if (
-                        row["product_id"] != str(params["product_id"])
-                        or row["store_id"] != str(params["store_id"])
+                        not _reservation_matches(row, params)
                         or reservation_id in keep
                     )
                 }
@@ -535,7 +597,7 @@ class FakePostgresSession:
                 self.inventory_reservations = {
                     reservation_id: row
                     for reservation_id, row in self.inventory_reservations.items()
-                    if row["product_id"] != str(params["product_id"]) or row["store_id"] != str(params["store_id"])
+                    if not _reservation_matches(row, params)
                 }
             return FakeResult(rowcount=1)
         if "insert into payments" in normalized:
@@ -569,17 +631,33 @@ class FakePostgresSession:
             return _one(self.stores.get(str(params["store_id"])))
         if "from order_store_products" in normalized:
             return FakeResult([dict(row) for row in self.products.get(str(params["store_id"]), [])])
+        if "from store_catalog_product_variants" in normalized:
+            return FakeResult([
+                dict(row)
+                for row in self.product_variants.get((str(params["store_id"]), str(params["product_id"])), [])
+            ])
+        if "from store_catalog_product_option_values" in normalized:
+            return FakeResult([
+                dict(row)
+                for row in self.product_option_values.get((str(params["store_id"]), str(params["product_id"])), [])
+            ])
         if "from orders where order_id" in normalized:
             return _one(self.orders.get(str(params["order_id"])))
         if "from order_items" in normalized and "order_id" in params:
             return FakeResult([dict(row) for row in self.order_items.get(str(params["order_id"]), [])])
+        if "from product_variant_inventory" in normalized and "where product_id" in normalized:
+            return _one(
+                self.variant_inventory.get(
+                    (str(params["product_id"]), str(params["store_id"]), str(params["public_variant_id"]))
+                )
+            )
         if "from product_inventory" in normalized and "where product_id" in normalized:
             return _one(self.inventory.get((str(params["product_id"]), str(params["store_id"]))))
         if "from inventory_reservations" in normalized:
             rows = [
                 dict(row)
                 for row in self.inventory_reservations.values()
-                if row["product_id"] == str(params["product_id"]) and row["store_id"] == str(params["store_id"])
+                if _reservation_matches(row, params)
             ]
             return FakeResult(rows)
         if "from orders where tracking_id" in normalized:
@@ -650,9 +728,45 @@ class FakePostgresSession:
         self.inventory[(str(PRODUCT_ID), str(STORE_ID))] = {
             "product_id": str(PRODUCT_ID),
             "store_id": str(STORE_ID),
+            "sale_status": "ACTIVE",
+            "updated_at": NOW,
+        }
+        # Option-less products carry their stock on a hidden default variant.
+        default_variant_id = default_public_variant_id(PRODUCT_ID)
+        self.variant_inventory[(str(PRODUCT_ID), str(STORE_ID), default_variant_id)] = {
+            "product_id": str(PRODUCT_ID),
+            "store_id": str(STORE_ID),
+            "public_variant_id": default_variant_id,
             "available_stock": 25,
             "reserved_stock": 0,
             "total_stock": 25,
+            "sale_status": "ACTIVE",
+            "updated_at": NOW,
+        }
+
+    def seed_variant_catalog(self) -> None:
+        self.seed_catalog()
+        self.products[str(STORE_ID)][0]["name"] = "Ledger Hoodie"
+        self.product_variants[(str(STORE_ID), str(PRODUCT_ID))] = [
+            {
+                "public_variant_id": VARIANT_ID,
+                "option_values": {"size": "L"},
+                "active": True,
+                "status": "ACTIVE",
+                "price_delta_numeric": Decimal("2.00"),
+                "price_delta_symbol": "USDC",
+                "price_delta_chain_id": 11155111,
+                "price_delta_token_address": TOKEN_ADDRESS,
+                "price_delta_decimals": 6,
+            }
+        ]
+        self.variant_inventory[(str(PRODUCT_ID), str(STORE_ID), VARIANT_ID)] = {
+            "product_id": str(PRODUCT_ID),
+            "store_id": str(STORE_ID),
+            "public_variant_id": VARIANT_ID,
+            "available_stock": 5,
+            "reserved_stock": 0,
+            "total_stock": 5,
             "sale_status": "ACTIVE",
             "updated_at": NOW,
         }
@@ -777,6 +891,20 @@ class FakePostgresSession:
 
 def _one(row: Mapping[str, Any] | None) -> FakeResult:
     return FakeResult([dict(row)] if row is not None else [], rowcount=1 if row is not None else 0)
+
+
+def _reservation_matches(row: Mapping[str, Any], params: Mapping[str, Any]) -> bool:
+    public_variant_id = params.get("public_variant_id")
+    row_public_variant_id = row.get("public_variant_id")
+    return (
+        row["product_id"] == str(params["product_id"])
+        and row["store_id"] == str(params["store_id"])
+        and (
+            row_public_variant_id is None
+            if public_variant_id is None
+            else str(row_public_variant_id) == str(public_variant_id)
+        )
+    )
 
 
 def _tracking_order_row(row: Mapping[str, Any] | None) -> dict[str, Any] | None:

@@ -150,7 +150,7 @@ class StoreOwnerInventoryCommandHandler:
                 duplicate_decision=IdempotencyDecision.IGNORE_DUPLICATE,
             )
 
-        inventory = self._inventory_repository.get(command.product_id, command.store_id)
+        inventory = self._inventory_repository.get(command.product_id, command.store_id, command.public_variant_id)
         if inventory is None:
             return self._rejected(command, "INVENTORY_NOT_FOUND")
 
@@ -191,6 +191,7 @@ class StoreOwnerInventoryCommandHandler:
                 actor_role=command.actor_role,
                 store_id=command.store_id,
                 product_id=command.product_id,
+                public_variant_id=after.public_variant_id,
                 action=action,
                 before_available_stock=before.available_stock.value,
                 before_reserved_stock=before.reserved_stock.value,

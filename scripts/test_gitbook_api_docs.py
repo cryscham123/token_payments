@@ -89,7 +89,7 @@ def test_api_spec_is_gitbook_ready_without_losing_route_manifest_contract() -> N
     ):
         assert f"]({link})" in api_spec
 
-    assert "Public HTTP route surface is exactly the current 55-route manifest" in api_spec
+    assert "Public HTTP route surface is exactly the current 56-route manifest" in api_spec
     for entry in http_route_manifest():
         route_row = f"| `{entry['operationId']}` | `{entry['method']}` | `{entry['path']}` |"
         assert route_row in api_spec

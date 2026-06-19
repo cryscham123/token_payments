@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from types import MappingProxyType
@@ -17,6 +18,8 @@ from token_payments.shared.adapter.outbox_relay import OutboxRelayResult
 from token_payments.shared.domain import CommandId
 
 from .contracts import Clock, WorkerLoopOptions
+
+logger = logging.getLogger(__name__)
 
 
 class OutboxRelayBatchPublisher(Protocol):
@@ -255,6 +258,7 @@ class PaymentReceiptPollingWorker(_BoundedWorker):
         checked_at = self._clock.now()
         processed = 0
         skipped = 0
+        failed = 0
         for payment in candidates:
             if payment.status not in {PaymentStatus.SUBMITTED, PaymentStatus.CONFIRMING}:
                 skipped += 1
@@ -265,13 +269,18 @@ class PaymentReceiptPollingWorker(_BoundedWorker):
                 order_id=payment.order_id,
                 checked_at=checked_at,
             )
-            self._command_handler.confirm_payment_receipt(command)
+            try:
+                self._command_handler.confirm_payment_receipt(command)
+            except Exception as exc:  # noqa: BLE001 - one payment's receipt error must not block the rest of the batch
+                failed += 1
+                logger.warning("receipt polling failed for payment %s: %s", payment.payment_id, exc)
+                continue
             processed += 1
 
         return WorkerBatchResult(
             worker=self.name,
             processed=processed,
-            details={"candidates": len(candidates), "skipped": skipped},
+            details={"candidates": len(candidates), "skipped": skipped, "failed": failed},
         )
 
 
@@ -356,7 +365,12 @@ class WorkerRuntime:
         batches: list[WorkerBatchResult] = []
         processed = 0
         for worker in self._workers:
-            batch = worker.run_once()
+            try:
+                batch = worker.run_once()
+            except Exception as exc:  # noqa: BLE001 - isolate worker failures so one crash cannot starve the others
+                worker_name = getattr(worker, "name", "unknown")
+                logger.exception("worker %s run_once failed; continuing with remaining workers", worker_name)
+                batch = WorkerBatchResult(worker=worker_name, processed=0, details={"error": str(exc)})
             batches.append(batch)
             processed += batch.processed
         return WorkerRunSummary(

@@ -106,6 +106,10 @@ export async function listMerchantStores() {
   return apiJson("/merchant/stores", { method: "GET" });
 }
 
+export async function listPublicStores() {
+  return apiJson("/stores", { method: "GET" });
+}
+
 export async function requestOAuthAuthorization({ provider = "google", redirectUri, mode = "login" }) {
   return apiJson(`/auth/oauth/${encodeURIComponent(provider)}/authorize`, {
     method: "POST",
@@ -218,5 +222,37 @@ async function readJson(response) {
     return JSON.parse(text);
   } catch {
     return { raw: text };
+  }
+}
+
+export async function ensureLocalTestnet() {
+  const ethereum = typeof window !== "undefined" ? window.ethereum : undefined;
+  if (!ethereum?.request) return;
+  const LOCAL_CHAIN_ID_HEX = "0x539"; // 1337 in hex
+  try {
+    await ethereum.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: LOCAL_CHAIN_ID_HEX }]
+    });
+  } catch (switchError) {
+    if (switchError.code === 4902) {
+      try {
+        await ethereum.request({
+          method: "wallet_addEthereumChain",
+          params: [{
+            chainId: LOCAL_CHAIN_ID_HEX,
+            chainName: "Local Test Network",
+            nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+            rpcUrls: ["http://127.0.0.1:8545"]
+          }]
+        });
+      } catch (addError) {
+        console.error("네트워크 추가 실패:", addError);
+        throw addError;
+      }
+    } else {
+      console.error("네트워크 전환 실패:", switchError);
+      throw switchError;
+    }
   }
 }

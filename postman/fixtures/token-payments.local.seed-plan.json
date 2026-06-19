@@ -419,17 +419,13 @@
       "columns": [
         "product_id",
         "store_id",
-        "available_stock",
-        "reserved_stock",
-        "total_stock",
+        "sale_status",
         "version"
       ],
       "values": {
         "product_id": "55555555-5555-4555-8555-555555555555",
         "store_id": "44444444-4444-4444-8444-444444444444",
-        "available_stock": 25,
-        "reserved_stock": 0,
-        "total_stock": 25,
+        "sale_status": "ACTIVE",
         "version": 0
       }
     },

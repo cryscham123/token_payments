@@ -521,6 +521,11 @@ def register_store_catalog_routes(router: HttpRouter, catalog_api: Any) -> tuple
         ),
         _add_manifest_route(
             router,
+            STORE_PROFILE_HTTP_ROUTES["list_all_public_products"],
+            catalog_api.list_all_public_products,
+        ),
+        _add_manifest_route(
+            router,
             STORE_PROFILE_HTTP_ROUTES["get_profile"],
             catalog_api.get_store_profile,
         ),
@@ -1109,6 +1114,7 @@ PAYMENT_HTTP_ROUTES: Mapping[str, HttpRouteSpec] = MappingProxyType(
 STORE_PROFILE_HTTP_ROUTES: Mapping[str, HttpRouteSpec] = MappingProxyType(
     {
         "list_public_stores": HttpRouteSpec("GET", "/stores", "listPublicStores"),
+        "list_all_public_products": HttpRouteSpec("GET", "/products", "listAllPublicProducts"),
         "get_profile": HttpRouteSpec("GET", "/stores/{publicStoreId}", "getStoreProfile"),
         "list_public_products": HttpRouteSpec(
             "GET",

@@ -78,7 +78,6 @@ def test_driver_factory_summary_redacts_dsn_tokens_rpc_credentials_and_addresses
     env = _factory_env() | {
         "ADAPTER_POSTGRES_DSN": "postgresql://token_payments:super-secret-password@postgres:5432/token_payments",
         "ADAPTER_BLOCKCHAIN_RPC_URL": "https://rpc.local/path?token=paid-secret",
-        "ADAPTER_BLOCKCHAIN_TOKEN_ADDRESS": "0x3333333333333333333333333333333333333333",
     }
     config = LiveRuntimeConfig.from_env(env)
     dependencies = build_live_runtime_dependencies_from_env(env, config=config)
@@ -87,12 +86,11 @@ def test_driver_factory_summary_redacts_dsn_tokens_rpc_credentials_and_addresses
 
     assert "super-secret-password" not in encoded
     assert "paid-secret" not in encoded
-    assert "0x3333333333333333333333333333333333333333" not in encoded
     assert payload["config"]["adapters"]["postgres"]["dsn"] == (
         "postgresql://token_payments:<redacted>@postgres:5432/token_payments"
     )
     assert payload["config"]["adapters"]["blockchain"]["rpcUrl"] == "https://rpc.local/path?<redacted>"
-    assert payload["config"]["adapters"]["blockchain"]["tokenAddress"] == "<redacted>"
+    assert "tokenAddress" not in payload["config"]["adapters"]["blockchain"]
 
 
 def test_json_rpc_blockchain_client_estimates_native_fee_from_gas_price() -> None:

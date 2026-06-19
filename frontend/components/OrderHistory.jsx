@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ExternalLink, ShoppingBag } from "lucide-react";
+import { CreditCard, ExternalLink, ShoppingBag } from "lucide-react";
 import SiteHeader from "./SiteHeader";
 import { useEffect, useState } from "react";
 import { apiJson, getCurrentUser } from "@/lib/auth-client";
@@ -143,11 +143,20 @@ export default function OrderHistory() {
     } else if (payment.status === "AWAITING_SIGNATURE") {
       statusText = "서명 대기 중";
       statusColorClass = "bg-amber-100 text-amber-700";
+    } else if (payment.status === "INITIATED") {
+      statusText = "결제 준비 중";
+      statusColorClass = "bg-blue-100 text-blue-700";
+    } else if (payment.status === "SUBMITTED" || payment.status === "CONFIRMING") {
+      statusText = "결제 확인 중";
+      statusColorClass = "bg-blue-100 text-blue-700";
     } else if (payment.status === "FAILED") {
       statusText = "결제 실패";
       statusColorClass = "bg-red-100 text-red-700";
     } else if (payment.status === "EXPIRED") {
       statusText = "시간 초과";
+      statusColorClass = "bg-slate-100 text-slate-700";
+    } else if (payment.status === "REFUNDED") {
+      statusText = "환불 완료";
       statusColorClass = "bg-slate-100 text-slate-700";
     }
 
@@ -158,6 +167,7 @@ export default function OrderHistory() {
       date: formattedDate,
       status: statusText,
       statusColor: statusColorClass,
+      resumable: payment.status === "AWAITING_SIGNATURE" && Boolean(payment.trackingId),
       items: orderItems,
       amount: `${formatCryptoAmount(payment.amount?.amount)} ${payment.amount?.symbol || "ETH"}`,
       txHash: payment.txHash,
@@ -191,9 +201,20 @@ export default function OrderHistory() {
                     <span className="hidden h-3 w-px bg-slate-300 sm:inline-block" />
                     <span className="text-xs font-mono text-slate-500">{order.orderId}</span>
                   </div>
-                  <Link href={`/payment-complete?trackingId=${encodeURIComponent(order.trackingId)}&txHash=${encodeURIComponent(order.txHash || "")}`} className="text-sm font-medium text-blue-600 hover:underline">
-                    상세보기
-                  </Link>
+                  <div className="flex items-center gap-3">
+                    {order.resumable && (
+                      <Link
+                        href={`/pay?trackingId=${encodeURIComponent(order.trackingId)}`}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-bold text-white hover:bg-blue-700"
+                      >
+                        <CreditCard size={14} />
+                        이어서 결제하기
+                      </Link>
+                    )}
+                    <Link href={`/payment-complete?trackingId=${encodeURIComponent(order.trackingId)}&txHash=${encodeURIComponent(order.txHash || "")}`} className="text-sm font-medium text-blue-600 hover:underline">
+                      상세보기
+                    </Link>
+                  </div>
                 </div>
                 <div className="divide-y divide-slate-100">
                   {order.items.map((item, idx) => (

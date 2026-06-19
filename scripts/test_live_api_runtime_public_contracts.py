@@ -68,8 +68,8 @@ def test_runtime_commands_keep_bounded_json_no_server_contracts() -> None:
 
     assert api["details"]["http"]["serverStarted"] is False
     assert api["details"]["http"]["longRunning"] is False
-    assert serve["details"]["http"]["routeCount"] == 55
-    assert dry_run["details"]["liveApiServer"]["routeCount"] == 55
+    assert serve["details"]["http"]["routeCount"] == 56
+    assert dry_run["details"]["liveApiServer"]["routeCount"] == 56
     assert dry_run["details"]["liveApiServer"]["appFactory"] == (
         "token_payments.runtime.api_server.build_live_asgi_application"
     )

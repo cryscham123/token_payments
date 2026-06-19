@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Menu, ReceiptText, Search, ShoppingBag, ShoppingCart, Wallet, User } from "lucide-react";
+import { ReceiptText, Search, ShoppingBag, ShoppingCart, Wallet, User } from "lucide-react";
 import { useEffect, useState } from "react";
 import WalletConnectModal from "./WalletConnectModal";
 import { getCurrentUser, logout } from "@/lib/auth-client";
@@ -108,7 +108,7 @@ export default function SiteHeader({ cartCount, currentUser: propCurrentUser, on
               <input
                 type="search"
                 className="w-full px-4 py-2.5 text-sm outline-none"
-                placeholder="신선식품, 패션의류, 가전제품 모두 검색해보세요"
+                placeholder="상품명이나 가게를 검색해보세요"
               />
               <button className="flex h-11 w-14 items-center justify-center text-blue-600 transition-colors hover:text-blue-700">
                 <Search size={22} />
@@ -142,22 +142,15 @@ export default function SiteHeader({ cartCount, currentUser: propCurrentUser, on
 
       <nav className="sticky top-0 z-40 border-y border-slate-200 bg-white shadow-sm">
         <div className="mx-auto flex h-12 max-w-7xl items-center px-4 text-sm font-medium sm:px-6 lg:px-8">
-          <button className="mr-8 flex items-center text-slate-800 hover:text-blue-600">
-            <Menu className="mr-2 h-5 w-5" />
-            카테고리
-          </button>
           <div className="flex gap-6 overflow-x-auto whitespace-nowrap text-slate-700">
-            <Link href="/" className="font-bold text-blue-600 hover:text-blue-800">
-              로컬 상품
+            <Link href="/#products" className="font-bold text-blue-600 hover:text-blue-800">
+              전체 상품
             </Link>
-            <Link href="/" className="hover:text-blue-600">
-              식품/과일
+            <Link href="/#new-products" className="hover:text-blue-600">
+              신상품
             </Link>
-            <Link href="/" className="hover:text-blue-600">
-              패션의류
-            </Link>
-            <Link href="/" className="font-bold text-red-500 hover:text-red-600">
-              크립토 결제
+            <Link href="/stores" className="hover:text-blue-600">
+              가게
             </Link>
           </div>
         </div>

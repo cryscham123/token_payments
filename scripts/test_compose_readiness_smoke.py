@@ -44,7 +44,7 @@ REQUIRED_ENV_KEYS = [
     "ADAPTER_BLOCKCHAIN_CHAIN_ID",
     "ADAPTER_BLOCKCHAIN_NATIVE_SYMBOL",
     "ADAPTER_BLOCKCHAIN_NATIVE_DECIMALS",
-    "ADAPTER_BLOCKCHAIN_TOKEN_ADDRESS",
+    "ADAPTER_BLOCKCHAIN_DEPLOYED_CONTRACTS_PATH",
     "ADAPTER_BLOCKCHAIN_GAS_BUFFER_RATE",
 ]
 
@@ -86,7 +86,6 @@ def test_compose_readiness_smoke_validates_committed_contracts_without_docker() 
         "TEST_NETWORK_ACCOUNT",
         "POSTGRES_PASSWORD",
         "ADAPTER_POSTGRES_DSN",
-        "ADAPTER_BLOCKCHAIN_TOKEN_ADDRESS",
     ]
     assert details["compose"]["path"] == "docker-compose.yml"
     assert details["compose"]["requiredServices"] == REQUIRED_SERVICES
