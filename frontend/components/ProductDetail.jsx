@@ -9,27 +9,7 @@ import { addCartItem } from "@/lib/cart";
 import { apiJson } from "@/lib/auth-client";
 import { formatCryptoAmount, products as demoProducts } from "@/lib/demo-data";
 import { getS3Url } from "@/lib/s3";
-
-const DEFAULT_PRODUCT_IMAGES = [
-  "https://images.unsplash.com/photo-1523381210434-271e8be1f52b?auto=format&fit=crop&q=80&w=900",
-  "https://images.unsplash.com/photo-1512436991641-6745cdb1723f?auto=format&fit=crop&q=80&w=900",
-  "https://images.unsplash.com/photo-1489987707025-afc232f7ea0f?auto=format&fit=crop&q=80&w=900"
-];
-
-const PRODUCT_MEDIA_FALLBACKS = {
-  "products/local-hoodie.png": DEFAULT_PRODUCT_IMAGES[0],
-  "products/local-hoodie-back.png": DEFAULT_PRODUCT_IMAGES[1],
-  "products/local-hoodie-detail.png": DEFAULT_PRODUCT_IMAGES[2],
-  "products/local-hoodie-intro.pdf": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
-};
-
-function resolveProductImage(file, width = 500) {
-  if (!file) return `https://images.unsplash.com/photo-1523381210434-271e8be1f52b?auto=format&fit=crop&q=80&w=${width}`;
-  if (/^https?:\/\//.test(file)) return file;
-  const s3Url = getS3Url(file);
-  if (s3Url) return s3Url;
-  return PRODUCT_MEDIA_FALLBACKS[file] || `https://images.unsplash.com/photo-1523381210434-271e8be1f52b?auto=format&fit=crop&q=80&w=${width}`;
-}
+import { productImageGallery, PRODUCT_IMAGE_PLACEHOLDER, getCategoryFallback } from "@/lib/product-image";
 
 import { paymentOptionsForItem } from "@/lib/payment-options";
 
@@ -76,15 +56,16 @@ export default function ProductDetail({ publicProductId }) {
         const res = await apiJson(`/stores/${storeId}/products/${publicProductId}`);
         if (active && res && res.product) {
           const p = res.product;
-          const galleryImages = mediaGalleryFromProduct(p);
+          const galleryImages = productImageGallery(p.media);
 
           const pdfFile = (p.media || []).find((file) => /\.pdf$/i.test(file));
-          const pdfUrl = pdfFile ? (getS3Url(pdfFile) || PRODUCT_MEDIA_FALLBACKS[pdfFile]) : null;
+          const pdfUrl = pdfFile ? getS3Url(pdfFile) : null;
 
           const item = {
             id: p.publicProductId,
-            orderProductId: demoProductIdForPublicId(p.publicProductId) || p.productId || "",
+            orderProductId: p.productId || demoProductIdForPublicId(p.publicProductId) || "",
             publicProductId: p.publicProductId,
+            publicStoreId: p.publicStoreId || "",
             title: p.title,
             cryptoAmount: p.displayPrice?.amount || "0",
             cryptoSymbol: p.displayPrice?.symbol || "ETH",
@@ -255,6 +236,7 @@ export default function ProductDetail({ publicProductId }) {
         publicVariantId: selectedVariant?.publicVariantId || "",
         variantOptionValues: selectedVariant?.optionValues || null,
         selectedOptions: selectedOptionValues,
+        priceByOptionKey: buildPriceByOptionKey(product, selectedVariant, selectedOptionValues, priceOptions),
         cryptoAmount: paymentPrice?.amount || product.cryptoAmount,
         cryptoSymbol: paymentPrice?.symbol || selectedPriceOption?.symbol || product.cryptoSymbol,
         cryptoChainId: paymentPrice?.chainId || selectedPriceOption?.chainId || product.cryptoChainId,
@@ -280,7 +262,7 @@ export default function ProductDetail({ publicProductId }) {
                   className="h-full w-full object-cover"
                   onError={(e) => {
                     e.target.onerror = null;
-                    e.target.src = "https://images.unsplash.com/photo-1523381210434-271e8be1f52b?auto=format&fit=crop&q=80&w=900";
+                    e.target.src = getCategoryFallback(product.category);
                   }}
                 />
               </div>
@@ -297,7 +279,7 @@ export default function ProductDetail({ publicProductId }) {
                       alt=""
                       onError={(e) => {
                         e.target.onerror = null;
-                        e.target.src = "https://images.unsplash.com/photo-1523381210434-271e8be1f52b?auto=format&fit=crop&q=80&w=900";
+                        e.target.src = getCategoryFallback(product.category);
                       }}
                     />
                   </button>
@@ -597,22 +579,6 @@ function paymentPriceOptionLabel(option) {
   return `${option.symbol} · ${option.chainLabel || `Chain ${option.chainId}`}${amountText}`;
 }
 
-function mediaGalleryFromProduct(product) {
-  const refs = Array.isArray(product.media) ? product.media : [];
-  const imageRefs = refs.filter((ref) => !/\.pdf$/i.test(ref));
-  const images = imageRefs.map(productMediaUrl).filter(Boolean);
-  return images.length > 0 ? images : DEFAULT_PRODUCT_IMAGES;
-}
-
-function productMediaUrl(ref) {
-  if (!ref) return "";
-  if (/^https?:\/\//.test(ref)) return ref;
-  if (ref.startsWith("ipfs://")) return ref;
-  const s3Url = getS3Url(ref);
-  if (s3Url) return s3Url;
-  return PRODUCT_MEDIA_FALLBACKS[ref] || DEFAULT_PRODUCT_IMAGES[0];
-}
-
 function optionChoicesFromProduct(product) {
   if (!product) return [];
   const options = Array.isArray(product.options) ? product.options : [];
@@ -785,6 +751,29 @@ function addPriceOption(left, right) {
   if (!samePaymentAsset(left, right)) return left;
   const amount = (Number.parseFloat(left.amount || "0") || 0) + (Number.parseFloat(right.amount || "0") || 0);
   return { ...left, amount: amount.toFixed(left.decimals || right.decimals || 18) };
+}
+
+// Precompute the per-payment-option unit price for the selected variant + add-ons so the
+// cart can display each line in whichever payment asset the buyer picks there. Keys match
+// paymentOptionsForItem so cart lookups line up. Only assets with an explicit matching price
+// are stored; others fall back to the snapshot price in the cart.
+function buildPriceByOptionKey(product, variant, selectedValues, priceOptions) {
+  const map = {};
+  for (const option of priceOptions || []) {
+    const base = variantDisplayPrice(variant, option, product) || basePriceOption(product, option);
+    const unit = addPriceOption(base, selectedAddOnPriceDelta(product, selectedValues, option));
+    if (!unit || unit.amount === undefined || unit.amount === null) continue;
+    if (!samePaymentAsset(unit, option)) continue;
+    map[option.key] = {
+      amount: unit.amount,
+      symbol: unit.symbol,
+      chainId: unit.chainId,
+      tokenAddress: unit.tokenAddress ?? null,
+      decimals: unit.decimals ?? 18,
+      paymentAssetId: option.paymentAssetId || ""
+    };
+  }
+  return map;
 }
 
 function normalizePriceDelta(priceDelta, selectedPriceOption) {

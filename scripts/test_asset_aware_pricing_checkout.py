@@ -64,7 +64,7 @@ def test_asset_aware_checkout_rejects_unsupported_disabled_and_wallet_chain_mism
     for payment_asset_id, wallet_id, expected in (
         ("local-usdt", WALLET_ID, "not supported"),
         ("disabled-usdc", WALLET_ID, "disabled"),
-        ("local-eth", WALLET_ID, "chain"),
+        ("local-eth", WALLET_ID, "not supported"),
     ):
         with pytest.raises(OrderApplicationError) as exc_info:
             _service().createOrder(
@@ -159,6 +159,7 @@ class FakeStoreRepository:
             active=True,
             store_wallet=STORE_WALLET,
             supported_chain_ids=(1337,),
+            supported_payment_asset_ids=("local-usdc",),
         )
 
 

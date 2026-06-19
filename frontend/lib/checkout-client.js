@@ -1,30 +1,39 @@
 import { apiJson, newBrowserDeviceId } from "./auth-client";
 import { products as demoProducts } from "./demo-data";
 
-export async function createOrder({ storeId, items, paymentAssetId, walletId }) {
+export async function createOrder({ storeId, publicStoreId, items, paymentAssetId, walletId }) {
   return apiJson("/orders", {
     method: "POST",
     idempotencyKey: newId("checkout"),
     body: {
-      storeId,
+      // Internal store UUID is redacted from public catalog reads; send the public id so the
+      // server can resolve it. storeId is still sent when known (e.g. hardcoded demo store).
+      ...(storeId ? { storeId } : {}),
+      ...(publicStoreId ? { publicStoreId } : {}),
       deliveryAddress: {
         id: "local-browser-address",
         street: "Local browser checkout"
       },
-      items: items.map((item) => ({
-        productId: checkoutProductId(item),
-        quantity: item.quantity,
-        ...(item.publicVariantId ? { publicVariantId: item.publicVariantId } : {}),
-        ...(item.selectedOptions ? { selectedOptions: item.selectedOptions } : {})
-      })),
+      items: items.map((item) => {
+        const productId = checkoutProductId(item);
+        return {
+          ...(productId ? { productId } : {}),
+          ...(item.publicProductId ? { publicProductId: item.publicProductId } : {}),
+          quantity: item.quantity,
+          ...(item.publicVariantId ? { publicVariantId: item.publicVariantId } : {}),
+          ...(item.selectedOptions ? { selectedOptions: item.selectedOptions } : {})
+        };
+      }),
       ...(paymentAssetId ? { paymentAssetId } : {}),
       ...(walletId ? { walletId } : {})
     }
   });
 }
 
+// Only return a value that is a real internal UUID. For products not in the hardcoded demo map
+// this is empty, and the server resolves the order line from publicProductId instead.
 function checkoutProductId(item) {
-  return item.orderProductId || item.productId || demoProductIdForPublicId(item.publicProductId) || item.id;
+  return item.orderProductId || item.productId || demoProductIdForPublicId(item.publicProductId) || "";
 }
 
 function demoProductIdForPublicId(publicProductId) {

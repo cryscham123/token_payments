@@ -156,7 +156,11 @@ def test_frontend_checkout_sends_order_uuid_product_ids_not_public_catalog_ids()
 
     assert "demoProductIdForPublicId" in checkout_client
     assert "checkoutProductId(item)" in checkout_client
-    assert "productId: checkoutProductId(item)" in checkout_client
+    assert "const productId = checkoutProductId(item);" in checkout_client
+    # A real internal UUID is sent when known; otherwise the server resolves the line from the
+    # public product id (internal UUIDs are redacted from public catalog reads).
+    assert "publicProductId: item.publicProductId" in checkout_client
+    assert "publicStoreId" in checkout_client
     assert "publicVariantId: item.publicVariantId" in checkout_client
     assert "selectedOptions: item.selectedOptions" in checkout_client
     assert "orderProductId" in product_detail
