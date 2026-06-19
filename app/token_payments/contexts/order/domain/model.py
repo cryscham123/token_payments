@@ -290,6 +290,12 @@ class Product:
         for option_key, expected_value in variant.option_values.items():
             selected_value = selected_options.get(option_key)
             if selected_value is not None and str(selected_value) != expected_value:
+                option_val_key = f"{option_key}:{selected_value}"
+                option_value_objs = self.option_values if self.option_values is not None else getattr(self, "_option_values", None)
+                if isinstance(option_value_objs, Mapping) and option_val_key in option_value_objs:
+                    display_val = option_value_objs[option_val_key].display_value
+                    if display_val == expected_value:
+                        continue
                 raise ValueError(f"selected option {option_key} does not match variant {public_variant_id}")
         return variant
 
