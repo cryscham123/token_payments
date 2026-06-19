@@ -8,7 +8,7 @@ import { loadCart, saveCart } from "@/lib/cart";
 import { getCurrentUser, listWallets, requestWalletLinkChallenge, linkWallet } from "@/lib/auth-client";
 import { createOrder, getStoreProduct, ensureChain } from "@/lib/checkout-client";
 import { demoStore, formatCryptoAmount } from "@/lib/demo-data";
-import { isActiveWallet, paymentOptionsFromItems, walletLabel } from "@/lib/payment-options";
+import { isActiveWallet, paymentOptionsFromItems, walletLabel, paymentOptionsForItem } from "@/lib/payment-options";
 
 export default function Cart() {
   const router = useRouter();
