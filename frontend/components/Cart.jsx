@@ -9,7 +9,7 @@ import { getCurrentUser, listWallets, requestWalletLinkChallenge, linkWallet } f
 import { createOrder, getStoreProduct, ensureChain } from "@/lib/checkout-client";
 import { demoStore, formatCryptoAmount } from "@/lib/demo-data";
 import { isActiveWallet, paymentOptionsFromItems, walletLabel, paymentOptionsForItem } from "@/lib/payment-options";
-
+import { getCategoryFallback } from "@/lib/product-image";
 export default function Cart() {
   const router = useRouter();
   const [cartItems, setCartItems] = useState([]);
@@ -76,6 +76,8 @@ export default function Cart() {
             if (!product) return item;
             return {
               ...item,
+              orderProductId: item.orderProductId || product.productId || "",
+              publicStoreId: item.publicStoreId || product.publicStoreId || "",
               cryptoAmount: product.displayPrice?.amount || item.cryptoAmount,
               cryptoSymbol: product.displayPrice?.symbol || item.cryptoSymbol,
               cryptoChainId: product.displayPrice?.chainId || item.cryptoChainId,
@@ -132,7 +134,10 @@ export default function Cart() {
     const itemOptions = paymentOptionsForItem(item);
     return !selectedPaymentOption || itemOptions.some((opt) => opt.key === selectedPaymentOption.key);
   });
-  const cryptoTotal = activeCartItems.reduce((acc, item) => acc + (Number.parseFloat(item.cryptoAmount) || 0) * item.quantity, 0);
+  const cryptoTotal = activeCartItems.reduce(
+    (acc, item) => acc + (Number.parseFloat(resolveItemUnitPrice(item, selectedPaymentOption).amount) || 0) * item.quantity,
+    0
+  );
   const cryptoSymbol = selectedPaymentOption?.symbol || cartItems[0]?.cryptoSymbol || "ETH";
   const selectedPaymentAssetId = selectedPaymentOption?.paymentAssetId || "";
   const eligibleWallets = wallets.filter((wallet) => !selectedPaymentOption?.chainId || Number(wallet.chainId) === Number(selectedPaymentOption.chainId));
@@ -169,7 +174,9 @@ export default function Cart() {
     setMessage("주문을 생성하는 중입니다.");
     try {
       const created = await createOrder({
-        storeId: demoStore.id,
+        // Resolve the store server-side from its public id (each item carries its own store);
+        // an explicit demo storeId would force every line onto the hardcoded demo store.
+        publicStoreId: activeCartItems.find((item) => item.publicStoreId)?.publicStoreId || demoStore.publicStoreId,
         items: activeCartItems,
         walletId: selectedWalletId,
         paymentAssetId: selectedPaymentAssetId
@@ -294,10 +301,19 @@ export default function Cart() {
                 <ul className="divide-y divide-slate-200">
                   {cartItems.map((item) => {
                     const isActive = activeCartItems.includes(item);
+                    const unitPrice = resolveItemUnitPrice(item, selectedPaymentOption);
                     return (
                       <li key={cartItemKey(item)} className={`flex flex-col gap-6 p-6 sm:flex-row transition-opacity duration-200 ${isActive ? "" : "opacity-45"}`}>
                         <Link href={`/products/${item.publicProductId}`} className="h-24 w-24 shrink-0 overflow-hidden rounded-lg bg-slate-100">
-                          <img src={item.thumb} alt={item.title} className="h-full w-full object-cover" />
+                          <img
+                            src={item.thumb}
+                            alt={item.title}
+                            className="h-full w-full object-cover"
+                            onError={(e) => {
+                              e.target.onerror = null;
+                              e.target.src = getCategoryFallback(item.category);
+                            }}
+                          />
                         </Link>
                         <div className="flex flex-1 flex-col justify-between">
                           <div className="flex items-start justify-between gap-4">
@@ -339,7 +355,7 @@ export default function Cart() {
                               </button>
                             </div>
                             <span className="text-lg font-bold font-mono">
-                              {formatCryptoAmount((Number.parseFloat(item.cryptoAmount) || 0) * item.quantity)} {item.cryptoSymbol}
+                              {formatCryptoAmount((Number.parseFloat(unitPrice.amount) || 0) * item.quantity)} {unitPrice.symbol}
                             </span>
                           </div>
                         </div>
@@ -445,4 +461,15 @@ function errorMessage(error, fallback) {
 
 function cartItemKey(item) {
   return `${item.id}:${item.option || "기본 옵션"}`;
+}
+
+// Show each line in the payment asset the buyer selected here, using the per-option price map
+// snapshotted when the item was added. Falls back to the item's stored price when an asset has
+// no precomputed entry (e.g. older cart items saved before this map existed).
+function resolveItemUnitPrice(item, paymentOption) {
+  const priced = paymentOption && item.priceByOptionKey ? item.priceByOptionKey[paymentOption.key] : null;
+  if (priced && priced.amount !== undefined && priced.amount !== null) {
+    return { amount: priced.amount, symbol: priced.symbol || paymentOption.symbol || item.cryptoSymbol };
+  }
+  return { amount: item.cryptoAmount, symbol: item.cryptoSymbol };
 }
