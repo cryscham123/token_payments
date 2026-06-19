@@ -69,10 +69,9 @@ class KafkaRecordStub:
         self.headers = headers or []
 
 
-def test_consumer_loop_commits_offset_only_on_success() -> None:
-    # We will mock the underlying kafka-python consumer to return some records
-    # and verify that commit() is called after listener successfully processes them,
-    # but NOT if listener raises an exception.
+def test_consumer_loop_skips_and_commits_past_malformed_message() -> None:
+    # A poison/malformed record must not wedge the partition forever: the loop logs it
+    # and commits past it (advancing the offset) instead of re-reading it every batch.
     connection = MagicMock()
     postgres_factory = MagicMock(return_value=connection)
     
@@ -112,12 +111,11 @@ def test_consumer_loop_commits_offset_only_on_success() -> None:
         runtime = build_live_worker_runtime_from_env(config=config, dependencies=dependencies)
         checkout_worker = [w for w in runtime.workers if w.name == "checkout-process-manager"][0]
 
-        # Running once with corrupt payload should raise MalformedKafkaMessage
-        with pytest.raises(MalformedKafkaMessage):
-            checkout_worker.run_once()
+        # Running once with a corrupt payload must NOT raise; the loop skips the poison.
+        checkout_worker.run_once()
 
-        # Under the hood, commit should NOT be called on mock_consumer
-        mock_consumer.commit.assert_not_called()
+        # And it commits past the bad message so the partition advances next batch.
+        mock_consumer.commit.assert_called()
 
 
 def test_consumer_loop_commits_offset_on_successful_message() -> None:

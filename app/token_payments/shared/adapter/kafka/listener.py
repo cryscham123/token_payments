@@ -4,8 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import logging
 from types import MappingProxyType
 from typing import Any, Mapping, Protocol
+
+
+_logger = logging.getLogger(__name__)
 
 
 class MalformedKafkaMessage(ValueError):
@@ -86,11 +90,9 @@ class KafkaConsumerLoop:
                 if isinstance(partition_records, list):
                     records_list.extend(partition_records)
             for record in records_list:
-                self._listener.handle(KafkaInboundMessage.from_record(record))
+                self._handle_record(record)
                 processed += 1
-                commit = getattr(self._consumer, "commit", None)
-                if callable(commit):
-                    commit()
+                self._commit()
         else:
             records = iter(self._consumer)
             while processed < limit:
@@ -98,12 +100,23 @@ class KafkaConsumerLoop:
                     record = next(records)
                 except StopIteration:
                     break
-                self._listener.handle(KafkaInboundMessage.from_record(record))
+                self._handle_record(record)
                 processed += 1
-                commit = getattr(self._consumer, "commit", None)
-                if callable(commit):
-                    commit()
+                self._commit()
         return KafkaConsumerLoopResult(processed=processed)
+
+    def _handle_record(self, record: object) -> None:
+        # A malformed/poison message must not wedge the partition forever: log it and let
+        # the caller commit past it. Transient errors still propagate so they can retry.
+        try:
+            self._listener.handle(KafkaInboundMessage.from_record(record))
+        except MalformedKafkaMessage as exc:
+            _logger.warning("skipping malformed Kafka record (committing past it): %s", exc)
+
+    def _commit(self) -> None:
+        commit = getattr(self._consumer, "commit", None)
+        if callable(commit):
+            commit()
 
 
 def decode_payload(message: KafkaInboundMessage) -> Mapping[str, Any]:
