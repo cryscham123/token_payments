@@ -57,7 +57,7 @@ COMPOSE_READINESS_REQUIRED_ENV_KEYS = (
     "ADAPTER_BLOCKCHAIN_CHAIN_ID",
     "ADAPTER_BLOCKCHAIN_NATIVE_SYMBOL",
     "ADAPTER_BLOCKCHAIN_NATIVE_DECIMALS",
-    "ADAPTER_BLOCKCHAIN_TOKEN_ADDRESS",
+    "ADAPTER_BLOCKCHAIN_DEPLOYED_CONTRACTS_PATH",
     "ADAPTER_BLOCKCHAIN_GAS_BUFFER_RATE",
 )
 COMPOSE_READINESS_SENSITIVE_PLACEHOLDER_KEYS = (
@@ -65,7 +65,6 @@ COMPOSE_READINESS_SENSITIVE_PLACEHOLDER_KEYS = (
     "TEST_NETWORK_ACCOUNT",
     "POSTGRES_PASSWORD",
     "ADAPTER_POSTGRES_DSN",
-    "ADAPTER_BLOCKCHAIN_TOKEN_ADDRESS",
 )
 COMPOSE_READINESS_REQUIRED_SERVICES = ("postgres", "kafka", "kafka-ui", "pgweb", "test_network")
 COMPOSE_READINESS_COMMAND_SEQUENCE = (
@@ -385,7 +384,11 @@ def _normalize_scenario(scenario: str) -> str:
 def _run_happy_path_checkout() -> SmokeScenarioResult:
     from token_payments.contexts.auth.domain.wallet import UserWallet, WalletId, WalletType, WalletVerificationStatus
     from token_payments.contexts.checkout.application import CheckoutProcessManager
-    from token_payments.contexts.inventory.application import InventoryCommandHandler, ReserveInventoryCommand
+    from token_payments.contexts.inventory.application import (
+        ConfirmInventoryCommand,
+        InventoryCommandHandler,
+        ReserveInventoryCommand,
+    )
     from token_payments.contexts.inventory.domain import ProductInventory
     from token_payments.contexts.order.application import (
         CreateOrderCommand,
@@ -635,6 +638,7 @@ def _run_happy_path_checkout() -> SmokeScenarioResult:
             requested_at=initiate_decision.metadata.issued_at,
             causation_id=initiate_decision.metadata.causation_id,
             event_message_id=MessageId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c31"),
+            items=tuple(order_created_message.payload["items"]),
         )
     )
     steps.append(
@@ -766,17 +770,21 @@ def _run_happy_path_checkout() -> SmokeScenarioResult:
             requested_at=approval_decision.metadata.issued_at,
             causation_id=approval_decision.metadata.causation_id,
             event_message_id=MessageId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c33"),
+            items=tuple(payment_confirmed_message.payload["items"]),
         )
     )
     if approval_result.outbox_message is None or approval_result.order_detail is None:
         raise RuntimeError("store approval result did not include outbox message and order detail")
     approval_projection = order_status_projector.project(_order_status_event_from_source_message(approval_result.outbox_message))
-    _handle_checkout_event(
-        process_manager=process_manager,
-        processed_messages=processed_messages,
-        outbox_messages=outbox_messages,
-        topic_resolver=topic_resolver,
-        source_message=approval_result.outbox_message,
+    confirm_decision = _single_decision(
+        _handle_checkout_event(
+            process_manager=process_manager,
+            processed_messages=processed_messages,
+            outbox_messages=outbox_messages,
+            topic_resolver=topic_resolver,
+            source_message=approval_result.outbox_message,
+        ),
+        CheckoutCommandName.CONFIRM_INVENTORY.value,
     )
     final_order = order_repository.require(order_id)
     steps.append(
@@ -791,6 +799,53 @@ def _run_happy_path_checkout() -> SmokeScenarioResult:
             },
         )
     )
+    steps.append(
+        _passed_step(
+            "ConfirmInventoryCommand",
+            "checkout process manager issued deterministic inventory confirmation command",
+            {
+                "commandId": str(confirm_decision.metadata.command_id),
+                "commandName": confirm_decision.name.value,
+            },
+        )
+    )
+    confirm_result = inventory_handler.confirm_inventory(
+        ConfirmInventoryCommand(
+            command_id=confirm_decision.metadata.command_id,
+            order_id=order_id,
+            product_id=product_id,
+            store_id=store_id,
+            requested_at=confirm_decision.metadata.issued_at,
+            causation_id=confirm_decision.metadata.causation_id,
+            event_message_id=MessageId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c34"),
+            items=tuple(approval_result.outbox_message.payload["items"]),
+        )
+    )
+    if confirm_result.outbox_message is None or confirm_result.inventory is None:
+        raise RuntimeError("inventory confirm result did not include outbox message and inventory")
+    terminal_decisions = _handle_checkout_event(
+        process_manager=process_manager,
+        processed_messages=processed_messages,
+        outbox_messages=outbox_messages,
+        topic_resolver=topic_resolver,
+        source_message=confirm_result.outbox_message,
+    )
+    if terminal_decisions:
+        raise RuntimeError("inventory confirmed terminal event emitted unexpected checkout commands")
+    final_inventory = confirm_result.inventory
+    steps.append(
+        _passed_step(
+            "InventoryConfirmedEvent",
+            "inventory handler confirmed reservation and decreased total stock",
+            {
+                "eventName": confirm_result.outbox_message.name,
+                "availableStock": final_inventory.available_stock.value,
+                "reservedStock": final_inventory.reserved_stock.value,
+                "totalStock": final_inventory.total_stock.value,
+                "status": confirm_result.status.value,
+            },
+        )
+    )
 
     duplicate_command_decisions = [
         decision.value
@@ -800,6 +855,7 @@ def _run_happy_path_checkout() -> SmokeScenarioResult:
             submit_result.duplicate_decision,
             confirmed_result.duplicate_decision,
             approval_result.duplicate_decision,
+            confirm_result.duplicate_decision,
         )
         if decision is not None
     ]
@@ -807,6 +863,7 @@ def _run_happy_path_checkout() -> SmokeScenarioResult:
         reserve_decision.name.value: str(reserve_decision.metadata.command_id),
         initiate_decision.name.value: str(initiate_decision.metadata.command_id),
         approval_decision.name.value: str(approval_decision.metadata.command_id),
+        confirm_decision.name.value: str(confirm_decision.metadata.command_id),
     }
 
     return SmokeScenarioResult(
@@ -822,6 +879,11 @@ def _run_happy_path_checkout() -> SmokeScenarioResult:
             "paymentId": str(payment_id),
             "finalOrderStatus": final_order.status.value,
             "finalStoreApprovalStatus": approval_result.order_detail.approval_status.value,
+            "finalInventory": {
+                "availableStock": final_inventory.available_stock.value,
+                "reservedStock": final_inventory.reserved_stock.value,
+                "totalStock": final_inventory.total_stock.value,
+            },
             "orderStatusProjector": {
                 payment_confirmed_message.name: payment_projection.status.value,
                 approval_result.outbox_message.name: approval_projection.status.value,

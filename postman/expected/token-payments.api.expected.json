@@ -26,6 +26,7 @@
     "listUserPayments",
     "submitTransactionHash",
     "listPublicStores",
+    "listAllPublicProducts",
     "getStoreProfile",
     "listPublicProducts",
     "getPublicProduct",
@@ -646,6 +647,37 @@
               "settlement": {
                 "available": true
               }
+            }
+          }
+        ],
+        "pagination": {
+          "limit": 20,
+          "offset": 0,
+          "nextOffset": null
+        }
+      }
+    },
+    {
+      "operationId": "listAllPublicProducts",
+      "requestName": "List all public products",
+      "method": "GET",
+      "path": "/products",
+      "status": 200,
+      "headers": {
+        "X-Request-Id": "postman-all-public-products-list-001"
+      },
+      "body": {
+        "products": [
+          {
+            "publicStoreId": "st_demo_store_001",
+            "publicProductId": "prd_local_hoodie_001",
+            "title": "Local Hoodie",
+            "displayPrice": {
+              "symbol": "ETH",
+              "chainId": 1337
+            },
+            "availability": {
+              "saleStatus": "ACTIVE"
             }
           }
         ],

@@ -74,6 +74,7 @@ class StoreOwnerIncreaseStockCommand:
     reason: str
     requested_at: datetime
     request_id: str
+    public_variant_id: str | None = None
     actor_store_role: str | None = None
 
     def __post_init__(self) -> None:
@@ -95,6 +96,7 @@ class StoreOwnerCorrectStockCommand:
     reason: str
     requested_at: datetime
     request_id: str
+    public_variant_id: str | None = None
     actor_store_role: str | None = None
 
     def __post_init__(self) -> None:
@@ -112,6 +114,7 @@ class PauseProductSalesCommand:
     reason: str
     requested_at: datetime
     request_id: str
+    public_variant_id: str | None = None
     actor_store_role: str | None = None
 
     def __post_init__(self) -> None:
@@ -128,6 +131,7 @@ class ResumeProductSalesCommand:
     reason: str
     requested_at: datetime
     request_id: str
+    public_variant_id: str | None = None
     actor_store_role: str | None = None
 
     def __post_init__(self) -> None:
@@ -191,6 +195,12 @@ def _validate_store_owner_command(
         _require_aware_datetime(command.requested_at, f"{type(command).__name__}.requested_at"),
     )
     object.__setattr__(command, "request_id", _require_text(command.request_id, f"{type(command).__name__}.request_id"))
+    if command.public_variant_id is not None:
+        object.__setattr__(
+            command,
+            "public_variant_id",
+            _require_text(command.public_variant_id, f"{type(command).__name__}.public_variant_id"),
+        )
     if command.actor_store_role is not None:
         object.__setattr__(
             command,

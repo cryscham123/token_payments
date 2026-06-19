@@ -157,6 +157,7 @@ export default function ProductDetail({ publicProductId }) {
   const selectedVariant = product ? selectedVariantForOptions(product, selectedOptionValues) : null;
   const selectedVariantRemaining = selectedVariant ? variantAvailability(selectedVariant) : null;
   const productRemainingQty = product ? productRemainingQuantity(product.availability, optionChoices) : null;
+  const effectiveRemainingStock = requiredOptions.length === 0 ? productRemainingQty : selectedVariantRemaining;
   const unavailableReason = product ? purchaseUnavailable(product, productRemainingQty) : "";
   const selectedVariantPrice = product ? variantDisplayPrice(selectedVariant, selectedPriceOption, product) : null;
   const selectedAddOnDelta = product ? selectedAddOnPriceDelta(product, selectedOptionValues, selectedPriceOption) : null;
@@ -164,7 +165,7 @@ export default function ProductDetail({ publicProductId }) {
   const selectedSymbol = displayedUnitPrice?.symbol || selectedPriceOption?.symbol || product?.cryptoSymbol || "ETH";
   const cryptoTotal = (Number.parseFloat(displayedUnitPrice?.amount || "0") || 0) * selectedQuantity;
   const requiredOptionsComplete = requiredOptions.every((option) => selectedOptionValues[option.key]);
-  const canAddSelectedVariant = requiredOptionsComplete && Boolean(selectedVariant) && !unavailableReason && selectedVariantRemaining !== 0;
+  const canAddSelectedVariant = requiredOptionsComplete && (requiredOptions.length === 0 || Boolean(selectedVariant)) && !unavailableReason && effectiveRemainingStock !== 0;
 
   useEffect(() => {
     if (!product || priceOptions.length === 0) return;
@@ -177,8 +178,8 @@ export default function ProductDetail({ publicProductId }) {
       setSelectedQuantity(1);
       return;
     }
-    if (selectedVariantRemaining !== null && selectedVariantRemaining > 0 && selectedQuantity > selectedVariantRemaining) {
-      setSelectedQuantity(selectedVariantRemaining);
+    if (effectiveRemainingStock !== null && effectiveRemainingStock > 0 && selectedQuantity > effectiveRemainingStock) {
+      setSelectedQuantity(effectiveRemainingStock);
     }
   }, [selectedVariant, selectedVariantRemaining, selectedQuantity]);
 
@@ -239,7 +240,7 @@ export default function ProductDetail({ publicProductId }) {
     if (!canAddSelectedVariant) return;
     setSelectedQuantity((current) => {
       const next = Math.max(1, Number(current || 1) + delta);
-      return selectedVariantRemaining === null ? next : Math.min(next, selectedVariantRemaining);
+      return effectiveRemainingStock === null ? next : Math.min(next, effectiveRemainingStock);
     });
   }
 
@@ -364,7 +365,7 @@ export default function ProductDetail({ publicProductId }) {
                               value={value.value}
                               disabled={!optionValueSelectable(product, option, optionIndex, value, selectedOptionValues)}
                             >
-                              {optionValueLabel(product, option, optionIndex, value, selectedOptionValues)}
+                              {optionValueLabel(product, option, optionIndex, value, selectedOptionValues, selectedPriceOption)}
                             </option>
                           ))}
                         </select>
@@ -393,8 +394,8 @@ export default function ProductDetail({ publicProductId }) {
                                       />
                                       <span className="truncate font-bold text-slate-800">{value.displayValue || value.value}</span>
                                     </span>
-                                    {value.priceDelta && priceDeltaLabel(normalizePriceOption(value.priceDelta)) && (
-                                      <span className="shrink-0 text-xs font-bold text-blue-600">{priceDeltaLabel(normalizePriceOption(value.priceDelta))}</span>
+                                    {value.priceDelta && priceDeltaLabel(normalizePriceDelta(value.priceDelta, selectedPriceOption)) && (
+                                      <span className="shrink-0 text-xs font-bold text-blue-600">{priceDeltaLabel(normalizePriceDelta(value.priceDelta, selectedPriceOption))}</span>
                                     )}
                                   </label>
                                 );
@@ -410,7 +411,7 @@ export default function ProductDetail({ publicProductId }) {
                               <option value="">선택 안 함</option>
                               {option.values.map((value) => (
                                 <option key={value.value} value={value.value}>
-                                  {optionValueDisplayWithDelta(value)}
+                                  {optionValueDisplayWithDelta(value, selectedPriceOption)}
                                 </option>
                               ))}
                             </select>
@@ -446,7 +447,11 @@ export default function ProductDetail({ publicProductId }) {
                   <div>
                     <p className="text-xs font-bold uppercase tracking-wide text-slate-400">구매 수량</p>
                     <p className="mt-1 text-xs text-slate-500">
-                      {selectedVariant ? "선택한 조합 기준" : "필수 옵션을 선택해 주세요"}
+                      {requiredOptions.length === 0 
+                        ? (productRemainingQty !== null ? `남은 수량 ${productRemainingQty}개` : "기본 재고") 
+                        : (selectedVariant 
+                          ? `선택한 조합 기준 (남은 수량 ${selectedVariantRemaining !== null ? selectedVariantRemaining : "확인 불가"}개)` 
+                          : "필수 옵션을 선택해 주세요")}
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center overflow-hidden rounded-lg border border-slate-300">
@@ -460,7 +465,7 @@ export default function ProductDetail({ publicProductId }) {
                     <span className="w-10 text-center text-sm font-medium">{selectedQuantity}</span>
                     <button
                       onClick={() => changeSelectedQuantity(1)}
-                      disabled={!canAddSelectedVariant || (selectedVariantRemaining !== null && selectedQuantity >= selectedVariantRemaining)}
+                      disabled={!canAddSelectedVariant || (effectiveRemainingStock !== null && selectedQuantity >= effectiveRemainingStock)}
                       className="flex h-9 w-9 items-center justify-center hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300"
                     >
                       <Plus size={14} />
@@ -634,14 +639,14 @@ function optionValueSelectable(product, option, optionIndex, value, selectedValu
   return matchingVariantsForSelection(product, candidate).length > 0;
 }
 
-function optionValueLabel(product, option, optionIndex, value, selectedValues) {
+function optionValueLabel(product, option, optionIndex, value, selectedValues, selectedPriceOption) {
   const display = value.displayValue || value.value;
   const candidate = optionCandidateSelection(product, option, optionIndex, value, selectedValues);
   const options = requiredVariantOptions(product);
   if (!selectionComplete(options, candidate)) return display;
   const variant = variantForSelection(product, candidate);
   if (!variant) return `${display} · 선택 불가`;
-  const priceDelta = variantPriceDelta(variant);
+  const priceDelta = variantPriceDelta(variant, selectedPriceOption);
   const stock = variantAvailability(variant);
   const deltaLabel = priceDelta ? priceDeltaLabel(priceDelta) : "";
   const stockLabel = stock === null ? "수량 확인 중" : `남은 수량 ${stock}개`;
@@ -768,9 +773,8 @@ function selectedAddOnPriceDelta(product, selectedValues, selectedPriceOption) {
     });
 
   return addOnValues.reduce((total, value) => {
-    const delta = normalizePriceOption(value.priceDelta || {});
+    const delta = normalizePriceDelta(value.priceDelta, selectedPriceOption);
     if (!delta || Number.parseFloat(delta.amount || "0") === 0) return total;
-    if (selectedPriceOption && !samePaymentAsset(delta, selectedPriceOption)) return total;
     return addPriceOption(total, delta);
   }, null);
 }
@@ -783,19 +787,35 @@ function addPriceOption(left, right) {
   return { ...left, amount: amount.toFixed(left.decimals || right.decimals || 18) };
 }
 
-function variantPriceDelta(variant) {
-  return normalizePriceOption(variant?.priceDelta || {});
+function normalizePriceDelta(priceDelta, selectedPriceOption) {
+  const delta = normalizePriceOption(priceDelta || {});
+  if (!delta) return null;
+  if (selectedPriceOption) {
+    return {
+      ...delta,
+      symbol: selectedPriceOption.symbol,
+      chainId: selectedPriceOption.chainId,
+      tokenAddress: selectedPriceOption.tokenAddress,
+      decimals: selectedPriceOption.decimals
+    };
+  }
+  return delta;
+}
+
+function variantPriceDelta(variant, selectedPriceOption) {
+  return normalizePriceDelta(variant?.priceDelta, selectedPriceOption);
 }
 
 function priceDeltaLabel(priceDelta) {
+  if (!priceDelta) return "";
   const amount = Number.parseFloat(priceDelta.amount || "0");
   if (!amount) return "";
   return `+${formatCryptoAmount(priceDelta.amount)} ${priceDelta.symbol}`;
 }
 
-function optionValueDisplayWithDelta(value) {
+function optionValueDisplayWithDelta(value, selectedPriceOption) {
   const label = value.displayValue || value.value;
-  const deltaLabel = value.priceDelta ? priceDeltaLabel(normalizePriceOption(value.priceDelta)) : "";
+  const deltaLabel = value.priceDelta ? priceDeltaLabel(normalizePriceDelta(value.priceDelta, selectedPriceOption)) : "";
   return [label, deltaLabel].filter(Boolean).join(" · ");
 }
 

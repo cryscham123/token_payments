@@ -96,6 +96,51 @@ def test_checkout_listener_writes_confirm_inventory_payload_for_order_approved_e
     assert confirm.payload["sourceEventName"] == CheckoutEventName.ORDER_APPROVED.value
 
 
+def test_checkout_listener_writes_variant_confirm_inventory_payload_from_order_items() -> None:
+    outbox_messages = FakeOutboxMessageRepository()
+    listener = CheckoutKafkaEventListener(
+        process_manager=CheckoutProcessManager(),
+        processed_messages=FakeProcessedMessageRepository(),
+        outbox_messages=outbox_messages,
+    )
+
+    result = listener.handle(
+        _event_message(
+            CheckoutEventName.ORDER_APPROVED,
+            {
+                "storeId": str(STORE_ID),
+                "approvalStatus": "APPROVED",
+                "items": [
+                    {
+                        "orderLineKey": "hoodie-l-line",
+                        "productId": str(PRODUCT_ID),
+                        "storeId": str(STORE_ID),
+                        "publicVariantId": "hoodie-l",
+                        "quantity": 2,
+                    }
+                ],
+            },
+        )
+    )
+
+    assert result.duplicate_decision is None
+    assert len(outbox_messages.saved) == 1
+    confirm = outbox_messages.saved[0]
+    assert confirm.name == CheckoutCommandName.CONFIRM_INVENTORY.value
+    assert confirm.payload["productId"] == str(PRODUCT_ID)
+    assert confirm.payload["storeId"] == str(STORE_ID)
+    assert confirm.payload["publicVariantId"] == "hoodie-l"
+    assert confirm.payload["items"] == [
+        {
+            "orderLineKey": "hoodie-l-line",
+            "productId": str(PRODUCT_ID),
+            "storeId": str(STORE_ID),
+            "publicVariantId": "hoodie-l",
+            "quantity": 2,
+        }
+    ]
+
+
 def test_duplicate_order_approved_message_is_ignored_before_confirm_command_side_effects() -> None:
     processed = FakeProcessedMessageRepository(
         existing={(CheckoutKafkaEventListener.CONSUMER_NAME, str(MESSAGE_ID))}

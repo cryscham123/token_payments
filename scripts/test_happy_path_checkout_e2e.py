@@ -29,6 +29,8 @@ def test_happy_path_checkout_smoke_runs_real_application_flow() -> None:
         "PaymentConfirmedEvent",
         "RequestStoreApprovalCommand",
         "OrderApprovedEvent",
+        "ConfirmInventoryCommand",
+        "InventoryConfirmedEvent",
     ]
 
     details = result["details"]
@@ -48,6 +50,7 @@ def test_happy_path_checkout_smoke_runs_real_application_flow() -> None:
         "PaymentProcessingStartedEvent",
         "PaymentConfirmedEvent",
         "OrderApprovedEvent",
+        "InventoryConfirmedEvent",
     ]
     assert details["processManagerCommandIds"] == {
         "ReserveInventoryCommand": "018f33aa-9e6d-73d8-9dc3-47d6cdcc6c21:ReserveInventoryCommand",
@@ -55,12 +58,18 @@ def test_happy_path_checkout_smoke_runs_real_application_flow() -> None:
         "RequestStoreApprovalCommand": (
             "018f33aa-9e6d-73d8-9dc3-47d6cdcc6c21:RequestStoreApprovalCommand"
         ),
+        "ConfirmInventoryCommand": "018f33aa-9e6d-73d8-9dc3-47d6cdcc6c21:ConfirmInventoryCommand",
+    }
+    assert details["finalInventory"] == {
+        "availableStock": 9,
+        "reservedStock": 0,
+        "totalStock": 9,
     }
     assert details["idempotency"] == {
         "normalProcessing": True,
         "duplicateCommandDecisions": [],
-        "processedCommandCount": 5,
-        "processedMessageCount": 4,
+        "processedCommandCount": 6,
+        "processedMessageCount": 5,
     }
     json.dumps(result)
 

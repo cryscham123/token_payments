@@ -1,6 +1,16 @@
 """Shared domain kernel for cross-context value objects and identifiers."""
 
-from .ids import CustomerId, MessageId, OrderId, PaymentId, ProductId, StoreId, UserId
+from .ids import (
+    CustomerId,
+    DEFAULT_VARIANT_KEY,
+    MessageId,
+    OrderId,
+    PaymentId,
+    ProductId,
+    StoreId,
+    UserId,
+    default_public_variant_id,
+)
 from .messaging import (
     CheckoutCommandName,
     CheckoutEventName,
@@ -24,6 +34,7 @@ __all__ = [
     "CommandMetadata",
     "Crypto",
     "CustomerId",
+    "DEFAULT_VARIANT_KEY",
     "EventMetadata",
     "IdempotencyDecision",
     "MessageId",
@@ -39,4 +50,5 @@ __all__ = [
     "TransactionHash",
     "UserId",
     "WalletAddress",
+    "default_public_variant_id",
 ]

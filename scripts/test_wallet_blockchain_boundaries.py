@@ -160,7 +160,8 @@ def test_wallet_blockchain_env_uses_placeholders_without_private_key_config() ->
     assert "ADAPTER_BLOCKCHAIN_RPC_HOST=test_network" in env_example
     assert "ADAPTER_BLOCKCHAIN_RPC_PORT=8545" in env_example
     assert "ADAPTER_BLOCKCHAIN_RPC_URL=" in env_example
-    assert "ADAPTER_BLOCKCHAIN_TOKEN_ADDRESS=0xreplace_with_local_dev_only_token_address" in env_example
+    assert "ADAPTER_BLOCKCHAIN_DEPLOYED_CONTRACTS_PATH=/var/chainDB/deployed_contracts.json" in env_example
+    assert "ADAPTER_BLOCKCHAIN_TOKEN_ADDRESS" not in env_example
     assert "ADAPTER_BLOCKCHAIN_PRIVATE_KEY" not in env_example
     assert "ADAPTER_BLOCKCHAIN_SEED_PHRASE" not in env_example
 

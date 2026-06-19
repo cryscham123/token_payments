@@ -61,6 +61,7 @@ from token_payments.shared.domain import (  # noqa: E402
     TransactionHash,
     UserId,
     WalletAddress,
+    default_public_variant_id,
 )
 
 
@@ -96,9 +97,9 @@ def test_inventory_repository_round_trips_inventory_and_missing_lookup() -> None
 
     assert repository.get(PRODUCT_ID, STORE_ID) == inventory
     normalized_sql = _normalize_sql("\n".join(statement.sql for statement in connection.statements))
-    assert "insert into product_inventory" in normalized_sql
+    assert "insert into product_variant_inventory" in normalized_sql
     assert "insert into inventory_reservations" in normalized_sql
-    assert "select" in normalized_sql and "from product_inventory" in normalized_sql
+    assert "select" in normalized_sql and "from product_variant_inventory" in normalized_sql
 
 
 def test_payment_repositories_round_trip_payment_authorization_and_missing_lookup() -> None:
@@ -137,6 +138,53 @@ def test_payment_repository_lists_unconfirmed_receipt_polling_candidates() -> No
     normalized_sql = _normalize_sql("\n".join(statement.sql for statement in connection.statements))
     assert "receipt_block_number is null" in normalized_sql
     assert "status in ('submitted', 'confirming')" in normalized_sql
+
+
+def test_payment_repository_falls_back_to_order_items_when_payment_items_are_empty() -> None:
+    connection = FakePostgresConnection()
+    payments = PostgresPaymentRepository(connection)
+    connection.seed_order(ORDER_ID, TRACKING_ID, store_id=STORE_ID)
+    connection.seed_order_item(
+        order_id=ORDER_ID,
+        product_id=PRODUCT_ID,
+        product_snapshot_name="Ledger Hoodie",
+        unit_price=_amount("14.50"),
+        quantity=2,
+        public_variant_id="hoodie-l",
+        selected_options={"size": "L"},
+        line_key="hoodie-l-line",
+    )
+    payments.save(_submitted_payment())
+
+    payment = payments.get(PAYMENT_ID)
+
+    assert payment is not None
+    assert payment.items == (
+        {
+            "orderLineKey": "hoodie-l-line",
+            "productId": str(PRODUCT_ID),
+            "publicVariantId": "hoodie-l",
+            "name": "Ledger Hoodie",
+            "selectedOptions": {"size": "L"},
+            "quantity": 2,
+            "unitPrice": {
+                "amount": "14.50",
+                "symbol": "USDC",
+                "chainId": 11155111,
+                "tokenAddress": str(TOKEN_ADDRESS),
+                "decimals": 6,
+            },
+            "subTotal": {
+                "amount": "29.00",
+                "symbol": "USDC",
+                "chainId": 11155111,
+                "tokenAddress": str(TOKEN_ADDRESS),
+                "decimals": 6,
+            },
+        },
+    )
+    normalized_sql = _normalize_sql("\n".join(statement.sql for statement in connection.statements))
+    assert "from order_items" in normalized_sql
 
 
 def test_payment_history_query_lists_only_authenticated_users_payments() -> None:
@@ -255,7 +303,7 @@ def test_repositories_share_injected_connection_for_transaction_boundary() -> No
 
     assert {id(statement.connection) for statement in connection.statements} == {id(connection)}
     normalized_sql = _normalize_sql("\n".join(statement.sql for statement in connection.statements))
-    assert "insert into product_inventory" in normalized_sql
+    assert "insert into product_variant_inventory" in normalized_sql
     assert "insert into outbox_messages" in normalized_sql
     assert "commit" not in normalized_sql
     assert "rollback" not in normalized_sql
@@ -326,6 +374,7 @@ def _inventory() -> ProductInventory:
     return ProductInventory(
         product_id=PRODUCT_ID,
         store_id=STORE_ID,
+        public_variant_id=default_public_variant_id(PRODUCT_ID),
         available_stock=Quantity(7),
         reserved_stock=Quantity(3),
         total_stock=Quantity(10),
@@ -475,6 +524,32 @@ def _product_payload(product: Product) -> dict[str, Any]:
     }
 
 
+def _payment_item_from_order_item(row: Mapping[str, Any]) -> dict[str, Any]:
+    payload = {
+        "orderLineKey": row.get("line_key"),
+        "productId": row["product_id"],
+        "publicVariantId": row.get("public_variant_id"),
+        "name": row["product_snapshot_name"],
+        "selectedOptions": row.get("selected_options") or {},
+        "quantity": row["quantity"],
+        "unitPrice": {
+            "amount": format(row["unit_price_numeric"], "f"),
+            "symbol": row["unit_price_symbol"],
+            "chainId": row["unit_price_chain_id"],
+            "tokenAddress": row["unit_price_token_address"],
+            "decimals": row["unit_price_decimals"],
+        },
+        "subTotal": {
+            "amount": format(row["subtotal_numeric"], "f"),
+            "symbol": row["subtotal_symbol"],
+            "chainId": row["subtotal_chain_id"],
+            "tokenAddress": row["subtotal_token_address"],
+            "decimals": row["subtotal_decimals"],
+        },
+    }
+    return {key: value for key, value in payload.items() if value is not None}
+
+
 def _normalize_sql(sql: str) -> str:
     return " ".join(sql.lower().split())
 
@@ -515,6 +590,7 @@ class FakePostgresConnection:
     def __init__(self) -> None:
         self.statements: list[ExecutedStatement] = []
         self.product_inventory: dict[tuple[str, str], dict[str, Any]] = {}
+        self.product_variant_inventory: dict[tuple[str, str, str], dict[str, Any]] = {}
         self.inventory_reservations: dict[str, dict[str, Any]] = {}
         self.payments: dict[str, dict[str, Any]] = {}
         self.payment_authorizations: dict[str, dict[str, Any]] = {}
@@ -531,12 +607,16 @@ class FakePostgresConnection:
         self.statements.append(statement)
         normalized_sql = _normalize_sql(sql)
 
+        if "insert into product_variant_inventory" in normalized_sql:
+            return self._upsert_product_variant_inventory(statement.params)
         if "insert into product_inventory" in normalized_sql:
             return self._upsert_product_inventory(statement.params)
         if "insert into inventory_reservations" in normalized_sql:
             return self._upsert_inventory_reservation(statement.params)
         if "delete from inventory_reservations" in normalized_sql:
             return self._delete_missing_inventory_reservations(statement.params)
+        if "from product_variant_inventory" in normalized_sql and "select" in normalized_sql:
+            return self._select_product_variant_inventory(statement.params)
         if "from product_inventory" in normalized_sql and "select" in normalized_sql:
             return self._select_product_inventory(statement.params)
         if "from inventory_reservations" in normalized_sql and "select" in normalized_sql:
@@ -617,6 +697,9 @@ class FakePostgresConnection:
         product_snapshot_name: str,
         unit_price: Crypto,
         quantity: int,
+        public_variant_id: str | None = None,
+        selected_options: Mapping[str, Any] | None = None,
+        line_key: str | None = None,
     ) -> None:
         subtotal_amount = unit_price.amount * Decimal(quantity)
         rows = self.order_items.setdefault(str(order_id), [])
@@ -625,6 +708,9 @@ class FakePostgresConnection:
                 "order_item_id": f"018f33aa-9e6d-73d8-9dc3-47d6cdcc6f{len(rows):02d}",
                 "order_id": str(order_id),
                 "product_id": str(product_id),
+                "public_variant_id": public_variant_id,
+                "selected_options": dict(selected_options or {}),
+                "line_key": line_key,
                 "product_snapshot_name": product_snapshot_name,
                 "unit_price_numeric": unit_price.amount,
                 "unit_price_symbol": unit_price.symbol,
@@ -665,16 +751,29 @@ class FakePostgresConnection:
         }
         return FakeResult(rowcount=before - len(self.inventory_reservations))
 
+    def _upsert_product_variant_inventory(self, params: Mapping[str, Any]) -> FakeResult:
+        key = (str(params["product_id"]), str(params["store_id"]), str(params["public_variant_id"]))
+        self.product_variant_inventory[key] = dict(params)
+        return FakeResult(rowcount=1)
+
     def _select_product_inventory(self, params: Mapping[str, Any]) -> FakeResult:
         key = (str(params["product_id"]), str(params["store_id"]))
         row = self.product_inventory.get(key)
         return FakeResult(rows=[dict(row)] if row is not None else [], rowcount=1 if row is not None else 0)
 
+    def _select_product_variant_inventory(self, params: Mapping[str, Any]) -> FakeResult:
+        key = (str(params["product_id"]), str(params["store_id"]), str(params["public_variant_id"]))
+        row = self.product_variant_inventory.get(key)
+        return FakeResult(rows=[dict(row)] if row is not None else [], rowcount=1 if row is not None else 0)
+
     def _select_inventory_reservations(self, params: Mapping[str, Any]) -> FakeResult:
+        requested_variant = params.get("public_variant_id")
         rows = [
             dict(row)
             for row in self.inventory_reservations.values()
-            if row["product_id"] == str(params["product_id"]) and row["store_id"] == str(params["store_id"])
+            if row["product_id"] == str(params["product_id"])
+            and row["store_id"] == str(params["store_id"])
+            and row.get("public_variant_id") == requested_variant
         ]
         rows.sort(key=lambda row: (row["created_at"], row["reservation_id"]))
         return FakeResult(rows=rows, rowcount=len(rows))
@@ -686,7 +785,7 @@ class FakePostgresConnection:
     def _select_payment(self, params: Mapping[str, Any]) -> FakeResult:
         if "limit" in params and "payment_id" not in params:
             rows = [
-                dict(row)
+                self._payment_row_with_item_fallback(row)
                 for row in self.payments.values()
                 if row["status"] in {"SUBMITTED", "CONFIRMING"}
                 and row["tx_hash"] is not None
@@ -696,6 +795,8 @@ class FakePostgresConnection:
             limit = int(params["limit"])
             return FakeResult(rows=rows[:limit], rowcount=len(rows[:limit]))
         row = self.payments.get(str(params["payment_id"]))
+        if row is not None:
+            row = self._payment_row_with_item_fallback(row)
         return FakeResult(rows=[dict(row)] if row is not None else [], rowcount=1 if row is not None else 0)
 
     def _select_payment_history(self, params: Mapping[str, Any]) -> FakeResult:
@@ -745,6 +846,13 @@ class FakePostgresConnection:
 
     def _has_confirmed_payment(self, order_id: str) -> bool:
         return any(row["order_id"] == order_id and row["status"] == "CONFIRMED" for row in self.payments.values())
+
+    def _payment_row_with_item_fallback(self, row: Mapping[str, Any]) -> dict[str, Any]:
+        items = row.get("items")
+        if items not in (None, "[]", []):
+            return dict(row)
+        fallback_items = [_payment_item_from_order_item(item) for item in self.order_items.get(str(row["order_id"]), [])]
+        return {**row, "items": fallback_items}
 
     def _select_store(self, params: Mapping[str, Any]) -> FakeResult:
         row = self.store_approval_stores.get(str(params["store_id"]))

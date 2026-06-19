@@ -93,7 +93,15 @@ export default function Cart() {
         setCartItems(enrichedItems);
         saveCart(enrichedItems);
       }
-      const nextOptions = paymentOptionsFromItems(enrichedItems);
+      const allOptions = enrichedItems.flatMap(paymentOptionsForItem);
+      const nextOptions = [];
+      const seenKeys = new Set();
+      for (const opt of allOptions) {
+        if (opt && !seenKeys.has(opt.key)) {
+          seenKeys.add(opt.key);
+          nextOptions.push(opt);
+        }
+      }
       const preferredPaymentOptionKey = enrichedItems.find((item) => (
         item.preferredPaymentOptionKey && nextOptions.some((option) => option.key === item.preferredPaymentOptionKey)
       ))?.preferredPaymentOptionKey || "";
@@ -119,9 +127,13 @@ export default function Cart() {
     saveCart(nextItems);
   };
 
-  const cryptoTotal = cartItems.reduce((acc, item) => acc + (Number.parseFloat(item.cryptoAmount) || 0) * item.quantity, 0);
-  const cryptoSymbol = cartItems[0]?.cryptoSymbol || "ETH";
   const selectedPaymentOption = paymentOptions.find((option) => option.key === selectedPaymentOptionKey) || paymentOptions[0] || null;
+  const activeCartItems = cartItems.filter((item) => {
+    const itemOptions = paymentOptionsForItem(item);
+    return !selectedPaymentOption || itemOptions.some((opt) => opt.key === selectedPaymentOption.key);
+  });
+  const cryptoTotal = activeCartItems.reduce((acc, item) => acc + (Number.parseFloat(item.cryptoAmount) || 0) * item.quantity, 0);
+  const cryptoSymbol = selectedPaymentOption?.symbol || cartItems[0]?.cryptoSymbol || "ETH";
   const selectedPaymentAssetId = selectedPaymentOption?.paymentAssetId || "";
   const eligibleWallets = wallets.filter((wallet) => !selectedPaymentOption?.chainId || Number(wallet.chainId) === Number(selectedPaymentOption.chainId));
   const busy = status === "creating";
@@ -158,12 +170,17 @@ export default function Cart() {
     try {
       const created = await createOrder({
         storeId: demoStore.id,
-        items: cartItems,
+        items: activeCartItems,
         walletId: selectedWalletId,
         paymentAssetId: selectedPaymentAssetId
       });
       const trackingId = created?.order?.trackingId;
       if (!trackingId) throw new Error("주문 trackingId를 받지 못했습니다.");
+      
+      const remainingItems = cartItems.filter((item) => !activeCartItems.includes(item));
+      setCartItems(remainingItems);
+      saveCart(remainingItems);
+      
       router.push(`/pay?trackingId=${encodeURIComponent(trackingId)}`);
     } catch (error) {
       setStatus("error");
@@ -275,43 +292,60 @@ export default function Cart() {
             <div className="w-full lg:w-2/3">
               <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                 <ul className="divide-y divide-slate-200">
-                  {cartItems.map((item) => (
-                    <li key={cartItemKey(item)} className="flex flex-col gap-6 p-6 sm:flex-row">
-                      <Link href={`/products/${item.publicProductId}`} className="h-24 w-24 shrink-0 overflow-hidden rounded-lg bg-slate-100">
-                        <img src={item.thumb} alt={item.title} className="h-full w-full object-cover" />
-                      </Link>
-                      <div className="flex flex-1 flex-col justify-between">
-                        <div className="flex items-start justify-between gap-4">
-                          <div>
-                            <Link href={`/products/${item.publicProductId}`} className="text-base font-semibold hover:text-blue-600">
-                              {item.title}
-                            </Link>
-                            <p className="mt-1 text-xs text-slate-500">{item.option}</p>
-                            <Link href={`/products/${item.publicProductId}`} className="mt-2 inline-flex text-xs font-bold text-blue-600 hover:text-blue-700">
-                              상품 정보 보기
-                            </Link>
-                          </div>
-                          <button onClick={() => removeItem(cartItemKey(item))} className="text-slate-400 hover:text-red-500">
-                            <X size={18} />
-                          </button>
-                        </div>
-                        <div className="mt-4 flex items-end justify-between">
-                          <div className="flex items-center rounded-lg border border-slate-300">
-                            <button onClick={() => updateQuantity(cartItemKey(item), -1)} className="flex h-8 w-8 items-center justify-center hover:bg-slate-100">
-                              <Minus size={13} />
-                            </button>
-                            <span className="w-10 text-center text-sm font-medium">{item.quantity}</span>
-                            <button onClick={() => updateQuantity(cartItemKey(item), 1)} className="flex h-8 w-8 items-center justify-center hover:bg-slate-100">
-                              <Plus size={13} />
+                  {cartItems.map((item) => {
+                    const isActive = activeCartItems.includes(item);
+                    return (
+                      <li key={cartItemKey(item)} className={`flex flex-col gap-6 p-6 sm:flex-row transition-opacity duration-200 ${isActive ? "" : "opacity-45"}`}>
+                        <Link href={`/products/${item.publicProductId}`} className="h-24 w-24 shrink-0 overflow-hidden rounded-lg bg-slate-100">
+                          <img src={item.thumb} alt={item.title} className="h-full w-full object-cover" />
+                        </Link>
+                        <div className="flex flex-1 flex-col justify-between">
+                          <div className="flex items-start justify-between gap-4">
+                            <div>
+                              <Link href={`/products/${item.publicProductId}`} className="text-base font-semibold hover:text-blue-600">
+                                {item.title}
+                              </Link>
+                              <p className="mt-1 text-xs text-slate-500">{item.option}</p>
+                              {!isActive && (
+                                <span className="mt-2 block text-[10px] font-bold text-amber-600 bg-amber-50 rounded px-2 py-0.5 inline-block border border-amber-100">
+                                  선택된 결제 수단({selectedPaymentOption?.symbol}) 미지원 (결제 제외)
+                                </span>
+                              )}
+                              <br />
+                              <Link href={`/products/${item.publicProductId}`} className="mt-2 inline-flex text-xs font-bold text-blue-600 hover:text-blue-700">
+                                상품 정보 보기
+                              </Link>
+                            </div>
+                            <button onClick={() => removeItem(cartItemKey(item))} className="text-slate-400 hover:text-red-500">
+                              <X size={18} />
                             </button>
                           </div>
-                          <span className="text-lg font-bold font-mono">
-                            {formatCryptoAmount((Number.parseFloat(item.cryptoAmount) || 0) * item.quantity)} {item.cryptoSymbol}
-                          </span>
+                          <div className="mt-4 flex items-end justify-between">
+                            <div className="flex items-center rounded-lg border border-slate-300">
+                              <button 
+                                onClick={() => updateQuantity(cartItemKey(item), -1)} 
+                                disabled={!isActive}
+                                className="flex h-8 w-8 items-center justify-center hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                              >
+                                <Minus size={13} />
+                              </button>
+                              <span className="w-10 text-center text-sm font-medium">{item.quantity}</span>
+                              <button 
+                                onClick={() => updateQuantity(cartItemKey(item), 1)} 
+                                disabled={!isActive}
+                                className="flex h-8 w-8 items-center justify-center hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                              >
+                                <Plus size={13} />
+                              </button>
+                            </div>
+                            <span className="text-lg font-bold font-mono">
+                              {formatCryptoAmount((Number.parseFloat(item.cryptoAmount) || 0) * item.quantity)} {item.cryptoSymbol}
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                    </li>
-                  ))}
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             </div>

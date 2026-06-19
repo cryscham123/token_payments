@@ -714,8 +714,6 @@ def _variant_option_values(value: Mapping[str, Any]) -> dict[str, str]:
     for raw_key, raw_value in value.items():
         key = _bounded_text(str(raw_key), "ProductVariant.option_values.key", max_length=60)
         result[key] = _bounded_text(str(raw_value), f"ProductVariant.option_values.{key}", max_length=120)
-    if not result:
-        raise ValueError("ProductVariant.option_values must not be empty")
     return result
 
 

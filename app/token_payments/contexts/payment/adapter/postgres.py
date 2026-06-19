@@ -61,7 +61,36 @@ SELECT
     refund_tx_hash,
     refund_block_number,
     refund_gas_used,
-    items,
+    COALESCE(
+        NULLIF(items, '[]'::jsonb),
+        (
+            SELECT COALESCE(jsonb_agg(jsonb_build_object(
+                'orderLineKey', NULLIF(oi.line_key, ''),
+                'productId', oi.product_id,
+                'publicVariantId', oi.public_variant_id,
+                'name', oi.product_snapshot_name,
+                'selectedOptions', COALESCE(oi.selected_options, '{}'::jsonb),
+                'quantity', oi.quantity,
+                'unitPrice', jsonb_build_object(
+                    'amount', oi.unit_price_numeric::text,
+                    'symbol', oi.unit_price_symbol,
+                    'chainId', oi.unit_price_chain_id,
+                    'tokenAddress', oi.unit_price_token_address,
+                    'decimals', oi.unit_price_decimals
+                ),
+                'subTotal', jsonb_build_object(
+                    'amount', oi.subtotal_numeric::text,
+                    'symbol', oi.subtotal_symbol,
+                    'chainId', oi.subtotal_chain_id,
+                    'tokenAddress', oi.subtotal_token_address,
+                    'decimals', oi.subtotal_decimals
+                )
+            ) ORDER BY oi.order_item_id), '[]'::jsonb)
+            FROM order_items oi
+            WHERE oi.order_id = payments.order_id
+        ),
+        '[]'::jsonb
+    ) AS items,
     expires_at
 FROM payments
 WHERE payment_id = %(payment_id)s
@@ -98,7 +127,36 @@ SELECT
     refund_tx_hash,
     refund_block_number,
     refund_gas_used,
-    items,
+    COALESCE(
+        NULLIF(items, '[]'::jsonb),
+        (
+            SELECT COALESCE(jsonb_agg(jsonb_build_object(
+                'orderLineKey', NULLIF(oi.line_key, ''),
+                'productId', oi.product_id,
+                'publicVariantId', oi.public_variant_id,
+                'name', oi.product_snapshot_name,
+                'selectedOptions', COALESCE(oi.selected_options, '{}'::jsonb),
+                'quantity', oi.quantity,
+                'unitPrice', jsonb_build_object(
+                    'amount', oi.unit_price_numeric::text,
+                    'symbol', oi.unit_price_symbol,
+                    'chainId', oi.unit_price_chain_id,
+                    'tokenAddress', oi.unit_price_token_address,
+                    'decimals', oi.unit_price_decimals
+                ),
+                'subTotal', jsonb_build_object(
+                    'amount', oi.subtotal_numeric::text,
+                    'symbol', oi.subtotal_symbol,
+                    'chainId', oi.subtotal_chain_id,
+                    'tokenAddress', oi.subtotal_token_address,
+                    'decimals', oi.subtotal_decimals
+                )
+            ) ORDER BY oi.order_item_id), '[]'::jsonb)
+            FROM order_items oi
+            WHERE oi.order_id = payments.order_id
+        ),
+        '[]'::jsonb
+    ) AS items,
     expires_at
 FROM payments
 WHERE status IN ('SUBMITTED', 'CONFIRMING')

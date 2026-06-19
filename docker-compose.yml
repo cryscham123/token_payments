@@ -23,9 +23,12 @@ services:
     env_file:
       - path: .env
         required: false
+    environment:
+      - ADAPTER_BLOCKCHAIN_DEPLOYED_CONTRACTS_PATH=/var/chainDB/deployed_contracts.json
     volumes:
       - postgres_data:/var/lib/postgresql
       - "${PWD}/app/postgres/init.d:/docker-entrypoint-initdb.d"
+      - "test_network_data:${TEST_NETWORK_DB_PATH}:ro"
     expose:
       - "5432"
     healthcheck:
@@ -33,6 +36,9 @@ services:
       interval: 3s
       timeout: 5s
       retries: 10
+    depends_on:
+      test_network:
+        condition: service_started
 
   postgres_seed:
     container_name: postgres_seed
@@ -45,8 +51,10 @@ services:
     environment:
       - BOOTSTRAP_POSTGRES_HOST=postgres
       - BOOTSTRAP_POSTGRES_PORT=5432
+      - ADAPTER_BLOCKCHAIN_DEPLOYED_CONTRACTS_PATH=/var/chainDB/deployed_contracts.json
     volumes:
       - "${PWD}/app/postgres/init.d:/docker-entrypoint-initdb.d"
+      - "test_network_data:${TEST_NETWORK_DB_PATH}:ro"
     command:
       [
         "sh",
@@ -56,6 +64,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      test_network:
+        condition: service_started
 
   pgweb:
       container_name: pgweb

@@ -20,12 +20,15 @@ class InventorySnapshot:
     total_stock: int
     sale_status: InventorySaleStatus | str
     updated_at: datetime
+    public_variant_id: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.store_id, StoreId):
             raise ValueError("InventorySnapshot.store_id must be a StoreId")
         if not isinstance(self.product_id, ProductId):
             raise ValueError("InventorySnapshot.product_id must be a ProductId")
+        if self.public_variant_id is not None:
+            object.__setattr__(self, "public_variant_id", _text(self.public_variant_id, "public_variant_id"))
         object.__setattr__(self, "available_stock", _non_negative_int(self.available_stock, "available_stock"))
         object.__setattr__(self, "reserved_stock", _non_negative_int(self.reserved_stock, "reserved_stock"))
         object.__setattr__(self, "confirmed_stock", _non_negative_int(self.confirmed_stock, "confirmed_stock"))
@@ -54,6 +57,7 @@ class InventoryAuditRecord:
     idempotency_key: str
     recorded_at: datetime
     actor_store_role: str | None = None
+    public_variant_id: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.actor_user_id, UserId):
@@ -81,6 +85,8 @@ class InventoryAuditRecord:
         object.__setattr__(self, "recorded_at", _aware_datetime(self.recorded_at, "recorded_at"))
         if self.actor_store_role is not None:
             object.__setattr__(self, "actor_store_role", _text(self.actor_store_role, "actor_store_role"))
+        if self.public_variant_id is not None:
+            object.__setattr__(self, "public_variant_id", _text(self.public_variant_id, "public_variant_id"))
 
 
 class InventoryRepository(Protocol):

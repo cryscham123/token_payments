@@ -136,6 +136,16 @@ class StoreCatalogApi:
         except ValueError as exc:
             return _error_response("VALIDATION_ERROR", str(exc), 400, request.request_id)
 
+    def list_all_public_products(self, request: ApiRequest) -> ApiResponse:
+        try:
+            _reject_unknown_query(request.query, {"q", "category", "tag", "sort", "limit", "offset"})
+            result = self._use_case.list_all_public_products(
+                filters=_catalog_filters(request.query, merchant=False),
+            )
+            return json_response(result, request_id=request.request_id)
+        except ValueError as exc:
+            return _error_response("VALIDATION_ERROR", str(exc), 400, request.request_id)
+
     def list_public_products(self, request: ApiRequest) -> ApiResponse:
         try:
             _reject_unknown_query(request.query, {"q", "category", "tag", "sort", "limit", "offset", "publicStoreId"})

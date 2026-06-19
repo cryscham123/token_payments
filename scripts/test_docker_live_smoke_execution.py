@@ -143,7 +143,7 @@ def test_live_execution_failure_after_infrastructure_start_runs_cleanup_once(
     tmp_path: Path, monkeypatch: Any, capsys: Any
 ) -> None:
     secret_value = "runtime-secret-token"
-    (tmp_path / ".env").write_text(f"ADAPTER_BLOCKCHAIN_TOKEN_ADDRESS={secret_value}\n", encoding="utf-8")
+    (tmp_path / ".env").write_text(f"POSTGRES_PASSWORD={secret_value}\n", encoding="utf-8")
     calls: list[list[str]] = []
 
     def fake_run(argv: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:

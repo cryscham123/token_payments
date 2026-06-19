@@ -104,7 +104,6 @@ def test_plan_payload_does_not_expose_sensitive_or_claude_values() -> None:
                 "TEST_NETWORK_ACCOUNT=",
                 "POSTGRES_PASSWORD=",
                 "ADAPTER_POSTGRES_DSN=",
-                "ADAPTER_BLOCKCHAIN_TOKEN_ADDRESS=",
             )
         )
     ]

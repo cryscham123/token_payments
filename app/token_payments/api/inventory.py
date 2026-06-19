@@ -87,6 +87,7 @@ class StoreOwnerInventoryApi:
                 "command_id": command_id,
                 "store_id": store_id,
                 "product_id": product_id,
+                "public_variant_id": _optional_text(body, "publicVariantId") or _optional_text(body, "public_variant_id"),
                 "actor_user_id": claims.user_id,
                 "actor_role": claims.role,
                 "reason": reason,
@@ -311,6 +312,15 @@ def _required_text(body: Mapping[str, Any], key: str) -> str:
     value = body.get(key)
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{key} is required")
+    return value.strip()
+
+
+def _optional_text(body: Mapping[str, Any], key: str) -> str | None:
+    value = body.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        return None
     return value.strip()
 
 

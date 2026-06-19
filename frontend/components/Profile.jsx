@@ -23,6 +23,7 @@ import {
   getCurrentUserProfile,
   updateCurrentUserProfile,
   listMerchantStores,
+  listPublicStores,
   listWallets,
   requestWalletLinkChallenge,
   linkWallet,
@@ -30,7 +31,8 @@ import {
   revokeWallet,
   listOAuthIdentities,
   requestOAuthAuthorization,
-  revokeOAuthIdentity
+  revokeOAuthIdentity,
+  ensureLocalTestnet
 } from "@/lib/auth-client";
 import { ensureChain } from "@/lib/checkout-client";
 import { isActiveWallet } from "@/lib/payment-options";
@@ -49,12 +51,22 @@ export default function Profile() {
   const [copiedWallet, setCopiedWallet] = useState(null); // stores address of copied wallet
   const [isGoogleLinked, setIsGoogleLinked] = useState(false);
   const [googleIdentityId, setGoogleIdentityId] = useState(null);
+  const [tokenAssets, setTokenAssets] = useState({ usdc: null, usdt: null });
 
   const [claimingState, setClaimingState] = useState({
     eth: false,
     usdc: false,
     usdt: false
   });
+  const [watchingAsset, setWatchingAsset] = useState({
+    usdc: false,
+    usdt: false
+  });
+
+  const loadTestnetAssets = async () => {
+    const storesPayload = await listPublicStores();
+    return extractTestnetTokenAssets(storesPayload?.stores || []);
+  };
 
   const loadProfileData = async () => {
     setErrorMsg("");
@@ -71,6 +83,7 @@ export default function Profile() {
 
         if (!userPayload?.user) {
           setCurrentUser(null);
+          setTokenAssets({ usdc: null, usdt: null });
           setLoading(false);
           return;
         }
@@ -79,7 +92,7 @@ export default function Profile() {
         setCurrentUser(activeUser);
       }
 
-      const [profileRes, storesRes, walletsRes, oauthRes] = await Promise.all([
+      const [profileRes, storesRes, walletsRes, oauthRes, tokenAssetsRes] = await Promise.all([
         getCurrentUserProfile().catch((err) => {
           if (err.status !== 404 && err.body?.error?.code !== "USER_PROFILE_NOT_FOUND") {
             console.error("Profile fetch failed:", err);
@@ -99,6 +112,10 @@ export default function Profile() {
         listOAuthIdentities().catch((err) => {
           console.error("OAuth identities fetch failed:", err);
           return { oauthIdentities: [] };
+        }),
+        loadTestnetAssets().catch((err) => {
+          console.error("Testnet token assets fetch failed:", err);
+          return { usdc: null, usdt: null };
         })
       ]);
 
@@ -108,6 +125,7 @@ export default function Profile() {
       }
       setStores(storesRes?.stores || []);
       setWallets((walletsRes?.wallets || []).filter(isActiveWallet));
+      setTokenAssets(tokenAssetsRes || { usdc: null, usdt: null });
 
       const googleIdentity = (oauthRes?.oauthIdentities || []).find(
         (identity) => identity.provider === "google" && !identity.revokedAt
@@ -131,6 +149,7 @@ export default function Profile() {
       setDisplayNameInput("");
       setStores([]);
       setWallets([]);
+      setTokenAssets({ usdc: null, usdt: null });
       setLoading(false);
     } else {
       loadProfileData();
@@ -229,6 +248,7 @@ export default function Profile() {
     }
 
     try {
+      await ensureLocalTestnet();
       try {
         await ethereum.request({
           method: "wallet_requestPermissions",
@@ -348,7 +368,8 @@ export default function Profile() {
     setClaimingState((prev) => ({ ...prev, [type]: true }));
 
     try {
-      await ensureChain(1337);
+      const selectedAsset = type === "usdc" || type === "usdt" ? tokenAssets[type] : null;
+      await ensureChain(selectedAsset?.chainId || 1337);
 
       const accounts = await ethereum.request({ method: "eth_requestAccounts" });
       const userAddress = accounts?.[0] || currentUser?.walletAddress;
@@ -381,9 +402,12 @@ export default function Profile() {
         const payload = await res.json();
         if (payload.error) throw new Error(payload.error.message || "ETH claim failed");
         txHash = payload.result;
-      } else if (type === "usdc") {
-        const usdcAddress = "0x4444444444444444444444444444444444444444";
-        const data = erc20TransferData(userAddress, 100000000n); // 100 USDC (6 decimals)
+      } else if (selectedAsset) {
+        if (!selectedAsset.tokenAddress) {
+          throw new Error(`${selectedAsset.symbol} 토큰 주소를 찾을 수 없습니다. 가게 목록을 불러왔는지 확인해 주세요.`);
+        }
+        const amount = 100n * 10n ** BigInt(Number(selectedAsset.decimals || 6));
+        const data = erc20TransferData(userAddress, amount);
         const res = await fetch(rpcUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -394,7 +418,7 @@ export default function Profile() {
             params: [
               {
                 from: deployer,
-                to: usdcAddress,
+                to: selectedAsset.tokenAddress,
                 value: "0x0",
                 data,
                 gas: "0x186a0"
@@ -403,31 +427,7 @@ export default function Profile() {
           })
         });
         const payload = await res.json();
-        if (payload.error) throw new Error(payload.error.message || "USDC claim failed");
-        txHash = payload.result;
-      } else if (type === "usdt") {
-        const usdtAddress = "0x5555555555555555555555555555555555555555";
-        const data = erc20TransferData(userAddress, 100000000n); // 100 USDT (6 decimals)
-        const res = await fetch(rpcUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            jsonrpc: "2.0",
-            id: 1,
-            method: "eth_sendTransaction",
-            params: [
-              {
-                from: deployer,
-                to: usdtAddress,
-                value: "0x0",
-                data,
-                gas: "0x186a0"
-              }
-            ]
-          })
-        });
-        const payload = await res.json();
-        if (payload.error) throw new Error(payload.error.message || "USDT claim failed");
+        if (payload.error) throw new Error(payload.error.message || `${selectedAsset.symbol} claim failed`);
         txHash = payload.result;
       }
 
@@ -437,6 +437,47 @@ export default function Profile() {
       setErrorMsg(err.message || `${type.toUpperCase()} 지급에 실패했습니다. Local Test Network(Ganache)를 확인하세요.`);
     } finally {
       setClaimingState((prev) => ({ ...prev, [type]: false }));
+    }
+  };
+
+  const handleWatchAsset = async (type) => {
+    setErrorMsg("");
+    setSuccessMsg("");
+
+    const ethereum = typeof window !== "undefined" ? window.ethereum : undefined;
+    if (!ethereum) {
+      setErrorMsg("MetaMask가 설치되어 있지 않거나 브라우저 환경이 아닙니다.");
+      return;
+    }
+
+    const asset = tokenAssets[type];
+    if (!asset?.tokenAddress) {
+      setErrorMsg(`${String(type).toUpperCase()} 토큰 주소가 아직 동기화되지 않았습니다.`);
+      return;
+    }
+
+    setWatchingAsset((prev) => ({ ...prev, [type]: true }));
+    try {
+      await ensureChain(asset.chainId || 1337);
+      const watched = await ethereum.request({
+        method: "wallet_watchAsset",
+        params: {
+          type: "ERC20",
+          options: {
+            address: asset.tokenAddress,
+            symbol: asset.symbol,
+            decimals: Number(asset.decimals || 6)
+          }
+        }
+      });
+      if (watched) {
+        setSuccessMsg(`${asset.symbol} 토큰을 MetaMask에 추가했습니다.`);
+      }
+    } catch (err) {
+      console.warn("Watch asset failed:", err);
+      setErrorMsg(err.message || `${asset.symbol} 토큰 추가에 실패했습니다.`);
+    } finally {
+      setWatchingAsset((prev) => ({ ...prev, [type]: false }));
     }
   };
 
@@ -461,6 +502,9 @@ export default function Profile() {
     if (cid === 1337 || cid === 31337) return "bg-amber-50 text-amber-700 border-amber-100";
     return "bg-slate-50 text-slate-700 border-slate-100";
   };
+
+  const usdcReady = Boolean(tokenAssets.usdc?.tokenAddress);
+  const usdtReady = Boolean(tokenAssets.usdt?.tokenAddress);
 
   function parseChainId(value) {
     const parsed = typeof value === "string" ? Number.parseInt(value, 16) : Number(value);
@@ -751,7 +795,7 @@ export default function Profile() {
                       <button
                         type="button"
                         onClick={() => handleFaucetClaim("usdc")}
-                        disabled={claimingState.usdc}
+                        disabled={claimingState.usdc || !usdcReady}
                         className="inline-flex items-center gap-2 rounded-xl bg-blue-50 hover:bg-blue-100 border border-blue-200/50 px-4 py-2 hover:border-blue-300/50 transition-all text-xs font-bold text-blue-700 disabled:opacity-50 shadow-sm"
                       >
                         {claimingState.usdc ? (
@@ -766,7 +810,7 @@ export default function Profile() {
                       <button
                         type="button"
                         onClick={() => handleFaucetClaim("usdt")}
-                        disabled={claimingState.usdt}
+                        disabled={claimingState.usdt || !usdtReady}
                         className="inline-flex items-center gap-2 rounded-xl bg-teal-50 hover:bg-teal-100 border border-teal-200/50 px-4 py-2 hover:border-teal-300/50 transition-all text-xs font-bold text-teal-700 disabled:opacity-50 shadow-sm"
                       >
                         {claimingState.usdt ? (
@@ -775,6 +819,38 @@ export default function Profile() {
                           <Coins className="h-3.5 w-3.5 text-teal-500" />
                         )}
                         <span>100 USDT 청구</span>
+                      </button>
+
+                      {/* USDC watch asset */}
+                      <button
+                        type="button"
+                        onClick={() => handleWatchAsset("usdc")}
+                        disabled={watchingAsset.usdc || !usdcReady}
+                        className="inline-flex items-center gap-2 rounded-xl bg-white hover:bg-blue-50 border border-blue-200/60 px-4 py-2 hover:border-blue-300/60 transition-all text-xs font-bold text-blue-700 disabled:opacity-50 shadow-sm"
+                        title={tokenAssets.usdc?.tokenAddress || "USDC 주소 동기화 대기"}
+                      >
+                        {watchingAsset.usdc ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500" />
+                        ) : (
+                          <Wallet className="h-3.5 w-3.5 text-blue-500" />
+                        )}
+                        <span>USDC 지갑에 추가</span>
+                      </button>
+
+                      {/* USDT watch asset */}
+                      <button
+                        type="button"
+                        onClick={() => handleWatchAsset("usdt")}
+                        disabled={watchingAsset.usdt || !usdtReady}
+                        className="inline-flex items-center gap-2 rounded-xl bg-white hover:bg-teal-50 border border-teal-200/60 px-4 py-2 hover:border-teal-300/60 transition-all text-xs font-bold text-teal-700 disabled:opacity-50 shadow-sm"
+                        title={tokenAssets.usdt?.tokenAddress || "USDT 주소 동기화 대기"}
+                      >
+                        {watchingAsset.usdt ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin text-teal-500" />
+                        ) : (
+                          <Wallet className="h-3.5 w-3.5 text-teal-500" />
+                        )}
+                        <span>USDT 지갑에 추가</span>
                       </button>
                     </div>
                   </div>
@@ -825,4 +901,34 @@ export default function Profile() {
       </main>
     </div>
   );
+}
+
+function extractTestnetTokenAssets(stores) {
+  const result = { usdc: null, usdt: null };
+  for (const store of stores || []) {
+    const assets = store?.paymentCapability?.acceptedAssets || store?.paymentCapability?.assets || [];
+    for (const asset of assets) {
+      const normalized = normalizeTokenAsset(asset);
+      if (!normalized || normalized.chainId !== 1337) continue;
+      const key = normalized.symbol.toLowerCase();
+      if ((key === "usdc" || key === "usdt") && !result[key]) {
+        result[key] = normalized;
+      }
+    }
+  }
+  return result;
+}
+
+function normalizeTokenAsset(asset) {
+  const tokenAddress = asset?.tokenContract?.address || asset?.tokenAddress || "";
+  const symbol = String(asset?.symbol || "").toUpperCase();
+  const chainId = Number(asset?.chainId || 0);
+  if (!tokenAddress || !symbol || !chainId) return null;
+  return {
+    assetId: asset.assetId || "",
+    symbol,
+    chainId,
+    tokenAddress,
+    decimals: Number(asset.decimals || 6)
+  };
 }

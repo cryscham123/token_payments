@@ -2081,6 +2081,65 @@ paths:
       - status: 400
         codes:
         - VALIDATION_ERROR
+  /products:
+    get:
+      summary: List all public products
+      description: Lists public products across all active stores with query, category, tag, sort, and pagination filters.
+      tags:
+      - catalog
+      operationId: listAllPublicProducts
+      security: []
+      parameters:
+      - $ref: '#/components/parameters/XRequestIdHeader'
+      - $ref: '#/components/parameters/q'
+      - $ref: '#/components/parameters/category'
+      - $ref: '#/components/parameters/tag'
+      - $ref: '#/components/parameters/sort'
+      - $ref: '#/components/parameters/limit'
+      - $ref: '#/components/parameters/offset'
+      responses:
+        '200':
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JsonObject'
+              example:
+                products:
+                - publicStoreId: st_demo_store_001
+                  storeDisplayName: Demo Store
+                  publicProductId: prd_local_hoodie_001
+                  title: Local Hoodie
+                  displayPrice:
+                    symbol: ETH
+                    chainId: 1337
+                  availability:
+                    saleStatus: ACTIVE
+                pagination:
+                  limit: 20
+                  offset: 0
+                  nextOffset: null
+        '400':
+          description: 'Validation error, malformed JSON, missing required input, unsupported enum, or rejected request shape. Possible error codes: VALIDATION_ERROR.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: VALIDATION_ERROR
+                  message: Validation error, malformed JSON, missing required input, unsupported enum, or rejected request shape.
+                  status: 400
+      x-codeSamples:
+      - lang: cURL
+        label: CLI
+        source: |
+          curl -L 'http://127.0.0.1:8000/products?limit=20&offset=0'
+      x-errorCodes:
+      - status: 400
+        codes:
+        - VALIDATION_ERROR
+
   /stores/{publicStoreId}:
     get:
       summary: Get store profile
