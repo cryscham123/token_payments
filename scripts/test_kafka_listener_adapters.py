@@ -391,6 +391,45 @@ def test_payment_command_listener_derives_inventory_item_from_reserved_inventory
     )
 
 
+def test_payment_initiate_stamps_store_id_onto_items_missing_it() -> None:
+    # Order items are store-agnostic; the order-level storeId must be stamped onto each
+    # item so payment events carry it and PaymentFailed -> RELEASE_INVENTORY commands are
+    # not rejected with "payload missing storeId".
+    payment_handler = FakePaymentCommandHandler()
+    initiate_id = CommandId.for_order_action(ORDER_ID, CheckoutCommandName.INITIATE_PAYMENT)
+
+    PaymentKafkaCommandListener(
+        command_handler=payment_handler,
+        processed_commands=FakeProcessedCommandRepository(),
+    ).handle(
+        _command_message(
+            CheckoutCommandName.INITIATE_PAYMENT,
+            initiate_id,
+            {
+                "paymentId": str(PAYMENT_ID),
+                "customerId": str(CUSTOMER_ID),
+                "userId": str(USER_ID),
+                "amount": _amount_payload(),
+                "walletFrom": str(WALLET_FROM),
+                "walletTo": str(WALLET_TO),
+                "chain": {"chainId": CHAIN.chain_id, "name": CHAIN.name},
+                "expiresAt": EXPIRES_AT.isoformat(),
+                "requestedAt": NOW.isoformat(),
+                "storeId": str(STORE_ID),
+                "items": [
+                    {
+                        "productId": str(PRODUCT_ID),
+                        "publicVariantId": "mug-red-large",
+                        "quantity": 2,
+                    }
+                ],
+            },
+        )
+    )
+
+    assert payment_handler.initiate_calls[0].items[0]["storeId"] == str(STORE_ID)
+
+
 def test_order_status_event_listener_projects_payment_and_store_events() -> None:
     projector = FakeOrderStatusEventProjector()
     listener = OrderStatusKafkaEventListener(projector=projector)

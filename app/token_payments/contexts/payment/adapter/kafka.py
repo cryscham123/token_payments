@@ -276,11 +276,18 @@ def _optional_items(payload: Mapping[str, Any]) -> tuple[dict[str, Any], ...]:
         return _single_item_from_inventory_payload(payload)
     if not isinstance(value, list | tuple):
         raise MalformedKafkaMessage("items must be a JSON array")
+    # Order items are store-agnostic, but downstream RELEASE/CONFIRM inventory commands
+    # (built from payment events) require a storeId per item. Stamp the order-level
+    # storeId onto each item so it survives into the payment events.
+    store_id = _optional_payload_text(payload, "storeId", "store_id")
     items: list[dict[str, Any]] = []
     for item in value:
         if not isinstance(item, Mapping):
             raise MalformedKafkaMessage("items must contain JSON objects")
-        items.append(dict(item))
+        item_dict = dict(item)
+        if store_id is not None and not item_dict.get("storeId") and not item_dict.get("store_id"):
+            item_dict["storeId"] = store_id
+        items.append(item_dict)
     return tuple(items)
 
 
