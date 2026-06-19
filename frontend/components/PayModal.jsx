@@ -184,7 +184,7 @@ export default function PayModal() {
       router.push(`/payment-complete?trackingId=${encodeURIComponent(checkout.trackingId)}&txHash=${encodeURIComponent(nextTxHash)}`);
     } catch (error) {
       setStatus("error");
-      setMessage(errorMessage(error, "결제 전송에 실패했습니다."));
+      setMessage(errorMessage(error, "결제 전송에 실패했습니다.", paymentAmount?.symbol));
     }
   }
 
@@ -315,7 +315,24 @@ function formatTime(seconds) {
   return `${minutes}:${secs}`;
 }
 
-function errorMessage(error, fallback) {
-  if (error?.code) return `${error.code}: ${error.message || fallback}`;
+function errorMessage(error, fallback, symbol = "") {
+  const errMsg = String(error?.message || error || "").toLowerCase();
+  
+  if (error?.code === 4001 || errMsg.includes("user rejected") || errMsg.includes("user denied")) {
+    return "지갑에서 트랜잭션 승인을 취소하셨습니다.";
+  }
+  
+  if (errMsg.includes("insufficient balance") || errMsg.includes("exceeds balance")) {
+    if (symbol && symbol !== "ETH") {
+      return `결제에 필요한 ${symbol} 토큰 잔액이 부족합니다. 프로필 페이지의 테스트넷 Faucet에서 ${symbol}을 충전해 주세요.`;
+    }
+    return "결제에 필요한 잔액이 부족합니다. (가스비 ETH 또는 보유 잔액 확인 필요)";
+  }
+  
+  if (errMsg.includes("chain id") || errMsg.includes("switch ethereum chain")) {
+    return "올바른 네트워크(로컬 테스트넷 Chain 1337)로 전환해 주세요.";
+  }
+
+  if (error?.code) return `[에러 코드 ${error.code}] ${error.message || fallback}`;
   return error?.message || fallback;
 }
