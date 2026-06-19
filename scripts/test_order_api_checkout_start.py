@@ -337,6 +337,55 @@ def test_order_api_maps_all_order_error_codes(code: OrderErrorCode, expected_sta
     assert response.body["error"]["code"] == code.value
 
 
+def test_order_api_resolves_public_store_and_product_ids_via_resolver() -> None:
+    service, _repositories = _service()
+    resolver = FakeOrderTargetResolver(store_id=str(STORE_ID), product_ids={"prd_demo_001": str(PRODUCT_ID)})
+    api = OrdersApi(service, target_resolver=resolver)
+
+    response = api.create_order(
+        ApiRequest(
+            request_id="req-public",
+            method="POST",
+            path="/orders",
+            headers={"X-User-Id": str(USER_ID)},
+            body={
+                "publicStoreId": "st_demo_store_001",
+                "deliveryAddress": {"id": "ship-to", "street": "2 River Rd"},
+                "items": [{"publicProductId": "prd_demo_001", "quantity": 1}],
+            },
+            received_at=NOW,
+        )
+    )
+
+    assert response.status_code == 201
+    assert resolver.calls == [("st_demo_store_001", ["prd_demo_001"])]
+    assert response.body["order"]["items"][0]["productId"] == str(PRODUCT_ID)
+
+
+def test_order_api_rejects_unresolvable_public_product_id_without_internal_uuid() -> None:
+    service, _repositories = _service()
+    resolver = FakeOrderTargetResolver(store_id=str(STORE_ID), product_ids={})
+    api = OrdersApi(service, target_resolver=resolver)
+
+    response = api.create_order(
+        ApiRequest(
+            request_id="req-unresolvable",
+            method="POST",
+            path="/orders",
+            headers={"X-User-Id": str(USER_ID)},
+            body={
+                "publicStoreId": "st_demo_store_001",
+                "deliveryAddress": {"id": "ship-to", "street": "2 River Rd"},
+                "items": [{"publicProductId": "prd_missing", "quantity": 1}],
+            },
+            received_at=NOW,
+        )
+    )
+
+    assert response.status_code == 400
+    assert response.body["error"]["code"] == "VALIDATION_ERROR"
+
+
 def test_order_postgres_repositories_and_outbox_share_injected_connection_boundary() -> None:
     connection = FakePostgresConnection()
     connection.customers[str(USER_ID)] = {
@@ -601,6 +650,17 @@ class FakeOutboxMessageRepository:
 
     def save(self, message: OutboxMessage) -> None:
         self.saved.append(message)
+
+
+class FakeOrderTargetResolver:
+    def __init__(self, *, store_id: str | None, product_ids: dict[str, str]) -> None:
+        self._store_id = store_id
+        self._product_ids = product_ids
+        self.calls: list[tuple[str, list[str]]] = []
+
+    def resolve(self, public_store_id: str, public_product_ids: Any) -> tuple[str | None, dict[str, str]]:
+        self.calls.append((public_store_id, list(public_product_ids)))
+        return self._store_id, dict(self._product_ids)
 
 
 class RejectingUseCase:
