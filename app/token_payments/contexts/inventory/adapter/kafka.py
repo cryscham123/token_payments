@@ -76,9 +76,11 @@ class InventoryKafkaCommandListener:
                 product_id=_product_id(_required_payload_text(payload, "productId", "product_id", field_name="productId")),
                 store_id=_store_id(_required_payload_text(payload, "storeId", "store_id", field_name="storeId")),
                 quantity=_positive_int(_required_payload_value(payload, "quantity"), "quantity"),
+                public_variant_id=_optional_payload_text(payload, "publicVariantId", "public_variant_id"),
                 requested_at=_command_time(payload),
                 causation_id=_causation_id(message, payload),
                 event_message_id=_event_message_id(payload),
+                items=_optional_items(payload),
             )
             handler_result = self._command_handler.reserve_inventory(command)
         elif command_name is CheckoutCommandName.RELEASE_INVENTORY:
@@ -87,9 +89,11 @@ class InventoryKafkaCommandListener:
                 order_id=order_id,
                 product_id=_product_id(_required_payload_text(payload, "productId", "product_id", field_name="productId")),
                 store_id=_store_id(_required_payload_text(payload, "storeId", "store_id", field_name="storeId")),
+                public_variant_id=_optional_payload_text(payload, "publicVariantId", "public_variant_id"),
                 requested_at=_command_time(payload),
                 causation_id=_causation_id(message, payload),
                 event_message_id=_event_message_id(payload),
+                items=_optional_items(payload),
             )
             handler_result = self._command_handler.release_inventory(command)
         elif command_name is CheckoutCommandName.CONFIRM_INVENTORY:
@@ -98,9 +102,11 @@ class InventoryKafkaCommandListener:
                 order_id=order_id,
                 product_id=_product_id(_required_payload_text(payload, "productId", "product_id", field_name="productId")),
                 store_id=_store_id(_required_payload_text(payload, "storeId", "store_id", field_name="storeId")),
+                public_variant_id=_optional_payload_text(payload, "publicVariantId", "public_variant_id"),
                 requested_at=_command_time(payload),
                 causation_id=_causation_id(message, payload),
                 event_message_id=_event_message_id(payload),
+                items=_optional_items(payload),
             )
             handler_result = self._command_handler.confirm_inventory(command)
         else:
@@ -206,6 +212,20 @@ def _required_payload_value(payload: Mapping[str, Any], name: str) -> object:
     if name not in payload or payload[name] is None:
         raise MalformedKafkaMessage(f"payload missing {name}")
     return payload[name]
+
+
+def _optional_items(payload: Mapping[str, Any]) -> tuple[dict[str, Any], ...]:
+    value = payload.get("items")
+    if value is None:
+        return ()
+    if not isinstance(value, list | tuple):
+        raise MalformedKafkaMessage("items must be a JSON array")
+    items: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            raise MalformedKafkaMessage("items must contain JSON objects")
+        items.append(dict(item))
+    return tuple(items)
 
 
 def _optional_payload_text(payload: Mapping[str, Any], *names: str) -> str | None:

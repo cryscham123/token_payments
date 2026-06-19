@@ -19,6 +19,10 @@ from token_payments.contexts.store_catalog.application import StoreCatalogApplic
 from token_payments.contexts.store_catalog.domain import (  # noqa: E402
     ProductStatus,
     ProductVisibility,
+    ProductOption,
+    ProductOptionValue,
+    ProductVariant,
+    PublicVariantId,
     PublicProductId,
     StoreProduct,
 )
@@ -76,8 +80,11 @@ def test_public_store_and_product_reads_use_public_ids_and_redact_internal_ids()
     listed_product = list_payload["products"][0]
     assert listed_product["title"] == "Ledger Mug"
     assert listed_product["displayPrice"]["symbol"] == "USDC"
-    assert listed_product["availability"]["availableStock"] == 8
+    assert listed_product["displayPrice"]["amount"] == "10.00"
+    assert listed_product["displayPrice"]["priceLabel"] == "from"
+    assert listed_product["availability"]["availableStock"] == 11
     assert listed_product["paymentCapability"]["supportedChainIds"] == [11155111]
+    assert listed_product["variants"][0]["publicVariantId"] == "var_ledger_mug_350"
     assert list_payload["pagination"] == {"limit": 10, "offset": 0, "nextOffset": None}
     assert "storeId" not in listed_product
     assert "productId" not in listed_product
@@ -85,6 +92,17 @@ def test_public_store_and_product_reads_use_public_ids_and_redact_internal_ids()
     assert detail_response.status_code == 200
     assert detail_payload["publicProductId"] == str(PUBLIC_PRODUCT_ID)
     assert detail_payload["attributes"] == {"capacityMl": 350}
+    assert detail_payload["options"][0]["key"] == "capacityMl"
+    assert detail_payload["options"][0]["required"] is True
+    assert detail_payload["options"][0]["selectionType"] == "SINGLE"
+    assert detail_payload["options"][0]["optionType"] == "VARIANT"
+    assert [value["value"] for value in detail_payload["options"][0]["values"]] == ["350", "500"]
+    assert [variant["displayName"] for variant in detail_payload["variants"]] == ["350ml", "500ml"]
+    assert detail_payload["variants"][0]["priceDelta"]["amount"] == "0.00"
+    assert detail_payload["variants"][0]["displayPrice"]["amount"] == "10.00"
+    assert detail_payload["variants"][1]["priceDelta"]["amount"] == "2.50"
+    assert detail_payload["variants"][1]["displayPrice"]["amount"] == "12.50"
+    assert detail_payload["variants"][1]["availability"]["availableStock"] == 3
     assert detail_payload["availability"]["saleStatus"] == "ACTIVE"
     assert "productId" not in detail_payload
     assert "storeId" not in detail_payload
@@ -216,6 +234,58 @@ def _seed_catalog() -> FakeStoreCatalogRepository:
     )
     for product in products:
         repository.save_product(product)
+    repository.product_options[(store.store_id, PRODUCT_ID)] = (
+        ProductOption(
+            store_id=store.store_id,
+            product_id=PRODUCT_ID,
+            option_id="opt-capacity",
+            option_key="capacityMl",
+            display_name="용량",
+            sort_order=1,
+        ),
+    )
+    repository.product_option_values["opt-capacity"] = (
+        ProductOptionValue(
+            store_id=store.store_id,
+            product_id=PRODUCT_ID,
+            option_id="opt-capacity",
+            option_value_id="val-capacity-350",
+            value_key="350",
+            display_value="350ml",
+            sort_order=1,
+        ),
+        ProductOptionValue(
+            store_id=store.store_id,
+            product_id=PRODUCT_ID,
+            option_id="opt-capacity",
+            option_value_id="val-capacity-500",
+            value_key="500",
+            display_value="500ml",
+            sort_order=2,
+        ),
+    )
+    repository.product_variants[(store.store_id, PRODUCT_ID)] = (
+        ProductVariant(
+            store_id=store.store_id,
+            product_id=PRODUCT_ID,
+            public_variant_id=PublicVariantId("var_ledger_mug_350"),
+            display_name="350ml",
+            option_values={"capacityMl": "350"},
+            price_delta=price(amount="0.00"),
+            sort_order=1,
+        ),
+        ProductVariant(
+            store_id=store.store_id,
+            product_id=PRODUCT_ID,
+            public_variant_id=PublicVariantId("var_ledger_mug_500"),
+            display_name="500ml",
+            option_values={"capacityMl": "500"},
+            price_delta=price(amount="2.50"),
+            sort_order=2,
+        ),
+    )
+    repository.variant_inventory["var_ledger_mug_350"] = 8
+    repository.variant_inventory["var_ledger_mug_500"] = 3
     repository.inventory[(store.store_id, PRODUCT_ID)] = 8
     return repository
 
@@ -241,7 +311,7 @@ def _product(**overrides: Any) -> StoreProduct:
         "attributes": {"capacityMl": 350},
         "status": ProductStatus.ACTIVE,
         "visibility": ProductVisibility.PUBLIC,
-        "price": price(),
+        "price": price(amount="10.00"),
         "created_at": NOW,
         "updated_at": NOW,
     }

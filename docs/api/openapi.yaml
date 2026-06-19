@@ -1541,7 +1541,7 @@ paths:
     post:
       summary: Create order
       description: |
-        Creates a checkout order after server-side validation of store, product, price, inventory, wallet, chain, and asset capability.
+        Creates a checkout order after server-side validation of store, product, price, inventory, wallet, chain, and asset capability. Item `publicVariantId` and `selectedOptions` are validated against current catalog state; unit price is recalculated from base price plus variant/add-on price deltas, and variant inventory is targeted when a variant is selected.
       tags:
       - orders
       operationId: createOrder
@@ -1565,24 +1565,29 @@ paths:
                     street: <street>
                   totalAmount:
                     amount: <amount>
-                    symbol: TPAY
+                    symbol: ETH
                     chainId: 1337
                     tokenAddress: null
                     decimals: 18
                   items:
                   - orderItemId: <order-item-id>
                     productId: <product-id>
+                    publicVariantId: <public-variant-id>
+                    selectedOptions:
+                      size: L
+                      giftWrap:
+                      - premium
                     name: <product-name>
                     quantity: 1
                     unitPrice:
                       amount: <amount>
-                      symbol: TPAY
+                      symbol: ETH
                       chainId: 1337
                       tokenAddress: null
                       decimals: 18
                     subTotal:
                       amount: <amount>
-                      symbol: TPAY
+                      symbol: ETH
                       chainId: 1337
                       tokenAddress: null
                       decimals: 18
@@ -2164,7 +2169,7 @@ paths:
                   publicProductId: prd_local_hoodie_001
                   title: Local Hoodie
                   displayPrice:
-                    symbol: TPAY
+                    symbol: ETH
                     chainId: 1337
                   availability:
                     saleStatus: ACTIVE
@@ -5472,8 +5477,8 @@ components:
           example:
             title: Local Hoodie
             price:
-              amount: '10.000000000000000000'
-              symbol: TPAY
+              amount: '0.010000000000000000'
+              symbol: ETH
               chainId: 1337
               tokenAddress: null
               decimals: 18
@@ -5927,6 +5932,18 @@ components:
         productId:
           type: string
           description: Store product id selected for checkout.
+        publicVariantId:
+          type: string
+          description: Optional public variant id selected by the customer.
+        selectedOptions:
+          type: object
+          additionalProperties:
+            oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+          description: Selected option values keyed by option key. Multi-select add-ons use arrays.
         quantity:
           type: integer
           minimum: 1
@@ -6104,7 +6121,7 @@ components:
         symbol:
           type: string
           description: Asset display symbol.
-          example: TPAY
+          example: ETH
         chainId:
           type: integer
           description: EVM chain id.

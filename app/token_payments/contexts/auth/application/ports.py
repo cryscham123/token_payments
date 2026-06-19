@@ -127,6 +127,8 @@ class OAuthAuthorizationResult:
 class OAuthProviderIdentity:
     provider: str
     provider_subject: str
+    wallet_address: str
+
 
 
 @dataclass(frozen=True)

@@ -15,7 +15,9 @@ from token_payments.contexts.order.domain import (
     OrderItemId,
     OrderStatus,
     Product,
+    ProductOptionValuePrice,
     ProductSnapshot,
+    ProductVariantPrice,
     Store,
     TrackingId,
 )
@@ -86,6 +88,46 @@ WHERE store_id = %(store_id)s
 ORDER BY product_id
 """
 
+SELECT_STORE_PRODUCT_VARIANTS_SQL = """
+SELECT
+    public_variant_id,
+    option_values,
+    active,
+    status,
+    price_delta_numeric,
+    price_delta_symbol,
+    price_delta_chain_id,
+    price_delta_token_address,
+    price_delta_decimals
+FROM store_catalog_product_variants
+WHERE store_id = %(store_id)s
+  AND product_id = %(product_id)s
+ORDER BY sort_order, public_variant_id
+"""
+
+SELECT_STORE_PRODUCT_OPTION_VALUES_SQL = """
+SELECT
+    options.option_key,
+    options.selection_type,
+    options.option_type,
+    values.value_key,
+    values.display_value,
+    values.active,
+    values.price_delta_numeric,
+    values.price_delta_symbol,
+    values.price_delta_chain_id,
+    values.price_delta_token_address,
+    values.price_delta_decimals
+FROM store_catalog_product_option_values values
+JOIN store_catalog_product_options options
+  ON options.store_id = values.store_id
+ AND options.product_id = values.product_id
+ AND options.option_id = values.option_id
+WHERE values.store_id = %(store_id)s
+  AND values.product_id = %(product_id)s
+ORDER BY options.sort_order, values.sort_order, values.value_key
+"""
+
 SELECT_ORDER_SQL = """
 SELECT
     order_id,
@@ -108,6 +150,9 @@ SELECT
     product_id,
     product_snapshot_created_at,
     product_snapshot_name,
+    public_variant_id,
+    selected_options,
+    line_key,
     unit_price_numeric,
     unit_price_symbol,
     unit_price_chain_id,
@@ -275,6 +320,9 @@ INSERT INTO order_items (
     product_id,
     product_snapshot_created_at,
     product_snapshot_name,
+    public_variant_id,
+    selected_options,
+    line_key,
     unit_price_numeric,
     unit_price_symbol,
     unit_price_chain_id,
@@ -292,6 +340,9 @@ INSERT INTO order_items (
     %(product_id)s,
     %(product_snapshot_created_at)s,
     %(product_snapshot_name)s,
+    %(public_variant_id)s,
+    %(selected_options)s::jsonb,
+    %(line_key)s,
     %(unit_price_numeric)s,
     %(unit_price_symbol)s,
     %(unit_price_chain_id)s,
@@ -309,6 +360,9 @@ ON CONFLICT (order_item_id) DO UPDATE SET
     product_id = EXCLUDED.product_id,
     product_snapshot_created_at = EXCLUDED.product_snapshot_created_at,
     product_snapshot_name = EXCLUDED.product_snapshot_name,
+    public_variant_id = EXCLUDED.public_variant_id,
+    selected_options = EXCLUDED.selected_options,
+    line_key = EXCLUDED.line_key,
     unit_price_numeric = EXCLUDED.unit_price_numeric,
     unit_price_symbol = EXCLUDED.unit_price_symbol,
     unit_price_chain_id = EXCLUDED.unit_price_chain_id,
@@ -370,7 +424,7 @@ class PostgresStoreRepository:
         return Store(
             store_id=StoreId(_row_value(store_row, "store_id")),
             owner_user_id=UserId(_row_value(store_row, "owner_user_id")),
-            products=tuple(_row_to_product(row) for row in product_rows),
+            products=tuple(self._row_to_product(row) for row in product_rows),
             active=bool(_row_value(store_row, "active")),
             store_address=_optional_address(
                 _row_value(store_row, "store_address_id"),
@@ -379,6 +433,23 @@ class PostgresStoreRepository:
             store_wallet=_optional_wallet(_row_value(store_row, "store_wallet_address")),
             supported_chain_ids=_supported_chain_ids(_row_value(store_row, "supported_chain_ids")),
         )
+
+    def _row_to_product(self, row: Mapping[str, Any] | object) -> Product:
+        store_id = StoreId(_row_value(row, "store_id"))
+        product_id = ProductId(_row_value(row, "product_id"))
+        variant_rows = _fetch_all(
+            self._connection.execute(
+                SELECT_STORE_PRODUCT_VARIANTS_SQL,
+                {"store_id": str(store_id), "product_id": str(product_id)},
+            )
+        )
+        option_value_rows = _fetch_all(
+            self._connection.execute(
+                SELECT_STORE_PRODUCT_OPTION_VALUES_SQL,
+                {"store_id": str(store_id), "product_id": str(product_id)},
+            )
+        )
+        return _row_to_product(row, variant_rows=variant_rows, option_value_rows=option_value_rows)
 
 
 class PostgresOrderRepository:
@@ -438,6 +509,9 @@ class PostgresOrderRepository:
                     "product_id": str(item.product_snapshot.product_id),
                     "product_snapshot_created_at": item.product_snapshot.created_date,
                     "product_snapshot_name": item.product_snapshot.name,
+                    "public_variant_id": item.product_snapshot.public_variant_id,
+                    "selected_options": json.dumps(dict(item.product_snapshot.selected_options)),
+                    "line_key": item.line_key,
                     **_crypto_params("unit_price", item.product_snapshot.price),
                     "quantity": item.quantity,
                     **_crypto_params("subtotal", item.sub_total),
@@ -515,11 +589,27 @@ def _row_to_customer(row: Mapping[str, Any] | object) -> Customer:
     return customer
 
 
-def _row_to_product(row: Mapping[str, Any] | object) -> Product:
+def _row_to_product(
+    row: Mapping[str, Any] | object,
+    *,
+    variant_rows: list[Mapping[str, Any] | object] | None = None,
+    option_value_rows: list[Mapping[str, Any] | object] | None = None,
+) -> Product:
     return Product(
         product_id=ProductId(_row_value(row, "product_id")),
         name=str(_row_value(row, "name")),
         price=_crypto_from_row(row, "price"),
+        variants={
+            str(_row_value(variant_row, "public_variant_id")): _row_to_product_variant_price(variant_row)
+            for variant_row in (variant_rows or [])
+            if _row_value_or_default(variant_row, "active", True)
+            and str(_row_value_or_default(variant_row, "status", "ACTIVE")) == "ACTIVE"
+        },
+        option_values={
+            f"{_row_value(option_value_row, 'option_key')}:{_row_value(option_value_row, 'value_key')}": _row_to_product_option_value_price(option_value_row)
+            for option_value_row in (option_value_rows or [])
+            if _row_value_or_default(option_value_row, "active", True)
+        },
     )
 
 
@@ -532,9 +622,33 @@ def _row_to_order_item(row: Mapping[str, Any] | object) -> OrderItem:
             created_date=_row_value(row, "product_snapshot_created_at"),
             name=str(_row_value(row, "product_snapshot_name")),
             price=_crypto_from_row(row, "unit_price"),
+            public_variant_id=_optional_row_value(row, "public_variant_id"),
+            selected_options=_json_mapping(_row_value_or_default(row, "selected_options", None)),
         ),
         quantity=int(_row_value(row, "quantity")),
         sub_total=_crypto_from_row(row, "subtotal"),
+        line_key=str(_optional_row_value(row, "line_key") or ""),
+    )
+
+
+def _row_to_product_variant_price(row: Mapping[str, Any] | object) -> ProductVariantPrice:
+    return ProductVariantPrice(
+        public_variant_id=str(_row_value(row, "public_variant_id")),
+        option_values=_json_mapping(_row_value(row, "option_values")),
+        price_delta=_crypto_from_row(row, "price_delta"),
+        active=bool(_row_value_or_default(row, "active", True)) and str(_row_value_or_default(row, "status", "ACTIVE")) == "ACTIVE",
+    )
+
+
+def _row_to_product_option_value_price(row: Mapping[str, Any] | object) -> ProductOptionValuePrice:
+    return ProductOptionValuePrice(
+        option_key=str(_row_value(row, "option_key")),
+        value_key=str(_row_value(row, "value_key")),
+        display_value=str(_row_value(row, "display_value")),
+        option_type=str(_row_value(row, "option_type")),
+        selection_type=str(_row_value(row, "selection_type")),
+        price_delta=_optional_crypto_from_row(row, "price_delta"),
+        active=bool(_row_value_or_default(row, "active", True)),
     )
 
 
@@ -597,6 +711,32 @@ def _crypto_from_row(row: Mapping[str, Any] | object, prefix: str) -> Crypto:
         token_address=_row_value(row, f"{prefix}_token_address"),
         decimals=int(_row_value(row, f"{prefix}_decimals")),
     )
+
+
+def _optional_crypto_from_row(row: Mapping[str, Any] | object, prefix: str) -> Crypto | None:
+    amount = _row_value_or_default(row, f"{prefix}_numeric", None)
+    if amount is None:
+        return None
+    return Crypto(
+        amount=amount,
+        symbol=str(_row_value(row, f"{prefix}_symbol")),
+        chain_id=int(_row_value(row, f"{prefix}_chain_id")),
+        token_address=_optional_row_value(row, f"{prefix}_token_address"),
+        decimals=int(_row_value(row, f"{prefix}_decimals")),
+    )
+
+
+def _json_mapping(value: Any) -> Mapping[str, Any]:
+    if value is None:
+        return {}
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise ValueError("JSON mapping column is not valid JSON") from exc
+    if not isinstance(value, Mapping):
+        raise ValueError("JSON mapping column must be an object")
+    return dict(value)
 
 
 def _total_amount(items: tuple[OrderItem, ...]) -> Crypto:
@@ -767,6 +907,12 @@ def _optional_row_value(row: Mapping[str, Any] | object, key: str) -> str | None
     else:
         value = getattr(row, key, None)
     return str(value) if value is not None else None
+
+
+def _row_value_or_default(row: Mapping[str, Any] | object, key: str, default: Any) -> Any:
+    if isinstance(row, Mapping):
+        return row.get(key, default)
+    return getattr(row, key, default)
 
 
 def _fetch_one(result: Any) -> Any:

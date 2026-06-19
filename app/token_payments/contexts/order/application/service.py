@@ -193,7 +193,7 @@ class OrderApplicationService:
                 customer=customer,
                 store=store,
                 delivery_address=command.delivery_address,
-                product_quantities=_product_quantities(command),
+                item_requests=command.items,
                 created_at=command.requested_at,
                 tracking_id=command.tracking_id,
                 payment_asset_id=command.payment_asset_id,
@@ -560,6 +560,7 @@ def _order_created_payload(
         },
         "items": [_item_payload(item, command.payment_asset_id) for item in order.items],
         "productId": str(primary_item.product_snapshot.product_id),
+        "publicVariantId": primary_item.product_snapshot.public_variant_id,
         "quantity": primary_item.quantity,
         "amount": _crypto_payload(total_amount, asset_id=command.payment_asset_id),
         "paymentAssetId": command.payment_asset_id,
@@ -592,7 +593,7 @@ def _order_cancelled_payload(command: CancelOrderCommand, event: OrderCancelledE
 
 def _item_payload(item: OrderItem, asset_id: str | None = None) -> dict[str, Any]:
     snapshot = item.product_snapshot
-    return {
+    payload = {
         "orderItemId": str(item.order_item_id),
         "productId": str(snapshot.product_id),
         "name": snapshot.name,
@@ -600,6 +601,13 @@ def _item_payload(item: OrderItem, asset_id: str | None = None) -> dict[str, Any
         "unitPrice": _crypto_payload(snapshot.price, asset_id=asset_id),
         "subTotal": _crypto_payload(item.sub_total, asset_id=asset_id),
     }
+    if snapshot.public_variant_id is not None or snapshot.selected_options:
+        payload["orderLineKey"] = item.line_key
+    if snapshot.public_variant_id is not None:
+        payload["publicVariantId"] = snapshot.public_variant_id
+    if snapshot.selected_options:
+        payload["selectedOptions"] = dict(snapshot.selected_options)
+    return payload
 
 
 def _total_amount(items: tuple[OrderItem, ...]) -> Crypto:

@@ -54,7 +54,7 @@ def test_reserve_inventory_command_saves_inventory_outbox_and_processed_command(
     outbox_messages = FakeOutboxMessageRepository()
     handler = InventoryCommandHandler(inventory_repository, processed_commands, outbox_messages)
 
-    result = handler.reserve_inventory(_reserve_command(quantity=3))
+    result = handler.reserve_inventory(_reserve_command(quantity=3, items=_inventory_items()))
 
     assert result.status == InventoryCommandStatus.RESERVED
     assert result.duplicate_decision is None
@@ -79,6 +79,7 @@ def test_reserve_inventory_command_saves_inventory_outbox_and_processed_command(
     assert outbox.payload["availableStock"] == 7
     assert outbox.payload["reservedStock"] == 3
     assert outbox.payload["totalStock"] == 10
+    assert outbox.payload["items"] == list(_inventory_items())
     assert outbox.payload["occurredAt"] == NOW.isoformat()
 
     assert processed_commands.records == [
@@ -106,6 +107,22 @@ def test_reserve_inventory_command_rejects_insufficient_stock_without_side_effec
     assert inventory_repository.saved == []
     assert outbox_messages.saved == []
     assert processed_commands.records == []
+
+
+def test_reserve_inventory_command_targets_variant_inventory_when_variant_selected() -> None:
+    inventory_repository = FakeInventoryRepository(_inventory(available=4, public_variant_id="hoodie-l"))
+    processed_commands = FakeProcessedCommandRepository()
+    outbox_messages = FakeOutboxMessageRepository()
+    handler = InventoryCommandHandler(inventory_repository, processed_commands, outbox_messages)
+
+    result = handler.reserve_inventory(_reserve_command(quantity=2, public_variant_id="hoodie-l"))
+
+    assert result.status == InventoryCommandStatus.RESERVED
+    assert inventory_repository.get_calls == [(PRODUCT_ID, STORE_ID, "hoodie-l")]
+    assert result.inventory is not None
+    assert result.inventory.public_variant_id == "hoodie-l"
+    assert result.inventory.available_stock == Quantity(2)
+    assert outbox_messages.saved[0].payload["publicVariantId"] == "hoodie-l"
 
 
 def test_duplicate_command_is_explicitly_ignored_before_loading_or_saving_inventory() -> None:
@@ -174,44 +191,69 @@ def test_inventory_application_does_not_import_external_adapters_or_clients() ->
         assert imports.isdisjoint(forbidden_roots), f"{path} imports adapter dependency: {imports}"
 
 
-def _reserve_command(quantity: int) -> ReserveInventoryCommand:
+def _reserve_command(
+    quantity: int,
+    public_variant_id: str | None = None,
+    *,
+    items: tuple[dict[str, object], ...] = (),
+) -> ReserveInventoryCommand:
     return ReserveInventoryCommand(
         command_id=COMMAND_ID,
         order_id=ORDER_ID,
         product_id=PRODUCT_ID,
         store_id=STORE_ID,
         quantity=Quantity(quantity),
+        public_variant_id=public_variant_id,
         requested_at=NOW,
         causation_id="order-created-message",
         event_message_id=EVENT_MESSAGE_ID,
+        items=items,
     )
 
 
-def _inventory(available: int) -> ProductInventory:
+def _inventory(available: int, public_variant_id: str | None = None) -> ProductInventory:
     return ProductInventory(
         product_id=PRODUCT_ID,
         store_id=STORE_ID,
+        public_variant_id=public_variant_id,
         available_stock=Quantity(available),
         reserved_stock=Quantity(0),
         total_stock=Quantity(available),
     )
 
 
+def _inventory_items() -> tuple[dict[str, object], ...]:
+    return (
+        {
+            "productId": str(PRODUCT_ID),
+            "storeId": str(STORE_ID),
+            "publicVariantId": "hoodie-l",
+            "quantity": 3,
+        },
+        {
+            "productId": "018f33aa-9e6d-73d8-9dc3-47d6cdcc6c30",
+            "storeId": str(STORE_ID),
+            "publicVariantId": "hoodie-xl",
+            "quantity": 1,
+        },
+    )
+
+
 class FakeInventoryRepository:
     def __init__(self, inventory: ProductInventory | None) -> None:
-        self.inventories: dict[tuple[ProductId, StoreId], ProductInventory] = {}
+        self.inventories: dict[tuple[ProductId, StoreId, str | None], ProductInventory] = {}
         if inventory is not None:
-            self.inventories[(inventory.product_id, inventory.store_id)] = inventory
-        self.get_calls: list[tuple[ProductId, StoreId]] = []
+            self.inventories[(inventory.product_id, inventory.store_id, inventory.public_variant_id)] = inventory
+        self.get_calls: list[tuple[ProductId, StoreId, str | None]] = []
         self.saved: list[ProductInventory] = []
 
-    def get(self, product_id: ProductId, store_id: StoreId) -> ProductInventory | None:
-        self.get_calls.append((product_id, store_id))
-        return self.inventories.get((product_id, store_id))
+    def get(self, product_id: ProductId, store_id: StoreId, public_variant_id: str | None = None) -> ProductInventory | None:
+        self.get_calls.append((product_id, store_id, public_variant_id))
+        return self.inventories.get((product_id, store_id, public_variant_id))
 
     def save(self, inventory: ProductInventory) -> None:
         self.saved.append(inventory)
-        self.inventories[(inventory.product_id, inventory.store_id)] = inventory
+        self.inventories[(inventory.product_id, inventory.store_id, inventory.public_variant_id)] = inventory
 
 
 class FakeProcessedCommandRepository:

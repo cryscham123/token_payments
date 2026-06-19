@@ -12,7 +12,9 @@ from .model import (
     OrderPaidEvent,
     OrderStatus,
     Product,
+    ProductOptionValuePrice,
     ProductSnapshot,
+    ProductVariantPrice,
     Store,
     TrackingId,
 )
@@ -31,7 +33,9 @@ __all__ = [
     "OrderPaidEvent",
     "OrderStatus",
     "Product",
+    "ProductOptionValuePrice",
     "ProductSnapshot",
+    "ProductVariantPrice",
     "Store",
     "TrackingId",
 ]

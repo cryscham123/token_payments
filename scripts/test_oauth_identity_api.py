@@ -238,19 +238,18 @@ def test_auth_application_service_links_logs_in_and_soft_revokes_oauth_identity(
     assert revoked.oauth_identity.revoked_at == NOW
     assert oauth_identities.get_active_by_provider_subject("google", "google-subject-123") is None
 
-    with pytest.raises(AuthApplicationError) as exc_info:
-        service.completeOAuthSession(
-            CompleteOAuthSessionCommand(
-                provider="google",
-                code="oauth-code",
-                state="state-route",
-                redirect_uri="https://token-payments.local/oauth/callback",
-                device_id="browser-1",
-                requested_at=NOW,
-            )
+    session2 = service.completeOAuthSession(
+        CompleteOAuthSessionCommand(
+            provider="google",
+            code="oauth-code",
+            state="state-route",
+            redirect_uri="https://token-payments.local/oauth/callback",
+            device_id="browser-1",
+            requested_at=NOW,
         )
+    )
+    assert session2.login.user.user_id == UserId(USER_ID)
 
-    assert exc_info.value.code is AuthErrorCode.OAUTH_IDENTITY_NOT_LINKED
 
 
 def _json(body: bytes) -> dict[str, object]:
@@ -386,7 +385,11 @@ class FakeOAuthProvider:
     def exchange_code(self, **kwargs: object) -> OAuthProviderIdentity:
         assert kwargs["code"] == "oauth-code"
         assert kwargs["state"] == "state-route"
-        return OAuthProviderIdentity(provider=str(kwargs["provider"]), provider_subject="google-subject-123")
+        return OAuthProviderIdentity(
+            provider=str(kwargs["provider"]),
+            provider_subject="google-subject-123",
+            wallet_address="0x2222222222222222222222222222222222222222",
+        )
 
 
 class FakeTokenIssuer:

@@ -47,7 +47,12 @@ services:
       - BOOTSTRAP_POSTGRES_PORT=5432
     volumes:
       - "${PWD}/app/postgres/init.d:/docker-entrypoint-initdb.d"
-    command: ["sh", "/docker-entrypoint-initdb.d/002-token-payments-default-seed.sh"]
+    command:
+      [
+        "sh",
+        "-c",
+        "sh /docker-entrypoint-initdb.d/002-token-payments-default-seed.sh && sh /docker-entrypoint-initdb.d/003-token-payments-demo-seed.sh",
+      ]
     depends_on:
       postgres:
         condition: service_healthy
@@ -252,6 +257,26 @@ services:
       token_payments_live_worker:
         condition: service_started
 
+  token_payments_web:
+    image: token_payments_web
+    build:
+      context: frontend
+      dockerfile: Dockerfile
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - NEXT_PUBLIC_API_BASE_URL=${API_PUBLIC_BASE_URL}
+    command: ["npm", "run", "dev", "--", "--hostname", "0.0.0.0", "--port", "3000"]
+    restart: unless-stopped
+    profiles:
+      - api
+    expose:
+      - "3000"
+    depends_on:
+      token_payments_api:
+        condition: service_healthy
+
   nginx:
     container_name: nginx
     build:
@@ -272,6 +297,8 @@ services:
     depends_on:
       token_payments_api:
         condition: service_healthy
+      token_payments_web:
+        condition: service_started
 
   redis:
     container_name: redis

@@ -311,9 +311,9 @@ class AuthApplicationService:
         provider = _coerce_oauth_provider(command.provider)
         redirect_uri = _require_text(command.redirect_uri, "redirect_uri")
         mode = _coerce_oauth_mode(command.mode)
-        if mode is OAuthAuthorizationMode.LINK and command.actor_user_id is None:
-            raise AuthApplicationError(AuthErrorCode.AUTHENTICATION_REQUIRED, _message_for_code(AuthErrorCode.AUTHENTICATION_REQUIRED))
-        if command.actor_user_id is not None:
+        if mode is OAuthAuthorizationMode.LINK:
+            if command.actor_user_id is None:
+                raise AuthApplicationError(AuthErrorCode.AUTHENTICATION_REQUIRED, _message_for_code(AuthErrorCode.AUTHENTICATION_REQUIRED))
             user = self._users.get_by_id(command.actor_user_id)
             if user is None or not user.active:
                 raise AuthApplicationError(AuthErrorCode.AUTHENTICATION_REQUIRED, _message_for_code(AuthErrorCode.AUTHENTICATION_REQUIRED))
@@ -338,14 +338,34 @@ class AuthApplicationService:
             provider_identity.provider,
             provider_identity.provider_subject,
         )
+        
+        registered = False
         if identity is None:
-            raise AuthApplicationError(
-                AuthErrorCode.OAUTH_IDENTITY_NOT_LINKED,
-                _message_for_code(AuthErrorCode.OAUTH_IDENTITY_NOT_LINKED),
+            wallet_addr = provider_identity.wallet_address
+            user = self._users.get_by_wallet(wallet_addr)
+            if user is None:
+                user = User.register_by_wallet(
+                    UserId(_new_text_id(self._user_id_generator, "user_id_generator")),
+                    wallet_addr,
+                )
+                self._users.save(user)
+                self._ensure_personal_membership(user, now)
+                registered = True
+            
+            identity = OAuthIdentity(
+                oauth_identity_id=OAuthIdentityId.new(),
+                provider=provider_identity.provider,
+                provider_subject=provider_identity.provider_subject,
+                user_id=user.user_id,
+                wallet_id=None,
+                linked_at=now,
             )
-        user = self._users.get_by_id(identity.user_id)
-        if user is None or not user.active:
-            raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, "linked OAuth user is missing or inactive")
+            self._oauth_identity_repository().save(identity)
+        else:
+            user = self._users.get_by_id(identity.user_id)
+            if user is None or not user.active:
+                raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, "linked OAuth user is missing or inactive")
+
         device_id = _require_text(command.device_id, "device_id")
         user = user.record_login(now)
         self._users.save(user)
@@ -357,6 +377,11 @@ class AuthApplicationService:
             login_wallet_id=identity.wallet_id,
         )
         self._sessions.save(session)
+        
+        if registered:
+            self._event_publisher.publish(UserRegisteredEvent(user.user_id, user.primary_wallet, now))
+            self._event_publisher.publish(WalletVerifiedEvent(user.user_id, user.primary_wallet, now))
+            
         self._event_publisher.publish(UserLoggedInEvent(user.user_id, session.session_id, now))
         return OAuthSessionResult(login=LoginResult(user=user, session=session, issued_token=issued_token), oauth_identity=identity)
 
@@ -685,6 +710,7 @@ class AuthApplicationService:
         return OAuthProviderIdentity(
             provider=_coerce_oauth_provider(result.provider),
             provider_subject=_require_text(result.provider_subject, "provider_subject"),
+            wallet_address=_coerce_wallet(result.wallet_address),
         )
 
     def _active_login_method_count(self, user_id: UserId) -> int:

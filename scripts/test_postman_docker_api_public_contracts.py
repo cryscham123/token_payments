@@ -45,7 +45,7 @@ REQUIRED_DOC_TERMS = (
 FINAL_LOCAL_ORDER = (
     "cp .env.example .env",
     "docker compose --env-file .env config --services",
-    "docker compose --env-file .env build token_payments_api nginx",
+    "docker compose --env-file .env build token_payments_api token_payments_web nginx",
     "docker compose up -d",
     "postman/fixtures/token-payments.local.seed-plan.json",
     "postman/token-payments.local.postman_collection.json",

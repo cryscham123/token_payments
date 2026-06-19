@@ -67,7 +67,7 @@ Store wallet and supported chains live on the store profile compatibility payloa
 
 `PATCH /merchant/stores/{publicStoreId}/products/{publicProductId}` updates product catalog detail fields without mutating inventory sale status or stock. Product catalog records carry internal `product_id`, external `public_product_id`, internal `store_id`, external `public_store_id`, `title`, optional `description`, `category`, `tags`, `media`, JSON `attributes`, `status`, `visibility`, and timestamps. `public_product_id` is stable and unique inside the public store scope; it must not expose the internal UUID primary key or a sequential id. Search engine integration remains future scope.
 
-`GET /stores`, `GET /stores/{publicStoreId}/products`, and `GET /stores/{publicStoreId}/products/{publicProductId}` are public read APIs keyed only by public store/product ids. Store responses expose business profile and bounded payment capability summaries, not internal settlement wallet values or internal UUID keys. Product responses expose `publicProductId`, display price, availability, and payment capability summaries while omitting internal `store_id`, `product_id`, and customer ids. `GET /merchant/stores/{publicStoreId}/products` and `GET /merchant/stores/{publicStoreId}/products/{publicProductId}` are permission-protected merchant reads that can include private/inactive catalog records and bounded filters for status, visibility, category, tag, query text, sort, limit, and offset.
+`GET /stores`, `GET /stores/{publicStoreId}/products`, and `GET /stores/{publicStoreId}/products/{publicProductId}` are public read APIs keyed only by public store/product ids. Store responses expose business profile and bounded payment capability summaries, not internal settlement wallet values or internal UUID keys. Product responses expose `publicProductId`, media, display price, aggregate availability, option definitions, variants, and payment capability summaries while omitting internal `store_id`, `product_id`, and customer ids. Option definitions expose `required`, `selectionType`, `optionType`, and option value `priceDelta`; required `VARIANT` options are selected before purchase and participate in variant matching, while optional `ADD_ON` options are customer selections that can add to the item price but do not define store/product payment capability. Variant responses expose `publicVariantId`, option values, `priceDelta`, calculated `displayPrice`, sale status, and variant-level availability; product `displayPrice` is the lowest currently purchaseable `product.price + variant.priceDelta` amount and carries `priceLabel: "from"` when derived from variants. Product-level payment capability remains store/product-scoped; chain/asset selection is a checkout payment choice, not a product variant axis. `GET /merchant/stores/{publicStoreId}/products` and `GET /merchant/stores/{publicStoreId}/products/{publicProductId}` are permission-protected merchant reads that can include private/inactive catalog records and bounded filters for status, visibility, category, tag, query text, sort, limit, and offset.
 
 Catalog query filtering is the PostgreSQL baseline for phase 23. Query text, category, tag, status, visibility, sort, and pagination values are bounded before persistence access; SQL values use parameter binding; `ILIKE` wildcard input is escaped; and ORDER BY columns/directions are allowlisted. Elasticsearch/OpenSearch search projection is future scope and should attach through outbox/projection without changing the public query contract.
 
@@ -820,6 +820,8 @@ Response `200`:
 
 Auth: customer user.
 
+Each order item may include `publicVariantId` and `selectedOptions`. The server resolves the current catalog product, validates the selected variant/add-on values, recalculates `unitPrice` from product base price plus variant/add-on `priceDelta`, and emits inventory commands for variant inventory when `publicVariantId` is present. Client-supplied display price, stock, or token metadata is never trusted.
+
 Request:
 
 ```json
@@ -832,6 +834,11 @@ Request:
   "items": [
     {
       "productId": "product-001",
+      "publicVariantId": "hoodie-l",
+      "selectedOptions": {
+        "size": "L",
+        "giftWrap": ["premium"]
+      },
       "quantity": 2
     }
   ]
@@ -862,6 +869,11 @@ Response `201`:
       {
         "orderItemId": "order-item-001",
         "productId": "product-001",
+        "publicVariantId": "hoodie-l",
+        "selectedOptions": {
+          "size": "L",
+          "giftWrap": ["premium"]
+        },
         "name": "Demo Product",
         "quantity": 2,
         "unitPrice": {
@@ -1297,11 +1309,11 @@ Final local verification should run in this order:
 
 For cookie auth setup, import `postman/token-payments.local.postman_collection.json` and `postman/token-payments.local.postman_environment.json`. The auth folder runs `POST /auth/challenges`, MetaMask signing, `POST /auth/sessions`, `POST /auth/sessions/refresh`, `DELETE /auth/sessions`, and `GET /auth/me` in order. Postman stores `Set-Cookie` responses in its cookie jar; happy-path requests do not use manual `Cookie`, Bearer, localStorage, or sessionStorage auth. `postman/token-payments.cookie-auth.expected.json` records redacted signed token shape, active key id metadata, CSRF header/cookie names, cookie attributes, and expired/invalid-signature negative cases.
 
-Default PostgreSQL bootstrap uses `app/postgres/init.d/002-token-payments-default-seed.sh`. New postgres volumes run it after schema creation, and `docker compose up` also runs the idempotent `postgres_seed` one-shot service after postgres is healthy. The script inserts only the static RBAC catalog plus the local platform admin identity and memberships needed to authenticate as an admin. The admin wallet is controlled by `.env` `BOOTSTRAP_ADMIN_WALLET_ADDRESS` and defaults to `TEST_NETWORK_ACCOUNT` when left empty. User and group UUIDs are generated in PostgreSQL and then reused by lookup on later runs.
+Default PostgreSQL bootstrap uses `app/postgres/init.d/002-token-payments-default-seed.sh` for static RBAC plus the local platform admin identity, then `app/postgres/init.d/003-token-payments-demo-seed.sh` for deterministic local demo data. New postgres volumes run both after schema creation, and `docker compose up` also runs the idempotent `postgres_seed` one-shot service after postgres is healthy. The admin wallet is controlled by `.env` `BOOTSTRAP_ADMIN_WALLET_ADDRESS` and defaults to `TEST_NETWORK_ACCOUNT` when left empty. The demo seed adds a customer, store owner, platform admin persona, one active demo store, one public product, inventory, payment asset rows, merchant/platform groups, and checkout/approval projections using stable local IDs.
 
-Manual seed data for local Postman examples is still described by `postman/fixtures/token-payments.local.seed-plan.json`. It references demo customer/store/product/inventory/payment destination/test network ids using committed PostgreSQL schema table and column names, but it is fixture metadata rather than the default init path. Route-level expected response examples live in `postman/expected/token-payments.api.expected.json`; the fixture covers auth, cookie/CSRF headers, `Idempotency-Key`, `X-Request-Id`, happy-path checkout, compensation cancellation, and operator action recovery while keeping signed token and cookie values redacted.
+Manual seed data for local Postman examples is still described by `postman/fixtures/token-payments.local.seed-plan.json`. It references the same demo customer/store/product/inventory/payment destination/test network ids using committed PostgreSQL schema table and column names, while the compose bootstrap materializes the matching core fixture rows through the demo seed script. Route-level expected response examples live in `postman/expected/token-payments.api.expected.json`; the fixture covers auth, cookie/CSRF headers, `Idempotency-Key`, `X-Request-Id`, happy-path checkout, compensation cancellation, and operator action recovery while keeping signed token and cookie values redacted.
 
-The Docker Compose API service is `token_payments_api`. Public local traffic goes through `nginx` on ports 80/443; `token_payments_api` only exposes port 8000 inside the compose network and does not publish a host port. Nginx access logs are disabled, nginx does not forward client IP headers, and the token API disables uvicorn access logs so user IP addresses are not stored in nginx or token API logs. Async checkout progress, including inventory reservation, auth RBAC projection, and payment receipt confirmation, is handled by `token_payments_live_worker`. The live worker belongs to both the `runtime` and `api` profiles, and the API service depends on it so API-profile local runs process outbox/Kafka work automatically. After `cp .env.example .env`, `COMPOSE_PROFILES=runtime,smoke,api` makes both services part of plain `docker compose up`; automated checks use daemon-less compose config and smoke plans and do not start Docker. Daemon-less compose config validation does not start Docker:
+The Docker Compose API service is `token_payments_api`, and the customer storefront service is `token_payments_web`. Public local traffic goes through `nginx` on ports 80/443; API paths route to `token_payments_api:8000`, storefront/root traffic routes to `token_payments_web:3000`, and neither service publishes its internal port directly. Nginx access logs are disabled, nginx does not forward client IP headers, and the token API disables uvicorn access logs so user IP addresses are not stored in nginx or token API logs. Async checkout progress, including inventory reservation, auth RBAC projection, and payment receipt confirmation, is handled by `token_payments_live_worker`. The live worker belongs to both the `runtime` and `api` profiles, and the API service depends on it so API-profile local runs process outbox/Kafka work automatically. After `cp .env.example .env`, `COMPOSE_PROFILES=runtime,smoke,api` makes both services part of plain `docker compose up`; automated checks use daemon-less compose config and smoke plans and do not start Docker. Daemon-less compose config validation does not start Docker:
 
 ```bash
 docker compose --env-file .env.example config --services
@@ -1316,12 +1328,12 @@ Final local backend order for Postman Docker API readiness:
 ```bash
 cp .env.example .env
 docker compose --env-file .env config --services
-docker compose --env-file .env build token_payments_api nginx
+docker compose --env-file .env build token_payments_api token_payments_web nginx
 docker compose up -d
 curl --fail --insecure https://localhost/healthz
 curl --fail --insecure https://localhost/readyz
-# Default DB bootstrap runs idempotently through postgres_seed after postgres is healthy.
-# Optionally apply/review the manual Postman fixture plan in postman/fixtures/token-payments.local.seed-plan.json
+# Default RBAC/admin and demo DB bootstrap run idempotently through postgres_seed after postgres is healthy.
+# Optionally review the manual Postman fixture plan in postman/fixtures/token-payments.local.seed-plan.json
 # Import postman/token-payments.local.postman_collection.json and postman/token-payments.local.postman_environment.json
 python3 scripts/docker_live_smoke.py --api-readiness --plan
 python3 scripts/docker_live_smoke.py --api-readiness --execute --confirm-live-docker

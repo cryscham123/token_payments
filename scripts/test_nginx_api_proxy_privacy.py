@@ -12,20 +12,31 @@ sys.path.insert(0, str(ROOT / "app"))
 def test_compose_routes_public_api_through_nginx_without_publishing_token_api_port() -> None:
     services = _compose_services()
     api = services["token_payments_api"]
+    web = services["token_payments_web"]
     nginx = services["nginx"]
 
     assert _list_for_key(api, "ports") == []
     assert _list_for_key(api, "expose") == ["8000"]
+    assert _list_for_key(web, "ports") == []
+    assert _list_for_key(web, "expose") == ["3000"]
+    assert _nested_scalar(web, "build", "context") == "frontend"
     assert _list_for_key(nginx, "ports") == ["443:443", "80:80"]
     assert _list_for_key(nginx, "profiles") == ["api"]
-    assert _depends_on_conditions(nginx) == {"token_payments_api": "service_healthy"}
+    assert _depends_on_conditions(nginx) == {
+        "token_payments_api": "service_healthy",
+        "token_payments_web": "service_started",
+    }
 
 
 def test_nginx_proxy_config_disables_ip_logs_and_does_not_forward_client_ip_headers() -> None:
     config = (ROOT / "app" / "nginx" / "default.conf").read_text(encoding="utf-8")
 
     assert "server token_payments_api:8000;" in config
+    assert "server token_payments_web:3000;" in config
+    assert "location ~ ^/(auth|checkouts?|payments|stores|merchant|admin|operator|healthz|readyz)(/|$)" in config
+    assert "location ~ ^/orders(/|$)" in config
     assert "proxy_pass http://token_payments_api;" in config
+    assert "proxy_pass http://token_payments_web;" in config
     assert "access_log off;" in config
     assert "error_log /dev/null crit;" in config
     assert "proxy_set_header Host $host;" in config
@@ -130,6 +141,23 @@ def _list_for_key(block: tuple[str, ...], key: str) -> list[str]:
         if in_key and stripped.startswith("- "):
             values.append(stripped[2:].strip().strip('"'))
     return values
+
+
+def _nested_scalar(block: tuple[str, ...], section: str, key: str) -> str | None:
+    in_section = False
+    section_indent = -1
+    for raw_line in block:
+        stripped = raw_line.strip()
+        indent = _indent_width(raw_line)
+        if stripped == f"{section}:":
+            in_section = True
+            section_indent = indent
+            continue
+        if in_section and indent <= section_indent:
+            break
+        if in_section and stripped.startswith(f"{key}:"):
+            return stripped.split(":", 1)[1].strip().strip('"')
+    return None
 
 
 def _depends_on_conditions(block: tuple[str, ...]) -> dict[str, str]:

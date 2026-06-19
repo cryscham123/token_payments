@@ -12,6 +12,7 @@ MetaMask 기반 암호화폐 checkout 시스템을 DDD bounded context와 Codex 
 | 실행 아키텍처와 bounded context | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/DOMAIN_MODEL.md](docs/DOMAIN_MODEL.md) |
 | public HTTP API, route manifest, OpenAPI, Postman | [docs/API_SPEC.md](docs/API_SPEC.md), [docs/api/README.md](docs/api/README.md) |
 | 애플리케이션 런타임, Docker, live worker | [app/README.md](app/README.md) |
+| Next.js storefront | [frontend/README.md](frontend/README.md) |
 | Harness phase/step 작성과 실행 규칙 | [docs/HARNESS.md](docs/HARNESS.md), [phases/README.md](phases/README.md) |
 | 현재 phase 상태와 작업 이력 | [phases/index.json](phases/index.json), [SUMMARY.md](SUMMARY.md) |
 
@@ -45,6 +46,14 @@ PYTHONPATH=app .venv/bin/python -m token_payments serve-api
 
 기본 `api`와 `serve-api` 명령은 no-server-start preview boundary를 유지한다. live API 실행, `/healthz`, `/readyz`, `token_payments_live_worker`, Postman Docker API readiness, ASGI/FastAPI Thin Adapter 세부 사항은 [app/README.md](app/README.md)와 [docs/API_SPEC.md](docs/API_SPEC.md)를 기준으로 본다.
 
+Frontend local dev:
+
+```bash
+cd frontend
+npm ci
+npm run dev -- --hostname 0.0.0.0 --port 3000
+```
+
 ## Local Environment
 
 로컬 실행 값은 `.env.example`을 복사해서 만든다. 커밋된 값은 local dev placeholder이며 real private keys, seed phrases, API keys, production RPC URLs는 커밋하지 않는다.
@@ -65,6 +74,7 @@ docker compose --env-file .env.example --profile runtime config --services
 ## Current Contracts
 
 - Public HTTP route surface는 `app/token_payments/api/http.py`의 55-route manifest가 기준이다. 문서 기준은 [docs/API_SPEC.md](docs/API_SPEC.md)다.
+- Customer storefront source는 `frontend/`의 Next.js app에 두고, `app/nginx`는 reverse proxy 설정만 담당한다.
 - Operator action APIs는 global admin role이 아니라 `operator:read`, `operator:action`, `outbox:retry` 같은 explicit permission으로 판단한다.
 - Admin provisioning APIs는 `admin:provision` 또는 `rbac:manage` permission을 요구한다.
 - `scripts/execute.py`는 phase 실행 오케스트레이션만 담당한다. 프로젝트별 구현 로직은 phase/step 또는 `app/token_payments` 코드에 둔다.

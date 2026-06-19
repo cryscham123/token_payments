@@ -498,6 +498,10 @@ POSTGRES_SCHEMA_COMPATIBILITY_SQL: tuple[str, ...] = (
         ADD COLUMN IF NOT EXISTS payment_asset_id TEXT REFERENCES payment_assets (asset_id)
     """,
     """
+    ALTER TABLE IF EXISTS payments
+        ADD COLUMN IF NOT EXISTS items JSONB NOT NULL DEFAULT '[]'::jsonb
+    """,
+    """
     ALTER TABLE IF EXISTS payment_authorizations
         ADD COLUMN IF NOT EXISTS payer_wallet_id UUID REFERENCES auth_user_wallets (wallet_id)
     """,

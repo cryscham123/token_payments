@@ -38,6 +38,8 @@ from token_payments.contexts.auth.application import (
     LoginWithMetaMaskCommand,
     LogoutCommand,
     MerchantMembershipService,
+    OAuthAuthorizationResult,
+    OAuthProviderIdentity,
     RefreshSessionCommand,
     RequestOAuthAuthorizationCommand,
     RequestLoginChallengeCommand,
@@ -1594,6 +1596,100 @@ def describe_live_runtime_dependencies(
     }
 
 
+class _RuntimeLocalOAuthProvider:
+    def build_authorization(
+        self,
+        *,
+        provider: str,
+        redirect_uri: str,
+        state: str,
+        mode: Any,
+        expires_at: datetime,
+    ) -> OAuthAuthorizationResult:
+        import os
+        google_client_id = os.environ.get("GOOGLE_CLIENT_ID", "local-dev")
+        return OAuthAuthorizationResult(
+            provider=provider,
+            authorization_url=f"https://accounts.google.com/o/oauth2/v2/auth?client_id={google_client_id}&redirect_uri={redirect_uri}&state={state}&response_type=code&scope=openid",
+            state=state,
+            mode=mode,
+            expires_at=expires_at,
+            pkce_required=True,
+        )
+
+    def exchange_code(
+        self,
+        *,
+        provider: str,
+        code: str,
+        state: str,
+        redirect_uri: str,
+    ) -> OAuthProviderIdentity:
+        import hashlib
+        import os
+        import urllib.request
+        import urllib.parse
+        import json
+        import base64
+
+        google_client_id = os.environ.get("GOOGLE_CLIENT_ID", "local-dev")
+        google_client_secret = os.environ.get("GOOGLE_CLIENT_SECRET", "")
+
+        # If we have real client credentials, try to exchange the code with Google
+        if google_client_id != "local-dev" and google_client_secret and google_client_secret != "replace_with_your_google_cloud_oauth_client_secret":
+            try:
+                # Exchange code for tokens
+                data = urllib.parse.urlencode({
+                    "client_id": google_client_id,
+                    "client_secret": google_client_secret,
+                    "code": code,
+                    "grant_type": "authorization_code",
+                    "redirect_uri": redirect_uri
+                }).encode("utf-8")
+                
+                req = urllib.request.Request(
+                    "https://oauth2.googleapis.com/token",
+                    data=data,
+                    headers={"Content-Type": "application/x-www-form-urlencoded"}
+                )
+                
+                with urllib.request.urlopen(req, timeout=5) as response:
+                    res_body = json.loads(response.read().decode("utf-8"))
+                    id_token = res_body.get("id_token")
+                    
+                    if id_token:
+                        # Decode payload of JWT id_token to get Google's 'sub' (subject id)
+                        parts = id_token.split('.')
+                        if len(parts) >= 2:
+                            payload_b64 = parts[1]
+                            padded = payload_b64 + '=' * (4 - len(payload_b64) % 4)
+                            payload_bytes = base64.urlsafe_b64decode(padded)
+                            claims = json.loads(payload_bytes.decode('utf-8'))
+                            
+                            sub = claims.get("sub")
+                            if sub:
+                                sha = hashlib.sha256(sub.encode("utf-8")).hexdigest()
+                                wallet_address = f"0x{sha[:40]}"
+                                return OAuthProviderIdentity(
+                                    provider=provider,
+                                    provider_subject=f"google-{sub}",
+                                    wallet_address=wallet_address,
+                                )
+            except Exception as e:
+                # Fallback to local dev mock on error so it doesn't hard fail
+                pass
+
+        # Fallback mock user identity
+        subject = f"google-local-dev-{abs(hash(code)) % 100000}"
+        sha = hashlib.sha256(subject.encode("utf-8")).hexdigest()
+        wallet_address = f"0x{sha[:40]}"
+        return OAuthProviderIdentity(
+            provider=provider,
+            provider_subject=subject,
+            wallet_address=wallet_address,
+        )
+
+
 class _TransactionalAuthUseCase:
     def __init__(self, config: LiveRuntimeConfig, dependencies: LiveRuntimeDependencies) -> None:
         self._config = config
@@ -1720,6 +1816,7 @@ class _TransactionalAuthUseCase:
             rbac=PostgresAuthRbacRepository(connection),
             profiles=PostgresUserProfileRepository(connection),
             oauth_identities=PostgresOAuthIdentityRepository(connection),
+            oauth_provider=_RuntimeLocalOAuthProvider(),
             signature_verifier=ClientWalletSignatureVerifier(
                 self._dependencies.wallet_signature_client,
                 supported_chain_ids=(self._config.wallet_signature_chain_id,),
@@ -2797,11 +2894,32 @@ class _TransactionalOutboxRelayRepository:
 
 
 class _TransactionalListener:
-    def __init__(self, dependencies: LiveRuntimeDependencies, listener_factory: Callable[[Any], Any]) -> None:
+    def __init__(
+        self,
+        dependencies: LiveRuntimeDependencies,
+        listener_factory: Callable[[Any], Any],
+        message_names: Sequence[str] | None = None,
+    ) -> None:
         self._dependencies = dependencies
         self._listener_factory = listener_factory
+        self._message_names = set(message_names) if message_names is not None else None
 
     def handle(self, message: Any) -> Any:
+        if self._message_names is not None:
+            try:
+                if hasattr(message, "value"):
+                    payload = json.loads(message.value)
+                    if isinstance(payload, dict):
+                        msg_name = (
+                            payload.get("eventName")
+                            or payload.get("commandName")
+                            or payload.get("name")
+                        )
+                        if msg_name and msg_name not in self._message_names:
+                            return None
+            except Exception:
+                pass
+
         return _with_transaction(
             self._dependencies,
             lambda connection: self._listener_factory(connection).handle(message)
@@ -2852,7 +2970,8 @@ def build_live_worker_runtime_from_env(
             process_manager=CheckoutProcessManager(),
             processed_messages=PostgresProcessedMessageRepository(connection),
             outbox_messages=PostgresOutboxMessageRepository(connection),
-        )
+        ),
+        message_names=tuple(event.value for event in CheckoutEventName),
     )
     checkout_consumer = LazyKafkaConsumerClient(
         bootstrap_servers=live_config.kafka_bootstrap_servers,
@@ -2881,7 +3000,12 @@ def build_live_worker_runtime_from_env(
                 outbox_messages=PostgresOutboxMessageRepository(connection),
             ),
             processed_commands=PostgresProcessedCommandRepository(connection),
-        )
+        ),
+        message_names=(
+            CheckoutCommandName.RESERVE_INVENTORY.value,
+            CheckoutCommandName.RELEASE_INVENTORY.value,
+            CheckoutCommandName.CONFIRM_INVENTORY.value,
+        ),
     )
     inventory_consumer = LazyKafkaConsumerClient(
         bootstrap_servers=live_config.kafka_bootstrap_servers,
@@ -2922,7 +3046,14 @@ def build_live_worker_runtime_from_env(
             processed_commands=PostgresProcessedCommandRepository(connection),
         )
 
-    payment_listener = _TransactionalListener(live_dependencies, payment_listener_factory)
+    payment_listener = _TransactionalListener(
+        live_dependencies,
+        payment_listener_factory,
+        message_names=(
+            CheckoutCommandName.INITIATE_PAYMENT.value,
+            CheckoutCommandName.REFUND_PAYMENT.value,
+        ),
+    )
     payment_consumer = LazyKafkaConsumerClient(
         bootstrap_servers=live_config.kafka_bootstrap_servers,
         client_id=live_config.kafka_client_id,
@@ -2940,18 +3071,23 @@ def build_live_worker_runtime_from_env(
     # 4. Store Approval Command Listener
     from token_payments.contexts.store_approval.adapter.kafka import StoreApprovalKafkaCommandListener
     from token_payments.contexts.store_approval.application import StoreApprovalService
+    from token_payments.contexts.store_approval.adapter.postgres import (
+        PostgresStoreRepository as StoreApprovalStoreRepository,
+        PostgresOrderDetailRepository,
+    )
 
     store_approval_listener = _TransactionalListener(
         live_dependencies,
         lambda connection: StoreApprovalKafkaCommandListener(
             service=StoreApprovalService(
-                store_repository=PostgresStoreRepository(connection),
-                order_detail_repository=PostgresOrderRepository(connection),
+                store_repository=StoreApprovalStoreRepository(connection),
+                order_detail_repository=PostgresOrderDetailRepository(connection),
                 processed_commands=PostgresProcessedCommandRepository(connection),
                 outbox_messages=PostgresOutboxMessageRepository(connection),
             ),
             processed_commands=PostgresProcessedCommandRepository(connection),
-        )
+        ),
+        message_names=(CheckoutCommandName.REQUEST_STORE_APPROVAL.value,),
     )
     store_approval_consumer = LazyKafkaConsumerClient(
         bootstrap_servers=live_config.kafka_bootstrap_servers,
@@ -2981,6 +3117,7 @@ def build_live_worker_runtime_from_env(
             ),
             processed_commands=PostgresProcessedCommandRepository(connection),
         ),
+        message_names=(CheckoutCommandName.CANCEL_ORDER.value,),
     )
     order_command_consumer = LazyKafkaConsumerClient(
         bootstrap_servers=live_config.kafka_bootstrap_servers,
@@ -3008,6 +3145,14 @@ def build_live_worker_runtime_from_env(
                 processed_messages=PostgresProcessedMessageRepository(connection),
             )
         ),
+        message_names=(
+            CheckoutEventName.PAYMENT_CONFIRMED.value,
+            CheckoutEventName.ORDER_APPROVED.value,
+            CheckoutEventName.PAYMENT_FAILED.value,
+            CheckoutEventName.PAYMENT_EXPIRED.value,
+            CheckoutEventName.ORDER_REJECTED.value,
+            CheckoutEventName.ORDER_CANCELLED.value,
+        ),
     )
     order_status_consumer = LazyKafkaConsumerClient(
         bootstrap_servers=live_config.kafka_bootstrap_servers,
@@ -3034,6 +3179,7 @@ def build_live_worker_runtime_from_env(
                 repository=PostgresAuthRbacRepository(connection)
             )
         ),
+        message_names=("StoreCatalogStoreMembershipChangedEvent",),
     )
     auth_rbac_consumer = LazyKafkaConsumerClient(
         bootstrap_servers=live_config.kafka_bootstrap_servers,

@@ -28,7 +28,15 @@ from token_payments.contexts.order.application import (  # noqa: E402
     OrderApplicationService,
     OrderErrorCode,
 )
-from token_payments.contexts.order.domain import Address, Customer, Order, Product, Store  # noqa: E402
+from token_payments.contexts.order.domain import (  # noqa: E402
+    Address,
+    Customer,
+    Order,
+    Product,
+    ProductOptionValuePrice,
+    ProductVariantPrice,
+    Store,
+)
 from token_payments.shared.adapter.postgres import PostgresOutboxMessageRepository  # noqa: E402
 from token_payments.shared.domain import (  # noqa: E402
     CheckoutEventName,
@@ -153,8 +161,75 @@ def test_order_use_case_creates_order_snapshot_and_order_created_outbox_event() 
     assert outbox.payload["causationId"] == "req-1"
 
 
+def test_order_use_case_prices_variant_and_add_on_selection_server_side() -> None:
+    service, repositories = _service(store=_variant_store())
+
+    result = service.createOrder(
+        CreateOrderCommand(
+            authenticated_user_id=USER_ID,
+            store_id=STORE_ID,
+            delivery_address=Address(id="ship-to", street="2 River Rd"),
+            items=(
+                CreateOrderItem(
+                    product_id=PRODUCT_ID,
+                    quantity=2,
+                    public_variant_id="hoodie-l",
+                    selected_options={"size": "L", "giftWrap": ["premium"]},
+                ),
+            ),
+            order_id=ORDER_ID,
+            tracking_id=TRACKING_ID,
+            event_message_id=MESSAGE_ID,
+            requested_at=NOW,
+            causation_id="req-variant",
+        )
+    )
+
+    item = result.order.items[0]
+    assert item.product_snapshot.public_variant_id == "hoodie-l"
+    assert dict(item.product_snapshot.selected_options) == {"giftWrap": ["premium"], "size": "L"}
+    assert item.product_snapshot.price.amount == Decimal("15.50")
+    assert item.sub_total.amount == Decimal("31.00")
+    assert result.total_amount.amount == Decimal("31.00")
+
+    payload_item = repositories.outbox.saved[0].payload["items"][0]
+    assert payload_item["publicVariantId"] == "hoodie-l"
+    assert payload_item["selectedOptions"] == {"giftWrap": ["premium"], "size": "L"}
+    assert payload_item["unitPrice"]["amount"] == "15.50"
+    assert payload_item["subTotal"]["amount"] == "31.00"
+    assert repositories.outbox.saved[0].payload["publicVariantId"] == "hoodie-l"
+
+
+def test_order_use_case_rejects_mismatched_variant_option_selection() -> None:
+    service, _repositories = _service(store=_variant_store())
+
+    with pytest.raises(OrderApplicationError) as exc_info:
+        service.createOrder(
+            CreateOrderCommand(
+                authenticated_user_id=USER_ID,
+                store_id=STORE_ID,
+                delivery_address=Address(id="ship-to", street="2 River Rd"),
+                items=(
+                    CreateOrderItem(
+                        product_id=PRODUCT_ID,
+                        quantity=1,
+                        public_variant_id="hoodie-l",
+                        selected_options={"size": "M"},
+                    ),
+                ),
+                order_id=ORDER_ID,
+                tracking_id=TRACKING_ID,
+                event_message_id=MESSAGE_ID,
+                requested_at=NOW,
+            )
+        )
+
+    assert exc_info.value.code is OrderErrorCode.VALIDATION_ERROR
+    assert "selected option size does not match variant hoodie-l" in str(exc_info.value)
+
+
 def test_order_api_returns_tracking_response_and_maps_validation_errors() -> None:
-    service, _repositories = _service()
+    service, _repositories = _service(store=_variant_store())
     api = OrdersApi(service)
 
     response = api.create_order(
@@ -166,7 +241,14 @@ def test_order_api_returns_tracking_response_and_maps_validation_errors() -> Non
             body={
                 "storeId": str(STORE_ID),
                 "deliveryAddress": {"id": "ship-to", "street": "2 River Rd"},
-                "items": [{"productId": str(PRODUCT_ID), "quantity": 2}],
+                "items": [
+                    {
+                        "productId": str(PRODUCT_ID),
+                        "quantity": 2,
+                        "publicVariantId": "hoodie-l",
+                        "selectedOptions": {"size": "L", "giftWrap": ["premium"]},
+                    }
+                ],
             },
             received_at=NOW,
         )
@@ -178,13 +260,15 @@ def test_order_api_returns_tracking_response_and_maps_validation_errors() -> Non
     assert response.body["order"]["trackingId"]
     assert response.body["order"]["status"] == "PENDING"
     assert response.body["order"]["totalAmount"] == {
-        "amount": "25.00",
+        "amount": "31.00",
         "symbol": "USDC",
         "chainId": 11155111,
         "tokenAddress": str(TOKEN_ADDRESS),
         "decimals": 6,
     }
     assert response.body["order"]["items"][0]["productId"] == str(PRODUCT_ID)
+    assert response.body["order"]["items"][0]["publicVariantId"] == "hoodie-l"
+    assert response.body["order"]["items"][0]["selectedOptions"] == {"giftWrap": ["premium"], "size": "L"}
 
     validation_response = api.create_order(
         ApiRequest(
@@ -318,6 +402,49 @@ def test_order_postgres_repositories_and_outbox_share_injected_connection_bounda
     assert "rollback" not in normalized_sql
 
 
+def test_postgres_order_repository_round_trip() -> None:
+    from token_payments.contexts.order.domain import OrderItem, OrderItemId, ProductSnapshot, OrderStatus, TrackingId
+    connection = FakePostgresConnection()
+    repository = PostgresOrderRepository(connection)
+
+    crypto = Crypto(amount=Decimal("10.00"), symbol="USDC", chain_id=11155111, token_address=TOKEN_ADDRESS, decimals=6)
+    item = OrderItem(
+        order_item_id=OrderItemId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c2c"),
+        order_id=ORDER_ID,
+        product_snapshot=ProductSnapshot(
+            product_id=PRODUCT_ID,
+            created_date=NOW,
+            name="Ledger Mug",
+            price=crypto,
+            public_variant_id="var-1",
+            selected_options={"color": "red"},
+        ),
+        quantity=1,
+        sub_total=crypto,
+        line_key="lk-1",
+    )
+
+    order = Order(
+        order_id=ORDER_ID,
+        customer_id=CUSTOMER_ID,
+        store_id=STORE_ID,
+        delivery_address=Address(id="ship-to", street="2 River Rd"),
+        items=(item,),
+        tracking_id=TrackingId(TRACKING_ID),
+        status=OrderStatus.PENDING,
+        payment_id=None,
+        failure_messages=(),
+    )
+
+    repository.save(order)
+    retrieved = repository.get(ORDER_ID)
+
+    assert retrieved is not None
+    assert retrieved.order_id == ORDER_ID
+    assert len(retrieved.items) == 1
+    assert retrieved.items[0].product_snapshot.selected_options == {"color": "red"}
+
+
 def test_order_schema_exports_and_import_boundaries() -> None:
     import token_payments.contexts.order.adapter as order_adapter
 
@@ -357,10 +484,10 @@ class FakeRepositories:
     outbox: "FakeOutboxMessageRepository"
 
 
-def _service() -> tuple[OrderApplicationService, FakeRepositories]:
+def _service(store: Store | None = None) -> tuple[OrderApplicationService, FakeRepositories]:
     repositories = FakeRepositories(
         customers=FakeCustomerRepository(),
-        stores=FakeStoreRepository(),
+        stores=FakeStoreRepository(store=store),
         orders=FakeOrderRepository(),
         outbox=FakeOutboxMessageRepository(),
     )
@@ -391,6 +518,59 @@ def _store() -> Store:
     )
 
 
+def _variant_store() -> Store:
+    product = Product(
+        product_id=PRODUCT_ID,
+        name="Ledger Hoodie",
+        price=USDC,
+        variants={
+            "hoodie-m": ProductVariantPrice(
+                public_variant_id="hoodie-m",
+                option_values={"size": "M"},
+                price_delta=Crypto("0.00", "USDC", 11155111, TOKEN_ADDRESS, 6),
+            ),
+            "hoodie-l": ProductVariantPrice(
+                public_variant_id="hoodie-l",
+                option_values={"size": "L"},
+                price_delta=Crypto("2.00", "USDC", 11155111, TOKEN_ADDRESS, 6),
+            ),
+        },
+        option_values={
+            "size:M": ProductOptionValuePrice(
+                option_key="size",
+                value_key="M",
+                display_value="M",
+                option_type="VARIANT",
+                price_delta=None,
+            ),
+            "size:L": ProductOptionValuePrice(
+                option_key="size",
+                value_key="L",
+                display_value="L",
+                option_type="VARIANT",
+                price_delta=None,
+            ),
+            "giftWrap:premium": ProductOptionValuePrice(
+                option_key="giftWrap",
+                value_key="premium",
+                display_value="Premium wrap",
+                option_type="ADD_ON",
+                selection_type="MULTI",
+                price_delta=Crypto("1.00", "USDC", 11155111, TOKEN_ADDRESS, 6),
+            ),
+        },
+    )
+    return Store(
+        store_id=STORE_ID,
+        owner_user_id=OWNER_USER_ID,
+        products=(product,),
+        active=True,
+        store_address=Address(id="store-address", street="1 Market St"),
+        store_wallet=STORE_WALLET,
+        supported_chain_ids=(11155111,),
+    )
+
+
 class FakeCustomerRepository:
     def __init__(self) -> None:
         self.customers_by_user_id = {str(USER_ID): _customer()}
@@ -400,8 +580,8 @@ class FakeCustomerRepository:
 
 
 class FakeStoreRepository:
-    def __init__(self) -> None:
-        self.stores_by_id = {str(STORE_ID): _store()}
+    def __init__(self, store: Store | None = None) -> None:
+        self.stores_by_id = {str(STORE_ID): store or _store()}
 
     def get(self, store_id: StoreId) -> Store | None:
         return self.stores_by_id.get(str(store_id))
@@ -455,6 +635,8 @@ class FakePostgresConnection:
         self.customers: dict[str, dict[str, Any]] = {}
         self.stores: dict[str, dict[str, Any]] = {}
         self.products: dict[str, list[dict[str, Any]]] = {}
+        self.product_variants: dict[tuple[str, str], list[dict[str, Any]]] = {}
+        self.product_option_values: dict[tuple[str, str], list[dict[str, Any]]] = {}
         self.orders: dict[str, dict[str, Any]] = {}
         self.order_items: dict[str, dict[str, Any]] = {}
         self.outbox_messages: dict[str, dict[str, Any]] = {}
@@ -472,6 +654,18 @@ class FakePostgresConnection:
             return FakeResult([dict(row)] if row else [], rowcount=1 if row else 0)
         if "from order_store_products" in normalized and "store_id" in params:
             rows = [dict(row) for row in self.products.get(str(params["store_id"]), [])]
+            return FakeResult(rows, rowcount=len(rows))
+        if "from store_catalog_product_variants" in normalized:
+            rows = [dict(row) for row in self.product_variants.get((str(params["store_id"]), str(params["product_id"])), [])]
+            return FakeResult(rows, rowcount=len(rows))
+        if "from store_catalog_product_option_values" in normalized:
+            rows = [dict(row) for row in self.product_option_values.get((str(params["store_id"]), str(params["product_id"])), [])]
+            return FakeResult(rows, rowcount=len(rows))
+        if "from orders" in normalized and "select" in normalized:
+            row = self.orders.get(str(params["order_id"]))
+            return FakeResult([dict(row)] if row else [], rowcount=1 if row else 0)
+        if "from order_items" in normalized and "select" in normalized:
+            rows = [dict(row) for row in self.order_items.values() if str(row.get("order_id")) == str(params["order_id"])]
             return FakeResult(rows, rowcount=len(rows))
         if "insert into orders" in normalized:
             stored_params = dict(params)

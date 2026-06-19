@@ -571,7 +571,7 @@ class FakePostgresSession:
             return FakeResult([dict(row) for row in self.products.get(str(params["store_id"]), [])])
         if "from orders where order_id" in normalized:
             return _one(self.orders.get(str(params["order_id"])))
-        if "from order_items" in normalized:
+        if "from order_items" in normalized and "order_id" in params:
             return FakeResult([dict(row) for row in self.order_items.get(str(params["order_id"]), [])])
         if "from product_inventory" in normalized and "where product_id" in normalized:
             return _one(self.inventory.get((str(params["product_id"]), str(params["store_id"]))))
@@ -758,7 +758,7 @@ class FakePostgresSession:
             order = self.orders.get(payment["order_id"])
             if order is None:
                 continue
-            rows.append({**payment, "tracking_id": order["tracking_id"]})
+            rows.append({**payment, "tracking_id": order["tracking_id"], "items": []})
         rows.sort(key=lambda row: (row.get("updated_at", NOW), row["payment_id"]), reverse=True)
         return rows[: int(params.get("limit") or len(rows))]
 

@@ -52,7 +52,14 @@ def test_api_readiness_plan_has_bounded_security_order_and_no_live_side_effects(
     assert payload["status"] == "planned"
     assert payload["dockerStarted"] is False
     assert payload["networkCalls"] is False
-    assert payload["requiredServices"] == ["postgres", "kafka", "test_network", "token_payments_api", "nginx"]
+    assert payload["requiredServices"] == [
+        "postgres",
+        "kafka",
+        "test_network",
+        "token_payments_api",
+        "token_payments_web",
+        "nginx",
+    ]
 
     commands = payload["commandSequence"]
     assert [command["name"] for command in commands] == EXPECTED_API_READINESS_ORDER
@@ -390,6 +397,14 @@ def test_runtime_smoke_registry_exposes_postman_docker_api_readiness_plan() -> N
     assert result["status"] == "passed"
     assert details["dockerStarted"] is False
     assert details["networkCalls"] is False
+    assert details["requiredServices"] == [
+        "postgres",
+        "kafka",
+        "test_network",
+        "token_payments_api",
+        "token_payments_web",
+        "nginx",
+    ]
     assert details["planCommand"] == "python3 scripts/docker_live_smoke.py --api-readiness --plan"
     assert details["refusalCommand"] == "python3 scripts/docker_live_smoke.py --api-readiness --execute"
     assert details["confirmedLiveCommand"] == (

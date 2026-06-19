@@ -210,11 +210,11 @@ def _decision_for_target(
 ) -> CheckoutCommandDecision:
     if not multi_target:
         return decision
-    product_id = _required_target_text(target, "productId")
+    target_identity = _required_target_text(target, "orderLineKey") if target.get("orderLineKey") else _required_target_text(target, "productId")
     metadata = replace(
         decision.metadata,
-        command_id=CommandId(f"{decision.order_id}:{decision.name.value}:{product_id}"),
-        aggregate_id=f"{decision.order_id}:{product_id}",
+        command_id=CommandId(f"{decision.order_id}:{decision.name.value}:{target_identity}"),
+        aggregate_id=f"{decision.order_id}:{target_identity}",
     )
     return CheckoutCommandDecision(metadata=metadata, order_id=decision.order_id)
 
@@ -242,6 +242,8 @@ def _inventory_command_targets(
                 product_id=str(product_id),
                 store_id=store_id,
                 quantity=None,
+                public_variant_id=None,
+                order_line_key=None,
                 require_quantity=False,
             )
             for product_id in product_ids
@@ -258,6 +260,8 @@ def _inventory_command_targets(
             product_id=product_id,
             store_id=store_id,
             quantity=source_payload.get("quantity"),
+            public_variant_id=_optional_payload_text(source_payload, "publicVariantId", "public_variant_id"),
+            order_line_key=_optional_payload_text(source_payload, "orderLineKey", "order_line_key"),
             require_quantity=command_name is CheckoutCommandName.RESERVE_INVENTORY,
         ),
     )
@@ -272,7 +276,7 @@ def _targets_from_items(
     if not isinstance(items, list | tuple):
         return ()
 
-    targets: list[dict[str, Any]] = []
+    targets: dict[tuple[str, str | None, str | None], dict[str, Any]] = {}
     require_quantity = command_name is CheckoutCommandName.RESERVE_INVENTORY
     for item in items:
         if not isinstance(item, Mapping):
@@ -280,15 +284,27 @@ def _targets_from_items(
         product_id = _optional_payload_text(item, "productId", "product_id")
         if product_id is None:
             continue
-        targets.append(
-            _target_payload(
-                product_id=product_id,
-                store_id=_optional_payload_text(item, "storeId", "store_id") or fallback_store_id,
-                quantity=item.get("quantity"),
-                require_quantity=require_quantity,
-            )
+        store_id = _optional_payload_text(item, "storeId", "store_id") or fallback_store_id
+        public_variant_id = _optional_payload_text(item, "publicVariantId", "public_variant_id")
+        key = (product_id, store_id, public_variant_id)
+        target = _target_payload(
+            product_id=product_id,
+            store_id=store_id,
+            quantity=item.get("quantity"),
+            public_variant_id=public_variant_id,
+            order_line_key=_optional_payload_text(item, "orderLineKey", "order_line_key"),
+            require_quantity=require_quantity,
         )
-    return tuple(targets)
+        if key not in targets:
+            targets[key] = target
+            continue
+
+        existing = targets[key]
+        existing.pop("orderLineKey", None)
+        if "quantity" in target:
+            existing_quantity = _positive_int(existing["quantity"], "quantity") if "quantity" in existing else 0
+            existing["quantity"] = existing_quantity + _positive_int(target["quantity"], "quantity")
+    return tuple(targets.values())
 
 
 def _target_payload(
@@ -296,11 +312,17 @@ def _target_payload(
     product_id: str,
     store_id: str | None,
     quantity: object,
+    public_variant_id: str | None,
+    order_line_key: str | None,
     require_quantity: bool,
 ) -> dict[str, Any]:
     target: dict[str, Any] = {"productId": _required_text(product_id, "productId")}
     if store_id is not None:
         target["storeId"] = store_id
+    if public_variant_id is not None:
+        target["publicVariantId"] = public_variant_id
+    if order_line_key is not None:
+        target["orderLineKey"] = order_line_key
     if require_quantity or quantity is not None:
         target["quantity"] = _positive_int(quantity, "quantity")
     return target

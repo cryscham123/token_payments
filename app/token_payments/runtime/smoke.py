@@ -155,7 +155,7 @@ POSTMAN_API_SERVICE: Mapping[str, Mapping[str, Any] | Sequence[Any] | str] = Map
     }
 )
 POSTMAN_API_COMPOSE_CONFIG_VALIDATION_COMMAND = "docker compose --env-file .env.example config --services"
-POSTMAN_API_BUILD_COMMAND = "docker compose --env-file .env build token_payments_api nginx"
+POSTMAN_API_BUILD_COMMAND = "docker compose --env-file .env build token_payments_api token_payments_web nginx"
 POSTMAN_API_MANUAL_LIVE_COMMANDS = (
     "cp .env.example .env",
     "docker compose --env-file .env config --services",
@@ -1153,7 +1153,7 @@ def _run_postman_docker_api_readiness() -> SmokeScenarioResult:
         "commandSequence": list(POSTMAN_DOCKER_API_READINESS_COMMAND_SEQUENCE),
         "manualLiveCommands": list(POSTMAN_DOCKER_API_READINESS_MANUAL_COMMANDS),
         "service": dict(POSTMAN_API_SERVICE),
-        "requiredServices": ["postgres", "kafka", "test_network", POSTMAN_API_SERVICE_NAME],
+        "requiredServices": ["postgres", "kafka", "test_network", POSTMAN_API_SERVICE_NAME, "token_payments_web", "nginx"],
         "fixtures": path_details,
         "redactionPolicy": {
             "rawSecretValuesCommitted": False,
@@ -2739,13 +2739,24 @@ class _InMemoryOrderRepository:
 
 class _InMemoryInventoryRepository:
     def __init__(self, inventory_by_key: Mapping[tuple[str, str], Any]) -> None:
-        self.inventory_by_key = dict(inventory_by_key)
+        self.inventory_by_key = {
+            _inventory_key_from_raw(key): value
+            for key, value in inventory_by_key.items()
+        }
 
-    def get(self, product_id: Any, store_id: Any) -> Any | None:
-        return self.inventory_by_key.get((str(product_id), str(store_id)))
+    def get(self, product_id: Any, store_id: Any, public_variant_id: str | None = None) -> Any | None:
+        return self.inventory_by_key.get((str(product_id), str(store_id), public_variant_id))
 
     def save(self, inventory: Any) -> None:
-        self.inventory_by_key[(str(inventory.product_id), str(inventory.store_id))] = inventory
+        self.inventory_by_key[(str(inventory.product_id), str(inventory.store_id), getattr(inventory, "public_variant_id", None))] = inventory
+
+
+def _inventory_key_from_raw(key: tuple[Any, ...]) -> tuple[str, str, str | None]:
+    if len(key) == 2:
+        return (str(key[0]), str(key[1]), None)
+    if len(key) == 3:
+        return (str(key[0]), str(key[1]), None if key[2] is None else str(key[2]))
+    raise ValueError("inventory key must contain product_id, store_id, and optional public_variant_id")
 
 
 class _InMemoryPaymentRepository:

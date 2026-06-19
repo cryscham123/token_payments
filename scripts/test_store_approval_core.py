@@ -79,7 +79,7 @@ def test_approval_service_saves_approved_order_detail_outbox_and_processed_comma
         outbox_messages=outbox_messages,
     )
 
-    result = service.request_store_approval(_command())
+    result = service.request_store_approval(_command(items=_inventory_items()))
 
     assert result.status == StoreApprovalResultStatus.APPROVED
     assert result.duplicate_decision is None
@@ -102,6 +102,7 @@ def test_approval_service_saves_approved_order_detail_outbox_and_processed_comma
     assert outbox.payload["ownerUserId"] == str(OWNER_USER_ID)
     assert outbox.payload["approvalStatus"] == ApprovalStatus.APPROVED.value
     assert outbox.payload["productIds"] == [str(PRODUCT_ID)]
+    assert outbox.payload["items"] == list(_inventory_items())
     assert outbox.payload["occurredAt"] == NOW.isoformat()
 
     assert processed_commands.records == [
@@ -246,7 +247,11 @@ def test_store_approval_layers_do_not_import_external_adapters_or_clients() -> N
             assert imports.isdisjoint(forbidden_roots), f"{path} imports adapter dependency: {imports}"
 
 
-def _command(owner_user_id: UserId = OWNER_USER_ID) -> RequestStoreApprovalCommand:
+def _command(
+    owner_user_id: UserId = OWNER_USER_ID,
+    *,
+    items: tuple[dict[str, object], ...] = (),
+) -> RequestStoreApprovalCommand:
     return RequestStoreApprovalCommand(
         command_id=COMMAND_ID,
         order_id=ORDER_ID,
@@ -255,6 +260,7 @@ def _command(owner_user_id: UserId = OWNER_USER_ID) -> RequestStoreApprovalComma
         requested_at=NOW,
         causation_id="payment-confirmed-message",
         event_message_id=EVENT_MESSAGE_ID,
+        items=items,
     )
 
 
@@ -297,6 +303,18 @@ def _amount() -> Crypto:
         chain_id=11155111,
         token_address=TOKEN_ADDRESS,
         decimals=6,
+    )
+
+
+def _inventory_items() -> tuple[dict[str, object], ...]:
+    return (
+        {
+            "productId": str(PRODUCT_ID),
+            "storeId": str(STORE_ID),
+            "publicVariantId": "mug-red-large",
+            "orderLineKey": f"{PRODUCT_ID}:mug-red-large",
+            "quantity": 2,
+        },
     )
 
 

@@ -147,6 +147,7 @@ class PaymentCommandHandler:
             status=PaymentStatus.AWAITING_SIGNATURE,
             payer_wallet_id=command.payer_wallet_id,
             payment_asset_id=command.payment_asset_id,
+            items=command.items,
         )
         payment_request = self._transaction_service.create_signature_request(
             command.payment_id,
@@ -246,7 +247,7 @@ class PaymentCommandHandler:
                         event_name=CheckoutEventName.PAYMENT_FAILED,
                         aggregate_id=str(updated_payment.payment_id),
                         occurred_at=event.created_at,
-                        payload=_failed_payload(event),
+                        payload=_failed_payload(event, updated_payment),
                     )
                     status = PaymentCommandStatus.FAILED
                 else:
@@ -257,7 +258,7 @@ class PaymentCommandHandler:
                         event_name=CheckoutEventName.PAYMENT_CONFIRMED,
                         aggregate_id=str(updated_payment.payment_id),
                         occurred_at=event.created_at,
-                        payload=_confirmed_payload(event),
+                        payload=_confirmed_payload(event, updated_payment),
                     )
                     self._timeout_scheduler.cancel_expiration(updated_payment.payment_id)
                     status = PaymentCommandStatus.CONFIRMED
@@ -290,7 +291,7 @@ class PaymentCommandHandler:
             event_name=CheckoutEventName.PAYMENT_EXPIRED,
             aggregate_id=str(updated_payment.payment_id),
             occurred_at=event.expired_at,
-            payload=_expired_payload(event),
+            payload=_expired_payload(event, updated_payment),
         )
         self._payment_repository.save(updated_payment)
         self._authorization_repository.save(updated_authorization)
@@ -445,11 +446,15 @@ def _record_event(
     if command.causation_id is not None:
         headers["sourceCausationId"] = command.causation_id
 
+    payload_dict = dict(payload)
+    name_str = event_name.value if hasattr(event_name, "value") else str(event_name)
+    payload_dict.setdefault("eventName", name_str)
+
     return OutboxMessage.record_event(
         metadata=metadata,
         topic=PAYMENT_EVENT_TOPIC,
         key=str(command.order_id),
-        payload=payload,
+        payload=payload_dict,
         headers=headers,
     )
 
@@ -459,7 +464,7 @@ def _processing_started_payload(
     authorization: PaymentAuthorization,
 ) -> dict[str, Any]:
     payment = event.payment
-    return {
+    payload: dict[str, Any] = {
         "paymentId": str(payment.payment_id),
         "orderId": str(payment.order_id),
         "customerId": str(payment.customer_id),
@@ -476,34 +481,42 @@ def _processing_started_payload(
         "expiresAt": payment.expires_at.isoformat(),
         "occurredAt": event.created_at.isoformat(),
     }
+    _add_items_payload(payload, payment)
+    return payload
 
 
-def _confirmed_payload(event: PaymentConfirmedEvent) -> dict[str, Any]:
-    return {
+def _confirmed_payload(event: PaymentConfirmedEvent, payment: Payment) -> dict[str, Any]:
+    payload: dict[str, Any] = {
         "paymentId": str(event.payment_id),
         "orderId": str(event.order_id),
         "txHash": str(event.tx_hash),
         "receipt": _receipt_payload(event.receipt),
         "occurredAt": event.created_at.isoformat(),
     }
+    _add_items_payload(payload, payment)
+    return payload
 
 
-def _failed_payload(event: PaymentFailedEvent) -> dict[str, Any]:
-    return {
+def _failed_payload(event: PaymentFailedEvent, payment: Payment) -> dict[str, Any]:
+    payload: dict[str, Any] = {
         "paymentId": str(event.payment_id),
         "orderId": str(event.order_id),
         "failureReason": event.failure_reason,
         "occurredAt": event.created_at.isoformat(),
     }
+    _add_items_payload(payload, payment)
+    return payload
 
 
-def _expired_payload(event: PaymentExpiredEvent) -> dict[str, Any]:
-    return {
+def _expired_payload(event: PaymentExpiredEvent, payment: Payment) -> dict[str, Any]:
+    payload: dict[str, Any] = {
         "paymentId": str(event.payment_id),
         "orderId": str(event.order_id),
         "reason": event.reason,
         "expiredAt": event.expired_at.isoformat(),
     }
+    _add_items_payload(payload, payment)
+    return payload
 
 
 def _refunded_payload(event: PaymentRefundedEvent) -> dict[str, Any]:
@@ -569,6 +582,11 @@ def _crypto_payload(value: Crypto) -> dict[str, Any]:
         "tokenAddress": str(value.token_address) if value.token_address is not None else None,
         "decimals": value.decimals,
     }
+
+
+def _add_items_payload(payload: dict[str, Any], payment: Payment) -> None:
+    if payment.items:
+        payload["items"] = [dict(item) for item in payment.items]
 
 
 def _signature_request_with_terms(

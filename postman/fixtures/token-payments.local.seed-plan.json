@@ -360,10 +360,10 @@
         },
         "status": "ACTIVE",
         "visibility": "PUBLIC",
-        "price_numeric": "10.000000000000000000",
-        "price_symbol": "TPAY",
+        "price_numeric": "0.010000000000000000",
+        "price_symbol": "ETH",
         "price_chain_id": 1337,
-        "price_token_address": "0x3333333333333333333333333333333333333333",
+        "price_token_address": null,
         "price_decimals": 18,
         "active": true
       }
@@ -407,10 +407,10 @@
         "store_id": "44444444-4444-4444-8444-444444444444",
         "product_id": "55555555-5555-4555-8555-555555555555",
         "name": "Local Hoodie",
-        "price_numeric": "10.000000000000000000",
-        "price_symbol": "TPAY",
+        "price_numeric": "0.010000000000000000",
+        "price_symbol": "ETH",
         "price_chain_id": 1337,
-        "price_token_address": "0x3333333333333333333333333333333333333333",
+        "price_token_address": null,
         "price_decimals": 18
       }
     },
@@ -463,10 +463,10 @@
         "store_id": "44444444-4444-4444-8444-444444444444",
         "product_id": "55555555-5555-4555-8555-555555555555",
         "name": "Local Hoodie",
-        "price_numeric": "10.000000000000000000",
-        "price_symbol": "TPAY",
+        "price_numeric": "0.010000000000000000",
+        "price_symbol": "ETH",
         "price_chain_id": 1337,
-        "price_token_address": "0x3333333333333333333333333333333333333333",
+        "price_token_address": null,
         "price_decimals": 18,
         "available": true
       }

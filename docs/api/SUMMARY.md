@@ -1,17 +1,7 @@
-# Table of contents
+# API 문서 목차
 
 * [API 개요](README.md)
-* ```yaml
-  type: builtin:openapi
-  props:
-    models: true
-    downloadLink: false
-  dependencies:
-    spec:
-      ref:
-        kind: openapi
-        spec: gitbook-petstore
-  ```
+* [OpenAPI Reference](openapi.yaml)
 * [인증과 OAuth](auth.md)
 * [상점과 상품 카탈로그](catalog-inventory.md)
 * [머천트, 관리자, RBAC](merchant-admin-rbac.md)

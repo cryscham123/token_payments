@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Any, Mapping
 
 from token_payments.shared.domain import CommandId, MessageId, OrderId, StoreId, UserId
 
@@ -18,6 +19,7 @@ class RequestStoreApprovalCommand:
     rejection_reason: str | None = None
     causation_id: str | None = None
     event_message_id: MessageId = field(default_factory=MessageId.new)
+    items: tuple[Mapping[str, Any], ...] | list[Mapping[str, Any]] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.command_id, CommandId):
@@ -47,6 +49,7 @@ class RequestStoreApprovalCommand:
             )
         if not isinstance(self.event_message_id, MessageId):
             raise ValueError("RequestStoreApprovalCommand.event_message_id must be a MessageId")
+        object.__setattr__(self, "items", _coerce_items(self.items, "RequestStoreApprovalCommand.items"))
 
 
 def _require_text(value: str, field_name: str) -> str:
@@ -61,3 +64,19 @@ def _require_aware_datetime(value: datetime, field_name: str) -> datetime:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError(f"{field_name} must be timezone-aware")
     return value
+
+
+def _coerce_items(
+    values: tuple[Mapping[str, Any], ...] | list[Mapping[str, Any]],
+    field_name: str,
+) -> tuple[dict[str, Any], ...]:
+    if isinstance(values, list):
+        values = tuple(values)
+    if not isinstance(values, tuple):
+        raise ValueError(f"{field_name} must be a tuple")
+    items: list[dict[str, Any]] = []
+    for item in values:
+        if not isinstance(item, Mapping):
+            raise ValueError(f"{field_name} must contain JSON objects")
+        items.append(dict(item))
+    return tuple(items)

@@ -198,3 +198,51 @@ def test_consumer_loop_commits_offset_on_successful_message() -> None:
 class SystemClockStub:
     def now(self) -> datetime:
         return datetime.now(UTC)
+
+
+def test_checkout_listener_filters_unsupported_events_without_db_interaction() -> None:
+    postgres_factory = MagicMock()
+    dependencies = LiveRuntimeDependencies(
+        postgres_session_factory=postgres_factory,
+        kafka_producer=MagicMock(),
+        wallet_signature_client=MagicMock(),
+        blockchain_client=MagicMock(),
+        clock=SystemClockStub(),
+        id_generator=MagicMock(),
+    )
+    
+    config = LiveRuntimeConfig(
+        postgres_dsn="postgresql://user:pass@host:5432/db",
+        kafka_bootstrap_servers=("localhost:9092",),
+        kafka_client_id="test-client",
+        worker_batch_size=1,
+    )
+
+    runtime = build_live_worker_runtime_from_env(config=config, dependencies=dependencies)
+    checkout_worker = [w for w in runtime.workers if w.name == "checkout-process-manager"][0]
+    
+    unsupported_payload = {
+        "eventName": "PaymentProcessingStartedEvent",
+        "orderId": "order-123",
+        "paymentId": "payment-123",
+    }
+    mock_record = KafkaRecordStub(
+        topic="payment.events",
+        key=b"order-123",
+        value=json.dumps(unsupported_payload).encode("utf-8"),
+        headers=[("message-id", b"msg-123")]
+    )
+
+    with patch("importlib.import_module") as mock_import:
+        mock_kafka = MagicMock()
+        mock_import.return_value = mock_kafka
+        mock_consumer = MagicMock()
+        mock_kafka.KafkaConsumer.return_value = mock_consumer
+        mock_consumer.__next__.side_effect = [mock_record]
+
+        result = checkout_worker.run_once()
+        assert result.processed == 1
+        
+        postgres_factory.assert_not_called()
+        mock_consumer.commit.assert_called_once()
+

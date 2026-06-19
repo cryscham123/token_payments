@@ -195,6 +195,75 @@ def test_checkout_core_message_names_are_ready_for_process_manager_and_adapters(
     )
 
 
+def test_checkout_adapter_preserves_variant_inventory_targets_from_order_items() -> None:
+    from token_payments.contexts.checkout.adapter.kafka import _inventory_command_targets
+    from token_payments.shared.domain import CheckoutCommandName
+
+    payload = {
+        "storeId": "018f33aa-9e6d-73d8-9dc3-47d6cdcc6c24",
+        "items": [
+            {
+                "productId": "018f33aa-9e6d-73d8-9dc3-47d6cdcc6c25",
+                "publicVariantId": "hoodie-l",
+                "orderLineKey": "line-hoodie-l-premium",
+                "quantity": 2,
+            }
+        ],
+    }
+    reservation_targets = _inventory_command_targets(
+        CheckoutCommandName.RESERVE_INVENTORY,
+        payload,
+    )
+    confirmation_targets = _inventory_command_targets(CheckoutCommandName.CONFIRM_INVENTORY, payload)
+
+    expected_target = (
+        {
+            "productId": "018f33aa-9e6d-73d8-9dc3-47d6cdcc6c25",
+            "storeId": "018f33aa-9e6d-73d8-9dc3-47d6cdcc6c24",
+            "publicVariantId": "hoodie-l",
+            "orderLineKey": "line-hoodie-l-premium",
+            "quantity": 2,
+        },
+    )
+    assert reservation_targets == expected_target
+    assert confirmation_targets == expected_target
+
+
+def test_checkout_adapter_combines_quantities_for_duplicate_inventory_targets() -> None:
+    from token_payments.contexts.checkout.adapter.kafka import _inventory_command_targets
+    from token_payments.shared.domain import CheckoutCommandName
+
+    targets = _inventory_command_targets(
+        CheckoutCommandName.RESERVE_INVENTORY,
+        {
+            "storeId": "018f33aa-9e6d-73d8-9dc3-47d6cdcc6c24",
+            "items": [
+                {
+                    "productId": "018f33aa-9e6d-73d8-9dc3-47d6cdcc6c25",
+                    "publicVariantId": "hoodie-l",
+                    "orderLineKey": "line-1",
+                    "quantity": 2,
+                },
+                {
+                    "productId": "018f33aa-9e6d-73d8-9dc3-47d6cdcc6c25",
+                    "publicVariantId": "hoodie-l",
+                    "orderLineKey": "line-2",
+                    "quantity": 1,
+                },
+            ],
+        },
+    )
+
+    assert targets == (
+        {
+            "productId": "018f33aa-9e6d-73d8-9dc3-47d6cdcc6c25",
+            "storeId": "018f33aa-9e6d-73d8-9dc3-47d6cdcc6c24",
+            "publicVariantId": "hoodie-l",
+            "quantity": 3,
+        },
+    )
+
+
 def test_public_docs_document_checkout_core_contracts_and_adapter_boundaries() -> None:
     docs = "\n".join(
         path.read_text(encoding="utf-8")

@@ -208,15 +208,15 @@ class HandlerFixture:
 
 class FakeInventoryRepository:
     def __init__(self, inventory: ProductInventory | None) -> None:
-        self.inventories: dict[tuple[ProductId, StoreId], ProductInventory] = {}
+        self.inventories: dict[tuple[ProductId, StoreId, str | None], ProductInventory] = {}
         if inventory is not None:
-            self.inventories[(inventory.product_id, inventory.store_id)] = inventory
+            self.inventories[(inventory.product_id, inventory.store_id, inventory.public_variant_id)] = inventory
 
-    def get(self, product_id: ProductId, store_id: StoreId) -> ProductInventory | None:
-        return self.inventories.get((product_id, store_id))
+    def get(self, product_id: ProductId, store_id: StoreId, public_variant_id: str | None = None) -> ProductInventory | None:
+        return self.inventories.get((product_id, store_id, public_variant_id))
 
     def save(self, inventory: ProductInventory) -> None:
-        self.inventories[(inventory.product_id, inventory.store_id)] = inventory
+        self.inventories[(inventory.product_id, inventory.store_id, inventory.public_variant_id)] = inventory
 
 
 class FakeProcessedCommandRepository:

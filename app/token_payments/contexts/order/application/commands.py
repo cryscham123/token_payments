@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from types import MappingProxyType
+from typing import Mapping
 
 from token_payments.contexts.auth.domain.wallet import WalletId
 from token_payments.contexts.order.domain import Address, TrackingId
@@ -14,10 +16,15 @@ from token_payments.shared.domain import CommandId, MessageId, OrderId, ProductI
 class CreateOrderItem:
     product_id: ProductId | str
     quantity: int
+    public_variant_id: str | None = None
+    selected_options: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "product_id", _coerce_product_id(self.product_id))
         object.__setattr__(self, "quantity", _coerce_positive_int(self.quantity, "CreateOrderItem.quantity"))
+        if self.public_variant_id is not None:
+            object.__setattr__(self, "public_variant_id", _require_text(self.public_variant_id, "CreateOrderItem.public_variant_id"))
+        object.__setattr__(self, "selected_options", MappingProxyType(_coerce_selected_options(self.selected_options)))
 
 
 @dataclass(frozen=True)
@@ -132,6 +139,19 @@ def _coerce_positive_int(value: int, field_name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise ValueError(f"{field_name} must be a positive integer")
     return value
+
+
+def _coerce_selected_options(values: Mapping[str, object]) -> dict[str, object]:
+    if not isinstance(values, Mapping):
+        raise ValueError("CreateOrderItem.selected_options must be a mapping")
+    normalized: dict[str, object] = {}
+    for key, value in values.items():
+        option_key = _require_text(str(key), "CreateOrderItem.selected_options key")
+        if isinstance(value, list | tuple):
+            normalized[option_key] = [_require_text(str(item), f"CreateOrderItem.selected_options.{option_key}") for item in value if str(item).strip()]
+        elif value is not None and str(value).strip():
+            normalized[option_key] = _require_text(str(value), f"CreateOrderItem.selected_options.{option_key}")
+    return dict(sorted(normalized.items()))
 
 
 def _require_aware_datetime(value: datetime, field_name: str) -> datetime:

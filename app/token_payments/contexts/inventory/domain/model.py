@@ -131,6 +131,7 @@ class ProductInventory:
     available_stock: Quantity | int
     reserved_stock: Quantity | int
     total_stock: Quantity | int
+    public_variant_id: str | None = None
     sale_status: InventorySaleStatus | str = InventorySaleStatus.ACTIVE
     reservations: tuple[InventoryReservation, ...] = ()
 
@@ -139,6 +140,8 @@ class ProductInventory:
             raise ValueError("ProductInventory.product_id must be a ProductId")
         if not isinstance(self.store_id, StoreId):
             raise ValueError("ProductInventory.store_id must be a StoreId")
+        if self.public_variant_id is not None:
+            object.__setattr__(self, "public_variant_id", _require_text(self.public_variant_id, "ProductInventory.public_variant_id"))
 
         available_stock = _coerce_quantity(self.available_stock)
         reserved_stock = _coerce_quantity(self.reserved_stock)
@@ -524,3 +527,9 @@ def _require_aware_datetime(value: datetime, field_name: str) -> datetime:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError(f"{field_name} must be timezone-aware")
     return value
+
+
+def _require_text(value: str, field_name: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field_name} must be a non-empty string")
+    return value.strip()
