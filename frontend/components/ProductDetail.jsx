@@ -690,7 +690,14 @@ function matchingVariantsForSelection(product, selectedValues) {
   const variants = Array.isArray(product.variants) ? product.variants : [];
   const entries = Object.entries(selectedValues || {}).filter(([, value]) => value);
   if (entries.length === 0) return variants;
-  return variants.filter((variant) => entries.every(([key, value]) => String(variant.optionValues?.[key]) === String(value)));
+  const options = optionChoicesFromProduct(product);
+  return variants.filter((variant) => entries.every(([key, value]) => {
+    const option = options.find((opt) => opt.key === key);
+    const optionValueObj = option?.values?.find((v) => v.value === value);
+    const displayVal = optionValueObj?.displayValue || optionValueObj?.value;
+    const variantVal = variant.optionValues?.[key];
+    return String(variantVal) === String(value) || (displayVal && String(variantVal) === String(displayVal));
+  }));
 }
 
 function selectionComplete(options, selectedValues) {
