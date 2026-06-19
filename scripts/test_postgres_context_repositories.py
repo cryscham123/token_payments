@@ -192,6 +192,59 @@ def test_store_approval_repositories_round_trip_store_and_order_detail() -> None
     )
 
 
+def test_store_approval_order_detail_repository_builds_from_order_rows_when_projection_missing() -> None:
+    connection = FakePostgresConnection()
+    variant_unit_price = _amount("14.75")
+    expected_total = _amount("29.50")
+    expected_product = Product(
+        product_id=PRODUCT_ID,
+        name="Ledger Mug - Red / Large",
+        price=variant_unit_price,
+        available=True,
+    )
+    connection.seed_order(ORDER_ID, TRACKING_ID, store_id=STORE_ID, status="PENDING")
+    connection.seed_order_item(
+        order_id=ORDER_ID,
+        product_id=PRODUCT_ID,
+        product_snapshot_name="Ledger Mug - Red / Large",
+        unit_price=variant_unit_price,
+        quantity=2,
+    )
+    PostgresPaymentRepository(connection).save(_confirmed_payment(order_id=ORDER_ID))
+
+    order_detail = PostgresOrderDetailRepository(connection).get(ORDER_ID)
+
+    assert order_detail == OrderDetail(
+        order_id=ORDER_ID,
+        store_id=STORE_ID,
+        order_status="PAID",
+        total_amount=expected_total,
+        products=(expected_product, expected_product),
+    )
+    normalized_sql = _normalize_sql("\n".join(statement.sql for statement in connection.statements))
+    assert "from store_approval_order_details" in normalized_sql
+    assert "from orders" in normalized_sql
+    assert "from order_items" in normalized_sql
+
+
+def test_store_approval_order_detail_fallback_does_not_reopen_cancelled_orders() -> None:
+    connection = FakePostgresConnection()
+    connection.seed_order(ORDER_ID, TRACKING_ID, store_id=STORE_ID, status="CANCELLED")
+    connection.seed_order_item(
+        order_id=ORDER_ID,
+        product_id=PRODUCT_ID,
+        product_snapshot_name="Ledger Mug",
+        unit_price=_amount(),
+        quantity=1,
+    )
+    PostgresPaymentRepository(connection).save(_confirmed_payment(order_id=ORDER_ID))
+
+    order_detail = PostgresOrderDetailRepository(connection).get(ORDER_ID)
+
+    assert order_detail is not None
+    assert order_detail.order_status == "CANCELLED"
+
+
 def test_repositories_share_injected_connection_for_transaction_boundary() -> None:
     connection = FakePostgresConnection()
     inventory_repository = PostgresInventoryRepository(connection)
@@ -350,9 +403,9 @@ def _product() -> Product:
     return Product(product_id=PRODUCT_ID, name="Ledger Mug", price=_amount(), available=True)
 
 
-def _amount() -> Crypto:
+def _amount(amount: Decimal | str = Decimal("12.50")) -> Crypto:
     return Crypto(
-        amount=Decimal("12.50"),
+        amount=amount,
         symbol="USDC",
         chain_id=11155111,
         token_address=TOKEN_ADDRESS,
@@ -467,6 +520,7 @@ class FakePostgresConnection:
         self.payment_authorizations: dict[str, dict[str, Any]] = {}
         self.order_customers: dict[str, dict[str, Any]] = {}
         self.orders: dict[str, dict[str, Any]] = {}
+        self.order_items: dict[str, list[dict[str, Any]]] = {}
         self.store_approval_stores: dict[str, dict[str, Any]] = {}
         self.store_approval_products: dict[tuple[str, str], dict[str, Any]] = {}
         self.store_approval_order_details: dict[str, dict[str, Any]] = {}
@@ -489,6 +543,8 @@ class FakePostgresConnection:
             return self._select_inventory_reservations(statement.params)
         if "insert into payments" in normalized_sql:
             return self._upsert_payment(statement.params)
+        if "from orders" in normalized_sql and "select" in normalized_sql:
+            return self._select_order(statement.params)
         if "from payments p" in normalized_sql and "join order_customers" in normalized_sql:
             return self._select_payment_history(statement.params)
         if "from payments" in normalized_sql and "select" in normalized_sql:
@@ -497,6 +553,8 @@ class FakePostgresConnection:
             return self._upsert_payment_authorization(statement.params)
         if "from payment_authorizations" in normalized_sql and "select" in normalized_sql:
             return self._select_payment_authorization(statement.params)
+        if "from order_items" in normalized_sql and "select" in normalized_sql and "from payments" not in normalized_sql:
+            return self._select_order_items(statement.params)
         if "from store_approval_stores" in normalized_sql and "select" in normalized_sql:
             return self._select_store(statement.params)
         if "from store_approval_products" in normalized_sql and "select" in normalized_sql:
@@ -536,11 +594,55 @@ class FakePostgresConnection:
             "customer_id": str(customer_id),
         }
 
-    def seed_order(self, order_id: OrderId, tracking_id: TrackingId) -> None:
+    def seed_order(
+        self,
+        order_id: OrderId,
+        tracking_id: TrackingId,
+        *,
+        store_id: StoreId = STORE_ID,
+        status: str = "PENDING",
+    ) -> None:
         self.orders[str(order_id)] = {
             "order_id": str(order_id),
             "tracking_id": str(tracking_id),
+            "store_id": str(store_id),
+            "status": status,
         }
+
+    def seed_order_item(
+        self,
+        *,
+        order_id: OrderId,
+        product_id: ProductId,
+        product_snapshot_name: str,
+        unit_price: Crypto,
+        quantity: int,
+    ) -> None:
+        subtotal_amount = unit_price.amount * Decimal(quantity)
+        rows = self.order_items.setdefault(str(order_id), [])
+        rows.append(
+            {
+                "order_item_id": f"018f33aa-9e6d-73d8-9dc3-47d6cdcc6f{len(rows):02d}",
+                "order_id": str(order_id),
+                "product_id": str(product_id),
+                "product_snapshot_name": product_snapshot_name,
+                "unit_price_numeric": unit_price.amount,
+                "unit_price_symbol": unit_price.symbol,
+                "unit_price_chain_id": unit_price.chain_id,
+                "unit_price_token_address": (
+                    str(unit_price.token_address) if unit_price.token_address is not None else None
+                ),
+                "unit_price_decimals": unit_price.decimals,
+                "quantity": quantity,
+                "subtotal_numeric": subtotal_amount,
+                "subtotal_symbol": unit_price.symbol,
+                "subtotal_chain_id": unit_price.chain_id,
+                "subtotal_token_address": (
+                    str(unit_price.token_address) if unit_price.token_address is not None else None
+                ),
+                "subtotal_decimals": unit_price.decimals,
+            }
+        )
 
     def _upsert_product_inventory(self, params: Mapping[str, Any]) -> FakeResult:
         key = (str(params["product_id"]), str(params["store_id"]))
@@ -622,6 +724,27 @@ class FakePostgresConnection:
     def _select_payment_authorization(self, params: Mapping[str, Any]) -> FakeResult:
         row = self.payment_authorizations.get(str(params["payment_id"]))
         return FakeResult(rows=[dict(row)] if row is not None else [], rowcount=1 if row is not None else 0)
+
+    def _select_order(self, params: Mapping[str, Any]) -> FakeResult:
+        order_id = str(params["order_id"])
+        row = self.orders.get(order_id)
+        if row is None:
+            return FakeResult()
+        selected = dict(row)
+        selected["order_status"] = (
+            "PAID"
+            if selected["status"] == "PENDING" and self._has_confirmed_payment(order_id)
+            else selected["status"]
+        )
+        return FakeResult(rows=[selected], rowcount=1)
+
+    def _select_order_items(self, params: Mapping[str, Any]) -> FakeResult:
+        rows = [dict(row) for row in self.order_items.get(str(params["order_id"]), [])]
+        rows.sort(key=lambda row: row["order_item_id"])
+        return FakeResult(rows=rows, rowcount=len(rows))
+
+    def _has_confirmed_payment(self, order_id: str) -> bool:
+        return any(row["order_id"] == order_id and row["status"] == "CONFIRMED" for row in self.payments.values())
 
     def _select_store(self, params: Mapping[str, Any]) -> FakeResult:
         row = self.store_approval_stores.get(str(params["store_id"]))

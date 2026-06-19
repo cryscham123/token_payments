@@ -163,6 +163,21 @@ def test_product_mismatch_and_inactive_product_are_rejected_with_all_reasons() -
     assert result.outbox_message.payload["rejectionReasons"] == list(result.event.rejection_reasons)
 
 
+def test_variant_snapshot_price_does_not_reject_when_catalog_identity_matches() -> None:
+    snapshot_price = _amount("14.75")
+    order_detail = _order_detail(
+        product=_product(price=snapshot_price),
+        total_amount=snapshot_price,
+    )
+    service = _service(store=_store(product=_product(price=_amount("12.50"))), order_detail=order_detail)
+
+    result = service.request_store_approval(_command())
+
+    assert result.status == StoreApprovalResultStatus.APPROVED
+    assert result.order_detail == order_detail.approve()
+    assert result.event == OrderApprovedEvent(order=order_detail.approve(), created_at=NOW)
+
+
 def test_duplicate_approval_command_is_ignored_before_loading_or_saving_aggregates() -> None:
     stores = FakeStoreRepository(_store())
     order_details = FakeOrderDetailRepository(_order_detail())
@@ -282,23 +297,23 @@ def _store(*, active: bool = True, product: Product | None = None) -> Store:
     )
 
 
-def _order_detail(*, product: Product | None = None) -> OrderDetail:
+def _order_detail(*, product: Product | None = None, total_amount: Crypto | None = None) -> OrderDetail:
     return OrderDetail(
         order_id=ORDER_ID,
         store_id=STORE_ID,
         order_status="PAID",
-        total_amount=_amount(),
+        total_amount=total_amount or _amount(),
         products=(product or _product(),),
     )
 
 
-def _product(*, name: str = "Ledger Mug", available: bool = True) -> Product:
-    return Product(product_id=PRODUCT_ID, name=name, price=_amount(), available=available)
+def _product(*, name: str = "Ledger Mug", price: Crypto | None = None, available: bool = True) -> Product:
+    return Product(product_id=PRODUCT_ID, name=name, price=price or _amount(), available=available)
 
 
-def _amount() -> Crypto:
+def _amount(amount: Decimal | str = Decimal("12.50")) -> Crypto:
     return Crypto(
-        amount=Decimal("12.50"),
+        amount=amount,
         symbol="USDC",
         chain_id=11155111,
         token_address=TOKEN_ADDRESS,

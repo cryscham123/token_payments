@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 import json
 from typing import Any, Mapping
 
@@ -68,6 +69,38 @@ SELECT
     rejection_reasons
 FROM store_approval_order_details
 WHERE order_id = %(order_id)s
+"""
+
+SELECT_CANONICAL_ORDER_DETAIL_SQL = """
+SELECT
+    order_id,
+    store_id,
+    CASE
+        WHEN status = 'PENDING' AND EXISTS (
+            SELECT 1
+            FROM payments
+            WHERE payments.order_id = orders.order_id
+              AND payments.status = 'CONFIRMED'
+        ) THEN 'PAID'
+        ELSE status
+    END AS order_status
+FROM orders
+WHERE order_id = %(order_id)s
+"""
+
+SELECT_CANONICAL_ORDER_DETAIL_ITEMS_SQL = """
+SELECT
+    product_id,
+    product_snapshot_name,
+    unit_price_numeric,
+    unit_price_symbol,
+    unit_price_chain_id,
+    unit_price_token_address,
+    unit_price_decimals,
+    quantity
+FROM order_items
+WHERE order_id = %(order_id)s
+ORDER BY order_item_id
 """
 
 UPSERT_ORDER_DETAIL_SQL = """
@@ -151,9 +184,15 @@ class PostgresOrderDetailRepository:
             raise ValueError("PostgresOrderDetailRepository.get requires an OrderId")
 
         row = _fetch_one(self._connection.execute(SELECT_ORDER_DETAIL_SQL, {"order_id": str(order_id)}))
-        if row is None:
+        if row is not None:
+            return _order_detail_from_row(row)
+
+        params = {"order_id": str(order_id)}
+        order_row = _fetch_one(self._connection.execute(SELECT_CANONICAL_ORDER_DETAIL_SQL, params))
+        if order_row is None:
             return None
-        return _order_detail_from_row(row)
+        item_rows = _fetch_all(self._connection.execute(SELECT_CANONICAL_ORDER_DETAIL_ITEMS_SQL, params))
+        return _order_detail_from_canonical_rows(order_row, item_rows)
 
     def save(self, order_detail: OrderDetail) -> None:
         if not isinstance(order_detail, OrderDetail):
@@ -198,6 +237,41 @@ def _order_detail_from_row(row: Mapping[str, Any] | object) -> OrderDetail:
         products=tuple(_product_from_payload(snapshot) for snapshot in snapshots),
         approval_status=ApprovalStatus(_row_value(row, "approval_status")),
         rejection_reasons=tuple(str(reason) for reason in rejection_reasons),
+    )
+
+
+def _order_detail_from_canonical_rows(
+    order_row: Mapping[str, Any] | object,
+    item_rows: list[Mapping[str, Any] | object],
+) -> OrderDetail | None:
+    if not item_rows:
+        return None
+
+    products: list[Product] = []
+    total_amount: Crypto | None = None
+    for row in item_rows:
+        quantity = int(_row_value(row, "quantity"))
+        if quantity <= 0:
+            raise ValueError("order item quantity must be positive")
+        unit_price = _crypto_from_row(row, "unit_price")
+        product = Product(
+            product_id=ProductId(_row_value(row, "product_id")),
+            name=str(_row_value(row, "product_snapshot_name")),
+            price=unit_price,
+            available=True,
+        )
+        products.extend(product for _ in range(quantity))
+        line_total = _multiply_crypto(unit_price, quantity)
+        total_amount = line_total if total_amount is None else _add_crypto(total_amount, line_total)
+
+    if total_amount is None:
+        return None
+    return OrderDetail(
+        order_id=OrderId(_row_value(order_row, "order_id")),
+        store_id=StoreId(_row_value(order_row, "store_id")),
+        order_status=str(_row_value(order_row, "order_status")),
+        total_amount=total_amount,
+        products=tuple(products),
     )
 
 
@@ -270,6 +344,37 @@ def _crypto_from_payload(payload: Mapping[str, Any]) -> Crypto:
         chain_id=int(payload["chainId"]),
         token_address=payload.get("tokenAddress"),
         decimals=int(payload["decimals"]),
+    )
+
+
+def _multiply_crypto(value: Crypto, quantity: int) -> Crypto:
+    return Crypto(
+        amount=value.amount * Decimal(quantity),
+        symbol=value.symbol,
+        chain_id=value.chain_id,
+        token_address=value.token_address,
+        decimals=value.decimals,
+    )
+
+
+def _add_crypto(left: Crypto, right: Crypto) -> Crypto:
+    if not _same_crypto_asset(left, right):
+        raise ValueError("order item snapshots must use a single crypto asset")
+    return Crypto(
+        amount=left.amount + right.amount,
+        symbol=left.symbol,
+        chain_id=left.chain_id,
+        token_address=left.token_address,
+        decimals=left.decimals,
+    )
+
+
+def _same_crypto_asset(left: Crypto, right: Crypto) -> bool:
+    return (
+        left.symbol == right.symbol
+        and left.chain_id == right.chain_id
+        and left.token_address == right.token_address
+        and left.decimals == right.decimals
     )
 
 
