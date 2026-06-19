@@ -91,6 +91,10 @@ export async function logout() {
   return apiJson("/auth/sessions", { method: "DELETE" });
 }
 
+export async function refreshSession() {
+  return rawApiJson("/auth/sessions/refresh", { method: "POST" });
+}
+
 export async function getCurrentUserProfile() {
   return apiJson("/auth/me/profile", { method: "GET" });
 }
@@ -162,7 +166,45 @@ export function newBrowserDeviceId() {
   return `browser-${randomId}`;
 }
 
-export async function apiJson(path, { method = "GET", body, idempotencyKey } = {}) {
+// In-flight refresh promise to prevent concurrent refresh storms.
+// When multiple requests get 401 simultaneously, only one refresh is issued
+// and the others wait for the same promise.
+let _inflightRefresh = null;
+
+async function _tryRefreshSession() {
+  if (_inflightRefresh) return _inflightRefresh;
+
+  _inflightRefresh = (async () => {
+    try {
+      const csrfToken = csrfCookie();
+      const headers = {};
+      if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
+
+      const response = await fetch("/auth/sessions/refresh", {
+        method: "POST",
+        credentials: "include",
+        headers: Object.keys(headers).length ? headers : undefined
+      });
+
+      if (!response.ok) return false;
+      return true;
+    } catch {
+      return false;
+    } finally {
+      _inflightRefresh = null;
+    }
+  })();
+
+  return _inflightRefresh;
+}
+
+// Paths that should never trigger a refresh retry (to avoid infinite loops)
+function _isRefreshPath(path) {
+  const p = typeof path === "string" ? path : "";
+  return p === "/auth/sessions/refresh" || p === "/auth/sessions" || p === "/auth/challenges";
+}
+
+export async function apiJson(path, { method = "GET", body, idempotencyKey, _retried = false } = {}) {
   const headers = body === undefined ? {} : { ...JSON_HEADERS };
   const csrfToken = csrfCookie();
   if (csrfToken && !isSafeMethod(method)) headers["X-CSRF-Token"] = csrfToken;
@@ -178,7 +220,17 @@ export async function apiJson(path, { method = "GET", body, idempotencyKey } = {
 
   if (!response.ok) {
     const error = payload?.error || {};
-    if (response.status === 401 || (response.status === 403 && (error.code === "CSRF_TOKEN_INVALID" || error.code === "CSRF_TOKEN_MISSING"))) {
+    const is401or403 = response.status === 401 || (response.status === 403 && (error.code === "CSRF_TOKEN_INVALID" || error.code === "CSRF_TOKEN_MISSING"));
+
+    // Attempt silent refresh once before giving up
+    if (is401or403 && !_retried && !_isRefreshPath(path)) {
+      const refreshed = await _tryRefreshSession();
+      if (refreshed) {
+        return apiJson(path, { method, body, idempotencyKey, _retried: true });
+      }
+    }
+
+    if (is401or403) {
       if (typeof window !== "undefined") {
         document.cookie = "csrf_token=; path=/; max-age=0;";
         window.dispatchEvent(new CustomEvent("token-payments-unauthorized"));
@@ -197,6 +249,31 @@ export async function apiJson(path, { method = "GET", body, idempotencyKey } = {
     });
   }
 
+  return payload;
+}
+
+// Low-level apiJson without refresh retry (used by refreshSession itself)
+async function rawApiJson(path, { method = "GET", body } = {}) {
+  const headers = body === undefined ? {} : { ...JSON_HEADERS };
+  const csrfToken = csrfCookie();
+  if (csrfToken && !isSafeMethod(method)) headers["X-CSRF-Token"] = csrfToken;
+
+  const response = await fetch(path, {
+    method,
+    credentials: "include",
+    headers: Object.keys(headers).length ? headers : undefined,
+    body: body === undefined ? undefined : JSON.stringify(body)
+  });
+  const payload = await readJson(response);
+
+  if (!response.ok) {
+    const error = payload?.error || {};
+    throw new ApiError(error.message || response.statusText || "API request failed", {
+      status: response.status,
+      code: error.code,
+      body: payload
+    });
+  }
   return payload;
 }
 
