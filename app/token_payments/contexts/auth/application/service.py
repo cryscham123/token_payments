@@ -353,7 +353,9 @@ class AuthApplicationService:
                 registered = True
                 
                 if self._wallets is not None:
-                    for chain_id in [1337, 11155111]:
+                    # Only auto-bind the public testnet wallet on OAuth sign-up. The local
+                    # testnet (1337) wallet is not auto-created; it can be linked manually.
+                    for chain_id in [11155111]:
                         existing = self._wallets.get_active_by_address(chain_id, wallet_addr)
                         if existing is None:
                             active_same_chain = [

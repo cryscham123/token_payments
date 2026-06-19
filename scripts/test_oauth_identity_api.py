@@ -522,12 +522,11 @@ def test_complete_oauth_session_registers_wallet_if_wallets_configured() -> None
         )
     )
 
-    # Verify that the user has wallets saved in the repository
-    assert len(wallets.wallets) == 2
-    
-    # Verify that they are verified, primary, and set up for both chain IDs 1337 and 11155111
+    # Only the public testnet (11155111) wallet is auto-bound; the local testnet (1337) wallet
+    # is intentionally not auto-created on OAuth sign-up.
+    assert len(wallets.wallets) == 1
     chains = {w.chain_id for w in wallets.wallets}
-    assert chains == {1337, 11155111}
+    assert chains == {11155111}
     for wallet in wallets.wallets:
         assert wallet.address == WalletAddress("0x2222222222222222222222222222222222222222")
         assert wallet.user_id == UserId(USER_ID)
