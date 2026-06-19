@@ -97,6 +97,9 @@ def test_approval_service_saves_approved_order_detail_outbox_and_processed_comma
     assert outbox.headers["correlationId"] == str(ORDER_ID)
     assert outbox.headers["causationId"] == str(COMMAND_ID)
     assert outbox.headers["sourceCausationId"] == "payment-confirmed-message"
+    # Consumers discriminate on payload eventName; without it the checkout process manager
+    # rejects the message and ORDER_APPROVED never triggers CONFIRM_INVENTORY.
+    assert outbox.payload["eventName"] == CheckoutEventName.ORDER_APPROVED.value
     assert outbox.payload["orderId"] == str(ORDER_ID)
     assert outbox.payload["storeId"] == str(STORE_ID)
     assert outbox.payload["ownerUserId"] == str(OWNER_USER_ID)

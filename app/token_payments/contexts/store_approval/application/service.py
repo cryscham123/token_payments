@@ -186,11 +186,16 @@ def _record_event(
     if command.causation_id is not None:
         headers["sourceCausationId"] = command.causation_id
 
+    # Consumers (checkout process manager) read the discriminator from the payload's
+    # eventName field; without it the message is rejected as "payload missing eventName"
+    # and ORDER_APPROVED never triggers CONFIRM_INVENTORY.
+    event_payload = {"eventName": event_name.value, **payload}
+
     return OutboxMessage.record_event(
         metadata=metadata,
         topic=STORE_APPROVAL_EVENT_TOPIC,
         key=str(command.order_id),
-        payload=payload,
+        payload=event_payload,
         headers=headers,
     )
 
