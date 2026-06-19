@@ -372,7 +372,7 @@ export default function Profile() {
       await ensureChain(selectedAsset?.chainId || 1337);
 
       const accounts = await ethereum.request({ method: "eth_requestAccounts" });
-      const userAddress = accounts?.[0] || currentUser?.walletAddress;
+      const userAddress = currentUser?.walletAddress || accounts?.[0];
       if (!userAddress) {
         throw new Error("연결된 지갑 주소를 찾을 수 없습니다.");
       }
