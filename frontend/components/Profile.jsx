@@ -431,7 +431,7 @@ export default function Profile() {
         txHash = payload.result;
       }
 
-      setSuccessMsg(`${type.toUpperCase()} 테스트넷 코인이 정상적으로 지급되었습니다! (Tx: ${txHash.slice(0, 10)}...)`);
+      setSuccessMsg(`${type.toUpperCase()} 테스트넷 코인이 정상적으로 지급되었습니다! (Tx: ${txHash.slice(0, 10)}...) ※ 로컬 모의 토큰 특성상 지갑 잔고는 0으로 표시될 수 있으나 결제는 정상 진행됩니다.`);
     } catch (err) {
       console.warn("Faucet claim failed:", err);
       setErrorMsg(err.message || `${type.toUpperCase()} 지급에 실패했습니다. Local Test Network(Ganache)를 확인하세요.`);
