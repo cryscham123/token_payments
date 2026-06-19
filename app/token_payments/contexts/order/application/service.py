@@ -5,10 +5,20 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from decimal import Decimal
 from enum import StrEnum
-from typing import Any
+from typing import Any, Mapping
 
 from token_payments.contexts.auth.domain.wallet import UserWallet, WalletId
-from token_payments.contexts.order.domain import Customer, Order, OrderCancelledEvent, OrderItem, OrderStatus, Product, Store
+from token_payments.contexts.order.domain import (
+    Customer,
+    Order,
+    OrderCancelledEvent,
+    OrderItem,
+    OrderStatus,
+    Product,
+    ProductOptionValuePrice,
+    ProductVariantPrice,
+    Store,
+)
 from token_payments.contexts.payment.domain import PaymentAsset, PaymentAssetRegistry
 from token_payments.shared.domain import (
     CheckoutEventName,
@@ -676,8 +686,43 @@ def _store_with_asset_prices(store: Store, asset: PaymentAsset) -> Store:
         existing = dict(product.asset_prices) if product.asset_prices else {}
         if asset.asset_id not in existing:
             existing[asset.asset_id] = asset.crypto(product.price.amount)
-        enriched_products.append(replace(product, asset_prices=existing))
+        # Variant / add-on price deltas are stored in the product's base price asset only.
+        # Re-express them in the selected asset (same numeric amount, like the base price)
+        # so price_for_selection can add base + delta without an asset-mismatch error.
+        variants = _variants_for_asset(product.variants, asset)
+        option_values = _option_values_for_asset(product.option_values, asset)
+        enriched_products.append(
+            replace(product, asset_prices=existing, variants=variants, option_values=option_values)
+        )
     return replace(store, products=tuple(enriched_products))
+
+
+def _variants_for_asset(
+    variants: Mapping[str, ProductVariantPrice] | None,
+    asset: PaymentAsset,
+) -> Mapping[str, ProductVariantPrice] | None:
+    if not variants:
+        return variants
+    return {
+        variant_id: replace(variant, price_delta=asset.crypto(variant.price_delta.amount))
+        for variant_id, variant in variants.items()
+    }
+
+
+def _option_values_for_asset(
+    option_values: Mapping[str, ProductOptionValuePrice] | None,
+    asset: PaymentAsset,
+) -> Mapping[str, ProductOptionValuePrice] | None:
+    if not option_values:
+        return option_values
+    return {
+        key: (
+            value
+            if value.price_delta is None
+            else replace(value, price_delta=asset.crypto(value.price_delta.amount))
+        )
+        for key, value in option_values.items()
+    }
 
 
 def _selected_asset(registry: PaymentAssetRegistry | None, payment_asset_id: str | None) -> PaymentAsset | None:

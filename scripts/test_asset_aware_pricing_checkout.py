@@ -105,6 +105,50 @@ def test_asset_aware_checkout_defaults_wallet_to_selected_asset_chain_primary() 
     assert outbox.saved[0].payload["payerWalletId"] == str(WALLET_ID)
 
 
+def test_variant_and_addon_deltas_are_reexpressed_in_selected_asset() -> None:
+    # A product priced in USDC whose variant delta is stored in USDC must be payable in
+    # USDT without "variant priceDelta asset must match product price asset".
+    from token_payments.contexts.order.application.service import (
+        _option_values_for_asset,
+        _store_with_asset_prices,
+        _variants_for_asset,
+    )
+    from token_payments.contexts.order.domain import ProductOptionValuePrice, ProductVariantPrice
+
+    usdt = PaymentAsset.erc20("local-usdt", 1337, "USDT", 6, USDT)
+
+    variant = ProductVariantPrice(
+        public_variant_id="var_x",
+        option_values={"size": "large"},
+        price_delta=Crypto("5", "USDC", 1337, USDC, 6),
+    )
+    reexpressed = _variants_for_asset({"var_x": variant}, usdt)["var_x"]
+    assert reexpressed.price_delta == Crypto("5", "USDT", 1337, USDT, 6)
+
+    add_on = ProductOptionValuePrice(
+        option_key="gift", value_key="wrap", display_value="Gift wrap", option_type="ADD_ON",
+        price_delta=Crypto("2", "USDC", 1337, USDC, 6),
+    )
+    reexpressed_addon = _option_values_for_asset({"wrap": add_on}, usdt)["wrap"]
+    assert reexpressed_addon.price_delta == Crypto("2", "USDT", 1337, USDT, 6)
+
+    # End-to-end through the store enrichment + domain price computation.
+    product = Product(
+        PRODUCT_ID,
+        "Variant Mug",
+        Crypto("12.50", "USDC", 1337, USDC, 6),
+        asset_prices={"local-usdc": Crypto("12.50", "USDC", 1337, USDC, 6)},
+        variants={"var_x": variant},
+    )
+    store = Store(
+        STORE_ID, USER_ID, products=(product,), active=True, store_wallet=STORE_WALLET,
+        supported_chain_ids=(1337,), supported_payment_asset_ids=("local-usdc", "local-usdt"),
+    )
+    enriched = _store_with_asset_prices(store, usdt)
+    price = enriched.products[0].price_for_selection("local-usdt", public_variant_id="var_x", selected_options={"size": "large"})
+    assert price == Crypto("17.50", "USDT", 1337, USDT, 6)
+
+
 def _service(
     *,
     wallets: "FakeWalletRepository | None" = None,
