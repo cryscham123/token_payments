@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT / "app"))
 from token_payments.contexts.auth.domain.wallet import WalletId  # noqa: E402
 from token_payments.contexts.payment.adapter._chain_mapping import (  # noqa: E402
     erc20_transfer_request,
+    receipt_from_payload,
     verify_transfer_receipt,
 )
 from token_payments.contexts.payment.application import (  # noqa: E402
@@ -122,6 +123,50 @@ def test_confirmation_fails_erc20_payment_when_transfer_log_does_not_match_autho
     assert result.status is PaymentCommandStatus.FAILED
     assert result.payment is not None
     assert result.payment.failure_reason == "ERC20_TRANSFER_MISMATCH: WRONG_RECIPIENT"
+
+
+def test_receipt_from_payload_preserves_logs_and_status() -> None:
+    # The live blockchain adapter returns receipt_from_payload(raw_rpc_result); if it
+    # drops logs/status, ERC-20 verification can never find the Transfer log.
+    receipt = receipt_from_payload(_transfer_receipt())
+    assert receipt is not None
+    assert receipt.status == 1
+    assert len(receipt.logs) == 1
+    assert receipt.logs[0]["topics"][0].startswith("0xddf252ad")
+
+
+def test_confirmation_succeeds_when_adapter_returns_domain_receipt_with_logs() -> None:
+    # Mirrors the live path: the adapter hands back a TransactionReceipt (not a raw dict).
+    # Verification must still locate the Transfer log carried on the domain receipt.
+    domain_receipt = receipt_from_payload(_transfer_receipt())
+    handler = _handler(FakeBlockchainAdapter(domain_receipt))
+    handler.initiate_payment(_initiate_command())
+    handler.submit_transaction_hash(
+        type(
+            "Submit",
+            (),
+            {
+                "command_id": CommandId(f"{ORDER_ID}:SubmitTransactionHashCommand"),
+                "payment_id": PAYMENT_ID,
+                "order_id": ORDER_ID,
+                "tx_hash": TX_HASH,
+                "submitted_at": NOW,
+                "causation_id": None,
+            },
+        )()
+    )
+
+    result = handler.confirm_payment_receipt(
+        ConfirmPaymentReceiptCommand(
+            command_id=CommandId(f"{ORDER_ID}:ConfirmPaymentReceiptCommand"),
+            payment_id=PAYMENT_ID,
+            order_id=ORDER_ID,
+            checked_at=NOW,
+        )
+    )
+
+    assert result.status is PaymentCommandStatus.CONFIRMED
+    assert result.payment is not None and result.payment.status is PaymentStatus.CONFIRMED
 
 
 def _initiate_command() -> InitiatePaymentCommand:

@@ -76,10 +76,16 @@ def receipt_from_payload(payload: TransactionReceipt | Mapping[str, Any] | objec
         return None
     if isinstance(payload, TransactionReceipt):
         return payload
+    raw_logs = _field(payload, "logs", default=())
+    logs = tuple(raw_logs) if isinstance(raw_logs, list | tuple) else ()
+    raw_status = _field(payload, "status", default=None)
+    status = None if raw_status is None else (_hex_int(raw_status) if isinstance(raw_status, str) else int(raw_status))
     return TransactionReceipt(
         hash=TransactionHash(str(_field(payload, "hash", "tx_hash", "txHash", "transactionHash"))),
         block_number=_coerce_int(_field(payload, "block_number", "blockNumber"), "block_number"),
         gas_used=_coerce_int(_field(payload, "gas_used", "gasUsed"), "gas_used"),
+        logs=logs,
+        status=status,
     )
 
 
