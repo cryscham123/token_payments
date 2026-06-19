@@ -907,10 +907,16 @@ class JsonRpcBlockchainClient:
             raise ValueError("eth_getTransactionReceipt result must be an object or null")
         block_number = result.get("blockNumber", 0)
         gas_used = result.get("gasUsed", 0)
+        raw_logs = result.get("logs")
         return {
             "hash": str(result.get("transactionHash") or tx_hash),
             "block_number": int(str(block_number), 16) if isinstance(block_number, str) else int(block_number),
             "gas_used": int(str(gas_used), 16) if isinstance(gas_used, str) else int(gas_used),
+            # Pass through event logs + execution status so ERC-20 transfer verification
+            # can locate the Transfer log; without these every token payment fails with
+            # TRANSFER_LOG_MISSING.
+            "logs": list(raw_logs) if isinstance(raw_logs, list | tuple) else [],
+            "status": result.get("status"),
         }
 
     def create_signature_request(self, request: Mapping[str, object] | None = None, **kwargs: object) -> dict[str, object]:

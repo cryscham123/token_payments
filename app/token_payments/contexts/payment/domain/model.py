@@ -247,11 +247,17 @@ class TransactionReceipt:
     hash: TransactionHash | str
     block_number: int
     gas_used: int
+    # Raw event logs and execution status carried through from the chain receipt so
+    # downstream ERC-20 transfer verification can inspect the Transfer log. Optional so
+    # existing positional construction (hash, block_number, gas_used) keeps working.
+    logs: tuple[Mapping[str, Any], ...] = ()
+    status: int | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "hash", _coerce_tx_hash(self.hash))
         object.__setattr__(self, "block_number", _coerce_non_negative_int(self.block_number, "block_number"))
         object.__setattr__(self, "gas_used", _coerce_positive_int(self.gas_used, "gas_used"))
+        object.__setattr__(self, "logs", tuple(self.logs) if self.logs else ())
 
 
 @dataclass(frozen=True)
