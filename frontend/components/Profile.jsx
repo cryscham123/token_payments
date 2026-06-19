@@ -72,7 +72,12 @@ export default function Profile() {
         return;
       }
 
-      setCurrentUser(userPayload.user);
+      if (userPayload?.user) {
+        setCurrentUser((prev) => {
+          if (prev?.userId === userPayload.user.userId) return prev;
+          return userPayload.user;
+        });
+      }
 
       const [profileRes, storesRes, walletsRes, oauthRes] = await Promise.all([
         getCurrentUserProfile().catch((err) => {
@@ -119,8 +124,16 @@ export default function Profile() {
   };
 
   useEffect(() => {
+    if (!currentUser) {
+      setProfile(null);
+      setDisplayNameInput("");
+      setStores([]);
+      setWallets([]);
+      setLoading(false);
+      return;
+    }
     loadProfileData();
-  }, []);
+  }, [currentUser]);
 
   const reloadWallets = async () => {
     try {
