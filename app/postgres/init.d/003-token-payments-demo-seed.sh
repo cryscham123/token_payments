@@ -305,7 +305,7 @@ INSERT INTO store_catalog_stores (
     true,
     '0x2222222222222222222222222222222222222222',
     '[1337]'::jsonb,
-    '["local-native-eth"]'::jsonb
+    '["local-native-eth", "local-usdc", "local-usdt"]'::jsonb
 )
 ON CONFLICT (store_id) DO UPDATE SET
     public_store_id = EXCLUDED.public_store_id,
@@ -645,7 +645,7 @@ INSERT INTO order_stores (
     '1 Local Demo Way',
     '0x2222222222222222222222222222222222222222',
     '[1337]'::jsonb,
-    '["local-native-eth"]'::jsonb
+    '["local-native-eth", "local-usdc", "local-usdt"]'::jsonb
 )
 ON CONFLICT (store_id) DO UPDATE SET
     owner_user_id = EXCLUDED.owner_user_id,
