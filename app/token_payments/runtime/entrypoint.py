@@ -60,6 +60,7 @@ class ContractRuntimeContainer:
                             {"name": "order-status-listener", "type": "kafka-consumer"},
                             {"name": "auth-rbac-projector", "type": "kafka-consumer"},
                             {"name": "payment-receipt-polling", "type": "polling-worker"},
+                            {"name": "payment-timeout", "type": "polling-worker"},
                         ]
                     }
                     return CommandDispatchResult.succeeded(

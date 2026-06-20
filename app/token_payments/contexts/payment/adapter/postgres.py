@@ -166,6 +166,14 @@ ORDER BY updated_at ASC, payment_id ASC
 LIMIT %(limit)s
 """
 
+# Reuse the receipt-polling projection (same columns so _row_to_payment works) but select
+# payments still awaiting signature whose window has elapsed, so the timeout worker can expire
+# them and release their reserved inventory.
+SELECT_EXPIRED_AWAITING_SIGNATURE_SQL = SELECT_RECEIPT_POLLING_CANDIDATES_SQL.replace(
+    "WHERE status IN ('SUBMITTED', 'CONFIRMING')\n  AND tx_hash IS NOT NULL\n  AND receipt_block_number IS NULL",
+    "WHERE status = 'AWAITING_SIGNATURE'\n  AND expires_at <= %(now)s",
+)
+
 SELECT_PAYMENT_HISTORY_FOR_USER_SQL = """
 SELECT
     p.payment_id,
@@ -493,6 +501,14 @@ class PostgresPaymentRepository:
         if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
             raise ValueError("PostgresPaymentRepository.list_receipt_polling_candidates requires positive limit")
         result = self._connection.execute(SELECT_RECEIPT_POLLING_CANDIDATES_SQL, {"limit": limit})
+        return tuple(_row_to_payment(row) for row in _fetch_all(result))
+
+    def list_expired_awaiting_signature(self, *, now: datetime, limit: int) -> tuple[Payment, ...]:
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
+            raise ValueError("PostgresPaymentRepository.list_expired_awaiting_signature requires positive limit")
+        result = self._connection.execute(
+            SELECT_EXPIRED_AWAITING_SIGNATURE_SQL, {"now": now, "limit": limit}
+        )
         return tuple(_row_to_payment(row) for row in _fetch_all(result))
 
     def save(self, payment: Payment) -> None:

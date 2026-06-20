@@ -16,7 +16,12 @@ from token_payments.runtime.composition import (
     LiveRuntimeDependencies,
     build_live_worker_runtime_from_env,
 )
-from token_payments.runtime.workers import KafkaConsumerWorker, PaymentReceiptPollingWorker, WorkerRuntime
+from token_payments.runtime.workers import (
+    KafkaConsumerWorker,
+    PaymentReceiptPollingWorker,
+    PaymentTimeoutWorker,
+    WorkerRuntime,
+)
 from token_payments.shared.adapter.kafka import KafkaInboundMessage, MalformedKafkaMessage
 from token_payments.shared.domain import (
     CheckoutCommandName,
@@ -43,6 +48,11 @@ def test_build_live_worker_runtime_wires_consumers_lazily() -> None:
         pollers = [w for w in runtime.workers if isinstance(w, PaymentReceiptPollingWorker)]
         assert len(pollers) == 1
         assert pollers[0].name == "payment-receipt-polling"
+        # The timeout worker must be wired too, otherwise expired awaiting-signature payments
+        # are never swept and their reserved inventory is never released.
+        timeouts = [w for w in runtime.workers if isinstance(w, PaymentTimeoutWorker)]
+        assert len(timeouts) == 1
+        assert timeouts[0].name == "payment-timeout"
 
         # Verify names
         names = {w.name for w in consumers}

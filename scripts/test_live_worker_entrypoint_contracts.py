@@ -45,6 +45,7 @@ def test_worker_live_dry_run() -> None:
         "order-status-listener",
         "auth-rbac-projector",
         "payment-receipt-polling",
+        "payment-timeout",
     }
     assert "config" in plan
 

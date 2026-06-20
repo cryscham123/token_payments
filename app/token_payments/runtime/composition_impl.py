@@ -2265,6 +2265,33 @@ class _TransactionalReceiptPollingRepository:
         )
 
 
+class _TransactionalPaymentTimeoutRepository:
+    """Lists payments still awaiting signature past their expiry, paired with their
+    authorization, so the timeout worker can expire them and release reserved inventory."""
+
+    def __init__(self, dependencies: LiveRuntimeDependencies) -> None:
+        self._dependencies = dependencies
+
+    def list_expired_awaiting_signature(self, *, now, limit):
+        return _with_transaction(
+            self._dependencies,
+            lambda connection: self._candidates(connection, now=now, limit=limit),
+        )
+
+    def _candidates(self, connection, *, now, limit):
+        from token_payments.runtime.workers import PaymentTimeoutCandidate
+
+        payment_repository = PostgresPaymentRepository(connection)
+        authorization_repository = PostgresPaymentAuthorizationRepository(connection)
+        candidates = []
+        for payment in payment_repository.list_expired_awaiting_signature(now=now, limit=limit):
+            authorization = authorization_repository.get(payment.payment_id)
+            if authorization is None:
+                continue
+            candidates.append(PaymentTimeoutCandidate(payment=payment, authorization=authorization))
+        return tuple(candidates)
+
+
 class _TransactionalInventoryQuery:
     def __init__(self, dependencies: LiveRuntimeDependencies) -> None:
         self._dependencies = dependencies
@@ -3070,6 +3097,8 @@ def build_live_worker_runtime_from_env(
         KafkaConsumerWorker,
         OutboxRelayWorker,
         PaymentReceiptPollingWorker,
+        PaymentTimeoutCandidate,
+        PaymentTimeoutWorker,
         WorkerRuntime,
     )
     from token_payments.shared.adapter.kafka import KafkaProducerPublisher, LazyKafkaConsumerClient
@@ -3334,6 +3363,13 @@ def build_live_worker_runtime_from_env(
         options=live_config.worker_loop_options(),
     )
 
+    payment_timeout_worker = PaymentTimeoutWorker(
+        timeout_repository=_TransactionalPaymentTimeoutRepository(live_dependencies),
+        command_handler=_TransactionalPaymentCommandHandler(live_config, live_dependencies),
+        clock=live_dependencies.clock,
+        options=live_config.worker_loop_options(),
+    )
+
     workers = [
         outbox_worker,
         checkout_worker,
@@ -3344,6 +3380,7 @@ def build_live_worker_runtime_from_env(
         order_status_worker,
         auth_rbac_worker,
         receipt_polling_worker,
+        payment_timeout_worker,
     ]
     return WorkerRuntime(workers)
 
