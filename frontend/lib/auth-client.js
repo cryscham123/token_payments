@@ -302,6 +302,16 @@ async function readJson(response) {
   }
 }
 
+// RPC URL MetaMask should use for the local test network. Ganache is published on :8545,
+// and MetaMask (the extension) calls the RPC directly, so it is not bound by the page's
+// mixed-content policy and a self-signed site cert does not apply. We point at the same host
+// the app is served from on port 8545 (an https proxy would instead be rejected by
+// MetaMask's certificate validation when the site uses a self-signed cert).
+function localTestnetRpcUrl() {
+  if (typeof window === "undefined") return "http://127.0.0.1:8545";
+  return `http://${window.location.hostname}:8545`;
+}
+
 export async function ensureLocalTestnet() {
   const ethereum = typeof window !== "undefined" ? window.ethereum : undefined;
   if (!ethereum?.request) return;
@@ -320,7 +330,7 @@ export async function ensureLocalTestnet() {
             chainId: LOCAL_CHAIN_ID_HEX,
             chainName: "Local Test Network",
             nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-            rpcUrls: ["http://127.0.0.1:8545"]
+            rpcUrls: [localTestnetRpcUrl()]
           }]
         });
       } catch (addError) {
