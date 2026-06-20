@@ -369,13 +369,13 @@ class RequestGuard:
 
         path = str(getattr(request, "path", ""))
         method = str(getattr(request, "method", "GET")).upper()
+        # Pre-auth login flows can't carry a CSRF double-submit token yet, so they are exempt.
+        # OAuth routes are intentionally NOT blanket-exempt here: unauthenticated OAuth login
+        # (no session cookie) is already exempt by the cookie check below, while authenticated
+        # OAuth account-linking (links/authorize in LINK mode) must still pass CSRF.
         if (
             path == "/auth/challenges"
             or (path == "/auth/sessions" and method == "POST")
-            or (
-                "/auth/oauth/" in path
-                and (path.endswith("/sessions") or path.endswith("/links") or path.endswith("/authorize"))
-            )
         ):
             return None
 

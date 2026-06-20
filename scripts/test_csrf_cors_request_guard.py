@@ -129,6 +129,60 @@ def test_cookie_authenticated_mutating_requests_require_valid_double_submit_csrf
     assert calls == [{"storeId": "store-001"}]
 
 
+def test_authenticated_oauth_account_linking_requires_csrf_but_login_flow_is_exempt() -> None:
+    csrf = _csrf_service()
+    guard = _guard(csrf_service=csrf)
+    router = HttpRouter(request_guard=guard)
+    calls: list[Any] = []
+
+    def handler(request: Any):
+        calls.append(request.request_id)
+        return json_response({"ok": True}, status_code=200, request_id=request.request_id)
+
+    router.add_route("POST", "/auth/oauth/google/links", handler, operation_id="linkOAuthIdentity")
+    token = csrf.issue_token(now=NOW).token
+
+    # Authenticated linking (session cookie present) without a CSRF token must be rejected.
+    missing = router.handle(
+        "POST",
+        "/auth/oauth/google/links",
+        headers={
+            "Content-Type": "application/json",
+            "Cookie": "access_token=session-token; csrf_token=%s" % token,
+            "X-Request-Id": "req-link-missing",
+        },
+        body=_json_body({"code": "c", "state": "s"}),
+        received_at=NOW,
+    )
+    # Unauthenticated OAuth flow (no session cookie) stays exempt.
+    anon = router.handle(
+        "POST",
+        "/auth/oauth/google/links",
+        headers={"Content-Type": "application/json", "X-Request-Id": "req-link-anon"},
+        body=_json_body({"code": "c", "state": "s"}),
+        received_at=NOW,
+    )
+    # Authenticated with a valid CSRF token is accepted.
+    accepted = router.handle(
+        "POST",
+        "/auth/oauth/google/links",
+        headers={
+            "Content-Type": "application/json",
+            "Cookie": "access_token=session-token; csrf_token=%s" % token,
+            "X-CSRF-Token": token,
+            "X-Request-Id": "req-link-ok",
+        },
+        body=_json_body({"code": "c", "state": "s"}),
+        received_at=NOW,
+    )
+
+    assert missing.status_code == 403
+    assert _json(missing.body)["error"]["code"] == "CSRF_TOKEN_MISSING"
+    assert anon.status_code == 200
+    assert accepted.status_code == 200
+    assert calls == ["req-link-anon", "req-link-ok"]
+
+
 def test_safe_methods_do_not_require_csrf_even_when_auth_cookies_are_present() -> None:
     router = HttpRouter(request_guard=_guard())
     calls: list[str] = []
