@@ -173,21 +173,27 @@ export default function Cart() {
     setStatus("creating");
     setMessage("주문을 생성하는 중입니다.");
     try {
+      // An order belongs to a single store (inventory, payment, and approval are all
+      // per-store), and the backend resolves each item's publicProductId within that one
+      // store. So check out only the items for one store at a time and leave any other-store
+      // items in the cart for a separate checkout.
+      const orderStoreId = activeCartItems.find((item) => item.publicStoreId)?.publicStoreId || demoStore.publicStoreId;
+      const orderItems = activeCartItems.filter(
+        (item) => (item.publicStoreId || demoStore.publicStoreId) === orderStoreId
+      );
       const created = await createOrder({
-        // Resolve the store server-side from its public id (each item carries its own store);
-        // an explicit demo storeId would force every line onto the hardcoded demo store.
-        publicStoreId: activeCartItems.find((item) => item.publicStoreId)?.publicStoreId || demoStore.publicStoreId,
-        items: activeCartItems,
+        publicStoreId: orderStoreId,
+        items: orderItems,
         walletId: selectedWalletId,
         paymentAssetId: selectedPaymentAssetId
       });
       const trackingId = created?.order?.trackingId;
       if (!trackingId) throw new Error("주문 trackingId를 받지 못했습니다.");
-      
-      const remainingItems = cartItems.filter((item) => !activeCartItems.includes(item));
+
+      const remainingItems = cartItems.filter((item) => !orderItems.includes(item));
       setCartItems(remainingItems);
       saveCart(remainingItems);
-      
+
       router.push(`/pay?trackingId=${encodeURIComponent(trackingId)}`);
     } catch (error) {
       setStatus("error");
