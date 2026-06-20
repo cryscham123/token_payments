@@ -176,7 +176,8 @@ SELECT
     tracking_id,
     status,
     failure_messages,
-    updated_at AS order_updated_at
+    updated_at AS order_updated_at,
+    (SELECT COALESCE(SUM(oi.quantity), 0) FROM order_items oi WHERE oi.order_id = orders.order_id) AS total_quantity
 FROM orders
 WHERE tracking_id = %(tracking_id)s
 """
@@ -187,7 +188,8 @@ SELECT
     tracking_id,
     status,
     failure_messages,
-    updated_at AS order_updated_at
+    updated_at AS order_updated_at,
+    (SELECT COALESCE(SUM(oi.quantity), 0) FROM order_items oi WHERE oi.order_id = orders.order_id) AS total_quantity
 FROM orders
 WHERE order_id = %(order_id)s
 """
@@ -577,6 +579,7 @@ class PostgresCheckoutTrackingQuery:
             authorization=authorization,
             outbox_statuses=outbox_statuses,
             updated_at=_latest_updated_at(order_row, payment_row, authorization_row, outbox_statuses),
+            total_quantity=int(_row_value_or_default(order_row, "total_quantity", 0) or 0),
         )
 
 

@@ -162,6 +162,7 @@ class CheckoutTrackingSnapshot:
     authorization: Any | None
     outbox_statuses: tuple[OutboxStatusSnapshot, ...]
     updated_at: datetime
+    total_quantity: int = 0
 
     def __post_init__(self) -> None:
         if not isinstance(self.order_id, OrderId):

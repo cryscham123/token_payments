@@ -89,6 +89,7 @@ def test_tracking_api_returns_awaiting_signature_payment_request_and_gas_estimat
         "trackingId": str(TRACKING_ID),
         "paymentId": str(PAYMENT_ID),
         "status": "AWAITING_SIGNATURE",
+        "totalQuantity": 0,
         "currentStep": "AWAITING_SIGNATURE",
         "pendingAction": "SIGN_PAYMENT",
         "paymentRequest": {

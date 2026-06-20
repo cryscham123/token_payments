@@ -55,6 +55,7 @@ def _tracking_payload(snapshot: CheckoutTrackingSnapshot) -> dict[str, Any]:
         "trackingId": str(snapshot.tracking_id),
         "paymentId": str(snapshot.payment_id) if snapshot.payment_id is not None else None,
         "status": snapshot.status,
+        "totalQuantity": snapshot.total_quantity,
         "currentStep": snapshot.current_step.value,
         "pendingAction": snapshot.pending_action.value if snapshot.pending_action is not None else None,
         "paymentRequest": _payment_request_payload(snapshot.payment_request),

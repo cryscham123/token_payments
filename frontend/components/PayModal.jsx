@@ -141,8 +141,11 @@ export default function PayModal() {
   const paymentExpired = timeLeft !== null && timeLeft <= 0;
   const timerText = paymentRequest?.expiresAt ? (paymentExpired ? "시간 초과" : formatTime(timeLeft || 0)) : "대기 중";
   const canPay = Boolean(paymentRequest && currentUser && !busy && !paymentExpired);
+  // The cart is emptied once the order is created, so read the quantity from the order
+  // (tracking response) and only fall back to the cart count.
+  const orderQuantity = checkout?.totalQuantity ?? cartQuantity;
   const compactPaymentFacts = [
-    { label: "상품 수량", value: `${cartQuantity}개` },
+    { label: "상품 수량", value: `${orderQuantity}개` },
     paymentRequest?.amount?.chainId ? { label: "네트워크", value: `Chain ${paymentRequest.amount.chainId}` } : null,
     checkout?.payerWallet?.chainId ? { label: "지갑 체인", value: `Chain ${checkout.payerWallet.chainId}` } : null
   ].filter(Boolean);
@@ -274,7 +277,7 @@ export default function PayModal() {
                   <div className="grid gap-3 sm:grid-cols-2">
                     <InfoRow className="sm:col-span-2" label="수신 주소" value={transferTo} onCopy={() => copyToClipboard(transferTo, "주소")} />
                     {checkout?.trackingId && <InfoRow label="Tracking ID" value={checkout.trackingId} onCopy={() => copyToClipboard(checkout.trackingId, "Tracking ID")} />}
-                    {checkout?.payerWallet?.walletId && <InfoRow label="결제 지갑" value={`${checkout.payerWallet.addressPreview || checkout.payerWallet.walletId} · Chain ${checkout.payerWallet.chainId}`} onCopy={() => copyToClipboard(checkout.payerWallet.walletId, "결제 지갑")} />}
+                    {checkout?.payerWallet?.walletId && <InfoRow label="결제 지갑" value={`${checkout.payerWallet.addressPreview || checkout.payerWallet.walletId} · Chain ${checkout.payerWallet.chainId}`} onCopy={() => copyToClipboard(checkout.payerWallet.addressPreview || checkout.payerWallet.walletId, "결제 지갑")} />}
                     {txHash && <InfoRow className="sm:col-span-2" label="거래 해시" value={txHash} onCopy={() => copyToClipboard(txHash, "거래 해시")} />}
                     {copied && <p className="sm:col-span-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700">{copied} 복사 완료</p>}
                   </div>
