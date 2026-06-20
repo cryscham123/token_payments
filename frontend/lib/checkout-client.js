@@ -58,6 +58,14 @@ export async function submitTransactionHash({ trackingId, txHash }) {
   });
 }
 
+export async function cancelPayment({ trackingId }) {
+  return apiJson("/payments/cancellations", {
+    method: "POST",
+    idempotencyKey: `payment-cancel-${trackingId}`,
+    body: { trackingId }
+  });
+}
+
 export async function completeOAuthSession({ provider, code, state, redirectUri }) {
   return apiJson(`/auth/oauth/${encodeURIComponent(provider)}/sessions`, {
     method: "POST",

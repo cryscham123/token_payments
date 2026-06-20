@@ -1044,6 +1044,38 @@
           }
         },
         {
+          "id": "cancelPayment",
+          "name": "Cancel payment",
+          "description": "Local Postman request skeleton for the API route manifest; authentication uses the Postman cookie jar.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/payments/cancellations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "payments",
+                "cancellations"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"trackingId\": \"{{trackingId}}\"\n}"
+            }
+          }
+        },
+        {
           "id": "listPublicStores",
           "name": "List public stores",
           "description": "Lists active public stores with public profile and payment capability summaries.",

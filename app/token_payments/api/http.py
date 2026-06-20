@@ -507,6 +507,11 @@ def register_payment_routes(router: HttpRouter, payments_api: Any) -> tuple[Http
             PAYMENT_HTTP_ROUTES["submit_transaction_hash"],
             payments_api.submit_transaction_hash,
         ),
+        _add_manifest_route(
+            router,
+            PAYMENT_HTTP_ROUTES["cancel_payment"],
+            payments_api.cancel_payment,
+        ),
     )
 
 
@@ -1106,6 +1111,11 @@ PAYMENT_HTTP_ROUTES: Mapping[str, HttpRouteSpec] = MappingProxyType(
             "POST",
             "/payments/transaction-hashes",
             "submitTransactionHash",
+        ),
+        "cancel_payment": HttpRouteSpec(
+            "POST",
+            "/payments/cancellations",
+            "cancelPayment",
         ),
     }
 )

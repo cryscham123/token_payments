@@ -25,6 +25,7 @@
     "getCheckoutTrackingByOrderId",
     "listUserPayments",
     "submitTransactionHash",
+    "cancelPayment",
     "listPublicStores",
     "listAllPublicProducts",
     "getStoreProfile",
@@ -622,6 +623,23 @@
           "pendingAction": "WAIT_FOR_RECEIPT",
           "txHash": "<local-test-network-transaction-hash>",
           "updatedAt": "<timestamp>"
+        }
+      }
+    },
+    {
+      "operationId": "cancelPayment",
+      "requestName": "Cancel payment",
+      "method": "POST",
+      "path": "/payments/cancellations",
+      "status": 202,
+      "headers": {
+        "X-CSRF-Token": "{{csrfToken}}",
+        "X-Request-Id": "postman-payment-cancel-001"
+      },
+      "body": {
+        "payment": {
+          "orderId": "<order-id>",
+          "status": "EXPIRED"
         }
       }
     },

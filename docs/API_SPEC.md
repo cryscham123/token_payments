@@ -43,7 +43,7 @@ Phase 26 hardens the public API and runtime architecture around externally safe 
 
 ### Public HTTP route surface
 
-Public HTTP route surface is exactly the current 56-route manifest from `app/token_payments/api/http.py`. This manifest contains auth session routes, OAuth provider-subject login/link/list/revoke routes, authenticated wallet link/list/primary/revoke routes, current user display profile routes, order creation, checkout tracking, customer payment history, payment txHash submission, public store profile reads, merchant store profile listing/update routes, admin store catalog provisioning routes, store-owner product registration, store owner inventory query/mutation routes, merchant member/invitation routes, operator dashboard/detail reads, and cancel/retry/replay operator actions. It does not include store owner manual approval routes, role/permission full CRUD, platform group CRUD, personal group CRUD, owner transfer, settlement wallet mutation, or checkout saga command endpoints.
+Public HTTP route surface is exactly the current 57-route manifest from `app/token_payments/api/http.py`. This manifest contains auth session routes, OAuth provider-subject login/link/list/revoke routes, authenticated wallet link/list/primary/revoke routes, current user display profile routes, order creation, checkout tracking, customer payment history, payment txHash submission, public store profile reads, merchant store profile listing/update routes, admin store catalog provisioning routes, store-owner product registration, store owner inventory query/mutation routes, merchant member/invitation routes, operator dashboard/detail reads, and cancel/retry/replay operator actions. It does not include store owner manual approval routes, role/permission full CRUD, platform group CRUD, personal group CRUD, owner transfer, settlement wallet mutation, or checkout saga command endpoints.
 
 ### Message listener input surface
 
@@ -329,6 +329,7 @@ Common status codes:
 | `getCheckoutTrackingByOrderId` | `GET` | `/checkouts/orders/{orderId}` |
 | `listUserPayments` | `GET` | `/payments` |
 | `submitTransactionHash` | `POST` | `/payments/transaction-hashes` |
+| `cancelPayment` | `POST` | `/payments/cancellations` |
 | `getStoreProfile` | `GET` | `/stores/{publicStoreId}` |
 | `listPublicStores` | `GET` | `/stores` |
 | `listAllPublicProducts` | `GET` | `/products` |

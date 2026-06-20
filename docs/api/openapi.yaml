@@ -2026,6 +2026,101 @@ paths:
         codes:
         - INVALID_STATE
         - IDEMPOTENCY_KEY_CONFLICT
+  /payments/cancellations:
+    post:
+      summary: Cancel payment
+      description: |
+        Cancels a payment still awaiting signature keyed by `trackingId`; reuses the expiry flow to release reserved inventory and cancel the order after ownership checks. Rejected once a transaction has already been submitted.
+      tags:
+      - payments
+      operationId: cancelPayment
+      responses:
+        '202':
+          description: Command accepted for asynchronous or idempotent processing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JsonObject'
+              example:
+                payment:
+                  orderId: <order-id>
+                  status: EXPIRED
+        '400':
+          description: 'Validation error, malformed JSON, missing required input, unsupported enum, or rejected request shape.
+            Possible error codes: VALIDATION_ERROR.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: VALIDATION_ERROR
+                  message: Validation error, malformed JSON, missing required input, unsupported enum, or rejected request
+                    shape.
+                  status: 400
+        '403':
+          description: 'Authenticated actor lacks permission, scoped membership, or required CSRF validation. Possible error
+            codes: FORBIDDEN.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: FORBIDDEN
+                  message: Authenticated actor lacks permission, scoped membership, or required CSRF validation.
+                  status: 403
+        '404':
+          description: 'The requested resource does not exist or is not visible in the caller scope. Possible error codes:
+            PAYMENT_NOT_FOUND, NOT_FOUND.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: PAYMENT_NOT_FOUND
+                  message: The requested resource does not exist or is not visible in the caller scope.
+                  status: 404
+        '409':
+          description: 'Idempotency conflict or domain state conflict. Possible error codes: INVALID_STATE, IDEMPOTENCY_KEY_CONFLICT.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: INVALID_STATE
+                  message: Idempotency conflict or domain state conflict.
+                  status: 409
+      x-codeSamples:
+      - lang: cURL
+        label: CLI
+        source: |
+          curl -L http://127.0.0.1:8000/payments/cancellations \
+            -H 'Content-Type: application/json' \
+            -H 'Cookie: access=SESSION_COOKIE' \
+            -H 'X-CSRF-Token: YOUR_CSRF_TOKEN' \
+            -d '{"trackingId":"trk_demo"}'
+      parameters:
+      - $ref: '#/components/parameters/XRequestIdHeader'
+      - $ref: '#/components/parameters/LocalUserIdHeader'
+      - $ref: '#/components/parameters/LocalScopesHeader'
+      - $ref: '#/components/parameters/CsrfTokenHeader'
+      x-errorCodes:
+      - status: 400
+        codes:
+        - VALIDATION_ERROR
+      - status: 403
+        codes:
+        - FORBIDDEN
+      - status: 404
+        codes:
+        - PAYMENT_NOT_FOUND
+        - NOT_FOUND
+      - status: 409
+        codes:
+        - INVALID_STATE
   /stores:
     get:
       summary: List public stores

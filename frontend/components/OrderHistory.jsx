@@ -5,6 +5,7 @@ import { CreditCard, ExternalLink, ShoppingBag } from "lucide-react";
 import SiteHeader from "./SiteHeader";
 import { useEffect, useState } from "react";
 import { apiJson, getCurrentUser } from "@/lib/auth-client";
+import { cancelPayment } from "@/lib/checkout-client";
 import { formatCryptoAmount } from "@/lib/demo-data";
 import { productImageFromMedia, PRODUCT_IMAGE_PLACEHOLDER, getCategoryFallback } from "@/lib/product-image";
 
@@ -14,6 +15,21 @@ export default function OrderHistory() {
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState(null);
   const [error, setError] = useState("");
+  const [cancellingTrackingId, setCancellingTrackingId] = useState("");
+
+  const handleCancelPayment = async (trackingId) => {
+    if (!trackingId || cancellingTrackingId) return;
+    setCancellingTrackingId(trackingId);
+    try {
+      await cancelPayment({ trackingId });
+      const res = await apiJson("/payments", { method: "GET" }).catch(() => ({ payments: [] }));
+      setPayments(res?.payments || []);
+    } catch (err) {
+      console.error("Failed to cancel payment", err);
+    } finally {
+      setCancellingTrackingId("");
+    }
+  };
 
   useEffect(() => {
     let active = true;
@@ -224,6 +240,15 @@ export default function OrderHistory() {
                         <CreditCard size={14} />
                         이어서 결제하기
                       </Link>
+                    )}
+                    {order.resumable && (
+                      <button
+                        onClick={() => handleCancelPayment(order.trackingId)}
+                        disabled={cancellingTrackingId === order.trackingId}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-bold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        결제 취소
+                      </button>
                     )}
                     <Link href={`/payment-complete?trackingId=${encodeURIComponent(order.trackingId)}&txHash=${encodeURIComponent(order.txHash || "")}`} className="text-sm font-medium text-blue-600 hover:underline">
                       상세보기

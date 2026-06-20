@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any, Mapping
 
 from token_payments.contexts.payment.application import (
+    ExpireAwaitingSignatureCommand,
     PaymentHistoryItem,
     PaymentHistoryQueryPort,
     PaymentCommandHandler,
@@ -88,6 +89,50 @@ class PaymentsApi:
             )
             result = self._handler.submit_transaction_hash(command)
             return json_response(_submit_payload(result, tracking_id, request.received_at), status_code=202, request_id=request.request_id)
+        except IdempotencyKeyConflict as exc:
+            return idempotency_conflict_response(exc, request.request_id)
+        except PaymentCommandRejected as exc:
+            return _payment_error_response(exc, request.request_id)
+        except ValueError as exc:
+            msg = str(exc)
+            if "not own" in msg or "forbidden" in msg:
+                return _error_response("FORBIDDEN", msg, 403, request.request_id)
+            if "not found" in msg or "NotFound" in msg:
+                return _error_response("NOT_FOUND", msg, 404, request.request_id)
+            return _error_response("VALIDATION_ERROR", msg, 400, request.request_id)
+
+    def cancel_payment(self, request: ApiRequest) -> ApiResponse:
+        """Customer-initiated cancel of a payment still awaiting signature. Reuses the expiry
+        flow (PAYMENT_EXPIRED -> RELEASE_INVENTORY + CANCEL_ORDER); rejected once the payment
+        has moved past AWAITING_SIGNATURE (e.g. a tx was already submitted)."""
+        try:
+            body = _request_body(request)
+            tracking_id = TrackingId(_required_text(body, "trackingId"))
+
+            user_id = _user_id_from_request(request)
+            if user_id is None:
+                raise ValueError("authenticated session is required")
+
+            if self._tracking_query is None:
+                raise ValueError("tracking query is not configured")
+
+            order_id, payment_id = self._tracking_query.resolve_and_verify(tracking_id, user_id)
+
+            command = ExpireAwaitingSignatureCommand(
+                command_id=CommandId(f"{order_id}:ExpireAwaitingSignatureCommand"),
+                payment_id=payment_id,
+                order_id=order_id,
+                expired_at=request.received_at,
+                reason="cancelled by customer",
+                causation_id=request.request_id,
+            )
+            result = self._handler.expire_awaiting_signature(command)
+            status = result.status.value if hasattr(result.status, "value") else str(result.status)
+            return json_response(
+                {"payment": {"orderId": str(order_id), "status": status}},
+                status_code=202,
+                request_id=request.request_id,
+            )
         except IdempotencyKeyConflict as exc:
             return idempotency_conflict_response(exc, request.request_id)
         except PaymentCommandRejected as exc:

@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { getCurrentUser } from "@/lib/auth-client";
 import { clearCart, loadCart } from "@/lib/cart";
-import { getCheckoutTracking, sendPayment, submitTransactionHash } from "@/lib/checkout-client";
+import { cancelPayment, getCheckoutTracking, sendPayment, submitTransactionHash } from "@/lib/checkout-client";
 import { demoStore, formatCryptoAmount } from "@/lib/demo-data";
 import SiteHeader from "./SiteHeader";
 
@@ -191,6 +191,19 @@ export default function PayModal() {
     }
   }
 
+  async function cancelCheckout() {
+    if (!checkout?.trackingId || busy) return;
+    setStatus("loading");
+    setMessage("결제를 취소하는 중입니다.");
+    try {
+      await cancelPayment({ trackingId: checkout.trackingId });
+      router.push("/orders");
+    } catch (error) {
+      setStatus("error");
+      setMessage(errorMessage(error, "결제 취소에 실패했습니다. 이미 처리되었을 수 있습니다."));
+    }
+  }
+
   async function copyToClipboard(text, label) {
     await navigator.clipboard?.writeText(text);
     setCopied(label);
@@ -269,6 +282,15 @@ export default function PayModal() {
                       {busy && <Loader2 className="h-4 w-4 animate-spin" />}
                       MetaMask로 결제 전송
                     </button>
+                    {checkout?.paymentRequest && !txHash && (
+                      <button
+                        onClick={cancelCheckout}
+                        disabled={busy}
+                        className="mt-2.5 block w-full rounded-xl border border-red-200 bg-white py-2.5 text-center text-sm font-bold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        결제 취소 (주문 취소 · 재고 복원)
+                      </button>
+                    )}
                     <Link href="/cart" className="mt-2.5 block w-full rounded-xl border border-slate-300 bg-white py-2.5 text-center text-sm font-bold text-slate-700 hover:bg-slate-50">
                       장바구니로 돌아가기
                     </Link>

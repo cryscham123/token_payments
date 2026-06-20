@@ -150,7 +150,7 @@ def test_payment_http_route_submits_tx_hash_and_preserves_request_id_and_command
 
     routes = register_payment_routes(router, PaymentsApi(handler, tracking_query=query, history_query=FakePaymentHistoryQuery()))
 
-    assert [route.operation_id for route in routes] == ["listUserPayments", "submitTransactionHash"]
+    assert [route.operation_id for route in routes] == ["listUserPayments", "submitTransactionHash", "cancelPayment"]
 
     response = router.handle(
         "POST",
@@ -246,6 +246,36 @@ def test_payment_http_route_lists_user_payment_history_without_request_body() ->
         "pagination": {"limit": 20, "nextPageToken": None},
     }
     assert history_query.calls == [(USER_ID, (PaymentStatus.SUBMITTED, PaymentStatus.CONFIRMED), 20)]
+
+
+def test_payment_http_route_cancels_awaiting_signature_payment() -> None:
+    handler = CapturingPaymentCommandHandler()
+    router = HttpRouter()
+    query = FakeCheckoutTrackingQuery(_tracking_snapshot())
+
+    register_payment_routes(router, PaymentsApi(handler, tracking_query=query, history_query=FakePaymentHistoryQuery()))
+
+    response = router.handle(
+        "POST",
+        "/payments/cancellations",
+        headers={
+            "Content-Type": "application/json",
+            "X-Request-Id": "req-payment-cancel",
+            "X-User-Id": str(USER_ID),
+        },
+        body=json.dumps({"trackingId": str(TRACKING_ID)}, separators=(",", ":")).encode("utf-8"),
+        received_at=NOW,
+    )
+
+    assert response.status_code == 202
+    assert response.headers["X-Request-Id"] == "req-payment-cancel"
+    assert len(handler.commands) == 1
+    cancel_command = handler.commands[0]
+    assert cancel_command.order_id == ORDER_ID
+    assert cancel_command.payment_id == PAYMENT_ID
+    body = _json(response.body)
+    assert body["payment"]["status"] == "EXPIRED"
+    assert body["payment"]["orderId"] == str(ORDER_ID)
 
 
 def _json(body: bytes) -> dict[str, object]:
@@ -382,4 +412,13 @@ class CapturingPaymentCommandHandler:
             order_id=command.order_id,
             status=PaymentCommandStatus.TX_SUBMITTED,
             payment=_awaiting_payment().submit_tx_hash(command.tx_hash),
+        )
+
+    def expire_awaiting_signature(self, command) -> PaymentCommandResult:
+        self.commands.append(command)
+        return PaymentCommandResult(
+            command_id=command.command_id,
+            order_id=command.order_id,
+            status=PaymentCommandStatus.EXPIRED,
+            payment=_awaiting_payment(),
         )
