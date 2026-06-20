@@ -140,7 +140,7 @@ export default function PayModal() {
   const busy = ["loading", "sending", "submitting"].includes(status);
   const paymentExpired = timeLeft !== null && timeLeft <= 0;
   const timerText = paymentRequest?.expiresAt ? (paymentExpired ? "시간 초과" : formatTime(timeLeft || 0)) : "대기 중";
-  const canPay = Boolean(paymentRequest && currentUser && walletMatched && !busy && !paymentExpired);
+  const canPay = Boolean(paymentRequest && currentUser && !busy && !paymentExpired);
   const compactPaymentFacts = [
     { label: "상품 수량", value: `${cartQuantity}개` },
     paymentRequest?.amount?.chainId ? { label: "네트워크", value: `Chain ${paymentRequest.amount.chainId}` } : null,
@@ -251,18 +251,11 @@ export default function PayModal() {
                       </div>
                     )}
 
-                    {!currentUser ? (
+                    {!currentUser && (
                       <div className="mt-3 flex gap-2 rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs leading-relaxed text-amber-700">
                         <TriangleAlert size={15} className="mt-0.5 shrink-0" />
                         <span>지갑을 연결한 후 결제를 진행해 주세요.</span>
                       </div>
-                    ) : (
-                      currentUser && !walletMatched && activeAddress && (
-                        <div className="mt-3 flex gap-2 rounded-xl border border-red-100 bg-red-50 p-3 text-xs leading-relaxed text-red-700">
-                          <TriangleAlert size={15} className="mt-0.5 shrink-0" />
-                          <span>소셜 로그인 계정은 현재 결제를 지원하지 않습니다.</span>
-                        </div>
-                      )
                     )}
 
                     <button
