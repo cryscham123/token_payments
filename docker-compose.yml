@@ -277,7 +277,7 @@ services:
         required: false
     environment:
       - NEXT_PUBLIC_API_BASE_URL=${API_PUBLIC_BASE_URL}
-    command: ["npm", "run", "dev", "--", "--hostname", "0.0.0.0", "--port", "3000"]
+    # Serve the production build baked into the image (Dockerfile CMD runs `next start`).
     restart: unless-stopped
     profiles:
       - api
