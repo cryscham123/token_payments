@@ -110,14 +110,16 @@ export async function sendNativePayment(args) {
   return sendPayment(args);
 }
 
-// RPC URL MetaMask should use for the local test network. Ganache is published on :8545,
-// and MetaMask (the extension) calls the RPC directly, so it is not bound by the page's
-// mixed-content policy and a self-signed site cert does not apply. We point at the same host
-// the app is served from on port 8545 (an https proxy would instead be rejected by
-// MetaMask's certificate validation when the site uses a self-signed cert).
+// RPC URL MetaMask should use for the local test network. MetaMask only accepts http for
+// localhost; for any remote host it requires a trusted https endpoint. So on localhost we hit
+// Ganache directly over http, and on a deployed host we go through the same-origin https
+// /testnet-rpc proxy (which must have a trusted cert, e.g. Let's Encrypt — a self-signed cert
+// is rejected by MetaMask).
 export function localTestnetRpcUrl() {
   if (typeof window === "undefined") return "http://localhost:8545";
-  return `http://${window.location.hostname}:8545`;
+  const host = window.location.hostname;
+  if (host === "localhost" || host === "127.0.0.1") return "http://localhost:8545";
+  return `${window.location.origin}/testnet-rpc`;
 }
 
 export async function ensureChain(chainId) {
