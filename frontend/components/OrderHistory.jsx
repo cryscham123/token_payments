@@ -72,6 +72,16 @@ export default function OrderHistory() {
     };
   }, []);
 
+  // When the user logs out (SiteHeader sets currentUser to null) or the session is revoked,
+  // drop the previous user's order data so it doesn't linger on screen.
+  useEffect(() => {
+    if (!loading && !currentUser) {
+      setPayments([]);
+      setProducts([]);
+      setError("로그인이 필요합니다.");
+    }
+  }, [currentUser, loading]);
+
   if (loading) {
     return (
       <div className="flex min-h-screen flex-col bg-slate-50 text-slate-800">
