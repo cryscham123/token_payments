@@ -143,6 +143,27 @@ export default function Cart() {
   const eligibleWallets = wallets.filter((wallet) => !selectedPaymentOption?.chainId || Number(wallet.chainId) === Number(selectedPaymentOption.chainId));
   const busy = status === "creating";
 
+  // An order is per-store, so group the cart by store and let each store be checked out
+  // on its own. Items missing a store fall back to the demo store.
+  const storeIdOf = (item) => item.publicStoreId || demoStore.publicStoreId;
+  const storeNameOf = (item) => item.storeDisplayName || item.storePublicId || demoStore.displayName || "스토어";
+  const storeGroups = (() => {
+    const groups = new Map();
+    for (const item of cartItems) {
+      const storeId = storeIdOf(item);
+      if (!groups.has(storeId)) groups.set(storeId, { storeId, storeName: storeNameOf(item), items: [] });
+      groups.get(storeId).items.push(item);
+    }
+    return Array.from(groups.values()).map((group) => {
+      const activeItems = group.items.filter((item) => activeCartItems.includes(item));
+      const subtotal = activeItems.reduce(
+        (acc, item) => acc + (Number.parseFloat(resolveItemUnitPrice(item, selectedPaymentOption).amount) || 0) * item.quantity,
+        0
+      );
+      return { ...group, activeItems, subtotal };
+    });
+  })();
+
   useEffect(() => {
     if (!selectedPaymentOption) {
       setSelectedWalletId("");
@@ -153,7 +174,7 @@ export default function Cart() {
     setSelectedWalletId(primary?.walletId || eligibleWallets[0]?.walletId || "");
   }, [selectedPaymentOption, selectedWalletId, eligibleWallets]);
 
-  async function startCheckout() {
+  async function startCheckout(storeId) {
     if (!currentUser) {
       setStatus("error");
       setMessage("지갑을 연결한 후 주문할 수 있습니다.");
@@ -175,12 +196,14 @@ export default function Cart() {
     try {
       // An order belongs to a single store (inventory, payment, and approval are all
       // per-store), and the backend resolves each item's publicProductId within that one
-      // store. So check out only the items for one store at a time and leave any other-store
-      // items in the cart for a separate checkout.
-      const orderStoreId = activeCartItems.find((item) => item.publicStoreId)?.publicStoreId || demoStore.publicStoreId;
-      const orderItems = activeCartItems.filter(
-        (item) => (item.publicStoreId || demoStore.publicStoreId) === orderStoreId
-      );
+      // store. Check out only the chosen store's items; other-store items stay in the cart.
+      const orderStoreId = storeId || (activeCartItems.find((item) => item.publicStoreId)?.publicStoreId || demoStore.publicStoreId);
+      const orderItems = activeCartItems.filter((item) => storeIdOf(item) === orderStoreId);
+      if (orderItems.length === 0) {
+        setStatus("error");
+        setMessage("결제할 상품이 없습니다.");
+        return;
+      }
       const created = await createOrder({
         publicStoreId: orderStoreId,
         items: orderItems,
@@ -303,9 +326,14 @@ export default function Cart() {
         ) : (
           <div className="flex flex-col gap-8 lg:flex-row">
             <div className="w-full lg:w-2/3">
-              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                <ul className="divide-y divide-slate-200">
-                  {cartItems.map((item) => {
+              {storeGroups.map((group) => (
+                <div key={group.storeId} className="mb-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                  <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-3">
+                    <span className="text-sm font-bold text-slate-900">{group.storeName}</span>
+                    <span className="text-[11px] font-semibold text-slate-500">결제 대상 {group.activeItems.length}개</span>
+                  </div>
+                  <ul className="divide-y divide-slate-200">
+                  {group.items.map((item) => {
                     const isActive = activeCartItems.includes(item);
                     const unitPrice = resolveItemUnitPrice(item, selectedPaymentOption);
                     return (
@@ -368,8 +396,23 @@ export default function Cart() {
                       </li>
                     );
                   })}
-                </ul>
-              </div>
+                  </ul>
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+                    <div className="text-sm">
+                      <span className="text-slate-500">스토어 합계 </span>
+                      <span className="font-mono font-bold text-slate-900">{formatCryptoAmount(group.subtotal)} {cryptoSymbol}</span>
+                    </div>
+                    <button
+                      onClick={() => startCheckout(group.storeId)}
+                      disabled={busy || !currentUser || !selectedPaymentOption || !selectedWalletId || group.activeItems.length === 0}
+                      className="flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight size={16} />}
+                      이 스토어 결제
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
 
             <div className="w-full lg:w-1/3">
@@ -377,19 +420,17 @@ export default function Cart() {
                 <h2 className="mb-6 text-lg font-bold text-slate-950">결제 정보</h2>
                 <div className="mb-6 space-y-4 border-b border-slate-200 pb-6 text-sm text-slate-600">
                   <div className="flex justify-between">
-                    <span>총 상품 금액</span>
+                    <span>전체 상품 금액</span>
                     <span className="font-mono">{formatCryptoAmount(cryptoTotal)} {cryptoSymbol}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>스토어 수</span>
+                    <span>{storeGroups.length}곳</span>
                   </div>
                   <div className="flex justify-between">
                     <span>배송비</span>
                     <span>무료</span>
                   </div>
-                </div>
-                <div className="mb-6 flex items-end justify-between">
-                  <span className="font-bold">최종 결제 금액</span>
-                  <span className="text-2xl font-extrabold text-blue-600 font-mono">
-                    {formatCryptoAmount(cryptoTotal)} {cryptoSymbol}
-                  </span>
                 </div>
                 <div className="mb-5 space-y-4">
                   <div>
@@ -443,14 +484,11 @@ export default function Cart() {
                     <span>{message}</span>
                   </div>
                 )}
-                <button
-                  onClick={startCheckout}
-                  disabled={busy || !currentUser || !selectedPaymentOption || !selectedWalletId}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-950 py-4 text-lg font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight size={18} />}
-                  주문하기
-                </button>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs leading-relaxed text-slate-600">
+                  {storeGroups.length > 1
+                    ? "상품이 여러 스토어에 나뉘어 있어 스토어별로 결제합니다. 왼쪽에서 각 스토어의 “이 스토어 결제”를 눌러 진행해 주세요."
+                    : "왼쪽의 “이 스토어 결제” 버튼으로 결제를 진행해 주세요."}
+                </div>
               </div>
             </div>
           </div>
