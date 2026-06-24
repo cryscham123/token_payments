@@ -223,6 +223,8 @@ class StoreCatalogApi:
                     "supportEmail",
                     "supportEmailPublic",
                     "businessRegistrationLabel",
+                    "supportedChainIds",
+                    "supportedPaymentAssetIds",
                     "idempotencyKey",
                     "commandId",
                 },
@@ -241,6 +243,8 @@ class StoreCatalogApi:
                 requested_at=request.received_at,
                 request_id=request.request_id,
                 payload_hash=payload_hash(_idempotency_payload(request, body, claims.user_id)),
+                supported_chain_ids=_optional_int_tuple(body, "supportedChainIds"),
+                supported_payment_asset_ids=_optional_str_tuple(body, "supportedPaymentAssetIds"),
             )
             return _result_response(
                 self._use_case.update_store_profile(command),
@@ -725,6 +729,30 @@ def _reject_unknown_fields(body: Mapping[str, Any], allowed: set[str]) -> None:
     unknown = sorted(str(key) for key in body if key not in allowed)
     if unknown:
         raise ValueError(f"unknown store profile field(s): {', '.join(unknown)}")
+
+
+def _optional_int_tuple(body: Mapping[str, Any], key: str) -> tuple[int, ...] | None:
+    if key not in body or body[key] is None:
+        return None
+    values = body[key]
+    if not isinstance(values, list):
+        raise ValueError(f"{key} must be an array")
+    return tuple(_int_value(value, key) for value in values)
+
+
+def _optional_str_tuple(body: Mapping[str, Any], key: str) -> tuple[str, ...] | None:
+    if key not in body or body[key] is None:
+        return None
+    values = body[key]
+    if not isinstance(values, list):
+        raise ValueError(f"{key} must be an array")
+    return tuple(_str_value(value, key) for value in values)
+
+
+def _str_value(value: Any, field_name: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field_name} must contain non-empty strings")
+    return value.strip()
 
 
 def _new_id(generator: Any | None) -> str:

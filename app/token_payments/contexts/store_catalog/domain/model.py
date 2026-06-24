@@ -252,7 +252,20 @@ class StoreProfile:
         support_email_public: bool | None = None,
         business_registration_label: str | None = None,
         updated_at: datetime,
+        supported_chain_ids: tuple[int, ...] | None = None,
+        supported_payment_asset_ids: tuple[str, ...] | None = None,
     ) -> Self:
+        new_settings = self.payment_settings
+        if (supported_chain_ids is not None or supported_payment_asset_ids is not None) and self.payment_settings is not None:
+            new_chains = self.payment_settings.supported_chain_ids if supported_chain_ids is None else supported_chain_ids
+            new_assets = self.payment_settings.supported_payment_asset_ids if supported_payment_asset_ids is None else supported_payment_asset_ids
+            new_settings = StorePaymentSettings(
+                store_id=self.payment_settings.store_id,
+                store_wallet=self.payment_settings.store_wallet,
+                supported_chain_ids=new_chains,
+                supported_payment_asset_ids=new_assets,
+                active=self.payment_settings.active,
+            )
         return type(self)(
             store_id=self.store_id,
             owner_user_id=self.owner_user_id,
@@ -270,7 +283,7 @@ class StoreProfile:
             ),
             created_at=self.created_at,
             updated_at=updated_at,
-            payment_settings=self.payment_settings,
+            payment_settings=new_settings,
         )
 
 

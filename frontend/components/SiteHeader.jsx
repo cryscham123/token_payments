@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ReceiptText, Search, ShoppingBag, ShoppingCart, Wallet, User, Menu, X } from "lucide-react";
+import { ReceiptText, Search, ShoppingCart, Wallet, User, Menu, X, Store } from "lucide-react";
 import { useEffect, useState, Suspense, useRef } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import WalletConnectModal from "./WalletConnectModal";
@@ -49,8 +49,8 @@ function SearchBar() {
   };
 
   return (
-    <form onSubmit={handleSearchSubmit} className="flex w-full max-w-2xl flex-1">
-      <div className="relative flex w-full items-center rounded-sm border-4 border-blue-600">
+    <form onSubmit={handleSearchSubmit} className="flex w-full min-w-0 max-w-2xl flex-1">
+      <div className="relative flex w-full min-w-0 items-center rounded-sm border-4 border-blue-600">
         <div className="hidden border-r border-slate-300 px-4 text-sm font-medium text-slate-500 sm:block shrink-0 whitespace-nowrap">
           전체
         </div>
@@ -59,8 +59,8 @@ function SearchBar() {
           type="search"
           value={searchVal}
           onChange={(e) => setSearchVal(e.target.value)}
-          className="w-full px-4 py-2.5 text-sm outline-none"
-          placeholder="상품명을 검색해보세요"
+          className="w-full min-w-0 px-4 py-2.5 text-sm outline-none"
+          placeholder="상품명이나 가게를 검색해보세요"
         />
         <button type="submit" className="flex h-11 w-14 items-center justify-center text-blue-600 transition-colors hover:text-blue-700">
           <Search size={22} />
@@ -76,6 +76,21 @@ export default function SiteHeader({ cartCount, currentUser: propCurrentUser, on
   const [storedCartCount, setStoredCartCount] = useState(0);
   const [pendingCount, setPendingCount] = useState(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [merchantStores, setMerchantStores] = useState([]);
+
+  useEffect(() => {
+    if (!currentUser) {
+      setMerchantStores([]);
+      return;
+    }
+    apiJson("/merchant/stores")
+      .then((res) => {
+        setMerchantStores(res?.stores || []);
+      })
+      .catch((err) => {
+        console.error("Failed to fetch merchant stores in header", err);
+      });
+  }, [currentUser]);
 
   const currentUser = propCurrentUser !== undefined ? propCurrentUser : localCurrentUser;
   const setCurrentUser = (user) => {
@@ -191,9 +206,9 @@ export default function SiteHeader({ cartCount, currentUser: propCurrentUser, on
 
       <header className="bg-white pt-5 pb-4 border-b border-slate-100">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 sm:px-6 md:flex-row md:items-center justify-between lg:px-8">
-          <div className="flex w-full items-center justify-between md:w-auto">
+          <div className="flex w-full items-center justify-between md:w-auto md:shrink-0">
             <Link href="/" className="flex shrink-0 items-center">
-              <ShoppingBag className="mr-2 h-9 w-9 text-blue-600" />
+              <img src="/logo.png?v=4" alt="Skkrypto Market" className="mr-2 h-11 w-auto sm:h-12" />
               <h1 className="text-xl sm:text-2xl font-black leading-none tracking-normal text-slate-950">Skkrypto Market</h1>
             </Link>
             
@@ -208,17 +223,17 @@ export default function SiteHeader({ cartCount, currentUser: propCurrentUser, on
           </div>
 
           {/* 검색 영역 */}
-          <div className="w-full md:max-w-xl lg:max-w-2xl">
+          <div className="w-full min-w-0 md:flex-1 md:max-w-2xl">
             <Suspense fallback={
-              <div className="flex w-full animate-pulse">
-                <div className="relative flex w-full items-center rounded-sm border-4 border-slate-200">
+              <div className="flex w-full min-w-0 animate-pulse">
+                <div className="relative flex w-full min-w-0 items-center rounded-sm border-4 border-slate-200">
                   <div className="hidden border-r border-slate-200 px-4 text-sm font-medium text-slate-400 sm:block shrink-0 whitespace-nowrap">
                     전체
                   </div>
                   <input
                     type="search"
                     disabled
-                    className="w-full px-4 py-2.5 text-sm outline-none bg-slate-50/50"
+                    className="w-full min-w-0 px-4 py-2.5 text-sm outline-none bg-slate-50/50"
                     placeholder="상품명을 검색해보세요"
                   />
                 </div>
@@ -230,6 +245,12 @@ export default function SiteHeader({ cartCount, currentUser: propCurrentUser, on
 
           {/* 데스크톱 전용 메뉴 아이콘 영역 */}
           <div className="hidden md:flex shrink-0 items-center gap-6">
+            {currentUser && merchantStores.length > 0 && (
+              <Link href={`/merchant/stores/${merchantStores[0].publicStoreId}`} className="flex flex-col items-center text-slate-600 transition-colors hover:text-blue-600">
+                <Store size={22} />
+                <span className="mt-1 text-[10px] font-semibold">가게 관리</span>
+              </Link>
+            )}
             {currentUser && (
               <Link href="/profile" className="flex flex-col items-center text-slate-600 transition-colors hover:text-blue-600">
                 <User size={22} />
@@ -286,7 +307,17 @@ export default function SiteHeader({ cartCount, currentUser: propCurrentUser, on
             </div>
 
             {/* 모바일 아이콘 메뉴 링크들 */}
-            <div className="grid grid-cols-3 gap-2 text-center text-slate-700">
+            <div className={`grid ${currentUser && merchantStores.length > 0 ? "grid-cols-4" : "grid-cols-3"} gap-2 text-center text-slate-700`}>
+              {currentUser && merchantStores.length > 0 && (
+                <Link
+                  href={`/merchant/stores/${merchantStores[0].publicStoreId}`}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="flex flex-col items-center justify-center rounded-xl border border-slate-100 bg-slate-50/50 py-3 text-xs font-bold hover:bg-blue-50 hover:text-blue-600 transition"
+                >
+                  <Store size={20} className="mb-1 text-slate-500" />
+                  <span>가게 관리</span>
+                </Link>
+              )}
               {currentUser && (
                 <Link
                   href="/profile"
