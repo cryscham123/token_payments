@@ -2176,17 +2176,33 @@ class _TransactionalCheckoutTrackingQuery:
     def __init__(self, dependencies: LiveRuntimeDependencies) -> None:
         self._dependencies = dependencies
 
-    def get_by_tracking_id(self, tracking_id: TrackingId):
-        return _with_transaction(
-            self._dependencies,
-            lambda connection: PostgresCheckoutTrackingQuery(connection).get_by_tracking_id(tracking_id),
-        )
+    def get_by_tracking_id(self, tracking_id: TrackingId, user_id: UserId | None = None):
+        def _execute(connection):
+            snapshot = PostgresCheckoutTrackingQuery(connection).get_by_tracking_id(tracking_id)
+            if snapshot is None or (user_id is not None and not self._owns(connection, snapshot, user_id)):
+                return None
+            return snapshot
 
-    def get_by_order_id(self, order_id: OrderId):
-        return _with_transaction(
-            self._dependencies,
-            lambda connection: PostgresCheckoutTrackingQuery(connection).get_by_order_id(order_id),
-        )
+        return _with_transaction(self._dependencies, _execute)
+
+    def get_by_order_id(self, order_id: OrderId, user_id: UserId | None = None):
+        def _execute(connection):
+            snapshot = PostgresCheckoutTrackingQuery(connection).get_by_order_id(order_id)
+            if snapshot is None or (user_id is not None and not self._owns(connection, snapshot, user_id)):
+                return None
+            return snapshot
+
+        return _with_transaction(self._dependencies, _execute)
+
+    @staticmethod
+    def _owns(connection: Any, snapshot: Any, user_id: UserId) -> bool:
+        """Object-level authorization: the snapshot is only visible to the customer who owns
+        the order. Non-owners get None (rendered as 404) so existence is not leaked."""
+        order = PostgresOrderRepository(connection).get(snapshot.order_id)
+        if order is None:
+            return False
+        customer = PostgresCustomerRepository(connection).get_by_user_id(user_id)
+        return customer is not None and customer.customer_id == order.customer_id
 
     def resolve_and_verify(self, tracking_id: TrackingId, user_id: UserId) -> tuple[OrderId, PaymentId]:
         def _execute(connection):

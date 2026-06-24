@@ -167,7 +167,7 @@ def test_live_api_facade_wiring_dispatches_routes_through_injected_transactional
     tracking = router.handle(
         "GET",
         f"/checkouts/tracking/{TRACKING_ID}",
-        headers={"X-Request-Id": "req-track"},
+        headers={"X-Request-Id": "req-track", "X-User-Id": str(USER_ID)},
         received_at=NOW,
     )
     assert tracking.status_code == 200

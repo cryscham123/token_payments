@@ -61,6 +61,7 @@ TRACKING_ID = TrackingId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c32")
 PAYMENT_ID = PaymentId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c33")
 CUSTOMER_ID = CustomerId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c34")
 USER_ID = UserId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c35")
+OTHER_USER_ID = UserId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c99")
 WALLET_FROM = WalletAddress("0x1111111111111111111111111111111111111111")
 WALLET_TO = WalletAddress("0x2222222222222222222222222222222222222222")
 TOKEN_ADDRESS = WalletAddress("0x3333333333333333333333333333333333333333")
@@ -78,6 +79,7 @@ def test_tracking_api_returns_awaiting_signature_payment_request_and_gas_estimat
             method="GET",
             path=f"/checkout/tracking/{TRACKING_ID}",
             query={"trackingId": str(TRACKING_ID)},
+            auth_context=ApiAuthContext(user_id=str(USER_ID), session_id="session-1"),
             received_at=NOW,
         )
     )
@@ -147,6 +149,7 @@ def test_tracking_api_accepts_order_id_and_maps_receipt_pending_state() -> None:
             method="GET",
             path=f"/checkout/orders/{ORDER_ID}",
             query={"orderId": str(ORDER_ID)},
+            auth_context=ApiAuthContext(user_id=str(USER_ID), session_id="session-1"),
             received_at=NOW,
         )
     )
@@ -221,16 +224,41 @@ def test_tracking_status_mapping_for_failed_expired_and_approved_states() -> Non
 
 def test_tracking_api_maps_not_found_and_validation_errors() -> None:
     api = CheckoutApi(FakeCheckoutTrackingQuery(None))
+    auth = ApiAuthContext(user_id=str(USER_ID), session_id="session-1")
 
     missing = api.get_tracking(
-        ApiRequest(request_id="req-missing", method="GET", path="/checkout/tracking/missing", query={"orderId": str(ORDER_ID)})
+        ApiRequest(request_id="req-missing", method="GET", path="/checkout/tracking/missing", query={"orderId": str(ORDER_ID)}, auth_context=auth)
     )
     assert missing.status_code == 404
     assert missing.body["error"]["code"] == "CHECKOUT_NOT_FOUND"
 
-    invalid = api.get_tracking(ApiRequest(request_id="req-invalid", method="GET", path="/checkout/tracking", query={}))
+    invalid = api.get_tracking(ApiRequest(request_id="req-invalid", method="GET", path="/checkout/tracking", query={}, auth_context=auth))
     assert invalid.status_code == 400
     assert invalid.body["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_tracking_api_requires_auth_and_hides_other_users_checkouts() -> None:
+    api = CheckoutApi(FakeCheckoutTrackingQuery(_awaiting_snapshot()))
+
+    # No session -> 401, before any lookup.
+    unauth = api.get_tracking(
+        ApiRequest(request_id="req-unauth", method="GET", path="/checkout/tracking", query={"trackingId": str(TRACKING_ID)})
+    )
+    assert unauth.status_code == 401
+    assert unauth.body["error"]["code"] == "AUTHENTICATION_REQUIRED"
+
+    # A different user cannot read someone else's checkout: 404 (existence hidden), not 200.
+    other = api.get_tracking(
+        ApiRequest(
+            request_id="req-other",
+            method="GET",
+            path="/checkout/tracking",
+            query={"trackingId": str(TRACKING_ID)},
+            auth_context=ApiAuthContext(user_id=str(OTHER_USER_ID), session_id="session-2"),
+        )
+    )
+    assert other.status_code == 404
+    assert other.body["error"]["code"] == "CHECKOUT_NOT_FOUND"
 
 
 def test_submit_transaction_hash_api_delegates_to_payment_handler_and_returns_receipt_pending() -> None:
@@ -379,6 +407,7 @@ def _tracking_request(request_id: str) -> ApiRequest:
         method="GET",
         path=f"/checkout/tracking/{TRACKING_ID}",
         query={"trackingId": str(TRACKING_ID)},
+        auth_context=ApiAuthContext(user_id=str(USER_ID), session_id="session-1"),
         received_at=NOW,
     )
 
@@ -482,12 +511,16 @@ class FakeCheckoutTrackingQuery:
         self.order_id_calls: list[OrderId] = []
         self.tracking_id_calls: list[TrackingId] = []
 
-    def get_by_tracking_id(self, tracking_id: TrackingId) -> CheckoutTrackingSnapshot | None:
+    def get_by_tracking_id(self, tracking_id: TrackingId, user_id: UserId | None = None) -> CheckoutTrackingSnapshot | None:
         self.tracking_id_calls.append(tracking_id)
+        if user_id is not None and user_id != USER_ID:
+            return None
         return self.snapshot
 
-    def get_by_order_id(self, order_id: OrderId) -> CheckoutTrackingSnapshot | None:
+    def get_by_order_id(self, order_id: OrderId, user_id: UserId | None = None) -> CheckoutTrackingSnapshot | None:
         self.order_id_calls.append(order_id)
+        if user_id is not None and user_id != USER_ID:
+            return None
         return self.snapshot
 
     def resolve_and_verify(self, tracking_id: TrackingId, user_id: UserId) -> tuple[OrderId, PaymentId]:
