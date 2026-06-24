@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { ReceiptText, Search, ShoppingBag, ShoppingCart, Wallet, User } from "lucide-react";
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useState, Suspense, useRef } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import WalletConnectModal from "./WalletConnectModal";
 import { getCurrentUser, logout, apiJson } from "@/lib/auth-client";
@@ -12,10 +12,19 @@ function SearchBar() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const searchInputRef = useRef(null);
   const [searchVal, setSearchVal] = useState(searchParams.get("q") || "");
 
   useEffect(() => {
-    setSearchVal(searchParams.get("q") || "");
+    const q = searchParams.get("q") || "";
+    setSearchVal(q);
+    
+    // Auto focus and place cursor at the end of the text on route/query change
+    if (searchInputRef.current) {
+      searchInputRef.current.focus();
+      const length = searchInputRef.current.value.length;
+      searchInputRef.current.setSelectionRange(length, length);
+    }
   }, [searchParams]);
 
 
@@ -33,6 +42,10 @@ function SearchBar() {
     } else {
       router.push(`/?${params.toString()}`);
     }
+
+    if (searchInputRef.current) {
+      searchInputRef.current.focus();
+    }
   };
 
   return (
@@ -42,6 +55,7 @@ function SearchBar() {
           전체
         </div>
         <input
+          ref={searchInputRef}
           type="search"
           value={searchVal}
           onChange={(e) => setSearchVal(e.target.value)}
