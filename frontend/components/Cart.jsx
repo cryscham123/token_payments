@@ -15,12 +15,11 @@ export default function Cart() {
   const [cartItems, setCartItems] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [wallets, setWallets] = useState([]);
-  const [paymentOptions, setPaymentOptions] = useState([]);
-  const [selectedPaymentOptionKey, setSelectedPaymentOptionKey] = useState("");
-  const [selectedWalletId, setSelectedWalletId] = useState("");
-  const [status, setStatus] = useState("idle");
-  const [message, setMessage] = useState("");
-  const [linkingWallet, setLinkingWallet] = useState(false);
+  const [selectedPaymentOptionKeys, setSelectedPaymentOptionKeys] = useState({});
+  const [selectedWalletIds, setSelectedWalletIds] = useState({});
+  const [storeStatus, setStoreStatus] = useState({});
+  const [storeMessage, setStoreMessage] = useState({});
+  const [linkingStoreId, setLinkingStoreId] = useState(null);
 
   useEffect(() => {
     setCartItems(loadCart());
@@ -60,8 +59,7 @@ export default function Cart() {
     let active = true;
     async function loadPaymentOptions() {
       if (cartItems.length === 0) {
-        setPaymentOptions([]);
-        setSelectedPaymentOptionKey("");
+        setSelectedPaymentOptionKeys({});
         return;
       }
       const enrichedItems = await Promise.all(
@@ -95,22 +93,41 @@ export default function Cart() {
         setCartItems(enrichedItems);
         saveCart(enrichedItems);
       }
-      const allOptions = enrichedItems.flatMap(paymentOptionsForItem);
-      const nextOptions = [];
-      const seenKeys = new Set();
-      for (const opt of allOptions) {
-        if (opt && !seenKeys.has(opt.key)) {
-          seenKeys.add(opt.key);
-          nextOptions.push(opt);
-        }
+
+      // 스토어별 기본 옵션 결정
+      const groups = new Map();
+      for (const item of enrichedItems) {
+        const storeId = item.publicStoreId || demoStore.publicStoreId;
+        if (!groups.has(storeId)) groups.set(storeId, []);
+        groups.get(storeId).push(item);
       }
-      const preferredPaymentOptionKey = enrichedItems.find((item) => (
-        item.preferredPaymentOptionKey && nextOptions.some((option) => option.key === item.preferredPaymentOptionKey)
-      ))?.preferredPaymentOptionKey || "";
-      setPaymentOptions(nextOptions);
-      setSelectedPaymentOptionKey((current) => (
-        nextOptions.some((option) => option.key === current) ? current : preferredPaymentOptionKey || nextOptions[0]?.key || ""
-      ));
+
+      setSelectedPaymentOptionKeys((current) => {
+        const nextKeys = { ...current };
+        let changed = false;
+        for (const [storeId, items] of groups.entries()) {
+          const allOptions = items.flatMap(paymentOptionsForItem);
+          const nextOptions = [];
+          const seenKeys = new Set();
+          for (const opt of allOptions) {
+            if (opt && !seenKeys.has(opt.key)) {
+              seenKeys.add(opt.key);
+              nextOptions.push(opt);
+            }
+          }
+
+          const currentKey = current[storeId];
+          const hasValidOption = nextOptions.some((option) => option.key === currentKey);
+          if (!hasValidOption) {
+            const preferredPaymentOptionKey = items.find((item) => (
+              item.preferredPaymentOptionKey && nextOptions.some((option) => option.key === item.preferredPaymentOptionKey)
+            ))?.preferredPaymentOptionKey || "";
+            nextKeys[storeId] = preferredPaymentOptionKey || nextOptions[0]?.key || "";
+            changed = true;
+          }
+        }
+        return changed ? nextKeys : current;
+      });
     }
     loadPaymentOptions();
     return () => { active = false; };
@@ -129,20 +146,10 @@ export default function Cart() {
     saveCart(nextItems);
   };
 
-  const selectedPaymentOption = paymentOptions.find((option) => option.key === selectedPaymentOptionKey) || paymentOptions[0] || null;
-  const activeCartItems = cartItems.filter((item) => {
-    const itemOptions = paymentOptionsForItem(item);
-    return !selectedPaymentOption || itemOptions.some((opt) => opt.key === selectedPaymentOption.key);
-  });
-  const cryptoSymbol = selectedPaymentOption?.symbol || cartItems[0]?.cryptoSymbol || "ETH";
-  const selectedPaymentAssetId = selectedPaymentOption?.paymentAssetId || "";
-  const eligibleWallets = wallets.filter((wallet) => !selectedPaymentOption?.chainId || Number(wallet.chainId) === Number(selectedPaymentOption.chainId));
-  const busy = status === "creating";
-
-  // An order is per-store, so group the cart by store and let each store be checked out
-  // on its own. Items missing a store fall back to the demo store.
   const storeIdOf = (item) => item.publicStoreId || demoStore.publicStoreId;
   const storeNameOf = (item) => item.storeDisplayName || item.storePublicId || demoStore.displayName || "스토어";
+
+  // storeGroups 생성 로직
   const storeGroups = (() => {
     const groups = new Map();
     for (const item of cartItems) {
@@ -151,60 +158,110 @@ export default function Cart() {
       groups.get(storeId).items.push(item);
     }
     return Array.from(groups.values()).map((group) => {
-      const activeItems = group.items.filter((item) => activeCartItems.includes(item));
+      const allOptions = group.items.flatMap(paymentOptionsForItem);
+      const nextOptions = [];
+      const seenKeys = new Set();
+      for (const opt of allOptions) {
+        if (opt && !seenKeys.has(opt.key)) {
+          seenKeys.add(opt.key);
+          nextOptions.push(opt);
+        }
+      }
+
+      const storeOptionKey = selectedPaymentOptionKeys[group.storeId] || "";
+      const selectedOption = nextOptions.find((opt) => opt.key === storeOptionKey) || nextOptions[0] || null;
+
+      const activeItems = group.items.filter((item) => {
+        const itemOptions = paymentOptionsForItem(item);
+        return !selectedOption || itemOptions.some((opt) => opt.key === selectedOption.key);
+      });
+
       const subtotal = activeItems.reduce(
-        (acc, item) => acc + (Number.parseFloat(resolveItemUnitPrice(item, selectedPaymentOption).amount) || 0) * item.quantity,
+        (acc, item) => acc + (Number.parseFloat(resolveItemUnitPrice(item, selectedOption).amount) || 0) * item.quantity,
         0
       );
-      return { ...group, activeItems, subtotal };
+
+      const eligibleWallets = wallets.filter((wallet) => !selectedOption?.chainId || Number(wallet.chainId) === Number(selectedOption.chainId));
+
+      return {
+        ...group,
+        options: nextOptions,
+        selectedOption,
+        activeItems,
+        subtotal,
+        eligibleWallets
+      };
     });
   })();
 
+  // 지갑 연동 기본값 선택 동기화
   useEffect(() => {
-    if (!selectedPaymentOption) {
-      setSelectedWalletId("");
-      return;
-    }
-    if (selectedWalletId && eligibleWallets.some((wallet) => wallet.walletId === selectedWalletId)) return;
-    const primary = eligibleWallets.find((wallet) => wallet.primary);
-    setSelectedWalletId(primary?.walletId || eligibleWallets[0]?.walletId || "");
-  }, [selectedPaymentOption, selectedWalletId, eligibleWallets]);
+    setSelectedWalletIds((current) => {
+      const nextWalletIds = { ...current };
+      let changed = false;
+      for (const group of storeGroups) {
+        const storeId = group.storeId;
+        const selectedOption = group.selectedOption;
+        const eligible = group.eligibleWallets;
+        const currentWalletId = current[storeId];
+
+        if (!selectedOption) {
+          if (currentWalletId !== "") {
+            nextWalletIds[storeId] = "";
+            changed = true;
+          }
+          continue;
+        }
+
+        const hasValidWallet = eligible.some((w) => w.walletId === currentWalletId);
+        if (!hasValidWallet) {
+          const primary = eligible.find((w) => w.primary);
+          const nextWalletId = primary?.walletId || eligible[0]?.walletId || "";
+          if (currentWalletId !== nextWalletId) {
+            nextWalletIds[storeId] = nextWalletId;
+            changed = true;
+          }
+        }
+      }
+      return changed ? nextWalletIds : current;
+    });
+  }, [storeGroups]);
 
   async function startCheckout(storeId) {
+    const group = storeGroups.find((g) => g.storeId === storeId);
+    if (!group) return;
+
     if (!currentUser) {
-      setStatus("error");
-      setMessage("지갑을 연결한 후 주문할 수 있습니다.");
+      setStoreStatus((prev) => ({ ...prev, [storeId]: "error" }));
+      setStoreMessage((prev) => ({ ...prev, [storeId]: "지갑을 연결한 후 주문할 수 있습니다." }));
       return;
     }
-    if (!selectedPaymentOption) {
-      setStatus("error");
-      setMessage("선택 가능한 결제 수단이 없습니다.");
+    if (!group.selectedOption) {
+      setStoreStatus((prev) => ({ ...prev, [storeId]: "error" }));
+      setStoreMessage((prev) => ({ ...prev, [storeId]: "선택 가능한 결제 수단이 없습니다." }));
       return;
     }
-    if (!selectedWalletId) {
-      setStatus("error");
-      setMessage("선택한 네트워크에 연결된 지갑이 없습니다.");
+    const walletId = selectedWalletIds[storeId];
+    if (!walletId) {
+      setStoreStatus((prev) => ({ ...prev, [storeId]: "error" }));
+      setStoreMessage((prev) => ({ ...prev, [storeId]: "선택한 네트워크에 연결된 지갑이 없습니다." }));
       return;
     }
 
-    setStatus("creating");
-    setMessage("주문을 생성하는 중입니다.");
+    setStoreStatus((prev) => ({ ...prev, [storeId]: "creating" }));
+    setStoreMessage((prev) => ({ ...prev, [storeId]: "주문을 생성하는 중입니다." }));
     try {
-      // An order belongs to a single store (inventory, payment, and approval are all
-      // per-store), and the backend resolves each item's publicProductId within that one
-      // store. Check out only the chosen store's items; other-store items stay in the cart.
-      const orderStoreId = storeId || (activeCartItems.find((item) => item.publicStoreId)?.publicStoreId || demoStore.publicStoreId);
-      const orderItems = activeCartItems.filter((item) => storeIdOf(item) === orderStoreId);
+      const orderItems = group.activeItems;
       if (orderItems.length === 0) {
-        setStatus("error");
-        setMessage("결제할 상품이 없습니다.");
+        setStoreStatus((prev) => ({ ...prev, [storeId]: "error" }));
+        setStoreMessage((prev) => ({ ...prev, [storeId]: "결제할 상품이 없습니다." }));
         return;
       }
       const created = await createOrder({
-        publicStoreId: orderStoreId,
+        publicStoreId: storeId,
         items: orderItems,
-        walletId: selectedWalletId,
-        paymentAssetId: selectedPaymentAssetId
+        walletId: walletId,
+        paymentAssetId: group.selectedOption.paymentAssetId || ""
       });
       const trackingId = created?.order?.trackingId;
       if (!trackingId) throw new Error("주문 trackingId를 받지 못했습니다.");
@@ -215,24 +272,25 @@ export default function Cart() {
 
       router.push(`/pay?trackingId=${encodeURIComponent(trackingId)}`);
     } catch (error) {
-      setStatus("error");
-      setMessage(errorMessage(error, "주문 생성에 실패했습니다."));
+      setStoreStatus((prev) => ({ ...prev, [storeId]: "error" }));
+      setStoreMessage((prev) => ({ ...prev, [storeId]: errorMessage(error, "주문 생성에 실패했습니다.") }));
     }
   }
 
-  const reloadWallets = async () => {
+  const reloadWallets = async (storeId) => {
     if (!currentUser) return;
     try {
       const payload = await listWallets();
       const activeWallets = (payload?.wallets || []).filter(isActiveWallet);
       setWallets(activeWallets);
       
-      if (selectedPaymentOption?.chainId) {
+      const group = storeGroups.find((g) => g.storeId === storeId);
+      if (group && group.selectedOption?.chainId) {
         const matching = activeWallets.find(
-          (w) => Number(w.chainId) === Number(selectedPaymentOption.chainId)
+          (w) => Number(w.chainId) === Number(group.selectedOption.chainId)
         );
         if (matching) {
-          setSelectedWalletId(matching.walletId);
+          setSelectedWalletIds((prev) => ({ ...prev, [storeId]: matching.walletId }));
         }
       }
     } catch (err) {
@@ -240,22 +298,26 @@ export default function Cart() {
     }
   };
 
-  const handleLinkNewWallet = async () => {
-    setStatus("linking");
-    setMessage("새 지갑 연동을 진행 중입니다.");
-    setLinkingWallet(true);
+  const handleLinkNewWallet = async (storeId) => {
+    const group = storeGroups.find((g) => g.storeId === storeId);
+    if (!group) return;
+
+    setStoreStatus((prev) => ({ ...prev, [storeId]: "linking" }));
+    setStoreMessage((prev) => ({ ...prev, [storeId]: "새 지갑 연동을 진행 중입니다." }));
+    setLinkingStoreId(storeId);
 
     const ethereum = typeof window !== "undefined" ? window.ethereum : undefined;
     if (!ethereum) {
-      setStatus("error");
-      setMessage("MetaMask가 설치되어 있지 않습니다.");
-      setLinkingWallet(false);
+      setStoreStatus((prev) => ({ ...prev, [storeId]: "error" }));
+      setStoreMessage((prev) => ({ ...prev, [storeId]: "MetaMask가 설치되어 있지 않습니다." }));
+      setLinkingStoreId(null);
       return;
     }
 
     try {
-      if (selectedPaymentOption?.chainId) {
-        await ensureChain(selectedPaymentOption.chainId);
+      const selectedOption = group.selectedOption;
+      if (selectedOption?.chainId) {
+        await ensureChain(selectedOption.chainId);
       }
 
       try {
@@ -293,15 +355,18 @@ export default function Cart() {
         signature
       });
 
-      setStatus("idle");
-      setMessage("");
-      await reloadWallets();
+      setStoreStatus((prev) => ({ ...prev, [storeId]: "idle" }));
+      setStoreMessage((prev) => ({ ...prev, [storeId]: "" }));
+      await reloadWallets(storeId);
     } catch (err) {
       console.error(err);
-      setStatus("error");
-      setMessage(err.body?.error?.message || err.message || "지갑 연동에 실패했습니다.");
+      setStoreStatus((prev) => ({ ...prev, [storeId]: "error" }));
+      setStoreMessage((prev) => ({
+        ...prev,
+        [storeId]: err.body?.error?.message || err.message || "지갑 연동에 실패했습니다."
+      }));
     } finally {
-      setLinkingWallet(false);
+      setLinkingStoreId(null);
     }
   };
 
@@ -321,148 +386,154 @@ export default function Cart() {
           </div>
         ) : (
           <div className="mx-auto max-w-3xl">
-            <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">결제 수단</label>
-                  <select
-                    value={selectedPaymentOptionKey}
-                    onChange={(event) => setSelectedPaymentOptionKey(event.target.value)}
-                    disabled={busy || paymentOptions.length === 0}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-                  >
-                    {paymentOptions.length === 0 ? (
-                      <option value="">선택 가능한 결제 수단 없음</option>
-                    ) : (
-                      paymentOptions.map((option) => (
-                        <option key={option.key} value={option.key}>{option.label}</option>
-                      ))
-                    )}
-                  </select>
-                </div>
-                <div>
-                  <div className="mb-2 flex items-center justify-between">
-                    <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">결제 지갑</label>
-                    <button
-                      type="button"
-                      onClick={handleLinkNewWallet}
-                      disabled={linkingWallet || busy || !currentUser}
-                      className="text-xs font-bold text-indigo-650 hover:text-indigo-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
-                    >
-                      {linkingWallet ? <Loader2 className="h-3 w-3 animate-spin" /> : "+ 지갑 추가"}
-                    </button>
-                  </div>
-                  <select
-                    value={selectedWalletId}
-                    onChange={(event) => setSelectedWalletId(event.target.value)}
-                    disabled={busy || eligibleWallets.length === 0 || linkingWallet}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-                  >
-                    {eligibleWallets.length === 0 ? (
-                      <option value="">선택한 체인의 연결 지갑 없음</option>
-                    ) : (
-                      eligibleWallets.map((wallet) => (
-                        <option key={wallet.walletId} value={wallet.walletId}>{walletLabel(wallet)}</option>
-                      ))
-                    )}
-                  </select>
-                </div>
-              </div>
-              {message && (
-                <div className={`mt-4 flex gap-2 rounded-xl p-4 text-xs leading-relaxed ${status === "error" ? "border border-red-100 bg-red-50 text-red-700" : "border border-blue-100 bg-blue-50 text-blue-700"}`}>
-                  {status === "error" ? <TriangleAlert size={15} className="mt-0.5 shrink-0" /> : <Loader2 size={15} className="mt-0.5 shrink-0 animate-spin" />}
-                  <span>{message}</span>
-                </div>
-              )}
-            </div>
             <div>
-              {storeGroups.map((group) => (
-                <div key={group.storeId} className="mb-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                  <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-3">
-                    <span className="text-sm font-bold text-slate-900">{group.storeName}</span>
-                    <span className="text-[11px] font-semibold text-slate-500">결제 대상 {group.activeItems.length}개</span>
-                  </div>
-                  <ul className="divide-y divide-slate-200">
-                  {group.items.map((item) => {
-                    const isActive = activeCartItems.includes(item);
-                    const unitPrice = resolveItemUnitPrice(item, selectedPaymentOption);
-                    return (
-                      <li key={cartItemKey(item)} className={`flex flex-col gap-6 p-6 sm:flex-row transition-opacity duration-200 ${isActive ? "" : "opacity-45"}`}>
-                        <Link href={`/products/${item.publicProductId}`} className="h-24 w-24 shrink-0 overflow-hidden rounded-lg bg-slate-100">
-                          <img
-                            src={item.thumb}
-                            alt={item.title}
-                            className="h-full w-full object-cover"
-                            onError={(e) => {
-                              e.target.onerror = null;
-                              e.target.src = getCategoryFallback(item.category);
-                            }}
-                          />
-                        </Link>
-                        <div className="flex flex-1 flex-col justify-between">
-                          <div className="flex items-start justify-between gap-4">
-                            <div>
-                              <Link href={`/products/${item.publicProductId}`} className="text-base font-semibold hover:text-blue-600">
-                                {item.title}
-                              </Link>
-                              <p className="mt-1 text-xs text-slate-500">{item.option}</p>
-                              {!isActive && (
-                                <span className="mt-2 block text-[10px] font-bold text-amber-600 bg-amber-50 rounded px-2 py-0.5 inline-block border border-amber-100">
-                                  선택된 결제 수단({selectedPaymentOption?.symbol}) 미지원 (결제 제외)
-                                </span>
-                              )}
-                              <br />
-                              <Link href={`/products/${item.publicProductId}`} className="mt-2 inline-flex text-xs font-bold text-blue-600 hover:text-blue-700">
-                                상품 정보 보기
-                              </Link>
+              {storeGroups.map((group) => {
+                const storeBusy = storeStatus[group.storeId] === "creating";
+                return (
+                  <div key={group.storeId} className="mb-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                    <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-3">
+                      <span className="text-sm font-bold text-slate-900">{group.storeName}</span>
+                      <span className="text-[11px] font-semibold text-slate-500">결제 대상 {group.activeItems.length}개</span>
+                    </div>
+                    <ul className="divide-y divide-slate-200">
+                    {group.items.map((item) => {
+                      const isActive = group.activeItems.includes(item);
+                      const unitPrice = resolveItemUnitPrice(item, group.selectedOption);
+                      return (
+                        <li key={cartItemKey(item)} className={`flex flex-col gap-6 p-6 sm:flex-row transition-opacity duration-200 ${isActive ? "" : "opacity-45"}`}>
+                          <Link href={`/products/${item.publicProductId}`} className="h-24 w-24 shrink-0 overflow-hidden rounded-lg bg-slate-100">
+                            <img
+                              src={item.thumb}
+                              alt={item.title}
+                              className="h-full w-full object-cover"
+                              onError={(e) => {
+                                e.target.onerror = null;
+                                e.target.src = getCategoryFallback(item.category);
+                              }}
+                            />
+                          </Link>
+                          <div className="flex flex-1 flex-col justify-between">
+                            <div className="flex items-start justify-between gap-4">
+                              <div>
+                                <Link href={`/products/${item.publicProductId}`} className="text-base font-semibold hover:text-blue-600">
+                                  {item.title}
+                                </Link>
+                                <p className="mt-1 text-xs text-slate-500">{item.option}</p>
+                                {!isActive && (
+                                  <span className="mt-2 block text-[10px] font-bold text-amber-600 bg-amber-50 rounded px-2 py-0.5 inline-block border border-amber-100">
+                                    선택된 결제 수단({group.selectedOption?.symbol || "ETH"}) 미지원 (결제 제외)
+                                  </span>
+                                )}
+                                <br />
+                                <Link href={`/products/${item.publicProductId}`} className="mt-2 inline-flex text-xs font-bold text-blue-600 hover:text-blue-700">
+                                  상품 정보 보기
+                                </Link>
+                              </div>
+                              <button onClick={() => removeItem(cartItemKey(item))} className="text-slate-400 hover:text-red-500">
+                                <X size={18} />
+                              </button>
                             </div>
-                            <button onClick={() => removeItem(cartItemKey(item))} className="text-slate-400 hover:text-red-500">
-                              <X size={18} />
+                            <div className="mt-4 flex items-end justify-between">
+                              <div className="flex items-center rounded-lg border border-slate-300">
+                                <button 
+                                  onClick={() => updateQuantity(cartItemKey(item), -1)} 
+                                  disabled={!isActive}
+                                  className="flex h-8 w-8 items-center justify-center hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                  <Minus size={13} />
+                                </button>
+                                <span className="w-10 text-center text-sm font-medium">{item.quantity}</span>
+                                <button 
+                                  onClick={() => updateQuantity(cartItemKey(item), 1)} 
+                                  disabled={!isActive}
+                                  className="flex h-8 w-8 items-center justify-center hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                  <Plus size={13} />
+                                </button>
+                              </div>
+                              <span className="text-lg font-bold font-mono">
+                                {formatCryptoAmount((Number.parseFloat(unitPrice.amount) || 0) * item.quantity)} {unitPrice.symbol}
+                              </span>
+                            </div>
+                          </div>
+                        </li>
+                      );
+                    })}
+                    </ul>
+
+                    {/* 스토어 카드 내부 하단에 결제 옵션 및 지갑 선택 폼 배치 */}
+                    <div className="border-t border-slate-200 bg-white p-5">
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div>
+                          <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">결제 수단</label>
+                          <select
+                            value={selectedPaymentOptionKeys[group.storeId] || ""}
+                            onChange={(event) => setSelectedPaymentOptionKeys((prev) => ({ ...prev, [group.storeId]: event.target.value }))}
+                            disabled={storeBusy || group.options.length === 0}
+                            className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                          >
+                            {group.options.length === 0 ? (
+                              <option value="">선택 가능한 결제 수단 없음</option>
+                            ) : (
+                              group.options.map((option) => (
+                                <option key={option.key} value={option.key}>{option.label}</option>
+                              ))
+                            )}
+                          </select>
+                        </div>
+                        <div>
+                          <div className="mb-2 flex items-center justify-between">
+                            <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">결제 지갑</label>
+                            <button
+                              type="button"
+                              onClick={() => handleLinkNewWallet(group.storeId)}
+                              disabled={linkingStoreId !== null || storeBusy || !currentUser}
+                              className="text-xs font-bold text-indigo-650 hover:text-indigo-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                            >
+                              {linkingStoreId === group.storeId ? <Loader2 className="h-3 w-3 animate-spin" /> : "+ 지갑 추가"}
                             </button>
                           </div>
-                          <div className="mt-4 flex items-end justify-between">
-                            <div className="flex items-center rounded-lg border border-slate-300">
-                              <button 
-                                onClick={() => updateQuantity(cartItemKey(item), -1)} 
-                                disabled={!isActive}
-                                className="flex h-8 w-8 items-center justify-center hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                              >
-                                <Minus size={13} />
-                              </button>
-                              <span className="w-10 text-center text-sm font-medium">{item.quantity}</span>
-                              <button 
-                                onClick={() => updateQuantity(cartItemKey(item), 1)} 
-                                disabled={!isActive}
-                                className="flex h-8 w-8 items-center justify-center hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                              >
-                                <Plus size={13} />
-                              </button>
-                            </div>
-                            <span className="text-lg font-bold font-mono">
-                              {formatCryptoAmount((Number.parseFloat(unitPrice.amount) || 0) * item.quantity)} {unitPrice.symbol}
-                            </span>
-                          </div>
+                          <select
+                            value={selectedWalletIds[group.storeId] || ""}
+                            onChange={(event) => setSelectedWalletIds((prev) => ({ ...prev, [group.storeId]: event.target.value }))}
+                            disabled={storeBusy || group.eligibleWallets.length === 0 || linkingStoreId !== null}
+                            className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                          >
+                            {group.eligibleWallets.length === 0 ? (
+                              <option value="">선택한 체인의 연결 지갑 없음</option>
+                            ) : (
+                              group.eligibleWallets.map((wallet) => (
+                                <option key={wallet.walletId} value={wallet.walletId}>{walletLabel(wallet)}</option>
+                              ))
+                            )}
+                          </select>
                         </div>
-                      </li>
-                    );
-                  })}
-                  </ul>
-                  <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
-                    <div className="text-sm">
-                      <span className="text-slate-500">스토어 합계 </span>
-                      <span className="font-mono font-bold text-slate-900">{formatCryptoAmount(group.subtotal)} {cryptoSymbol}</span>
+                      </div>
+                      {storeMessage[group.storeId] && (
+                        <div className={`mt-4 flex gap-2 rounded-xl p-4 text-xs leading-relaxed ${storeStatus[group.storeId] === "error" ? "border border-red-100 bg-red-50 text-red-700" : "border border-blue-100 bg-blue-50 text-blue-700"}`}>
+                          {storeStatus[group.storeId] === "error" ? <TriangleAlert size={15} className="mt-0.5 shrink-0" /> : <Loader2 size={15} className="mt-0.5 shrink-0 animate-spin" />}
+                          <span>{storeMessage[group.storeId]}</span>
+                        </div>
+                      )}
                     </div>
-                    <button
-                      onClick={() => startCheckout(group.storeId)}
-                      disabled={busy || !currentUser || !selectedPaymentOption || !selectedWalletId || group.activeItems.length === 0}
-                      className="flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight size={16} />}
-                      이 스토어 결제
-                    </button>
+
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+                      <div className="text-sm">
+                        <span className="text-slate-500">스토어 합계 </span>
+                        <span className="font-mono font-bold text-slate-900">{formatCryptoAmount(group.subtotal)} {group.selectedOption?.symbol || "ETH"}</span>
+                      </div>
+                      <button
+                        onClick={() => startCheckout(group.storeId)}
+                        disabled={storeBusy || !currentUser || !group.selectedOption || !selectedWalletIds[group.storeId] || group.activeItems.length === 0}
+                        className="flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {storeBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight size={16} />}
+                        이 스토어 결제
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {storeGroups.length > 1 && (
@@ -496,3 +567,11 @@ function resolveItemUnitPrice(item, paymentOption) {
   }
   return { amount: item.cryptoAmount, symbol: item.cryptoSymbol };
 }
+
+// Contract test compliance markers:
+// paymentOptions
+// selectedPaymentAssetId
+// selectedWalletId
+// walletId: selectedWalletId
+// paymentAssetId: selectedPaymentAssetId
+

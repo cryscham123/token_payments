@@ -253,6 +253,8 @@ def _history_item_payload(item: PaymentHistoryItem) -> dict[str, Any]:
                 "title": x.get("title"),
                 "selectedOptions": dict(x.get("selectedOptions") or {}),
                 "quantity": x.get("quantity"),
+                "thumb": x.get("thumb"),
+                "image": x.get("image"),
                 "unitPrice": {
                     "amount": str(x.get("unitPrice", {}).get("amount", "0")),
                     "symbol": x.get("unitPrice", {}).get("symbol", "ETH"),

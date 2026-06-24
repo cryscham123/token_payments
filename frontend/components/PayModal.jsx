@@ -288,8 +288,7 @@ export default function PayModal() {
                         disabled={busy}
                         className="mt-2.5 block w-full rounded-xl border border-red-200 bg-white py-2.5 text-center text-sm font-bold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        결제 취소 (주문 취소 · 재고 복원)
-                      </button>
+                        결제 취소                      </button>
                     )}
                     <Link href="/cart" className="mt-2.5 block w-full rounded-xl border border-slate-300 bg-white py-2.5 text-center text-sm font-bold text-slate-700 hover:bg-slate-50">
                       장바구니로 돌아가기
