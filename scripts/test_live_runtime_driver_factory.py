@@ -175,6 +175,53 @@ def test_json_rpc_blockchain_client_estimates_erc20_transfer_with_encoded_call_d
     assert estimate["gas_limit"] == 50000
 
 
+def test_json_rpc_blockchain_client_sanitizes_estimate_gas_insufficient_balance_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    from token_payments.runtime import JsonRpcBlockchainClient
+
+    raw_error = {
+        "message": "VM Exception while processing transaction: revert insufficient balance",
+        "stack": "RuntimeError: VM Exception while processing transaction: revert insufficient balance",
+        "code": -32000,
+        "data": {
+            "programCounter": 738,
+            "reason": "insufficient balance",
+            "message": "revert",
+        },
+    }
+
+    def fake_urlopen(request: object, timeout: float) -> FakeJsonRpcResponse:
+        return FakeJsonRpcResponse({"jsonrpc": "2.0", "id": 1, "error": raw_error})
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    client = JsonRpcBlockchainClient(
+        rpc_url="http://rpc.local",
+        chain_id=1337,
+        native_symbol="ETH",
+        native_decimals=18,
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        client.estimate_gas(
+            {
+                "amount": {
+                    "amount": "1.25",
+                    "symbol": "USDC",
+                    "chain_id": 1337,
+                    "token_address": "0x3333333333333333333333333333333333333333",
+                    "decimals": 6,
+                },
+                "wallet_from": "0x1111111111111111111111111111111111111111",
+                "wallet_to": "0x2222222222222222222222222222222222222222",
+            }
+        )
+
+    message = str(exc_info.value)
+    assert message == "payment token balance is insufficient"
+    assert "JSON-RPC" not in message
+    assert "programCounter" not in message
+    assert "RuntimeError" not in message
+
+
 def test_docker_image_contract_installs_live_runtime_dependencies_reproducibly() -> None:
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
     requirements = (ROOT / "requirements-runtime.txt").read_text(encoding="utf-8")
@@ -283,6 +330,20 @@ class FakeJsonRpcBlockchainClient:
 
     def estimate_gas(self, request: dict[str, object]) -> dict[str, object]:
         return self._client.estimate_gas(request)
+
+
+class FakeJsonRpcResponse:
+    def __init__(self, payload: dict[str, object]) -> None:
+        self._payload = payload
+
+    def __enter__(self) -> FakeJsonRpcResponse:
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return json.dumps(self._payload).encode("utf-8")
 
 
 def _imported_roots(path: Path) -> set[str]:

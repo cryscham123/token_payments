@@ -880,7 +880,13 @@ class JsonRpcBlockchainClient:
         wallet_to = str(payload.get("wallet_to") or payload.get("walletTo") or "")
         amount = _amount_payload(payload.get("amount"))
         rpc_payload = _gas_transaction_payload(amount=amount, wallet_from=wallet_from, wallet_to=wallet_to)
-        raw_gas = self._rpc("eth_estimateGas", (rpc_payload,))
+        try:
+            raw_gas = self._rpc("eth_estimateGas", (rpc_payload,))
+        except ValueError as exc:
+            exc_str = str(exc).lower()
+            if "insufficient balance" in exc_str:
+                raise ValueError("payment token balance is insufficient") from exc
+            raise
         gas_limit = int(str(raw_gas), 16) if isinstance(raw_gas, str) and raw_gas.startswith("0x") else int(raw_gas)
         raw_gas_price = self._rpc("eth_gasPrice", ())
         gas_price = (

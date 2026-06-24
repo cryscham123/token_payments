@@ -1,8 +1,8 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "Token Payments Storefront",
-  description: "Crypto checkout storefront for Token Payments"
+  title: "Skkrypto Market",
+  description: "암호화폐 결제 기능을 제공하는 마켓플레이스",
 };
 
 export default function RootLayout({ children }) {

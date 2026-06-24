@@ -7,7 +7,8 @@ import { useRouter } from "next/navigation";
 import SiteHeader from "./SiteHeader";
 import { addCartItem } from "@/lib/cart";
 import { apiJson } from "@/lib/auth-client";
-import { formatCryptoAmount, products as demoProducts } from "@/lib/demo-data";
+import { formatCryptoAmount } from "@/lib/format";
+import { findProductSummary } from "@/lib/checkout-client";
 import { getS3Url } from "@/lib/s3";
 import { productImageGallery, PRODUCT_IMAGE_PLACEHOLDER, getCategoryFallback } from "@/lib/product-image";
 
@@ -30,28 +31,14 @@ export default function ProductDetail({ publicProductId }) {
 
     const fetchProductDetail = async () => {
       try {
-        let storeId = "st_demo_store_001";
-        const LIMIT = 50;
-        let currentOffset = 0;
-        let found = false;
-
-        while (!found && active) {
-          const listRes = await apiJson(`/products?limit=${LIMIT}&offset=${currentOffset}`);
-          if (!active) return;
-          const rawProducts = listRes?.products || [];
-          if (rawProducts.length === 0) {
-            break;
-          }
-          const matched = rawProducts.find(p => p.publicProductId === publicProductId);
-          if (matched) {
-            storeId = matched.publicStoreId || matched.storePublicId || matched.store?.publicStoreId || "st_demo_store_001";
-            found = true;
-            break;
-          }
-          currentOffset += LIMIT;
-        }
-
+        const summary = await findProductSummary(publicProductId);
         if (!active) return;
+        const storeId = summary?.publicStoreId || summary?.storePublicId || summary?.store?.publicStoreId || "";
+        if (!storeId) {
+          setProduct(null);
+          setLoading(false);
+          return;
+        }
 
         const res = await apiJson(`/stores/${storeId}/products/${publicProductId}`);
         if (active && res && res.product) {
@@ -63,9 +50,9 @@ export default function ProductDetail({ publicProductId }) {
 
           const item = {
             id: p.publicProductId,
-            orderProductId: p.productId || demoProductIdForPublicId(p.publicProductId) || "",
+            orderProductId: p.productId || summary?.productId || "",
             publicProductId: p.publicProductId,
-            publicStoreId: p.publicStoreId || "",
+            publicStoreId: p.publicStoreId || storeId,
             title: p.title,
             cryptoAmount: p.displayPrice?.amount || "0",
             cryptoSymbol: p.displayPrice?.symbol || "ETH",
@@ -921,8 +908,4 @@ function sameQuantities(left, right) {
   const rightKeys = Object.keys(right);
   if (leftKeys.length !== rightKeys.length) return false;
   return rightKeys.every((key) => Number(left[key] || 0) === Number(right[key] || 0));
-}
-
-function demoProductIdForPublicId(publicProductId) {
-  return demoProducts.find((product) => product.publicProductId === publicProductId)?.id || "";
 }
