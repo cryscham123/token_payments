@@ -1,5 +1,4 @@
 import { apiJson, newBrowserDeviceId } from "./auth-client";
-import { products as demoProducts } from "./demo-data";
 
 export async function createOrder({ storeId, publicStoreId, items, paymentAssetId, walletId }) {
   return apiJson("/orders", {
@@ -7,7 +6,7 @@ export async function createOrder({ storeId, publicStoreId, items, paymentAssetI
     idempotencyKey: newId("checkout"),
     body: {
       // Internal store UUID is redacted from public catalog reads; send the public id so the
-      // server can resolve it. storeId is still sent when known (e.g. hardcoded demo store).
+      // server can resolve it. storeId is still sent when a caller already has an internal id.
       ...(storeId ? { storeId } : {}),
       ...(publicStoreId ? { publicStoreId } : {}),
       deliveryAddress: {
@@ -32,20 +31,30 @@ export async function createOrder({ storeId, publicStoreId, items, paymentAssetI
   });
 }
 
-// Only return a value that is a real internal UUID. For products not in the hardcoded demo map
-// this is empty, and the server resolves the order line from publicProductId instead.
+// Only return an internal UUID that the API already returned. Otherwise the server resolves
+// the order line from publicProductId.
 function checkoutProductId(item) {
-  return item.orderProductId || item.productId || demoProductIdForPublicId(item.publicProductId) || "";
-}
-
-function demoProductIdForPublicId(publicProductId) {
-  return demoProducts.find((product) => product.publicProductId === publicProductId)?.id || "";
+  return item.orderProductId || item.productId || "";
 }
 
 export async function getStoreProduct({ publicStoreId, publicProductId }) {
   return apiJson(`/stores/${encodeURIComponent(publicStoreId)}/products/${encodeURIComponent(publicProductId)}`, {
     method: "GET"
   });
+}
+
+export async function findProductSummary(publicProductId, { limit = 50, maxPages = 20 } = {}) {
+  if (!publicProductId) return null;
+  let offset = 0;
+  for (let page = 0; page < maxPages; page += 1) {
+    const payload = await apiJson(`/products?limit=${limit}&offset=${offset}`);
+    const products = payload?.products || [];
+    const matched = products.find((product) => product.publicProductId === publicProductId);
+    if (matched) return matched;
+    if (products.length < limit) return null;
+    offset += limit;
+  }
+  return null;
 }
 
 export async function getCheckoutTracking(trackingId) {

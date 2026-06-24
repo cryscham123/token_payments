@@ -6,7 +6,6 @@ import { useEffect, useState } from "react";
 import WalletConnectModal from "./WalletConnectModal";
 import { getCurrentUser, logout, apiJson } from "@/lib/auth-client";
 import { loadCart } from "@/lib/cart";
-import { demoStore } from "@/lib/demo-data";
 
 export default function SiteHeader({ cartCount, currentUser: propCurrentUser, onCurrentUserChange }) {
   const [openWallet, setOpenWallet] = useState(false);
@@ -130,8 +129,7 @@ export default function SiteHeader({ cartCount, currentUser: propCurrentUser, on
           <Link href="/" className="flex shrink-0 items-center">
             <ShoppingBag className="mr-2 h-10 w-10 text-blue-600" />
             <div>
-              <h1 className="text-2xl font-black leading-none tracking-normal text-slate-950">{demoStore.name}</h1>
-              <p className="mt-0.5 text-[10px] tracking-wide text-slate-400">{demoStore.tagline}</p>
+              <h1 className="text-2xl font-black leading-none tracking-normal text-slate-950">Skkrypto Market</h1>
             </div>
           </Link>
 

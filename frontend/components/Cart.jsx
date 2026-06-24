@@ -6,9 +6,9 @@ import { useEffect, useState } from "react";
 import SiteHeader from "./SiteHeader";
 import { loadCart, saveCart } from "@/lib/cart";
 import { getCurrentUser, listWallets, requestWalletLinkChallenge, linkWallet } from "@/lib/auth-client";
-import { createOrder, getStoreProduct, ensureChain } from "@/lib/checkout-client";
-import { demoStore, formatCryptoAmount } from "@/lib/demo-data";
-import { isActiveWallet, paymentOptionsFromItems, walletLabel, paymentOptionsForItem } from "@/lib/payment-options";
+import { createOrder, findProductSummary, getStoreProduct, ensureChain } from "@/lib/checkout-client";
+import { formatCryptoAmount } from "@/lib/format";
+import { isActiveWallet, walletLabel, paymentOptionsForItem } from "@/lib/payment-options";
 import { getCategoryFallback } from "@/lib/product-image";
 export default function Cart() {
   const router = useRouter();
@@ -64,18 +64,44 @@ export default function Cart() {
       }
       const enrichedItems = await Promise.all(
         cartItems.map(async (item) => {
-          if (item.paymentCapability) return item;
+          if (item.paymentCapability && (item.publicStoreId || item.storePublicId)) return item;
           try {
+            let publicStoreId = item.publicStoreId || item.storePublicId || "";
+            let summary = null;
+            if (!publicStoreId && item.publicProductId) {
+              summary = await findProductSummary(item.publicProductId);
+              publicStoreId = summary?.publicStoreId || summary?.storePublicId || summary?.store?.publicStoreId || "";
+            }
+            if (!publicStoreId) return item;
+            if (item.paymentCapability) {
+              return {
+                ...item,
+                orderProductId: item.orderProductId || summary?.productId || "",
+                publicStoreId: item.publicStoreId || publicStoreId,
+                storePublicId: item.storePublicId || publicStoreId,
+                storeDisplayName: item.storeDisplayName || summary?.storeDisplayName || summary?.store?.displayName || ""
+              };
+            }
             const payload = await getStoreProduct({
-              publicStoreId: demoStore.publicStoreId,
+              publicStoreId,
               publicProductId: item.publicProductId
             });
             const product = payload?.product;
-            if (!product) return item;
+            if (!product) {
+              return {
+                ...item,
+                orderProductId: item.orderProductId || summary?.productId || "",
+                publicStoreId: item.publicStoreId || publicStoreId,
+                storePublicId: item.storePublicId || publicStoreId,
+                storeDisplayName: item.storeDisplayName || summary?.storeDisplayName || summary?.store?.displayName || ""
+              };
+            }
             return {
               ...item,
-              orderProductId: item.orderProductId || product.productId || "",
-              publicStoreId: item.publicStoreId || product.publicStoreId || "",
+              orderProductId: item.orderProductId || product.productId || summary?.productId || "",
+              publicStoreId: item.publicStoreId || product.publicStoreId || publicStoreId,
+              storePublicId: item.storePublicId || product.publicStoreId || publicStoreId,
+              storeDisplayName: item.storeDisplayName || payload?.store?.displayName || summary?.storeDisplayName || summary?.store?.displayName || "",
               cryptoAmount: product.displayPrice?.amount || item.cryptoAmount,
               cryptoSymbol: product.displayPrice?.symbol || item.cryptoSymbol,
               cryptoChainId: product.displayPrice?.chainId || item.cryptoChainId,
@@ -97,7 +123,7 @@ export default function Cart() {
       // 스토어별 기본 옵션 결정
       const groups = new Map();
       for (const item of enrichedItems) {
-        const storeId = item.publicStoreId || demoStore.publicStoreId;
+        const storeId = storeIdOf(item);
         if (!groups.has(storeId)) groups.set(storeId, []);
         groups.get(storeId).push(item);
       }
@@ -146,8 +172,8 @@ export default function Cart() {
     saveCart(nextItems);
   };
 
-  const storeIdOf = (item) => item.publicStoreId || demoStore.publicStoreId;
-  const storeNameOf = (item) => item.storeDisplayName || item.storePublicId || demoStore.displayName || "스토어";
+  const storeIdOf = (item) => item.publicStoreId || item.storePublicId || "";
+  const storeNameOf = (item) => item.storeDisplayName || item.storePublicId || item.publicStoreId || "스토어";
 
   // storeGroups 생성 로직
   const storeGroups = (() => {
@@ -230,6 +256,11 @@ export default function Cart() {
   async function startCheckout(storeId) {
     const group = storeGroups.find((g) => g.storeId === storeId);
     if (!group) return;
+    if (!group.storeId) {
+      setStoreStatus((prev) => ({ ...prev, [storeId]: "error" }));
+      setStoreMessage((prev) => ({ ...prev, [storeId]: "스토어 정보를 확인할 수 없습니다. 상품을 다시 담아 주세요." }));
+      return;
+    }
 
     if (!currentUser) {
       setStoreStatus((prev) => ({ ...prev, [storeId]: "error" }));
@@ -273,7 +304,10 @@ export default function Cart() {
       router.push(`/pay?trackingId=${encodeURIComponent(trackingId)}`);
     } catch (error) {
       setStoreStatus((prev) => ({ ...prev, [storeId]: "error" }));
-      setStoreMessage((prev) => ({ ...prev, [storeId]: errorMessage(error, "주문 생성에 실패했습니다.") }));
+      setStoreMessage((prev) => ({
+        ...prev,
+        [storeId]: errorMessage(error, "주문 생성에 실패했습니다.", group.selectedOption?.symbol)
+      }));
     }
   }
 
@@ -392,7 +426,7 @@ export default function Cart() {
                 return (
                   <div key={group.storeId} className="mb-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                     <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-3">
-                      <Link href={`/stores/${group.storeId}`} className="text-sm font-bold text-slate-900 hover:text-blue-600 transition flex items-center gap-1.5">
+                      <Link href={group.storeId ? `/stores/${group.storeId}` : "/stores"} className="text-sm font-bold text-slate-900 hover:text-blue-600 transition flex items-center gap-1.5">
                         <span>{group.storeName}</span>
                         <span className="text-[10px] text-slate-400 font-normal">스토어 바로가기 →</span>
                       </Link>
@@ -522,7 +556,7 @@ export default function Cart() {
                       </div>
                       <button
                         onClick={() => startCheckout(group.storeId)}
-                        disabled={storeBusy || !currentUser || !group.selectedOption || !selectedWalletIds[group.storeId] || group.activeItems.length === 0}
+                        disabled={storeBusy || !currentUser || !group.storeId || !group.selectedOption || !selectedWalletIds[group.storeId] || group.activeItems.length === 0}
                         className="flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {storeBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight size={16} />}
@@ -546,7 +580,55 @@ export default function Cart() {
   );
 }
 
-function errorMessage(error, fallback) {
+function errorMessage(error, fallback, symbol = "") {
+  let rawMsg = "";
+  if (typeof error === "string") {
+    rawMsg = error;
+  } else if (error) {
+    rawMsg = error.message ||
+      error.body?.error?.message ||
+      error.error?.message ||
+      (typeof error.body === "string" ? error.body : "") ||
+      error.reason ||
+      JSON.stringify(error);
+  }
+  const errMsg = rawMsg.toLowerCase();
+
+  // 1. Direct detection for backend gas estimation errors due to insufficient balance
+  if (errMsg.includes("eth_estimategas") && (errMsg.includes("insufficient") || errMsg.includes("revert"))) {
+    if (symbol && symbol !== "ETH") {
+      return `결제에 필요한 ${symbol} 토큰 잔액이 부족합니다.`;
+    }
+    return "결제에 필요한 잔액이 부족합니다. (가스비 또는 보유 잔액을 확인해 주세요)";
+  }
+
+  // 2. Token insufficient balance detection
+  const isTokenInsufficient =
+    (error?.code === "VALIDATION_ERROR" && errMsg.includes("payment token balance is insufficient")) ||
+    errMsg.includes("payment token balance is insufficient") ||
+    errMsg.includes("insufficient balance") ||
+    /insufficient.*balance/.test(errMsg) ||
+    errMsg.includes("exceeds balance") ||
+    errMsg.includes("transfer amount exceeds balance") ||
+    (errMsg.includes("execution reverted") && symbol && symbol !== "ETH");
+
+  if (isTokenInsufficient) {
+    if (symbol && symbol !== "ETH") {
+      return `결제에 필요한 ${symbol} 토큰 잔액이 부족합니다.`;
+    }
+    return "결제에 필요한 잔액이 부족합니다. (가스비 또는 보유 잔액을 확인해 주세요)";
+  }
+
+  // 3. Gas insufficient balance detection
+  const isGasInsufficient =
+    errMsg.includes("payment gas balance is insufficient") ||
+    errMsg.includes("insufficient funds") ||
+    /insufficient.*funds/.test(errMsg);
+
+  if (isGasInsufficient) {
+    return "가스비로 쓸 ETH가 부족합니다.";
+  }
+
   if (error?.code) return `${error.code}: ${error.message || fallback}`;
   return error?.message || fallback;
 }
@@ -573,4 +655,3 @@ function resolveItemUnitPrice(item, paymentOption) {
 // walletId: selectedWalletId
 // paymentAssetId: selectedPaymentAssetId
 // 상품 정보 보기
-

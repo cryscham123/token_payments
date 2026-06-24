@@ -23,13 +23,13 @@ def test_frontend_scaffold_uses_next_react_tailwind_outside_nginx_directory() ->
     assert not (ROOT / "app" / "nginx" / "app").exists()
 
 
-def test_frontend_keeps_imported_ethercommerce_flow_and_demo_seed_ids() -> None:
+def test_frontend_keeps_imported_ethercommerce_flow_without_static_demo_data_module() -> None:
     readme = (FRONTEND / "README.md").read_text(encoding="utf-8")
-    data = (FRONTEND / "lib" / "demo-data.js").read_text(encoding="utf-8")
     component_names = {path.name for path in (FRONTEND / "components").glob("*.jsx")}
 
     assert "https://github.com/joonistaa/ethercommerce" in readme
     assert "69596a5ef735d2c84739ac58d4ce747bc1996cf0" in readme
+    assert not (FRONTEND / "lib" / "demo-data.js").exists()
     assert {
         "Home.jsx",
         "ProductDetail.jsx",
@@ -40,9 +40,6 @@ def test_frontend_keeps_imported_ethercommerce_flow_and_demo_seed_ids() -> None:
         "StoreDetail.jsx",
         "StoreList.jsx",
     } <= component_names
-    assert "st_demo_store_001" in data
-    assert "prd_local_hoodie_001" in data
-    assert "55555555-5555-4555-8555-555555555555" in data
 
 
 def test_frontend_wallet_login_uses_cookie_first_siwe_api_flow() -> None:
@@ -75,7 +72,6 @@ def test_frontend_wallet_login_uses_cookie_first_siwe_api_flow() -> None:
 
 
 def test_frontend_checkout_starts_with_empty_cart_and_uses_real_payment_api_flow() -> None:
-    data = (FRONTEND / "lib" / "demo-data.js").read_text(encoding="utf-8")
     cart = (FRONTEND / "lib" / "cart.js").read_text(encoding="utf-8")
     checkout_client = (FRONTEND / "lib" / "checkout-client.js").read_text(encoding="utf-8")
     product_detail = (FRONTEND / "components" / "ProductDetail.jsx").read_text(encoding="utf-8")
@@ -83,13 +79,17 @@ def test_frontend_checkout_starts_with_empty_cart_and_uses_real_payment_api_flow
     pay_modal = (FRONTEND / "components" / "PayModal.jsx").read_text(encoding="utf-8")
     home = (FRONTEND / "components" / "Home.jsx").read_text(encoding="utf-8")
     complete = (FRONTEND / "components" / "PaymentComplete.jsx").read_text(encoding="utf-8")
-    combined = "\n".join((data, cart, checkout_client, product_detail, cart_page, pay_modal, home, complete))
+    formatter = (FRONTEND / "lib" / "format.js").read_text(encoding="utf-8")
+    combined = "\n".join((cart, checkout_client, product_detail, cart_page, pay_modal, home, complete, formatter))
 
     assert "TPAY" not in combined
     assert "cartSeed" not in combined
     assert "tokenAmount" not in combined
     assert "tokenSymbol" not in combined
-    assert 'cryptoSymbol: "ETH"' in data
+    assert "demo-data" not in combined
+    assert "demoStore" not in combined
+    assert "demoProducts" not in combined
+    assert "formatCryptoAmount" in formatter
     assert "loadCart()" in cart_page
     assert "localStorage" in cart
     assert "addCartItem" in product_detail
@@ -132,6 +132,19 @@ def test_frontend_checkout_supports_server_payment_options_and_expiry_sync() -> 
     assert "결제 요청 만들기" not in pay_modal
 
 
+def test_frontend_checkout_normalizes_token_insufficient_balance_errors_before_code_prefix() -> None:
+    cart_page = (FRONTEND / "components" / "Cart.jsx").read_text(encoding="utf-8")
+    pay_modal = (FRONTEND / "components" / "PayModal.jsx").read_text(encoding="utf-8")
+
+    assert 'errorMessage(error, "주문 생성에 실패했습니다.", group.selectedOption?.symbol)' in cart_page
+    assert "isTokenInsufficient" in cart_page
+    assert "insufficient balance" in cart_page
+    assert "결제에 필요한 ${symbol} 토큰 잔액이 부족합니다." in cart_page
+    assert "VALIDATION_ERROR" in cart_page
+    assert "errMsg.includes(\"insufficient balance\")" in pay_modal
+    assert "결제에 필요한 ${symbol} 토큰 잔액이 부족합니다." in pay_modal
+
+
 def test_frontend_testnet_faucet_uses_registry_assets_for_claim_and_metamask_watch() -> None:
     profile = (FRONTEND / "components" / "Profile.jsx").read_text(encoding="utf-8")
     auth_client = (FRONTEND / "lib" / "auth-client.js").read_text(encoding="utf-8")
@@ -154,11 +167,14 @@ def test_frontend_checkout_sends_order_uuid_product_ids_not_public_catalog_ids()
     product_detail = (FRONTEND / "components" / "ProductDetail.jsx").read_text(encoding="utf-8")
     home = (FRONTEND / "components" / "Home.jsx").read_text(encoding="utf-8")
 
-    assert "demoProductIdForPublicId" in checkout_client
     assert "checkoutProductId(item)" in checkout_client
     assert "const productId = checkoutProductId(item);" in checkout_client
-    # A real internal UUID is sent when known; otherwise the server resolves the line from the
-    # public product id (internal UUIDs are redacted from public catalog reads).
+    assert "demoProductIdForPublicId" not in checkout_client
+    assert "demoProductIdForPublicId" not in product_detail
+    assert "demoProductIdForPublicId" not in home
+    assert "products as demoProducts" not in checkout_client
+    # A real internal UUID is sent when already returned by the API; otherwise the server
+    # resolves the line from publicProductId.
     assert "publicProductId: item.publicProductId" in checkout_client
     assert "publicStoreId" in checkout_client
     assert "publicVariantId: item.publicVariantId" in checkout_client

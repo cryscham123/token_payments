@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import { getCurrentUser } from "@/lib/auth-client";
 import { clearCart, loadCart } from "@/lib/cart";
 import { cancelPayment, getCheckoutTracking, sendPayment, submitTransactionHash } from "@/lib/checkout-client";
-import { demoStore, formatCryptoAmount } from "@/lib/demo-data";
+import { formatCryptoAmount } from "@/lib/format";
 import SiteHeader from "./SiteHeader";
 
 export default function PayModal() {
@@ -136,7 +136,7 @@ export default function PayModal() {
   const displayAmount = paymentAmount
     ? `${formatCryptoAmount(paymentAmount.amount)} ${paymentAmount.symbol}`
     : `${formatCryptoAmount(cartCryptoTotal)} ${cartItems[0]?.cryptoSymbol || "ETH"}`;
-  const transferTo = paymentRequest?.to || demoStore.wallet;
+  const transferTo = paymentRequest?.to || "수신 지갑 확인 중";
   const busy = ["loading", "sending", "submitting"].includes(status);
   const paymentExpired = timeLeft !== null && timeLeft <= 0;
   const timerText = paymentRequest?.expiresAt ? (paymentExpired ? "시간 초과" : formatTime(timeLeft || 0)) : "대기 중";
@@ -422,21 +422,37 @@ function errorMessage(error, fallback, symbol = "") {
   if (error?.code === 4001 || errMsg.includes("user rejected") || errMsg.includes("user denied")) {
     return "지갑에서 트랜잭션 승인을 취소하셨습니다.";
   }
+
+  // 1. Direct detection for backend gas estimation errors due to insufficient balance
+  if (errMsg.includes("eth_estimategas") && (errMsg.includes("insufficient") || errMsg.includes("revert"))) {
+    if (symbol && symbol !== "ETH") {
+      return `결제에 필요한 ${symbol} 토큰 잔액이 부족합니다.`;
+    }
+    return "결제에 필요한 잔액이 부족합니다. (가스비 또는 보유 잔액을 확인해 주세요)";
+  }
   
+  // 2. Token insufficient balance detection
   const isTokenInsufficient =
     errMsg.includes("insufficient balance") ||
+    /insufficient.*balance/.test(errMsg) ||
     errMsg.includes("exceeds balance") ||
     errMsg.includes("transfer amount exceeds balance") ||
     (errMsg.includes("execution reverted") && symbol && symbol !== "ETH");
+
   if (isTokenInsufficient) {
     if (symbol && symbol !== "ETH") {
       return `결제에 필요한 ${symbol} 토큰 잔액이 부족합니다.`;
     }
-    return "결제에 필요한 잔액이 부족합니다. (가스비 ETH 또는 보유 잔액 확인 필요)";
+    return "결제에 필요한 잔액이 부족합니다. (가스비 또는 보유 잔액을 확인해 주세요)";
   }
 
-  if (errMsg.includes("insufficient funds")) {
-    return "가스비로 쓸 ETH가 부족합니다. 테스트넷 ETH를 먼저 충전해 주세요.";
+  // 3. Gas insufficient balance detection
+  const isGasInsufficient =
+    errMsg.includes("insufficient funds") ||
+    /insufficient.*funds/.test(errMsg);
+
+  if (isGasInsufficient) {
+    return "가스비로 쓸 ETH가 부족합니다.";
   }
 
   if (errMsg.includes("chain id") || errMsg.includes("switch ethereum chain") || errMsg.includes("wrong network")) {

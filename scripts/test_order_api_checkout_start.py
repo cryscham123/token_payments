@@ -337,6 +337,40 @@ def test_order_api_maps_all_order_error_codes(code: OrderErrorCode, expected_sta
     assert response.body["error"]["code"] == code.value
 
 
+def test_order_api_sanitizes_raw_estimate_gas_insufficient_balance_errors() -> None:
+    api = OrdersApi(
+        RawValueRejectingUseCase(
+            "JSON-RPC eth_estimateGas failed: {'message': 'VM Exception while processing transaction: "
+            "revert insufficient balance', 'stack': 'RuntimeError: VM Exception while processing transaction: "
+            "revert insufficient balance', 'code': -32000, 'data': {'programCounter': 738, "
+            "'reason': 'insufficient balance', 'message': 'revert'}}"
+        )
+    )
+
+    response = api.create_order(
+        ApiRequest(
+            request_id="req-rpc-error",
+            method="POST",
+            path="/orders",
+            headers={"X-User-Id": str(USER_ID)},
+            body={
+                "storeId": str(STORE_ID),
+                "deliveryAddress": {"id": "ship-to", "street": "2 River Rd"},
+                "items": [{"productId": str(PRODUCT_ID), "quantity": 1}],
+            },
+            received_at=NOW,
+        )
+    )
+
+    message = response.body["error"]["message"]
+    assert response.status_code == 400
+    assert response.body["error"]["code"] == "VALIDATION_ERROR"
+    assert message == "payment token balance is insufficient"
+    assert "JSON-RPC" not in message
+    assert "programCounter" not in message
+    assert "RuntimeError" not in message
+
+
 def test_order_api_resolves_public_store_and_product_ids_via_resolver() -> None:
     service, _repositories = _service()
     resolver = FakeOrderTargetResolver(store_id=str(STORE_ID), product_ids={"prd_demo_001": str(PRODUCT_ID)})
@@ -669,6 +703,14 @@ class RejectingUseCase:
 
     def createOrder(self, command: object) -> object:
         raise OrderApplicationError(self._code, "rejected for test")
+
+
+class RawValueRejectingUseCase:
+    def __init__(self, message: str) -> None:
+        self._message = message
+
+    def createOrder(self, command: object) -> object:
+        raise ValueError(self._message)
 
 
 @dataclass(frozen=True)

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import SiteHeader from "./SiteHeader";
 import { apiJson, getCurrentUser } from "@/lib/auth-client";
-import { formatCryptoAmount } from "@/lib/demo-data";
+import { formatCryptoAmount } from "@/lib/format";
 import { productImageFromMedia, PRODUCT_IMAGE_PLACEHOLDER, getCategoryFallback } from "@/lib/product-image";
 
 export default function StoreDetail({ publicStoreId }) {
@@ -166,4 +166,3 @@ function fromPriceLabel(product) {
 // `/stores/${publicStoreId}/products`
 // paymentCapabilitySummary(store?.paymentCapability)
 // supportEmail
-

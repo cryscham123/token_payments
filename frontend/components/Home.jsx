@@ -5,7 +5,7 @@ import { ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import SiteHeader from "./SiteHeader";
 import { apiJson } from "@/lib/auth-client";
-import { formatCryptoAmount, products as demoProducts } from "@/lib/demo-data";
+import { formatCryptoAmount } from "@/lib/format";
 import { productImageFromMedia, PRODUCT_IMAGE_PLACEHOLDER, getCategoryFallback } from "@/lib/product-image";
 
 export default function Home() {
@@ -29,9 +29,10 @@ export default function Home() {
         const rawProducts = res?.products || [];
         const items = rawProducts.map((p) => ({
           id: p.publicProductId,
-          orderProductId: demoProductIdForPublicId(p.publicProductId) || p.productId || "",
+          orderProductId: p.productId || "",
           publicProductId: p.publicProductId,
           storePublicId: p.storePublicId || p.publicStoreId || "",
+          publicStoreId: p.publicStoreId || p.storePublicId || "",
           storeDisplayName: p.storeDisplayName || p.store?.displayName || p.publicStoreId || "스토어",
           title: p.title,
           cryptoAmount: p.displayPrice?.amount || "0",
@@ -224,8 +225,4 @@ function homeStoreLabel(storeProfile) {
 
 function fromPriceLabel(product) {
   return product.displayPrice?.priceLabel === "from" ? "" : "";
-}
-
-function demoProductIdForPublicId(publicProductId) {
-  return demoProducts.find((product) => product.publicProductId === publicProductId)?.id || "";
 }
