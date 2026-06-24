@@ -67,9 +67,21 @@ export default function Profile() {
     usdt: false
   });
 
+  // Track if assets are already added to MetaMask to prevent duplicate popups
+  const [addedAssets, setAddedAssets] = useState({ usdc: false, usdt: false });
+
   const loadTestnetAssets = async () => {
     const storesPayload = await listPublicStores();
     return extractTestnetTokenAssets(storesPayload?.stores || []);
+  };
+
+  const markAssetAdded = (type) => {
+    if (type === "usdc" || type === "usdt") {
+      setAddedAssets(prev => ({ ...prev, [type]: true }));
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(`token-payments.asset-added.${type}`, "true");
+      }
+    }
   };
 
   const loadProfileData = async () => {
@@ -144,6 +156,14 @@ export default function Profile() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const usdcAdded = window.localStorage.getItem("token-payments.asset-added.usdc") === "true";
+      const usdtAdded = window.localStorage.getItem("token-payments.asset-added.usdt") === "true";
+      setAddedAssets({ usdc: usdcAdded, usdt: usdtAdded });
+    }
+  }, []);
 
   useEffect(() => {
     if (currentUser === undefined) {
@@ -472,27 +492,6 @@ export default function Profile() {
       }
 
       setSuccessMsg(`${type.toUpperCase()} 테스트넷 코인이 정상적으로 지급되었습니다! (Tx: ${txHash.slice(0, 10)}...)`);
-      if (type === "usdc" || type === "usdt") {
-        try {
-          const asset = tokenAssets[type];
-          if (asset?.tokenAddress) {
-            await ensureChain(asset.chainId || 1337);
-            await ethereum.request({
-              method: "wallet_watchAsset",
-              params: {
-                type: "ERC20",
-                options: {
-                  address: asset.tokenAddress,
-                  symbol: asset.symbol,
-                  decimals: Number(asset.decimals || 6)
-                }
-              }
-            });
-          }
-        } catch (watchErr) {
-          console.warn("Auto watch asset after claim failed:", watchErr);
-        }
-      }
     } catch (err) {
       console.warn("Faucet claim failed:", err);
       setErrorMsg(err.message || `${type.toUpperCase()} 지급에 실패했습니다. Local Test Network(Ganache)를 확인하세요.`);
@@ -520,7 +519,7 @@ export default function Profile() {
     setWatchingAsset((prev) => ({ ...prev, [type]: true }));
     try {
       await ensureChain(asset.chainId || 1337);
-      const watched = await ethereum.request({
+      await ethereum.request({
         method: "wallet_watchAsset",
         params: {
           type: "ERC20",
@@ -531,9 +530,8 @@ export default function Profile() {
           }
         }
       });
-      if (watched) {
-        setSuccessMsg(`${asset.symbol} 토큰을 MetaMask에 추가했습니다.`);
-      }
+      setSuccessMsg(`${asset.symbol} 토큰을 MetaMask에 추가했습니다.`);
+      markAssetAdded(type);
     } catch (err) {
       console.warn("Watch asset failed:", err);
       setErrorMsg(err.message || `${asset.symbol} 토큰 추가에 실패했습니다.`);
@@ -676,7 +674,7 @@ export default function Profile() {
                   {isGoogleLinked ? (
                     <button
                       onClick={handleUnlinkGoogle}
-                      className="text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 px-4 py-2 rounded-xl transition-all active:scale-95"
+                      className="text-xs font-bold text-red-650 bg-red-50 hover:bg-red-100 border border-red-200 px-4 py-2 rounded-xl transition-all active:scale-95"
                     >
                       연동 해제
                     </button>
@@ -723,7 +721,7 @@ export default function Profile() {
                         className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-xs font-mono transition ${
                           selectedAccount === acc
                             ? "border-blue-500 bg-white text-blue-900 font-bold shadow-sm"
-                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                            : "border-slate-205 bg-white text-slate-700 hover:bg-slate-50"
                         }`}
                       >
                         <span className="truncate">{shortWallet(acc)}</span>
@@ -779,7 +777,7 @@ export default function Profile() {
                             <button
                               type="button"
                               onClick={() => handleCopyWallet(wallet.walletAddress)}
-                              className="text-slate-400 hover:text-slate-650 active:scale-90 transition-all"
+                              className="text-slate-400 hover:text-slate-655 active:scale-90 transition-all"
                               title="주소 복사"
                             >
                               {copiedWallet === wallet.walletAddress ? (
@@ -832,7 +830,7 @@ export default function Profile() {
 
               {stores.length === 0 ? (
                 <div className="text-center py-10 rounded-xl border border-dashed border-slate-200 bg-slate-50">
-                  <p className="text-xs font-semibold text-slate-505">소속된 상점이 존재하지 않습니다.</p>
+                  <p className="text-xs font-semibold text-slate-500">소속된 상점이 존재하지 않습니다.</p>
                 </div>
               ) : (
                 <div className="divide-y divide-slate-200">
@@ -862,21 +860,16 @@ export default function Profile() {
               {/* Grid Faucet Cards */}
               <div className="grid gap-4 sm:grid-cols-3">
                 {/* ETH Faucet */}
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 flex flex-col justify-between space-y-4 shadow-inner">
-                  <div className="space-y-1.5">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white border border-slate-200 text-slate-600">
-                      <Coins className="h-4 w-4" />
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-bold text-slate-800">ETH</h4>
-                      <span className="text-[10px] text-slate-400 font-medium">Ethereum 테스트넷</span>
-                    </div>
+                <div className="rounded-xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-purple-50/50 p-4 flex flex-col justify-between space-y-4 shadow-sm">
+                  <div className="space-y-1">
+                    <h4 className="text-sm font-black text-indigo-900">ETH</h4>
+                    <span className="text-[10px] text-indigo-400 font-bold block">Ethereum 테스트넷</span>
                   </div>
                   <button
                     type="button"
                     onClick={() => handleFaucetClaim("eth")}
                     disabled={claimingState.eth}
-                    className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 active:scale-95 disabled:opacity-50 px-3 py-2 text-xs font-bold text-white transition-all shadow-sm"
+                    className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 active:scale-95 disabled:opacity-50 px-3 py-2 text-xs font-bold text-white transition-all shadow-sm"
                   >
                     {claimingState.eth ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin text-white" />
@@ -887,22 +880,17 @@ export default function Profile() {
                 </div>
 
                 {/* USDC Faucet */}
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 flex flex-col justify-between space-y-4 shadow-inner">
-                  <div className="space-y-1.5">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white border border-slate-200 text-slate-600">
-                      <Coins className="h-4 w-4" />
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-bold text-slate-800">USDC</h4>
-                      <span className="text-[10px] text-slate-400 font-medium">USD Coin 테스트넷</span>
-                    </div>
+                <div className="rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50 to-indigo-50/30 p-4 flex flex-col justify-between space-y-4 shadow-sm">
+                  <div className="space-y-1">
+                    <h4 className="text-sm font-black text-blue-900">USDC</h4>
+                    <span className="text-[10px] text-blue-400 font-bold block">USD Coin 테스트넷</span>
                   </div>
                   <div className="space-y-2">
                     <button
                       type="button"
                       onClick={() => handleFaucetClaim("usdc")}
                       disabled={claimingState.usdc || !usdcReady}
-                      className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 active:scale-95 disabled:opacity-50 px-3 py-2 text-xs font-bold text-white transition-all shadow-sm"
+                      className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 active:scale-95 disabled:opacity-50 px-3 py-2 text-xs font-bold text-white transition-all shadow-sm"
                     >
                       {claimingState.usdc ? (
                         <Loader2 className="h-3.5 w-3.5 animate-spin text-white" />
@@ -913,11 +901,13 @@ export default function Profile() {
                     <button
                       type="button"
                       onClick={() => handleWatchAsset("usdc")}
-                      disabled={watchingAsset.usdc || !usdcReady}
-                      className="w-full inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 px-3 py-1.5 text-[11px] font-bold transition active:scale-95 disabled:opacity-50 shadow-sm"
+                      disabled={watchingAsset.usdc || !usdcReady || addedAssets.usdc}
+                      className="w-full inline-flex items-center justify-center gap-1 rounded-lg border border-blue-200 bg-white hover:bg-blue-50 text-blue-600 px-3 py-1.5 text-[11px] font-bold transition active:scale-95 disabled:opacity-50 disabled:bg-blue-50 disabled:text-blue-400 shadow-sm"
                     >
                       {watchingAsset.usdc ? (
                         <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : addedAssets.usdc ? (
+                        "추가 완료 ✓"
                       ) : (
                         "지갑에 추가"
                       )}
@@ -926,22 +916,17 @@ export default function Profile() {
                 </div>
 
                 {/* USDT Faucet */}
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 flex flex-col justify-between space-y-4 shadow-inner">
-                  <div className="space-y-1.5">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white border border-slate-200 text-slate-600">
-                      <Coins className="h-4 w-4" />
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-bold text-slate-800">USDT</h4>
-                      <span className="text-[10px] text-slate-400 font-medium">Tether 테스트넷</span>
-                    </div>
+                <div className="rounded-xl border border-emerald-100 bg-gradient-to-br from-emerald-50 to-teal-50/30 p-4 flex flex-col justify-between space-y-4 shadow-sm">
+                  <div className="space-y-1">
+                    <h4 className="text-sm font-black text-teal-900">USDT</h4>
+                    <span className="text-[10px] text-teal-400 font-bold block">Tether 테스트넷</span>
                   </div>
                   <div className="space-y-2">
                     <button
                       type="button"
                       onClick={() => handleFaucetClaim("usdt")}
                       disabled={claimingState.usdt || !usdtReady}
-                      className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 active:scale-95 disabled:opacity-50 px-3 py-2 text-xs font-bold text-white transition-all shadow-sm"
+                      className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 active:scale-95 disabled:opacity-50 px-3 py-2 text-xs font-bold text-white transition-all shadow-sm"
                     >
                       {claimingState.usdt ? (
                         <Loader2 className="h-3.5 w-3.5 animate-spin text-white" />
@@ -952,11 +937,13 @@ export default function Profile() {
                     <button
                       type="button"
                       onClick={() => handleWatchAsset("usdt")}
-                      disabled={watchingAsset.usdt || !usdtReady}
-                      className="w-full inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 px-3 py-1.5 text-[11px] font-bold transition active:scale-95 disabled:opacity-50 shadow-sm"
+                      disabled={watchingAsset.usdt || !usdtReady || addedAssets.usdt}
+                      className="w-full inline-flex items-center justify-center gap-1 rounded-lg border border-teal-200 bg-white hover:bg-teal-50 text-teal-600 px-3 py-1.5 text-[11px] font-bold transition active:scale-95 disabled:opacity-50 disabled:bg-teal-50 disabled:text-teal-400 shadow-sm"
                     >
                       {watchingAsset.usdt ? (
                         <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : addedAssets.usdt ? (
+                        "추가 완료 ✓"
                       ) : (
                         "지갑에 추가"
                       )}
