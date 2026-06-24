@@ -311,6 +311,32 @@ def test_expire_awaiting_signature_saves_expired_payment_authorization_and_event
     assert outbox.payload["expiredAt"] == EXPIRES_AT.isoformat()
 
 
+def test_customer_cancel_resolves_to_cancelled_payment_and_emits_release_compensation() -> None:
+    payment_repository = FakePaymentRepository(_awaiting_payment(items=_inventory_items()))
+    authorization_repository = FakePaymentAuthorizationRepository(_requested_authorization())
+    outbox_messages = FakeOutboxMessageRepository()
+    handler = _handler(payment_repository, authorization_repository, outbox_messages=outbox_messages)
+
+    # force=True before expires_at: a customer cancellation, not a timeout.
+    command = ExpireAwaitingSignatureCommand(
+        command_id=EXPIRE_COMMAND_ID,
+        payment_id=PAYMENT_ID,
+        order_id=ORDER_ID,
+        expired_at=NOW,
+        reason="cancelled by customer",
+        force=True,
+        event_message_id=EXPIRED_EVENT_ID,
+    )
+    result = handler.expire_awaiting_signature(command)
+
+    # The payment reads as CANCELLED (distinct from a timeout's EXPIRED) ...
+    assert result.payment is not None
+    assert result.payment.status == PaymentStatus.CANCELLED
+    # ... while still emitting the shared release+cancel compensation event.
+    assert outbox_messages.saved[0].name == CheckoutEventName.PAYMENT_EXPIRED.value
+    assert outbox_messages.saved[0].payload["reason"] == "cancelled by customer"
+
+
 def test_refund_payment_uses_transaction_service_and_records_refunded_event() -> None:
     confirmed = _confirmed_payment()
     payment_repository = FakePaymentRepository(confirmed)

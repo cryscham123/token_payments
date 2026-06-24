@@ -837,8 +837,11 @@ class PaymentExpiredEvent:
     def from_payment(cls, payment: Payment, expired_at: datetime | None = None) -> Self:
         if not isinstance(payment, Payment):
             raise ValueError("PaymentExpiredEvent.from_payment requires a Payment")
-        if payment.status is not PaymentStatus.EXPIRED:
-            raise ValueError("PaymentExpiredEvent requires an EXPIRED payment")
+        # Both a signature timeout (EXPIRED) and a customer cancellation (CANCELLED) terminate
+        # an awaiting-signature payment and drive the identical release+cancel compensation;
+        # they differ only in the payment's user-facing status, not in this event's handling.
+        if payment.status not in {PaymentStatus.EXPIRED, PaymentStatus.CANCELLED}:
+            raise ValueError("PaymentExpiredEvent requires an EXPIRED or CANCELLED payment")
         return cls(
             payment_id=payment.payment_id,
             order_id=payment.order_id,
