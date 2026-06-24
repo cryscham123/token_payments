@@ -53,6 +53,7 @@ class OrderErrorCode(StrEnum):
     CUSTOMER_NOT_FOUND = "CUSTOMER_NOT_FOUND"
     STORE_NOT_FOUND = "STORE_NOT_FOUND"
     VALIDATION_ERROR = "VALIDATION_ERROR"
+    OPEN_ORDER_EXISTS = "OPEN_ORDER_EXISTS"
 
 
 class OrderApplicationError(Exception):

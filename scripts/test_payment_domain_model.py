@@ -137,6 +137,18 @@ def test_payment_failure_and_expiry_are_guarded_and_idempotent() -> None:
         _payment(status=PaymentStatus.INITIATED).expire_awaiting_signature(now=EXPIRES_AT)
 
 
+def test_force_cancel_resolves_to_cancelled_before_expiry_unlike_timeout() -> None:
+    awaiting = _payment(status=PaymentStatus.AWAITING_SIGNATURE)
+
+    # Customer cancel (force=True) is allowed before expires_at and reads as CANCELLED,
+    # distinct from a timeout which only fires past expires_at and reads as EXPIRED.
+    cancelled = awaiting.expire_awaiting_signature(now=NOW, reason="cancelled by customer", force=True)
+    assert cancelled.status == PaymentStatus.CANCELLED
+    assert cancelled.failure_reason == "cancelled by customer"
+    # Terminal + idempotent.
+    assert cancelled.expire_awaiting_signature(now=EXPIRES_AT) == cancelled
+
+
 def test_refund_payment_transitions_from_confirmed_once() -> None:
     receipt = TransactionReceipt(hash=TX_HASH, block_number=12345, gas_used=21000)
     refund_receipt = TransactionReceipt(hash=OTHER_TX_HASH, block_number=12355, gas_used=31000)

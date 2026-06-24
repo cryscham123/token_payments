@@ -462,6 +462,20 @@ class PostgresOrderRepository:
     def __init__(self, connection: PostgresConnection) -> None:
         self._connection = connection
 
+    def open_order_exists(self, customer_id: CustomerId) -> bool:
+        """True when the customer already has an order awaiting payment (status PENDING).
+        Used to cap each account at one in-flight unpaid order so a single account cannot
+        reserve stock across many simultaneous unpaid orders."""
+        if not isinstance(customer_id, CustomerId):
+            raise ValueError("PostgresOrderRepository.open_order_exists requires a CustomerId")
+        row = _fetch_one(
+            self._connection.execute(
+                "SELECT 1 FROM orders WHERE customer_id = %(customer_id)s AND status = 'PENDING' LIMIT 1",
+                {"customer_id": str(customer_id)},
+            )
+        )
+        return row is not None
+
     def get(self, order_id: OrderId) -> Order | None:
         if not isinstance(order_id, OrderId):
             raise ValueError("PostgresOrderRepository.get requires an OrderId")
