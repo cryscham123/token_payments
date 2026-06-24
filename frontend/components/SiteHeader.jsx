@@ -2,10 +2,81 @@
 
 import Link from "next/link";
 import { ReceiptText, Search, ShoppingBag, ShoppingCart, Wallet, User } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import WalletConnectModal from "./WalletConnectModal";
 import { getCurrentUser, logout, apiJson } from "@/lib/auth-client";
 import { loadCart } from "@/lib/cart";
+
+function SearchBar() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [searchVal, setSearchVal] = useState(searchParams.get("q") || "");
+
+  useEffect(() => {
+    setSearchVal(searchParams.get("q") || "");
+  }, [searchParams]);
+
+  useEffect(() => {
+    const currentQuery = searchParams.get("q") || "";
+    if (searchVal === currentQuery) return;
+
+    const timer = setTimeout(() => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (searchVal.trim()) {
+        params.set("q", searchVal);
+      } else {
+        params.delete("q");
+      }
+      
+      const isSearchablePage = pathname === "/" || pathname.startsWith("/stores/");
+      if (isSearchablePage) {
+        router.push(`${pathname}?${params.toString()}`);
+      } else {
+        router.push(`/?${params.toString()}`);
+      }
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [searchVal, pathname, router, searchParams]);
+
+  const handleSearchSubmit = (e) => {
+    e.preventDefault();
+    const params = new URLSearchParams(searchParams.toString());
+    if (searchVal.trim()) {
+      params.set("q", searchVal);
+    } else {
+      params.delete("q");
+    }
+    const isSearchablePage = pathname === "/" || pathname.startsWith("/stores/");
+    if (isSearchablePage) {
+      router.push(`${pathname}?${params.toString()}`);
+    } else {
+      router.push(`/?${params.toString()}`);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSearchSubmit} className="flex w-full max-w-2xl flex-1">
+      <div className="relative flex w-full items-center rounded-sm border-4 border-blue-600">
+        <div className="hidden border-r border-slate-300 px-4 text-sm font-medium text-slate-500 sm:block">
+          전체
+        </div>
+        <input
+          type="search"
+          value={searchVal}
+          onChange={(e) => setSearchVal(e.target.value)}
+          className="w-full px-4 py-2.5 text-sm outline-none"
+          placeholder="상품명이나 가게를 검색해보세요"
+        />
+        <button type="submit" className="flex h-11 w-14 items-center justify-center text-blue-600 transition-colors hover:text-blue-700">
+          <Search size={22} />
+        </button>
+      </div>
+    </form>
+  );
+}
 
 export default function SiteHeader({ cartCount, currentUser: propCurrentUser, onCurrentUserChange }) {
   const [openWallet, setOpenWallet] = useState(false);
@@ -133,21 +204,23 @@ export default function SiteHeader({ cartCount, currentUser: propCurrentUser, on
             </div>
           </Link>
 
-          <div className="flex w-full max-w-2xl flex-1">
-            <div className="relative flex w-full items-center rounded-sm border-4 border-blue-600">
-              <div className="hidden border-r border-slate-300 px-4 text-sm font-medium text-slate-500 sm:block">
-                전체
+          <Suspense fallback={
+            <div className="flex w-full max-w-2xl flex-1 animate-pulse">
+              <div className="relative flex w-full items-center rounded-sm border-4 border-slate-200">
+                <div className="hidden border-r border-slate-200 px-4 text-sm font-medium text-slate-400 sm:block">
+                  전체
+                </div>
+                <input
+                  type="search"
+                  disabled
+                  className="w-full px-4 py-2.5 text-sm outline-none bg-slate-50/50"
+                  placeholder="상품명이나 가게를 검색해보세요"
+                />
               </div>
-              <input
-                type="search"
-                className="w-full px-4 py-2.5 text-sm outline-none"
-                placeholder="상품명이나 가게를 검색해보세요"
-              />
-              <button className="flex h-11 w-14 items-center justify-center text-blue-600 transition-colors hover:text-blue-700">
-                <Search size={22} />
-              </button>
             </div>
-          </div>
+          }>
+            <SearchBar />
+          </Suspense>
 
           <div className="flex shrink-0 items-center gap-5">
             {currentUser && (
