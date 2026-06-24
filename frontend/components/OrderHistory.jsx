@@ -11,7 +11,6 @@ import { productImageFromMedia, PRODUCT_IMAGE_PLACEHOLDER, getCategoryFallback }
 
 export default function OrderHistory() {
   const [payments, setPayments] = useState([]);
-  const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState(null);
   const [error, setError] = useState("");
@@ -47,31 +46,14 @@ export default function OrderHistory() {
 
         setCurrentUser(userPayload.user);
 
-        const [paymentsRes, productsRes] = await Promise.all([
-          apiJson("/payments", { method: "GET" }).catch((err) => {
-            console.error("Failed to fetch payments", err);
-            return { payments: [] };
-          }),
-          apiJson("/stores/st_demo_store_001/products", { method: "GET" }).catch((err) => {
-            console.error("Failed to fetch products", err);
-            return { products: [] };
-          })
-        ]);
+        const paymentsRes = await apiJson("/payments", { method: "GET" }).catch((err) => {
+          console.error("Failed to fetch payments", err);
+          return { payments: [] };
+        });
 
         if (!active) return;
 
         setPayments(paymentsRes?.payments || []);
-
-        const mappedProducts = (productsRes?.products || []).map((p) => ({
-          id: p.publicProductId,
-          title: p.title,
-          cryptoAmount: p.displayPrice?.amount || "0",
-          cryptoSymbol: p.displayPrice?.symbol || "ETH",
-          thumb: productImageFromMedia(p.media),
-          category: p.category || ""
-        }));
-
-        setProducts(mappedProducts);
         setLoading(false);
       } catch (err) {
         console.error(err);
@@ -88,12 +70,9 @@ export default function OrderHistory() {
     };
   }, []);
 
-  // When the user logs out (SiteHeader sets currentUser to null) or the session is revoked,
-  // drop the previous user's order data so it doesn't linger on screen.
   useEffect(() => {
     if (!loading && !currentUser) {
       setPayments([]);
-      setProducts([]);
       setError("로그인이 필요합니다.");
     }
   }, [currentUser, loading]);
@@ -127,34 +106,26 @@ export default function OrderHistory() {
   }
 
   const displayOrders = payments.map((payment) => {
-    const fallbackProduct = products.find(
-      (p) => Number.parseFloat(p.cryptoAmount) === Number.parseFloat(payment.amount?.amount)
-    ) || products[0] || {
-      title: "데모 상품",
-      thumb: PRODUCT_IMAGE_PLACEHOLDER
-    };
-
     const orderItems = (payment.items && payment.items.length > 0)
       ? payment.items.map((item) => {
-          const catalogProd = products.find((p) => p.id === item.publicProductId);
           return {
             productId: item.productId,
             publicProductId: item.publicProductId,
-            title: item.title || item.name || fallbackProduct.title,
+            title: item.title || item.name || "상품",
             quantity: item.quantity || 1,
             selectedOptions: item.selectedOptions || {},
-            thumb: catalogProd?.thumb || fallbackProduct.thumb || PRODUCT_IMAGE_PLACEHOLDER,
-            category: catalogProd?.category || fallbackProduct.category || ""
+            thumb: item.thumb || item.image || PRODUCT_IMAGE_PLACEHOLDER,
+            category: item.category || ""
           };
         })
       : [{
           productId: "",
-          publicProductId: fallbackProduct.id || "",
-          title: fallbackProduct.title,
+          publicProductId: "",
+          title: "상품",
           quantity: 1,
           selectedOptions: {},
-          thumb: fallbackProduct.thumb,
-          category: fallbackProduct.category || ""
+          thumb: PRODUCT_IMAGE_PLACEHOLDER,
+          category: ""
         }];
 
     const formattedDate = payment.updatedAt

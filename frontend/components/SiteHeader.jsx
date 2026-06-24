@@ -39,6 +39,9 @@ export default function SiteHeader({ cartCount, currentUser: propCurrentUser, on
 
   useEffect(() => {
     const handleUnauthorized = () => {
+      if (currentUser) {
+        alert("세션이 만료되었습니다. 다시 로그인해 주세요.");
+      }
       setLocalCurrentUser(null);
       if (onCurrentUserChange) {
         onCurrentUserChange(null);
@@ -48,7 +51,7 @@ export default function SiteHeader({ cartCount, currentUser: propCurrentUser, on
     return () => {
       window.removeEventListener("token-payments-unauthorized", handleUnauthorized);
     };
-  }, [onCurrentUserChange]);
+  }, [currentUser, onCurrentUserChange]);
 
   useEffect(() => {
     const refreshCartCount = () => setStoredCartCount(loadCart().reduce((sum, item) => sum + item.quantity, 0));

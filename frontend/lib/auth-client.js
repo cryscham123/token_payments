@@ -187,6 +187,10 @@ async function _tryRefreshSession() {
       });
 
       if (!response.ok) return false;
+      const payload = await response.json();
+      if (payload && payload.csrfToken && typeof window !== "undefined") {
+        document.cookie = `csrf_token=${payload.csrfToken}; path=/`;
+      }
       return true;
     } catch {
       return false;
