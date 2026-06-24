@@ -616,6 +616,7 @@ def _item_payload(item: OrderItem, asset_id: str | None = None) -> dict[str, Any
         "quantity": item.quantity,
         "unitPrice": _crypto_payload(snapshot.price, asset_id=asset_id),
         "subTotal": _crypto_payload(item.sub_total, asset_id=asset_id),
+        "media": list(snapshot.media),
     }
     if snapshot.public_variant_id is not None or snapshot.selected_options:
         payload["orderLineKey"] = item.line_key

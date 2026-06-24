@@ -18,6 +18,7 @@ class CreateOrderItem:
     quantity: int
     public_variant_id: str | None = None
     selected_options: Mapping[str, object] = field(default_factory=dict)
+    media: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "product_id", _coerce_product_id(self.product_id))
@@ -25,6 +26,8 @@ class CreateOrderItem:
         if self.public_variant_id is not None:
             object.__setattr__(self, "public_variant_id", _require_text(self.public_variant_id, "CreateOrderItem.public_variant_id"))
         object.__setattr__(self, "selected_options", MappingProxyType(_coerce_selected_options(self.selected_options)))
+        if self.media:
+            object.__setattr__(self, "media", tuple(str(x) for x in self.media if str(x).strip()))
 
 
 @dataclass(frozen=True)

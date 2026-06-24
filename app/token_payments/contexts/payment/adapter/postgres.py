@@ -71,6 +71,7 @@ SELECT
                 'name', oi.product_snapshot_name,
                 'selectedOptions', COALESCE(oi.selected_options, '{}'::jsonb),
                 'quantity', oi.quantity,
+                'media', oi.media,
                 'unitPrice', jsonb_build_object(
                     'amount', oi.unit_price_numeric::text,
                     'symbol', oi.unit_price_symbol,
@@ -137,6 +138,7 @@ SELECT
                 'name', oi.product_snapshot_name,
                 'selectedOptions', COALESCE(oi.selected_options, '{}'::jsonb),
                 'quantity', oi.quantity,
+                'media', oi.media,
                 'unitPrice', jsonb_build_object(
                     'amount', oi.unit_price_numeric::text,
                     'symbol', oi.unit_price_symbol,
@@ -217,7 +219,8 @@ SELECT
             'title', COALESCE(sp.title, oi.product_snapshot_name),
             'selectedOptions', oi.selected_options,
             'quantity', oi.quantity,
-            'media', sp.media,
+            'media', oi.media,
+            'category', sp.category,
             'unitPrice', json_build_object(
                 'amount', oi.unit_price_numeric::text,
                 'symbol', oi.unit_price_symbol,
@@ -279,7 +282,8 @@ SELECT
             'title', COALESCE(sp.title, oi.product_snapshot_name),
             'selectedOptions', oi.selected_options,
             'quantity', oi.quantity,
-            'media', sp.media,
+            'media', oi.media,
+            'category', sp.category,
             'unitPrice', json_build_object(
                 'amount', oi.unit_price_numeric::text,
                 'symbol', oi.unit_price_symbol,

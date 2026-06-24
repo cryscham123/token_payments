@@ -21,8 +21,7 @@ export async function createOrder({ storeId, publicStoreId, items, paymentAssetI
           quantity: item.quantity,
           ...(item.publicVariantId ? { publicVariantId: item.publicVariantId } : {}),
           ...(item.selectedOptions ? { selectedOptions: item.selectedOptions } : {}),
-          ...(item.thumb ? { thumb: item.thumb } : {}),
-          ...(item.image ? { image: item.image } : {})
+          ...(item.media ? { media: item.media } : {})
         };
       }),
       ...(paymentAssetId ? { paymentAssetId } : {}),
