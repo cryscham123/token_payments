@@ -141,8 +141,7 @@ export default function PayModal() {
   const paymentExpired = timeLeft !== null && timeLeft <= 0;
   const timerText = paymentRequest?.expiresAt ? (paymentExpired ? "시간 초과" : formatTime(timeLeft || 0)) : "대기 중";
   const canPay = Boolean(paymentRequest && currentUser && !busy && !paymentExpired);
-  // The cart is emptied once the order is created, so read the quantity from the order
-  // (tracking response) and only fall back to the cart count.
+  
   const orderQuantity = checkout?.totalQuantity ?? cartQuantity;
   const compactPaymentFacts = [
     { label: "상품 수량", value: `${orderQuantity}개` },
@@ -214,98 +213,167 @@ export default function PayModal() {
       <SiteHeader currentUser={currentUser} onCurrentUserChange={setCurrentUser} />
       <div className="mx-auto max-w-4xl px-4 py-6 font-sans">
         <div className="w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-          <div className="flex items-center justify-between bg-blue-600 px-5 py-3 text-white">
+          <div className="flex items-center justify-between bg-slate-900 px-5 py-4 text-white border-b border-slate-800">
             <div className="flex items-center gap-2">
-              <WalletCards size={22} />
-              <h2 className="text-lg font-bold tracking-normal">{paymentAmount?.symbol || "Crypto"} 결제</h2>
+              <WalletCards size={20} className="text-blue-400" />
+              <h2 className="text-base font-bold tracking-normal">{paymentAmount?.symbol || "Crypto"} 결제 진행</h2>
             </div>
-            <div className={`flex items-center gap-1 rounded-full px-3 py-1 font-mono text-sm font-bold ${paymentExpired ? "bg-red-600" : "bg-blue-700"}`}>
-              <Timer size={15} />
+            <div className={`flex items-center gap-1.5 rounded-full px-3 py-1 font-mono text-xs font-bold shadow-sm ${paymentExpired ? "bg-red-655" : "bg-blue-600/80"}`}>
+              <Timer size={14} className={paymentExpired ? "" : "animate-pulse"} />
               {timerText}
             </div>
           </div>
 
-          <div className="p-5">
+          <div className="p-5 bg-slate-50/30">
             {cartItems.length === 0 && !checkout ? (
-              <div className="py-6 text-center">
+              <div className="py-12 text-center bg-white rounded-xl border border-slate-200 shadow-sm">
                 <WalletCards className="mx-auto mb-3 h-12 w-12 text-slate-200" />
-                <p className="mb-5 text-sm text-slate-500">결제할 주문이 없습니다.</p>
-                <Link href="/cart" className="inline-flex rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-bold text-white">
+                <p className="mb-5 text-sm font-medium text-slate-500">결제할 주문이 없습니다.</p>
+                <Link href="/cart" className="inline-flex rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-bold text-white hover:bg-slate-800 transition">
                   장바구니로 돌아가기
                 </Link>
               </div>
             ) : (
               <>
-                <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
-                  <div className="rounded-xl border border-slate-100 bg-slate-50 p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-xs font-bold uppercase tracking-wide text-slate-400">결제 금액</p>
-                        <div className="mt-1 text-2xl font-extrabold text-slate-950 font-mono">{displayAmount}</div>
-                      </div>
-                      <button onClick={() => copyToClipboard(displayAmount, "금액")} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-100">
-                        <Copy size={14} />
-                      </button>
-                    </div>
-                    <div className="mt-4 grid grid-cols-2 gap-2">
-                      {compactPaymentFacts.map((fact) => (
-                        <div key={fact.label} className="rounded-lg bg-white px-3 py-2">
-                          <span className="block text-[11px] font-bold uppercase tracking-wide text-slate-400">{fact.label}</span>
-                          <span className="mt-0.5 block text-sm font-bold text-slate-900">{fact.value}</span>
+                <div className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
+                  {/* 좌측 영역: 주문 및 금액 요약 */}
+                  <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm flex flex-col justify-between">
+                    <div>
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4 pb-2 border-b border-slate-100">주문 내역</h3>
+                      
+                      <div className="mb-6">
+                        <span className="block text-[11px] font-bold uppercase tracking-wide text-slate-400">결제 요청 금액</span>
+                        <div className="mt-1 flex items-baseline gap-1.5">
+                          <span className="text-2xl font-extrabold text-slate-900 font-mono tracking-tight">{displayAmount}</span>
                         </div>
-                      ))}
+                      </div>
+
+                      <div className="rounded-lg bg-slate-50 border border-slate-100 p-3 flex flex-col gap-2">
+                        {compactPaymentFacts.map((fact) => (
+                          <div key={fact.label} className="flex justify-between items-center py-1 text-xs border-b border-slate-200/50 last:border-0">
+                            <span className="font-semibold text-slate-500">{fact.label}</span>
+                            <span className="font-bold text-slate-800">{fact.value}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
 
-                    {message && (
-                      <div
-                        className={`mt-4 flex gap-2 rounded-xl p-3 text-xs leading-relaxed ${
-                          status === "error" ? "border border-red-100 bg-red-50 text-red-700" : "border border-blue-100 bg-blue-50 text-blue-700"
-                        }`}
-                      >
-                        {status === "error" ? <TriangleAlert size={15} className="mt-0.5 shrink-0" /> : <CheckCircle2 size={15} className="mt-0.5 shrink-0" />}
-                        <span>{message}</span>
-                      </div>
-                    )}
+                    <div>
+                      {message && (
+                        <div className={`mt-5 flex gap-2 rounded-xl p-4 text-xs leading-relaxed ${status === "error" ? "border border-red-100 bg-red-50 text-red-700" : "border border-blue-100 bg-blue-50 text-blue-700"}`}>
+                          {status === "error" ? <TriangleAlert size={15} className="mt-0.5 shrink-0 text-red-500" /> : <Loader2 size={15} className="mt-0.5 shrink-0 animate-spin text-blue-500" />}
+                          <span>{message}</span>
+                        </div>
+                      )}
 
-                    {!currentUser && (
-                      <div className="mt-3 flex gap-2 rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs leading-relaxed text-amber-700">
-                        <TriangleAlert size={15} className="mt-0.5 shrink-0" />
-                        <span>지갑을 연결한 후 결제를 진행해 주세요.</span>
-                      </div>
-                    )}
-
-                    <button
-                      onClick={payWithMetaMask}
-                      disabled={!canPay}
-                      className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3.5 text-center font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-                      MetaMask로 결제 전송
-                    </button>
-                    {checkout?.paymentRequest && !txHash && (
-                      <button
-                        onClick={cancelCheckout}
-                        disabled={busy}
-                        className="mt-2.5 block w-full rounded-xl border border-red-200 bg-white py-2.5 text-center text-sm font-bold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        결제 취소                      </button>
-                    )}
-                    <Link href="/cart" className="mt-2.5 block w-full rounded-xl border border-slate-300 bg-white py-2.5 text-center text-sm font-bold text-slate-700 hover:bg-slate-50">
-                      장바구니로 돌아가기
-                    </Link>
+                      {!currentUser && (
+                        <div className="mt-4 flex gap-2 rounded-xl border border-amber-100 bg-amber-50 p-4 text-xs leading-relaxed text-amber-700">
+                          <TriangleAlert size={15} className="mt-0.5 shrink-0 text-amber-600" />
+                          <span>지갑을 연결한 후 결제를 진행해 주세요.</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="flex flex-col gap-3 rounded-xl border border-slate-100 bg-slate-50 p-4">
-                    <p className="text-xs font-bold uppercase tracking-wide text-slate-400">결제 정보</p>
-                    <InfoRow label="수신 주소" value={transferTo} onCopy={() => copyToClipboard(transferTo, "주소")} />
-                    {checkout?.payerWallet?.addressPreview && (
-                      <div className="flex items-center justify-between gap-2 px-1 text-sm">
-                        <span className="font-semibold text-slate-500">결제 지갑</span>
-                        <span className="font-mono text-slate-700">{checkout.payerWallet.addressPreview}</span>
+                  {/* 우측 영역: 트랜잭션 경로 및 실행 */}
+                  <div className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 pb-2 border-b border-slate-100">결제 트랜잭션 정보</h3>
+
+                    {/* 트랜잭션 흐름 도식 */}
+                    <div className="flex flex-col gap-3.5 bg-slate-50/50 border border-slate-100 rounded-xl p-4">
+                      {/* 송신처 (보내는 지갑) */}
+                      <div className="flex items-center justify-between rounded-lg border border-slate-150 bg-white p-3 shadow-xs">
+                        <div className="min-w-0">
+                          <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">보내는 지갑 (내 지갑)</span>
+                          <span className="font-mono text-xs font-bold text-slate-800">
+                            {checkout?.payerWallet?.addressPreview || (currentUser?.walletAddress ? `${currentUser.walletAddress.slice(0, 6)}...${currentUser.walletAddress.slice(-4)}` : "연결 안 됨")}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 rounded-full px-2 py-0.5 border border-emerald-100 shrink-0">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                          보내는 곳
+                        </div>
+                      </div>
+
+                      {/* 흐름 화살표 */}
+                      <div className="flex justify-center -my-2.5">
+                        <div className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 shadow-sm text-xs font-bold">
+                          ↓
+                        </div>
+                      </div>
+
+                      {/* 수신처 (받는 지갑) */}
+                      <div className="flex items-center justify-between rounded-lg border border-slate-150 bg-white p-3 shadow-xs">
+                        <div className="min-w-0 flex-1">
+                          <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">받는 지갑 (스토어 수신처)</span>
+                          <span className="block font-mono text-xs font-bold text-slate-800 truncate" title={transferTo}>{transferTo}</span>
+                        </div>
+                        <button onClick={() => copyToClipboard(transferTo, "수신 주소")} className="ml-2 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm hover:bg-slate-150 hover:text-slate-800 transition">
+                          <Copy size={12} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 지갑 불일치 경고 */}
+                    {!walletMatched && currentUser && activeAddress && (
+                      <div className="flex gap-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs leading-relaxed text-amber-850 shadow-sm animate-pulse">
+                        <TriangleAlert size={16} className="mt-0.5 shrink-0 text-amber-600" />
+                        <div>
+                          <p className="font-bold text-amber-900">지갑 주소 불일치 경고</p>
+                          <p className="mt-1 text-amber-800">
+                            주문 생성 시 지정된 지갑(<span className="font-mono font-bold text-slate-900">{checkout?.payerWallet?.addressPreview || currentUser.walletAddress.slice(0, 6) + "..." + currentUser.walletAddress.slice(-4)}</span>)과 
+                            현재 MetaMask에 선택된 계정(<span className="font-mono font-bold text-slate-900">{activeAddress.slice(0, 6) + "..." + activeAddress.slice(-4)}</span>)이 일치하지 않습니다. 
+                            MetaMask에서 결제용 계정으로 전환해 주세요.
+                          </p>
+                        </div>
                       </div>
                     )}
-                    {txHash && <InfoRow label="거래 해시" value={txHash} onCopy={() => copyToClipboard(txHash, "거래 해시")} />}
-                    {copied && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700">{copied} 복사 완료</p>}
+
+                    {/* 거래 해시 및 복사 완료 정보 */}
+                    {txHash && (
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">거래 해시 (TX Hash)</span>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="min-w-0 truncate font-mono text-xs font-bold text-slate-800" title={txHash}>{txHash}</span>
+                          <button onClick={() => copyToClipboard(txHash, "거래 해시")} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm hover:bg-slate-150">
+                            <Copy size={12} />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {copied && (
+                      <div className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 border border-emerald-100 shadow-xs">
+                        ✓ {copied} 복사 완료
+                      </div>
+                    )}
+
+                    {/* 주요 결제 액션 및 복귀 버튼들 */}
+                    <div className="flex flex-col gap-2.5 mt-auto pt-2 border-t border-slate-100">
+                      <button
+                        onClick={payWithMetaMask}
+                        disabled={!canPay || !walletMatched}
+                        className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3.5 text-center font-bold text-white shadow-md shadow-blue-100 hover:bg-blue-700 transition disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <WalletCards size={18} />}
+                        MetaMask로 결제 전송
+                      </button>
+
+                      <div className="flex gap-2">
+                        {checkout?.paymentRequest && !txHash && (
+                          <button
+                            onClick={cancelCheckout}
+                            disabled={busy}
+                            className="flex-1 rounded-xl border border-red-200 bg-white py-2.5 text-center text-sm font-bold text-red-650 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 transition"
+                          >
+                            결제 취소
+                          </button>
+                        )}
+                        <Link href="/cart" className="flex-1 rounded-xl border border-slate-300 bg-white py-2.5 text-center text-sm font-bold text-slate-700 hover:bg-slate-50 transition">
+                          장바구니로 돌아가기
+                        </Link>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </>
