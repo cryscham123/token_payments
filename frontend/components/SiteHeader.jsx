@@ -51,7 +51,7 @@ function SearchBar() {
   return (
     <form onSubmit={handleSearchSubmit} className="flex w-full max-w-2xl flex-1">
       <div className="relative flex w-full items-center rounded-sm border-4 border-blue-600">
-        <div className="hidden border-r border-slate-300 px-4 text-sm font-medium text-slate-500 sm:block">
+        <div className="hidden border-r border-slate-300 px-4 text-sm font-medium text-slate-500 sm:block shrink-0 whitespace-nowrap">
           전체
         </div>
         <input
@@ -199,7 +199,7 @@ export default function SiteHeader({ cartCount, currentUser: propCurrentUser, on
           <Suspense fallback={
             <div className="flex w-full max-w-2xl flex-1 animate-pulse">
               <div className="relative flex w-full items-center rounded-sm border-4 border-slate-200">
-                <div className="hidden border-r border-slate-200 px-4 text-sm font-medium text-slate-400 sm:block">
+                <div className="hidden border-r border-slate-200 px-4 text-sm font-medium text-slate-400 sm:block shrink-0 whitespace-nowrap">
                   전체
                 </div>
                 <input
