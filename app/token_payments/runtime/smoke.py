@@ -521,26 +521,17 @@ def _run_happy_path_checkout() -> SmokeScenarioResult:
 
     process_manager = CheckoutProcessManager()
     topic_resolver = MessageTopicResolver.default()
-    reserve_decision = _single_decision(
-        _handle_checkout_event(
-            process_manager=process_manager,
-            processed_messages=processed_messages,
-            outbox_messages=outbox_messages,
-            topic_resolver=topic_resolver,
-            source_message=order_created_message,
-        ),
-        CheckoutCommandName.RESERVE_INVENTORY.value,
+    # Reserve-on-confirm: order creation locks no stock, so ORDER_CREATED yields no saga
+    # commands. Payment is initiated synchronously (mirroring the live composition).
+    order_created_decisions = _handle_checkout_event(
+        process_manager=process_manager,
+        processed_messages=processed_messages,
+        outbox_messages=outbox_messages,
+        topic_resolver=topic_resolver,
+        source_message=order_created_message,
     )
-    steps.append(
-        _passed_step(
-            "ReserveInventoryCommand",
-            "checkout process manager issued deterministic inventory reservation command",
-            {
-                "commandId": str(reserve_decision.metadata.command_id),
-                "commandName": reserve_decision.name.value,
-            },
-        )
-    )
+    if order_created_decisions:
+        raise RuntimeError("order created event emitted unexpected checkout commands")
 
     inventory_repository = _InMemoryInventoryRepository(
         {
@@ -558,44 +549,8 @@ def _run_happy_path_checkout() -> SmokeScenarioResult:
         processed_commands=inventory_processed_commands,
         outbox_messages=outbox_messages,
     )
-    inventory_result = inventory_handler.reserve_inventory(
-        ReserveInventoryCommand(
-            command_id=reserve_decision.metadata.command_id,
-            order_id=order_id,
-            product_id=product_id,
-            store_id=store_id,
-            quantity=1,
-            requested_at=reserve_decision.metadata.issued_at,
-            causation_id=reserve_decision.metadata.causation_id,
-            event_message_id=MessageId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c30"),
-        )
-    )
-    if inventory_result.outbox_message is None or inventory_result.inventory is None:
-        raise RuntimeError("inventory reserve result did not include outbox message and inventory")
-    inventory_reserved_message = inventory_result.outbox_message
-    steps.append(
-        _passed_step(
-            "InventoryReservedEvent",
-            "inventory handler reserved stock and saved checkout-consumable event",
-            {
-                "eventName": inventory_reserved_message.name,
-                "availableStock": inventory_result.inventory.available_stock.value,
-                "reservedStock": inventory_result.inventory.reserved_stock.value,
-                "status": inventory_result.status.value,
-            },
-        )
-    )
 
-    initiate_decision = _single_decision(
-        _handle_checkout_event(
-            process_manager=process_manager,
-            processed_messages=processed_messages,
-            outbox_messages=outbox_messages,
-            topic_resolver=topic_resolver,
-            source_message=inventory_reserved_message,
-        ),
-        CheckoutCommandName.INITIATE_PAYMENT.value,
-    )
+    initiate_command_id = CommandId.for_order_action(order_id, CheckoutCommandName.INITIATE_PAYMENT)
     payment_repository = _InMemoryPaymentRepository()
     authorization_repository = _InMemoryPaymentAuthorizationRepository()
     timeout_scheduler = _InMemoryPaymentTimeoutScheduler()
@@ -625,7 +580,7 @@ def _run_happy_path_checkout() -> SmokeScenarioResult:
     )
     payment_result = payment_handler.initiate_payment(
         InitiatePaymentCommand(
-            command_id=initiate_decision.metadata.command_id,
+            command_id=initiate_command_id,
             payment_id=payment_id,
             order_id=order_id,
             customer_id=customer_id,
@@ -635,8 +590,8 @@ def _run_happy_path_checkout() -> SmokeScenarioResult:
             wallet_to=wallet_to,
             chain_network=chain,
             expires_at=now + timedelta(minutes=15),
-            requested_at=initiate_decision.metadata.issued_at,
-            causation_id=initiate_decision.metadata.causation_id,
+            requested_at=now,
+            causation_id=str(order_created_message.identity),
             event_message_id=MessageId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c31"),
             items=tuple(order_created_message.payload["items"]),
         )
@@ -646,7 +601,7 @@ def _run_happy_path_checkout() -> SmokeScenarioResult:
             "InitiatePaymentCommand",
             "payment handler created AWAITING_SIGNATURE payment and authorization",
             {
-                "commandId": str(initiate_decision.metadata.command_id),
+                "commandId": str(initiate_command_id),
                 "paymentId": str(payment_id),
                 "status": payment_result.status.value,
             },
@@ -671,7 +626,7 @@ def _run_happy_path_checkout() -> SmokeScenarioResult:
             order_id=order_id,
             tx_hash=tx_hash,
             submitted_at=now + timedelta(minutes=3),
-            causation_id=str(initiate_decision.metadata.command_id),
+            causation_id=str(initiate_command_id),
         )
     )
     steps.append(
@@ -714,13 +669,63 @@ def _run_happy_path_checkout() -> SmokeScenarioResult:
         )
     )
 
-    approval_decision = _single_decision(
+    # PAYMENT_CONFIRMED triggers the actual inventory claim (reserve-on-confirm).
+    reserve_decision = _single_decision(
         _handle_checkout_event(
             process_manager=process_manager,
             processed_messages=processed_messages,
             outbox_messages=outbox_messages,
             topic_resolver=topic_resolver,
             source_message=payment_confirmed_message,
+        ),
+        CheckoutCommandName.RESERVE_INVENTORY.value,
+    )
+    steps.append(
+        _passed_step(
+            "ReserveInventoryCommand",
+            "checkout process manager claimed inventory only after payment was confirmed",
+            {
+                "commandId": str(reserve_decision.metadata.command_id),
+                "commandName": reserve_decision.name.value,
+            },
+        )
+    )
+    inventory_result = inventory_handler.reserve_inventory(
+        ReserveInventoryCommand(
+            command_id=reserve_decision.metadata.command_id,
+            order_id=order_id,
+            product_id=product_id,
+            store_id=store_id,
+            quantity=1,
+            requested_at=reserve_decision.metadata.issued_at,
+            causation_id=reserve_decision.metadata.causation_id,
+            event_message_id=MessageId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c30"),
+            items=tuple(payment_confirmed_message.payload["items"]),
+        )
+    )
+    if inventory_result.outbox_message is None or inventory_result.inventory is None:
+        raise RuntimeError("inventory reserve result did not include outbox message and inventory")
+    inventory_reserved_message = inventory_result.outbox_message
+    steps.append(
+        _passed_step(
+            "InventoryReservedEvent",
+            "inventory handler reserved stock and saved checkout-consumable event",
+            {
+                "eventName": inventory_reserved_message.name,
+                "availableStock": inventory_result.inventory.available_stock.value,
+                "reservedStock": inventory_result.inventory.reserved_stock.value,
+                "status": inventory_result.status.value,
+            },
+        )
+    )
+
+    approval_decision = _single_decision(
+        _handle_checkout_event(
+            process_manager=process_manager,
+            processed_messages=processed_messages,
+            outbox_messages=outbox_messages,
+            topic_resolver=topic_resolver,
+            source_message=inventory_reserved_message,
         ),
         CheckoutCommandName.REQUEST_STORE_APPROVAL.value,
     )
@@ -770,7 +775,7 @@ def _run_happy_path_checkout() -> SmokeScenarioResult:
             requested_at=approval_decision.metadata.issued_at,
             causation_id=approval_decision.metadata.causation_id,
             event_message_id=MessageId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c33"),
-            items=tuple(payment_confirmed_message.payload["items"]),
+            items=tuple(inventory_reserved_message.payload["items"]),
         )
     )
     if approval_result.outbox_message is None or approval_result.order_detail is None:
@@ -860,8 +865,8 @@ def _run_happy_path_checkout() -> SmokeScenarioResult:
         if decision is not None
     ]
     process_manager_command_ids = {
+        CheckoutCommandName.INITIATE_PAYMENT.value: str(initiate_command_id),
         reserve_decision.name.value: str(reserve_decision.metadata.command_id),
-        initiate_decision.name.value: str(initiate_decision.metadata.command_id),
         approval_decision.name.value: str(approval_decision.metadata.command_id),
         confirm_decision.name.value: str(confirm_decision.metadata.command_id),
     }
@@ -1291,7 +1296,6 @@ def _run_postman_docker_api_readiness() -> SmokeScenarioResult:
 
 
 def _run_payment_receipt_failure_compensation() -> dict[str, Any]:
-    from token_payments.contexts.inventory.application import ReleaseInventoryCommand
     from token_payments.contexts.payment.application import ConfirmPaymentReceiptCommand, SubmitTransactionHashCommand
     from token_payments.shared.domain import CheckoutCommandName, CommandId, TransactionHash
 
@@ -1310,7 +1314,7 @@ def _run_payment_receipt_failure_compensation() -> dict[str, Any]:
             order_id=fixture.order_id,
             tx_hash=failed_tx_hash,
             submitted_at=fixture.now + timedelta(minutes=3),
-            causation_id=str(fixture.initiate_decision.metadata.command_id),
+            causation_id=str(fixture.initiate_command_id),
         )
     )
     failed_result = fixture.payment_handler.confirm_payment_receipt(
@@ -1327,22 +1331,10 @@ def _run_payment_receipt_failure_compensation() -> dict[str, Any]:
     if failed_result.outbox_message is None or failed_result.payment is None:
         raise RuntimeError("payment failure result did not include outbox message and payment")
 
+    # Reserve-on-confirm: a payment that fails before confirmation never held stock,
+    # so the only compensation is cancelling the order.
     decisions, duplicate_event_replay = _consume_compensation_event(fixture, failed_result.outbox_message)
-    release_decision = _single_decision(decisions, CheckoutCommandName.RELEASE_INVENTORY.value)
     cancel_decision = _single_decision(decisions, CheckoutCommandName.CANCEL_ORDER.value)
-    release_command = ReleaseInventoryCommand(
-        command_id=release_decision.metadata.command_id,
-        order_id=fixture.order_id,
-        product_id=fixture.product_id,
-        store_id=fixture.store_id,
-        requested_at=release_decision.metadata.issued_at,
-        causation_id=release_decision.metadata.causation_id,
-        event_message_id=_message_id("7c", "41"),
-    )
-    release_result = fixture.inventory_handler.release_inventory(release_command)
-    duplicate_release = fixture.inventory_handler.release_inventory(release_command)
-    if release_result.inventory is None:
-        raise RuntimeError("inventory release result did not include inventory")
     cancel_result, duplicate_cancel = _run_cancel_order_command(
         fixture,
         cancel_decision,
@@ -1357,10 +1349,9 @@ def _run_payment_receipt_failure_compensation() -> dict[str, Any]:
         decisions=decisions,
         duplicate_event_replay=duplicate_event_replay,
         duplicate_command_results={
-            CheckoutCommandName.RELEASE_INVENTORY.value: duplicate_release.status.value,
             CheckoutCommandName.CANCEL_ORDER.value: duplicate_cancel.status.value,
         },
-        final_inventory=release_result.inventory,
+        final_inventory=_require_inventory(fixture),
     ) | {
         "finalPaymentStatus": failed_result.payment.status.value,
         "finalOrderStatus": cancel_result.order.status.value,
@@ -1377,7 +1368,6 @@ def _run_payment_receipt_failure_compensation() -> dict[str, Any]:
 
 
 def _run_payment_signature_expiration_compensation() -> dict[str, Any]:
-    from token_payments.contexts.inventory.application import ReleaseInventoryCommand
     from token_payments.contexts.payment.application import ExpireAwaitingSignatureCommand
     from token_payments.shared.domain import CheckoutCommandName, CommandId
 
@@ -1389,29 +1379,16 @@ def _run_payment_signature_expiration_compensation() -> dict[str, Any]:
             order_id=fixture.order_id,
             expired_at=fixture.now + timedelta(minutes=16),
             reason="signature expired before txHash submission",
-            causation_id=str(fixture.initiate_decision.metadata.command_id),
+            causation_id=str(fixture.initiate_command_id),
             event_message_id=_message_id("8c", "40"),
         )
     )
     if expired_result.outbox_message is None or expired_result.payment is None:
         raise RuntimeError("payment expiration result did not include outbox message and payment")
 
+    # Reserve-on-confirm: an expired signature held no stock, so only the order is cancelled.
     decisions, duplicate_event_replay = _consume_compensation_event(fixture, expired_result.outbox_message)
-    release_decision = _single_decision(decisions, CheckoutCommandName.RELEASE_INVENTORY.value)
     cancel_decision = _single_decision(decisions, CheckoutCommandName.CANCEL_ORDER.value)
-    release_command = ReleaseInventoryCommand(
-        command_id=release_decision.metadata.command_id,
-        order_id=fixture.order_id,
-        product_id=fixture.product_id,
-        store_id=fixture.store_id,
-        requested_at=release_decision.metadata.issued_at,
-        causation_id=release_decision.metadata.causation_id,
-        event_message_id=_message_id("8c", "41"),
-    )
-    release_result = fixture.inventory_handler.release_inventory(release_command)
-    duplicate_release = fixture.inventory_handler.release_inventory(release_command)
-    if release_result.inventory is None:
-        raise RuntimeError("inventory release result did not include inventory")
     cancel_result, duplicate_cancel = _run_cancel_order_command(
         fixture,
         cancel_decision,
@@ -1426,10 +1403,9 @@ def _run_payment_signature_expiration_compensation() -> dict[str, Any]:
         decisions=decisions,
         duplicate_event_replay=duplicate_event_replay,
         duplicate_command_results={
-            CheckoutCommandName.RELEASE_INVENTORY.value: duplicate_release.status.value,
             CheckoutCommandName.CANCEL_ORDER.value: duplicate_cancel.status.value,
         },
-        final_inventory=release_result.inventory,
+        final_inventory=_require_inventory(fixture),
     ) | {
         "finalPaymentStatus": expired_result.payment.status.value,
         "finalOrderStatus": cancel_result.order.status.value,
@@ -1446,7 +1422,7 @@ def _run_payment_signature_expiration_compensation() -> dict[str, Any]:
 
 
 def _run_store_rejection_compensation() -> dict[str, Any]:
-    from token_payments.contexts.inventory.application import ReleaseInventoryCommand
+    from token_payments.contexts.inventory.application import ReleaseInventoryCommand, ReserveInventoryCommand
     from token_payments.contexts.payment.application import (
         ConfirmPaymentReceiptCommand,
         RefundPaymentCommand,
@@ -1463,7 +1439,7 @@ def _run_store_rejection_compensation() -> dict[str, Any]:
             order_id=fixture.order_id,
             tx_hash=fixture.confirmed_tx_hash,
             submitted_at=fixture.now + timedelta(minutes=3),
-            causation_id=str(fixture.initiate_decision.metadata.command_id),
+            causation_id=str(fixture.initiate_command_id),
         )
     )
     confirmed_result = fixture.payment_handler.confirm_payment_receipt(
@@ -1482,13 +1458,40 @@ def _run_store_rejection_compensation() -> dict[str, Any]:
         _order_status_event_from_source_message(confirmed_result.outbox_message)
     )
 
-    approval_decision = _single_decision(
+    # PAYMENT_CONFIRMED claims inventory (reserve-on-confirm) before store approval is sought.
+    reserve_decision = _single_decision(
         _handle_checkout_event(
             process_manager=fixture.process_manager,
             processed_messages=fixture.processed_messages,
             outbox_messages=fixture.outbox_messages,
             topic_resolver=fixture.topic_resolver,
             source_message=confirmed_result.outbox_message,
+        ),
+        CheckoutCommandName.RESERVE_INVENTORY.value,
+    )
+    reserve_result = fixture.inventory_handler.reserve_inventory(
+        ReserveInventoryCommand(
+            command_id=reserve_decision.metadata.command_id,
+            order_id=fixture.order_id,
+            product_id=fixture.product_id,
+            store_id=fixture.store_id,
+            quantity=1,
+            requested_at=reserve_decision.metadata.issued_at,
+            causation_id=reserve_decision.metadata.causation_id,
+            event_message_id=_message_id("9c", "39"),
+            items=tuple(confirmed_result.outbox_message.payload["items"]),
+        )
+    )
+    if reserve_result.outbox_message is None:
+        raise RuntimeError("inventory reserve result did not include outbox message")
+
+    approval_decision = _single_decision(
+        _handle_checkout_event(
+            process_manager=fixture.process_manager,
+            processed_messages=fixture.processed_messages,
+            outbox_messages=fixture.outbox_messages,
+            topic_resolver=fixture.topic_resolver,
+            source_message=reserve_result.outbox_message,
         ),
         CheckoutCommandName.REQUEST_STORE_APPROVAL.value,
     )
@@ -1600,13 +1603,14 @@ class _CompensationCheckoutFixture:
     approval_service: Any
     order_command_handler: Any
     order_status_projector: Any
-    initiate_decision: Any
+    initiate_command_id: Any
+    inventory_repository: Any
 
 
 def _build_compensation_fixture(marker: str) -> _CompensationCheckoutFixture:
     from token_payments.contexts.auth.domain.wallet import UserWallet, WalletId, WalletType, WalletVerificationStatus
     from token_payments.contexts.checkout.application import CheckoutProcessManager
-    from token_payments.contexts.inventory.application import InventoryCommandHandler, ReserveInventoryCommand
+    from token_payments.contexts.inventory.application import InventoryCommandHandler
     from token_payments.contexts.inventory.domain import ProductInventory
     from token_payments.contexts.order.application import (
         CreateOrderCommand,
@@ -1634,6 +1638,7 @@ def _build_compensation_fixture(marker: str) -> _CompensationCheckoutFixture:
     from token_payments.shared.domain import (
         ChainNetwork,
         CheckoutCommandName,
+        CommandId,
         Crypto,
         CustomerId,
         OrderId,
@@ -1721,16 +1726,16 @@ def _build_compensation_fixture(marker: str) -> _CompensationCheckoutFixture:
 
     process_manager = CheckoutProcessManager()
     topic_resolver = MessageTopicResolver.default()
-    reserve_decision = _single_decision(
-        _handle_checkout_event(
-            process_manager=process_manager,
-            processed_messages=processed_messages,
-            outbox_messages=outbox_messages,
-            topic_resolver=topic_resolver,
-            source_message=order_result.outbox_message,
-        ),
-        CheckoutCommandName.RESERVE_INVENTORY.value,
-    )
+    # Reserve-on-confirm: order creation locks no stock, so ORDER_CREATED yields no
+    # saga commands. Payment is initiated synchronously (mirroring the live composition).
+    if _handle_checkout_event(
+        process_manager=process_manager,
+        processed_messages=processed_messages,
+        outbox_messages=outbox_messages,
+        topic_resolver=topic_resolver,
+        source_message=order_result.outbox_message,
+    ):
+        raise RuntimeError("order created event emitted unexpected checkout commands")
     inventory_repository = _InMemoryInventoryRepository(
         {
             (str(product_id), str(store_id)): ProductInventory(
@@ -1747,31 +1752,8 @@ def _build_compensation_fixture(marker: str) -> _CompensationCheckoutFixture:
         processed_commands=inventory_processed_commands,
         outbox_messages=outbox_messages,
     )
-    inventory_result = inventory_handler.reserve_inventory(
-        ReserveInventoryCommand(
-            command_id=reserve_decision.metadata.command_id,
-            order_id=order_id,
-            product_id=product_id,
-            store_id=store_id,
-            quantity=1,
-            requested_at=reserve_decision.metadata.issued_at,
-            causation_id=reserve_decision.metadata.causation_id,
-            event_message_id=_message_id(marker, "30"),
-        )
-    )
-    if inventory_result.outbox_message is None:
-        raise RuntimeError("inventory reserve result did not include outbox message")
 
-    initiate_decision = _single_decision(
-        _handle_checkout_event(
-            process_manager=process_manager,
-            processed_messages=processed_messages,
-            outbox_messages=outbox_messages,
-            topic_resolver=topic_resolver,
-            source_message=inventory_result.outbox_message,
-        ),
-        CheckoutCommandName.INITIATE_PAYMENT.value,
-    )
+    initiate_command_id = CommandId.for_order_action(order_id, CheckoutCommandName.INITIATE_PAYMENT)
     blockchain_adapter = _InMemoryBlockchainAdapter(
         receipt=TransactionReceipt(hash=confirmed_tx_hash, block_number=123456, gas_used=21000),
         gas_estimate=GasEstimate(
@@ -1797,7 +1779,7 @@ def _build_compensation_fixture(marker: str) -> _CompensationCheckoutFixture:
     )
     payment_handler.initiate_payment(
         InitiatePaymentCommand(
-            command_id=initiate_decision.metadata.command_id,
+            command_id=initiate_command_id,
             payment_id=payment_id,
             order_id=order_id,
             customer_id=customer_id,
@@ -1807,9 +1789,10 @@ def _build_compensation_fixture(marker: str) -> _CompensationCheckoutFixture:
             wallet_to=wallet_to,
             chain_network=chain,
             expires_at=now + timedelta(minutes=15),
-            requested_at=initiate_decision.metadata.issued_at,
-            causation_id=initiate_decision.metadata.causation_id,
+            requested_at=now,
+            causation_id=str(order_result.outbox_message.identity),
             event_message_id=_message_id(marker, "31"),
+            items=tuple(order_result.outbox_message.payload["items"]),
         )
     )
 
@@ -1861,7 +1844,8 @@ def _build_compensation_fixture(marker: str) -> _CompensationCheckoutFixture:
         approval_service=approval_service,
         order_command_handler=order_command_handler,
         order_status_projector=order_status_projector,
-        initiate_decision=initiate_decision,
+        initiate_command_id=initiate_command_id,
+        inventory_repository=inventory_repository,
     )
 
 
@@ -1945,6 +1929,13 @@ def _run_cancel_order_command(
     cancel_result = fixture.order_command_handler.cancel_order(cancel_command)
     duplicate_cancel = fixture.order_command_handler.cancel_order(cancel_command)
     return cancel_result, duplicate_cancel
+
+
+def _require_inventory(fixture: _CompensationCheckoutFixture) -> Any:
+    inventory = fixture.inventory_repository.get(fixture.product_id, fixture.store_id)
+    if inventory is None:
+        raise RuntimeError("inventory snapshot was not available")
+    return inventory
 
 
 def _compensation_duplicate_summary(sub_scenarios: Mapping[str, Mapping[str, Any]]) -> dict[str, JsonValue]:

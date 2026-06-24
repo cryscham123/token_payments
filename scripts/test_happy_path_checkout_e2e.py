@@ -19,14 +19,16 @@ def test_happy_path_checkout_smoke_runs_real_application_flow() -> None:
     assert result["scenario"] == "happy-path-checkout"
     assert result["status"] == "passed"
     assert result["summary"] == "happy-path checkout reached approved order status with in-memory ports"
+    # Reserve-on-confirm: payment is initiated right after the order is created, and the
+    # inventory claim happens only once the payment is confirmed.
     assert [step["name"] for step in result["steps"]] == [
         "OrderCreatedEvent",
-        "ReserveInventoryCommand",
-        "InventoryReservedEvent",
         "InitiatePaymentCommand",
         "payment signature request/gas estimate",
         "txHash submit result",
         "PaymentConfirmedEvent",
+        "ReserveInventoryCommand",
+        "InventoryReservedEvent",
         "RequestStoreApprovalCommand",
         "OrderApprovedEvent",
         "ConfirmInventoryCommand",
@@ -46,15 +48,15 @@ def test_happy_path_checkout_smoke_runs_real_application_flow() -> None:
     }
     assert details["savedOutboxEventNames"] == [
         "OrderCreatedEvent",
-        "InventoryReservedEvent",
         "PaymentProcessingStartedEvent",
         "PaymentConfirmedEvent",
+        "InventoryReservedEvent",
         "OrderApprovedEvent",
         "InventoryConfirmedEvent",
     ]
     assert details["processManagerCommandIds"] == {
-        "ReserveInventoryCommand": "018f33aa-9e6d-73d8-9dc3-47d6cdcc6c21:ReserveInventoryCommand",
         "InitiatePaymentCommand": "018f33aa-9e6d-73d8-9dc3-47d6cdcc6c21:InitiatePaymentCommand",
+        "ReserveInventoryCommand": "018f33aa-9e6d-73d8-9dc3-47d6cdcc6c21:ReserveInventoryCommand",
         "RequestStoreApprovalCommand": (
             "018f33aa-9e6d-73d8-9dc3-47d6cdcc6c21:RequestStoreApprovalCommand"
         ),

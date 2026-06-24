@@ -36,15 +36,16 @@ def test_compensation_checkout_smoke_runs_failure_expiration_and_rejection_flows
     }
     assert details["cancelOrderHandlerWired"] is True
 
+    # Reserve-on-confirm: payments that fail/expire before confirmation never held stock,
+    # so the only compensation is cancelling the order (no inventory release).
     failure = sub_scenarios["paymentReceiptFailure"]
     assert failure["triggerEvent"] == "PaymentFailedEvent"
     assert failure["compensationCommandIds"] == {
-        "ReleaseInventoryCommand": "018f33aa-9e6d-73d8-9dc3-47d6cdcc7c21:ReleaseInventoryCommand",
         "CancelOrderCommand": "018f33aa-9e6d-73d8-9dc3-47d6cdcc7c21:CancelOrderCommand",
     }
     assert failure["duplicateEventReplay"]["ignoredByProcessedMessageRepository"] is True
     assert failure["duplicateEventReplay"]["sameDirectDecisionIdsOnReplay"] is True
-    assert failure["duplicateCommandResults"]["ReleaseInventoryCommand"] == "DUPLICATE_IGNORED"
+    assert "ReleaseInventoryCommand" not in failure["compensationCommandIds"]
     assert failure["duplicateCommandResults"]["CancelOrderCommand"] == "DUPLICATE_IGNORED"
     assert failure["finalInventory"] == {"availableStock": 10, "reservedStock": 0}
     assert failure["finalOrderStatus"] == "CANCELLED"
@@ -52,10 +53,9 @@ def test_compensation_checkout_smoke_runs_failure_expiration_and_rejection_flows
     expiration = sub_scenarios["paymentSignatureExpiration"]
     assert expiration["triggerEvent"] == "PaymentExpiredEvent"
     assert expiration["compensationCommandIds"] == {
-        "ReleaseInventoryCommand": "018f33aa-9e6d-73d8-9dc3-47d6cdcc8c21:ReleaseInventoryCommand",
         "CancelOrderCommand": "018f33aa-9e6d-73d8-9dc3-47d6cdcc8c21:CancelOrderCommand",
     }
-    assert expiration["duplicateCommandResults"]["ReleaseInventoryCommand"] == "DUPLICATE_IGNORED"
+    assert "ReleaseInventoryCommand" not in expiration["compensationCommandIds"]
     assert expiration["duplicateCommandResults"]["CancelOrderCommand"] == "DUPLICATE_IGNORED"
     assert expiration["finalPaymentStatus"] == "EXPIRED"
     assert expiration["finalInventory"] == {"availableStock": 10, "reservedStock": 0}
@@ -80,7 +80,7 @@ def test_compensation_checkout_smoke_runs_failure_expiration_and_rejection_flows
         "duplicateEventReplaysIgnored": 3,
         "deterministicProcessManagerReplays": 3,
         "duplicateCommandResults": {
-            "ReleaseInventoryCommand": ["DUPLICATE_IGNORED", "DUPLICATE_IGNORED", "DUPLICATE_IGNORED"],
+            "ReleaseInventoryCommand": ["DUPLICATE_IGNORED"],
             "RefundPaymentCommand": ["DUPLICATE_IGNORED"],
             "CancelOrderCommand": ["DUPLICATE_IGNORED", "DUPLICATE_IGNORED", "DUPLICATE_IGNORED"],
         },

@@ -58,8 +58,6 @@ from token_payments.contexts.inventory.adapter import (
 from token_payments.contexts.inventory.application import StoreOwnerInventoryCommandHandler
 from token_payments.contexts.inventory.application import (
     InventoryCommandHandler,
-    InventoryCommandRejected,
-    ReserveInventoryCommand,
 )
 from token_payments.contexts.order.adapter import (
     PostgresCheckoutTrackingQuery,
@@ -1891,42 +1889,34 @@ class _TransactionalOrderUseCase:
             wallets=PostgresUserWalletRepository(connection),
             payment_assets=_payment_asset_registry_for_connection(connection, self._config),
         ).createOrder(command)
-        self._reserve_inventory(connection, command, result)
+        self._ensure_inventory_available(connection, result)
         self._start_payment_request(connection, command, result)
         return result
 
-    def _reserve_inventory(self, connection: Any, command: CreateOrderCommand, result: Any) -> None:
-        inventory_handler = InventoryCommandHandler(
-            inventory_repository=PostgresInventoryRepository(connection),
-            processed_commands=PostgresProcessedCommandRepository(connection),
-            outbox_messages=PostgresOutboxMessageRepository(connection),
-        )
-        items_payload = _checkout_items_payload(result.outbox_message.payload)
-        multi_item = len(result.order.items) > 1
+    def _ensure_inventory_available(self, connection: Any, result: Any) -> None:
+        """Read-only availability guard at order creation.
+
+        Inventory is *not* locked here. The real claim happens atomically when the
+        payment is confirmed (reserve-on-confirm), so an unpaid order holds no stock.
+        This only fails fast for clearly out-of-stock or paused items so a customer
+        never pays for something we cannot fulfil. A rare race (two buyers pass this
+        check, one loses the claim after paying) is compensated by refund+cancel via
+        the InventoryReservationFailedEvent saga branch.
+        """
+        inventory_repository = PostgresInventoryRepository(connection)
         for item in result.order.items:
             public_variant_id = item.product_snapshot.public_variant_id
-            try:
-                inventory_handler.reserve_inventory(
-                    ReserveInventoryCommand(
-                        command_id=_inventory_command_id(
-                            result.order.order_id,
-                            CheckoutCommandName.RESERVE_INVENTORY,
-                            item.line_key or public_variant_id or item.product_snapshot.product_id,
-                            multi_item=multi_item,
-                        ),
-                        order_id=result.order.order_id,
-                        product_id=item.product_snapshot.product_id,
-                        store_id=result.order.store_id,
-                        quantity=item.quantity,
-                        public_variant_id=public_variant_id,
-                        requested_at=command.requested_at,
-                        causation_id=str(result.outbox_message.identity),
-                        event_message_id=MessageId(_new_id(self._dependencies.id_generator, "inventory_event_message_id")),
-                        items=items_payload,
-                    )
+            inventory = inventory_repository.get(
+                item.product_snapshot.product_id,
+                result.order.store_id,
+                public_variant_id,
+            )
+            if inventory is None:
+                raise ValueError(
+                    f"inventory {result.order.store_id}:{item.product_snapshot.product_id} was not found"
                 )
-            except InventoryCommandRejected as exc:
-                raise ValueError(str(exc)) from exc
+            if not inventory.available_for_new_orders or inventory.available_stock.value < item.quantity:
+                raise ValueError("insufficient available stock to reserve inventory")
 
     def _start_payment_request(self, connection: Any, command: CreateOrderCommand, result: Any) -> None:
         payload = result.outbox_message.payload
@@ -1971,18 +1961,6 @@ def _chain_network_from_checkout_payload(payload: Mapping[str, Any], default_cha
     chain_id = chain.get("chainId") or chain.get("chain_id") or default_chain_id
     name = chain.get("name") or f"chain-{chain_id}"
     return ChainNetwork(chain_id=int(chain_id), name=str(name))
-
-
-def _inventory_command_id(
-    order_id: OrderId,
-    command_name: CheckoutCommandName,
-    target_identity: Any,
-    *,
-    multi_item: bool,
-) -> CommandId:
-    if not multi_item:
-        return CommandId.for_order_action(order_id, command_name)
-    return CommandId(f"{order_id}:{command_name.value}:{target_identity}")
 
 
 def _checkout_items_payload(payload: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:

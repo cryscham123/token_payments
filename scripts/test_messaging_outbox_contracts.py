@@ -32,6 +32,7 @@ def test_checkout_message_names_cover_process_manager_sequence() -> None:
         "OrderCreatedEvent",
         "InventoryReservedEvent",
         "InventoryConfirmedEvent",
+        "InventoryReservationFailedEvent",
         "PaymentConfirmedEvent",
         "PaymentFailedEvent",
         "PaymentExpiredEvent",
