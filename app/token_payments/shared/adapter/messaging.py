@@ -39,6 +39,7 @@ DEFAULT_EVENT_TOPICS: Mapping[str, str] = MappingProxyType(
         CheckoutEventName.ORDER_CANCELLED.value: "order.events",
         CheckoutEventName.INVENTORY_RESERVED.value: "inventory.events",
         CheckoutEventName.INVENTORY_CONFIRMED.value: "inventory.events",
+        CheckoutEventName.INVENTORY_RESERVATION_FAILED.value: "inventory.events",
         CheckoutEventName.PAYMENT_CONFIRMED.value: "payment.events",
         CheckoutEventName.PAYMENT_FAILED.value: "payment.events",
         CheckoutEventName.PAYMENT_EXPIRED.value: "payment.events",

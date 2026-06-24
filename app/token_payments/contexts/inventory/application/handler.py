@@ -39,6 +39,7 @@ INVENTORY_EVENT_TOPIC = "inventory.events"
 
 class InventoryCommandStatus(StrEnum):
     RESERVED = "RESERVED"
+    RESERVATION_FAILED = "RESERVATION_FAILED"
     RELEASED = "RELEASED"
     CONFIRMED = "CONFIRMED"
     DUPLICATE_IGNORED = "DUPLICATE_IGNORED"
@@ -245,6 +246,11 @@ class InventoryCommandHandler:
         try:
             updated = inventory.reserve_inventory(command.order_id, command.quantity)
         except ValueError as exc:
+            # Reserve happens only after the customer has paid; an oversold race here is a
+            # business outcome (someone else took the last unit), not a poison message.
+            # Emit a compensation event so the saga refunds and cancels the order.
+            if "insufficient" in str(exc).lower():
+                return self._record_reservation_failure(command, inventory, str(exc))
             raise self._rejection_from_domain_error(command, exc) from exc
 
         event = updated.record_reserved(command.order_id, created_at=command.requested_at)
@@ -256,6 +262,36 @@ class InventoryCommandHandler:
             payload=_reserved_payload(event, command.items),
         )
         return self._commit_success(command, updated, outbox_message, InventoryCommandStatus.RESERVED)
+
+    def _record_reservation_failure(
+        self,
+        command: ReserveInventoryCommand,
+        inventory: ProductInventory,
+        reason: str,
+    ) -> InventoryCommandResult:
+        outbox_message = _record_event(
+            command=command,
+            event_name=CheckoutEventName.INVENTORY_RESERVATION_FAILED,
+            aggregate_id=_aggregate_id(inventory),
+            occurred_at=command.requested_at,
+            payload=_reservation_failed_payload(inventory, command.order_id, command.requested_at, command.items, reason),
+        )
+        self._outbox_messages.save(outbox_message)
+        self._processed_commands.record(
+            ProcessedCommand.record(
+                command_id=command.command_id,
+                handler=self.HANDLER_NAME,
+                processed_at=command.requested_at,
+                order_id=command.order_id,
+            )
+        )
+        return InventoryCommandResult(
+            command_id=command.command_id,
+            order_id=command.order_id,
+            status=InventoryCommandStatus.RESERVATION_FAILED,
+            inventory=inventory,
+            outbox_message=outbox_message,
+        )
 
     def release_inventory(self, command: ReleaseInventoryCommand) -> InventoryCommandResult:
         if self._is_duplicate(command.command_id):
@@ -429,7 +465,9 @@ def _reservation_state_payload(
     event: InventoryConfirmedEvent | InventoryReleasedEvent,
     items: tuple[Mapping[str, Any], ...],
 ) -> dict[str, Any]:
-    reservation = _reservation_for_order(event.inventory, event.order_id)
+    # A compensation RELEASE may target an order that never reserved here (no-op release),
+    # so the reservation can be absent. Confirms always have one.
+    reservation = _find_reservation_for_order(event.inventory, event.order_id)
     event_name = (
         CheckoutEventName.INVENTORY_CONFIRMED.value
         if isinstance(event, InventoryConfirmedEvent)
@@ -437,9 +475,27 @@ def _reservation_state_payload(
     )
     payload = _base_payload(event.inventory, event.order_id, event.created_at.isoformat()) | {
         "eventName": event_name,
-        "reservationId": str(reservation.reservation_id),
-        "reservedQuantity": reservation.reserved_qty.value,
-        "reservationStatus": reservation.status.value,
+    }
+    if reservation is not None:
+        payload |= {
+            "reservationId": str(reservation.reservation_id),
+            "reservedQuantity": reservation.reserved_qty.value,
+            "reservationStatus": reservation.status.value,
+        }
+    _add_items_payload(payload, items)
+    return payload
+
+
+def _reservation_failed_payload(
+    inventory: ProductInventory,
+    order_id: OrderId,
+    occurred_at: datetime,
+    items: tuple[Mapping[str, Any], ...],
+    reason: str,
+) -> dict[str, Any]:
+    payload = _base_payload(inventory, order_id, occurred_at.isoformat()) | {
+        "eventName": CheckoutEventName.INVENTORY_RESERVATION_FAILED.value,
+        "reason": reason,
     }
     _add_items_payload(payload, items)
     return payload
@@ -466,10 +522,17 @@ def _add_items_payload(payload: dict[str, Any], items: tuple[Mapping[str, Any], 
 
 
 def _reservation_for_order(inventory: ProductInventory, order_id: OrderId) -> InventoryReservation:
+    reservation = _find_reservation_for_order(inventory, order_id)
+    if reservation is None:
+        raise ValueError(f"inventory reservation for order {order_id} was not recorded")
+    return reservation
+
+
+def _find_reservation_for_order(inventory: ProductInventory, order_id: OrderId) -> InventoryReservation | None:
     for reservation in inventory.reservations:
         if reservation.order_id == order_id:
             return reservation
-    raise ValueError(f"inventory reservation for order {order_id} was not recorded")
+    return None
 
 
 def _aggregate_id(inventory: ProductInventory) -> str:
