@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import { apiJson, getCurrentUser } from "@/lib/auth-client";
 import { cancelPayment } from "@/lib/checkout-client";
 import { formatCryptoAmount } from "@/lib/demo-data";
-import { productImageFromMedia, PRODUCT_IMAGE_PLACEHOLDER, getCategoryFallback } from "@/lib/product-image";
+import { productImageFromMedia, PRODUCT_IMAGE_PLACEHOLDER, getCategoryFallback, resolveProductImage } from "@/lib/product-image";
 
 export default function OrderHistory() {
   const [payments, setPayments] = useState([]);
@@ -115,9 +115,9 @@ export default function OrderHistory() {
             quantity: item.quantity || 1,
             selectedOptions: item.selectedOptions || {},
             thumb: (item.thumb && item.thumb !== PRODUCT_IMAGE_PLACEHOLDER)
-              ? item.thumb
+              ? resolveProductImage(item.thumb)
               : (item.image && item.image !== PRODUCT_IMAGE_PLACEHOLDER)
-                ? item.image
+                ? resolveProductImage(item.image)
                 : productImageFromMedia(item.media),
             category: item.category || ""
           };
