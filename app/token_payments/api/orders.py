@@ -91,6 +91,7 @@ class OrdersApi:
                     quantity=_required_int(raw_item, "quantity"),
                     public_variant_id=_optional_text(raw_item, "publicVariantId") or _optional_text(raw_item, "public_variant_id"),
                     selected_options=_optional_mapping(raw_item, "selectedOptions") or _optional_mapping(raw_item, "selected_options") or {},
+                    media=tuple(_raw_media(raw_item.get("media"))),
                 )
             )
         return store_id, tuple(items)
@@ -264,6 +265,12 @@ def _public_order_error_message(message: str) -> str:
     if "json-rpc" in lower and "insufficient funds" in lower:
         return "payment gas balance is insufficient"
     return message
+
+
+def _raw_media(value: object) -> list[str]:
+    if not isinstance(value, list | tuple):
+        return []
+    return [str(x).strip() for x in value if str(x).strip()]
 
 
 __all__ = ["OrdersApi"]

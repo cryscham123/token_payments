@@ -155,6 +155,7 @@ def test_order_use_case_creates_order_snapshot_and_order_created_outbox_event() 
                 "tokenAddress": str(TOKEN_ADDRESS),
                 "decimals": 6,
             },
+            "media": [],
         }
     ]
     assert outbox.payload["correlationId"] == str(ORDER_ID)

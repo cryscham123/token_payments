@@ -96,6 +96,7 @@ class ProductSnapshot:
     price: Crypto
     public_variant_id: str | None = None
     selected_options: Mapping[str, object] = field(default_factory=dict)
+    media: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.product_id, ProductId):
@@ -115,6 +116,8 @@ class ProductSnapshot:
             "selected_options",
             MappingProxyType(_canonical_selected_options(self.selected_options)),
         )
+        if self.media:
+            object.__setattr__(self, "media", tuple(str(x) for x in self.media if str(x).strip()))
 
 
 @dataclass(frozen=True)
@@ -228,6 +231,7 @@ class Product:
         *,
         public_variant_id: str | None = None,
         selected_options: Mapping[str, object] | None = None,
+        media: tuple[str, ...] = (),
     ) -> ProductSnapshot:
         return ProductSnapshot(
             product_id=self.product_id,
@@ -240,6 +244,7 @@ class Product:
             ),
             public_variant_id=public_variant_id,
             selected_options=selected_options or {},
+            media=media,
         )
 
     def price_for_asset(self, payment_asset_id: str | None) -> Crypto:
@@ -420,6 +425,7 @@ class OrderItem:
         payment_asset_id: str | None = None,
         public_variant_id: str | None = None,
         selected_options: Mapping[str, object] | None = None,
+        media: tuple[str, ...] = (),
     ) -> Self:
         if not isinstance(order_id, OrderId):
             raise ValueError("OrderItem.from_product requires an OrderId")
@@ -432,6 +438,7 @@ class OrderItem:
             snapshotted_at,
             public_variant_id=public_variant_id,
             selected_options=selected_options,
+            media=media,
         )
         line_key = _order_line_key(product.product_id, public_variant_id, selected_options)
         return cls(
@@ -515,6 +522,7 @@ class Order:
                 quantity = getattr(item_request, "quantity")
                 public_variant_id = getattr(item_request, "public_variant_id", None)
                 selected_options = getattr(item_request, "selected_options", {})
+                media = getattr(item_request, "media", ())
                 product = store.require_product(product_id)
                 price = product.price_for_selection(
                     payment_asset_id,
@@ -532,6 +540,7 @@ class Order:
                         payment_asset_id=payment_asset_id,
                         public_variant_id=public_variant_id,
                         selected_options=selected_options,
+                        media=media,
                     )
                 )
         else:

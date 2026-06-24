@@ -635,6 +635,7 @@ CREATE TABLE IF NOT EXISTS order_items (
     subtotal_chain_id INTEGER NOT NULL CHECK (subtotal_chain_id > 0),
     subtotal_token_address TEXT,
     subtotal_decimals INTEGER NOT NULL CHECK (subtotal_decimals >= 0),
+    media JSONB NOT NULL DEFAULT '[]'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

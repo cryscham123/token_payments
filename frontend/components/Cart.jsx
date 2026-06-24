@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { ArrowRight, Loader2, Minus, Plus, ShoppingCart, TriangleAlert, X } from "lucide-react";
+import { ArrowRight, Info, Loader2, Minus, Plus, ShoppingCart, TriangleAlert, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import SiteHeader from "./SiteHeader";
@@ -420,6 +420,16 @@ export default function Cart() {
           </div>
         ) : (
           <div>
+            <div className="mb-6 flex gap-3 rounded-2xl border border-blue-100 bg-blue-50/40 p-4 text-sm leading-relaxed text-blue-900 shadow-sm">
+              <Info size={18} className="mt-0.5 shrink-0 text-blue-500" />
+              <div>
+                <span className="font-bold">TIP: 테스트 결제가 필요하신가요?</span> 잔액이 부족하다면{" "}
+                <Link href="/profile" className="font-bold underline text-blue-700 hover:text-blue-900 transition-colors">
+                  내 정보
+                </Link>
+                의 Faucet Station에서 테스트용 토큰을 무료로 발급받으실 수 있습니다.
+              </div>
+            </div>
             <div>
               {storeGroups.map((group) => {
                 const storeBusy = storeStatus[group.storeId] === "creating";

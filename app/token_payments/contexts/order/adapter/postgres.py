@@ -164,7 +164,8 @@ SELECT
     subtotal_symbol,
     subtotal_chain_id,
     subtotal_token_address,
-    subtotal_decimals
+    subtotal_decimals,
+    media
 FROM order_items
 WHERE order_id = %(order_id)s
 ORDER BY order_item_id
@@ -336,7 +337,8 @@ INSERT INTO order_items (
     subtotal_symbol,
     subtotal_chain_id,
     subtotal_token_address,
-    subtotal_decimals
+    subtotal_decimals,
+    media
 ) VALUES (
     %(order_item_id)s,
     %(order_id)s,
@@ -356,7 +358,8 @@ INSERT INTO order_items (
     %(subtotal_symbol)s,
     %(subtotal_chain_id)s,
     %(subtotal_token_address)s,
-    %(subtotal_decimals)s
+    %(subtotal_decimals)s,
+    %(media)s::jsonb
 )
 ON CONFLICT (order_item_id) DO UPDATE SET
     order_id = EXCLUDED.order_id,
@@ -377,6 +380,7 @@ ON CONFLICT (order_item_id) DO UPDATE SET
     subtotal_chain_id = EXCLUDED.subtotal_chain_id,
     subtotal_token_address = EXCLUDED.subtotal_token_address,
     subtotal_decimals = EXCLUDED.subtotal_decimals,
+    media = EXCLUDED.media,
     updated_at = now()
 """
 
@@ -533,6 +537,7 @@ class PostgresOrderRepository:
                     **_crypto_params("unit_price", item.product_snapshot.price),
                     "quantity": item.quantity,
                     **_crypto_params("subtotal", item.sub_total),
+                    "media": json.dumps(list(item.product_snapshot.media)),
                 },
             )
 
@@ -643,6 +648,7 @@ def _row_to_order_item(row: Mapping[str, Any] | object) -> OrderItem:
             price=_crypto_from_row(row, "unit_price"),
             public_variant_id=_optional_row_value(row, "public_variant_id"),
             selected_options=_json_mapping(_row_value_or_default(row, "selected_options", None)),
+            media=_json_media(_row_value_or_default(row, "media", None)),
         ),
         quantity=int(_row_value(row, "quantity")),
         sub_total=_crypto_from_row(row, "subtotal"),
@@ -764,6 +770,16 @@ def _json_mapping(value: Any) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise ValueError("JSON mapping column must be an object")
     return dict(value)
+
+
+def _json_media(value: Any) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        value = json.loads(value)
+    if not isinstance(value, list | tuple):
+        raise ValueError("order item media must be a JSON array")
+    return tuple(str(item) for item in value)
 
 
 def _total_amount(items: tuple[OrderItem, ...]) -> Crypto:

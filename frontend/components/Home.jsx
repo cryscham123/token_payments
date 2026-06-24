@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import SiteHeader from "./SiteHeader";
 import { apiJson } from "@/lib/auth-client";
@@ -11,20 +11,28 @@ import { productImageFromMedia, PRODUCT_IMAGE_PLACEHOLDER, getCategoryFallback }
 export default function Home() {
   const [productsList, setProductsList] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [searching, setSearching] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
+  const [searchVal, setSearchVal] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
 
   const LIMIT = 10;
 
-  const loadProducts = (currentOffset, isInitial = false) => {
+  const loadProducts = (currentOffset, isInitial = false, query = "") => {
     if (isInitial) {
-      setLoading(true);
+      if (productsList.length === 0) {
+        setLoading(true);
+      } else {
+        setSearching(true);
+      }
     } else {
       setLoadingMore(true);
     }
 
-    apiJson(`/products?limit=${LIMIT}&offset=${currentOffset}`)
+    const queryParam = query ? `&q=${encodeURIComponent(query)}` : "";
+    apiJson(`/products?limit=${LIMIT}&offset=${currentOffset}${queryParam}`)
       .then((res) => {
         const rawProducts = res?.products || [];
         const items = rawProducts.map((p) => ({
@@ -57,6 +65,7 @@ export default function Home() {
         if (isInitial) {
           setProductsList(items);
           setLoading(false);
+          setSearching(false);
         } else {
           setProductsList((prev) => [...prev, ...items]);
           setLoadingMore(false);
@@ -64,18 +73,32 @@ export default function Home() {
 
         if (rawProducts.length < LIMIT) {
           setHasMore(false);
+        } else {
+          setHasMore(true);
         }
       })
       .catch((err) => {
         console.error(err);
-        if (isInitial) setLoading(false);
+        if (isInitial) {
+          setLoading(false);
+          setSearching(false);
+        }
         setLoadingMore(false);
       });
   };
 
   useEffect(() => {
-    loadProducts(0, true);
-  }, []);
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchVal);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [searchVal]);
+
+  useEffect(() => {
+    setOffset(0);
+    setHasMore(true);
+    loadProducts(0, true, debouncedSearch);
+  }, [debouncedSearch]);
 
   useEffect(() => {
     if (loading || !hasMore) return;
@@ -85,7 +108,7 @@ export default function Home() {
         if (entries[0].isIntersecting && !loadingMore) {
           const nextOffset = offset + LIMIT;
           setOffset(nextOffset);
-          loadProducts(nextOffset, false);
+          loadProducts(nextOffset, false, debouncedSearch);
         }
       },
       { threshold: 0.1 }
@@ -99,7 +122,7 @@ export default function Home() {
     return () => {
       if (sentinel) observer.unobserve(sentinel);
     };
-  }, [loading, loadingMore, hasMore, offset]);
+  }, [loading, loadingMore, hasMore, offset, debouncedSearch]);
 
   if (loading) {
     return (
@@ -116,7 +139,29 @@ export default function Home() {
     <div className="min-h-screen bg-slate-100 text-slate-800">
       <SiteHeader />
 
-      <section id="new-products" className="mx-auto mt-6 mb-8 max-w-7xl scroll-mt-16 px-4 sm:px-6 lg:px-8">
+      {/* 검색창 컨테이너 */}
+      <div className="mx-auto max-w-7xl px-4 pt-8 sm:px-6 lg:px-8">
+        <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white/70 backdrop-blur-md p-6 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-xl font-bold tracking-tight text-slate-900">찾으시는 상품이 있으신가요?</h2>
+            <p className="mt-1 text-xs text-slate-500">스토어 전반에 등록된 고유 상품과 디지털 자산을 즉시 찾아보세요.</p>
+          </div>
+          <div className="relative w-full md:w-80">
+            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+              <Search className="h-4 w-4 text-slate-400" />
+            </div>
+            <input
+              type="text"
+              placeholder="상품명, 설명 또는 키워드 검색..."
+              value={searchVal}
+              onChange={(e) => setSearchVal(e.target.value)}
+              className="w-full rounded-xl border border-slate-300 bg-white pl-9 pr-4 py-2.5 text-sm font-semibold text-slate-900 placeholder-slate-400 outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
+            />
+          </div>
+        </div>
+      </div>
+
+      <section id="new-products" className={`mx-auto mt-6 mb-8 max-w-7xl scroll-mt-16 px-4 sm:px-6 lg:px-8 transition-opacity duration-200 ${searching ? "opacity-50" : ""}`}>
         <h3 className="mb-6 text-xl font-bold text-slate-950">신상품</h3>
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
           {productsList.slice(0, 10).map((product) => (
