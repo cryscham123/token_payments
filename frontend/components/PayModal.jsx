@@ -181,8 +181,6 @@ export default function PayModal() {
       setMessage("거래 해시를 제출하는 중입니다.");
 
       await submitTransactionHash({ trackingId: checkout.trackingId, txHash: nextTxHash });
-      clearCart();
-      setCartItems([]);
       router.push(`/payment-complete?trackingId=${encodeURIComponent(checkout.trackingId)}&txHash=${encodeURIComponent(nextTxHash)}`);
     } catch (error) {
       setStatus("error");
