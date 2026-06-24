@@ -150,15 +150,14 @@ def test_live_api_facade_wiring_dispatches_routes_through_injected_transactional
     assert create_payload["order"]["totalAmount"]["amount"] == "25.00"
     assert _transaction_sql(session, 1, "insert into orders")
     assert _transaction_sql(session, 1, "insert into outbox_messages")
+    assert _transaction_sql(session, 1, "insert into product_variant_inventory")
+    assert _transaction_sql(session, 1, "insert into inventory_reservations")
     assert _transaction_sql(session, 1, "insert into payments")
     assert _transaction_sql(session, 1, "insert into payment_authorizations")
     assert _transaction_sql(session, 1, "insert into processed_commands")
-    # Reserve-on-confirm: order creation only checks availability (read-only); it does not
-    # write a reservation or decrement stock, so the seeded variant row is untouched.
-    assert not _transaction_sql(session, 1, "insert into inventory_reservations")
     default_variant_id = default_public_variant_id(PRODUCT_ID)
-    assert session.variant_inventory[(str(PRODUCT_ID), str(STORE_ID), default_variant_id)]["available_stock"] == 25
-    assert session.variant_inventory[(str(PRODUCT_ID), str(STORE_ID), default_variant_id)]["reserved_stock"] == 0
+    assert session.variant_inventory[(str(PRODUCT_ID), str(STORE_ID), default_variant_id)]["available_stock"] == 23
+    assert session.variant_inventory[(str(PRODUCT_ID), str(STORE_ID), default_variant_id)]["reserved_stock"] == 2
     payment_items = json.loads(session.payments[str(PAYMENT_ID)]["items"])
     assert len(payment_items) == 1
     assert payment_items[0]["productId"] == str(PRODUCT_ID)
@@ -338,10 +337,9 @@ def test_live_order_start_targets_variant_inventory_and_persists_payment_items()
     assert create_payload["order"]["totalAmount"]["amount"] == "29.00"
     # Stock is tracked only on the selected variant; the base row holds no stock.
     assert "available_stock" not in session.inventory[(str(PRODUCT_ID), str(STORE_ID))]
-    # Reserve-on-confirm: order creation reads the variant row but does not reserve it.
-    assert session.variant_inventory[(str(PRODUCT_ID), str(STORE_ID), VARIANT_ID)]["available_stock"] == 5
-    assert session.variant_inventory[(str(PRODUCT_ID), str(STORE_ID), VARIANT_ID)]["reserved_stock"] == 0
-    assert session.inventory_reservations == {}
+    assert session.variant_inventory[(str(PRODUCT_ID), str(STORE_ID), VARIANT_ID)]["available_stock"] == 3
+    assert session.variant_inventory[(str(PRODUCT_ID), str(STORE_ID), VARIANT_ID)]["reserved_stock"] == 2
+    assert next(iter(session.inventory_reservations.values()))["public_variant_id"] == VARIANT_ID
 
     payment_items = json.loads(session.payments[str(PAYMENT_ID)]["items"])
     assert len(payment_items) == 1
@@ -375,9 +373,7 @@ def _dependencies(session: "FakePostgresSession") -> LiveRuntimeDependencies:
         blockchain_client=FakeBlockchainClient(),
         clock=FakeClock(NOW),
         id_generator=SequenceIdGenerator(
-            # Reserve-on-confirm: order creation no longer reserves inventory, so no
-            # inventory event message id is generated before the payment ids.
-            (str(ORDER_ID), TRACKING_ID, ORDER_MESSAGE_ID, str(PAYMENT_ID), PAYMENT_MESSAGE_ID)
+            (str(ORDER_ID), TRACKING_ID, ORDER_MESSAGE_ID, INVENTORY_MESSAGE_ID, str(PAYMENT_ID), PAYMENT_MESSAGE_ID)
         ),
     )
 

@@ -124,15 +124,14 @@ def test_order_status_transitions_emit_payment_and_cancel_events() -> None:
 def test_checkout_process_manager_decides_success_flow_commands() -> None:
     manager = CheckoutProcessManager()
 
-    # Reserve-on-confirm: order creation locks no stock; the claim happens at PAYMENT_CONFIRMED.
     order_created = manager.handle(_event(CheckoutEventName.ORDER_CREATED))
-    payment_confirmed = manager.handle(_event(CheckoutEventName.PAYMENT_CONFIRMED))
     inventory_reserved = manager.handle(_event(CheckoutEventName.INVENTORY_RESERVED))
+    payment_confirmed = manager.handle(_event(CheckoutEventName.PAYMENT_CONFIRMED))
     order_approved = manager.handle(_event(CheckoutEventName.ORDER_APPROVED))
 
-    assert [command.name for command in order_created] == []
-    assert [command.name for command in payment_confirmed] == [CheckoutCommandName.RESERVE_INVENTORY]
-    assert [command.name for command in inventory_reserved] == [CheckoutCommandName.REQUEST_STORE_APPROVAL]
+    assert [command.name for command in order_created] == [CheckoutCommandName.RESERVE_INVENTORY]
+    assert [command.name for command in inventory_reserved] == [CheckoutCommandName.INITIATE_PAYMENT]
+    assert [command.name for command in payment_confirmed] == [CheckoutCommandName.REQUEST_STORE_APPROVAL]
     assert [command.name for command in order_approved] == [CheckoutCommandName.CONFIRM_INVENTORY]
     assert [str(command.command_id) for command in order_approved] == [f"{ORDER_ID}:ConfirmInventoryCommand"]
 
@@ -140,38 +139,21 @@ def test_checkout_process_manager_decides_success_flow_commands() -> None:
 def test_checkout_process_manager_decides_payment_failure_compensation_commands() -> None:
     manager = CheckoutProcessManager()
 
-    # Reserve-on-confirm: nothing is reserved before payment, so failed/expired payments
-    # only cancel the order — there is no inventory to release.
     for event_name in (CheckoutEventName.PAYMENT_FAILED, CheckoutEventName.PAYMENT_EXPIRED):
         commands = manager.handle(_event(event_name))
 
         assert [command.name for command in commands] == [
+            CheckoutCommandName.RELEASE_INVENTORY,
             CheckoutCommandName.CANCEL_ORDER,
         ]
         assert [str(command.command_id) for command in commands] == [
+            f"{ORDER_ID}:ReleaseInventoryCommand",
             f"{ORDER_ID}:CancelOrderCommand",
         ]
 
 
 def test_checkout_process_manager_decides_order_rejected_compensation_commands() -> None:
     commands = CheckoutProcessManager().handle(_event(CheckoutEventName.ORDER_REJECTED))
-
-    assert [command.name for command in commands] == [
-        CheckoutCommandName.REFUND_PAYMENT,
-        CheckoutCommandName.RELEASE_INVENTORY,
-        CheckoutCommandName.CANCEL_ORDER,
-    ]
-    assert [str(command.command_id) for command in commands] == [
-        f"{ORDER_ID}:RefundPaymentCommand",
-        f"{ORDER_ID}:ReleaseInventoryCommand",
-        f"{ORDER_ID}:CancelOrderCommand",
-    ]
-
-
-def test_checkout_process_manager_refunds_and_cancels_when_paid_order_cannot_be_claimed() -> None:
-    # Reserve-on-confirm: if the inventory claim fails after the customer paid (oversold
-    # race), the saga refunds the payment, releases any sibling reservations, and cancels.
-    commands = CheckoutProcessManager().handle(_event(CheckoutEventName.INVENTORY_RESERVATION_FAILED))
 
     assert [command.name for command in commands] == [
         CheckoutCommandName.REFUND_PAYMENT,

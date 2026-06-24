@@ -92,26 +92,21 @@ def test_reserve_inventory_command_saves_inventory_outbox_and_processed_command(
     ]
 
 
-def test_reserve_inventory_command_on_insufficient_stock_emits_reservation_failed_event() -> None:
-    # Reserve-on-confirm: reserve runs only after the customer paid, so an oversold race is
-    # a business outcome that emits a compensation event (refund+cancel) instead of raising.
+def test_reserve_inventory_command_rejects_insufficient_stock_without_side_effects() -> None:
     inventory_repository = FakeInventoryRepository(_inventory(available=2))
     processed_commands = FakeProcessedCommandRepository()
     outbox_messages = FakeOutboxMessageRepository()
     handler = InventoryCommandHandler(inventory_repository, processed_commands, outbox_messages)
 
-    result = handler.reserve_inventory(_reserve_command(quantity=3))
+    with pytest.raises(InventoryCommandRejected) as exc:
+        handler.reserve_inventory(_reserve_command(quantity=3))
 
-    assert result.status == InventoryCommandStatus.RESERVATION_FAILED
-    assert result.order_id == ORDER_ID
-    # No stock is locked on a failed claim.
+    assert exc.value.reason == InventoryCommandRejectionReason.INSUFFICIENT_STOCK
+    assert exc.value.command_id == COMMAND_ID
+    assert exc.value.order_id == ORDER_ID
     assert inventory_repository.saved == []
-    assert len(outbox_messages.saved) == 1
-    failed_event = outbox_messages.saved[0]
-    assert failed_event.name == "InventoryReservationFailedEvent"
-    assert failed_event.payload["orderId"] == str(ORDER_ID)
-    # Recorded as processed so the compensation event is not re-emitted on retry.
-    assert len(processed_commands.records) == 1
+    assert outbox_messages.saved == []
+    assert processed_commands.records == []
 
 
 def test_reserve_inventory_command_targets_variant_inventory_when_variant_selected() -> None:

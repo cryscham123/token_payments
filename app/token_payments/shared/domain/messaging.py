@@ -16,7 +16,6 @@ class CheckoutEventName(StrEnum):
     ORDER_CANCELLED = "OrderCancelledEvent"
     INVENTORY_RESERVED = "InventoryReservedEvent"
     INVENTORY_CONFIRMED = "InventoryConfirmedEvent"
-    INVENTORY_RESERVATION_FAILED = "InventoryReservationFailedEvent"
     PAYMENT_CONFIRMED = "PaymentConfirmedEvent"
     PAYMENT_FAILED = "PaymentFailedEvent"
     PAYMENT_EXPIRED = "PaymentExpiredEvent"

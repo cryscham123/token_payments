@@ -193,12 +193,8 @@ class ProductInventory:
         )
 
     def release_reservation(self, order_id: OrderId) -> Self:
-        # Releasing is idempotent: with reserve-on-payment-confirmation a compensation
-        # RELEASE can target an order that never held a reservation here (e.g. the item
-        # that was oversold, or a sibling variant in a multi-item order). Treat a missing
-        # or already-cancelled reservation as a no-op rather than an error.
-        reservation = self._find_reservation(order_id)
-        if reservation is None or reservation.status is ReservationStatus.CANCELLED:
+        reservation = self._require_reservation(order_id, "release")
+        if reservation.status is ReservationStatus.CANCELLED:
             return self
         released = reservation.cancel()
         return replace(
