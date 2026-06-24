@@ -432,6 +432,27 @@ export default function Profile() {
       }
 
       setSuccessMsg(`${type.toUpperCase()} 테스트넷 코인이 정상적으로 지급되었습니다! (Tx: ${txHash.slice(0, 10)}...)`);
+      if (type === "usdc" || type === "usdt") {
+        try {
+          const asset = tokenAssets[type];
+          if (asset?.tokenAddress) {
+            await ensureChain(asset.chainId || 1337);
+            await ethereum.request({
+              method: "wallet_watchAsset",
+              params: {
+                type: "ERC20",
+                options: {
+                  address: asset.tokenAddress,
+                  symbol: asset.symbol,
+                  decimals: Number(asset.decimals || 6)
+                }
+              }
+            });
+          }
+        } catch (watchErr) {
+          console.warn("Auto watch asset after claim failed:", watchErr);
+        }
+      }
     } catch (err) {
       console.warn("Faucet claim failed:", err);
       setErrorMsg(err.message || `${type.toUpperCase()} 지급에 실패했습니다. Local Test Network(Ganache)를 확인하세요.`);
@@ -822,6 +843,7 @@ export default function Profile() {
                       {/* USDC watch asset */}
                       <button
                         type="button"
+                        style={{ display: "none" }}
                         onClick={() => handleWatchAsset("usdc")}
                         disabled={watchingAsset.usdc || !usdcReady}
                         className="inline-flex items-center gap-2 rounded-xl bg-white hover:bg-blue-50 border border-blue-200/60 px-4 py-2 hover:border-blue-300/60 transition-all text-xs font-bold text-blue-700 disabled:opacity-50 shadow-sm"
@@ -838,6 +860,7 @@ export default function Profile() {
                       {/* USDT watch asset */}
                       <button
                         type="button"
+                        style={{ display: "none" }}
                         onClick={() => handleWatchAsset("usdt")}
                         disabled={watchingAsset.usdt || !usdtReady}
                         className="inline-flex items-center gap-2 rounded-xl bg-white hover:bg-teal-50 border border-teal-200/60 px-4 py-2 hover:border-teal-300/60 transition-all text-xs font-bold text-teal-700 disabled:opacity-50 shadow-sm"

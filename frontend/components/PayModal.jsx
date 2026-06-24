@@ -406,7 +406,18 @@ function formatTime(seconds) {
 }
 
 function errorMessage(error, fallback, symbol = "") {
-  const errMsg = String(error?.message || error || "").toLowerCase();
+  let rawMsg = "";
+  if (typeof error === "string") {
+    rawMsg = error;
+  } else if (error) {
+    rawMsg = error.message || 
+             error.body?.error?.message || 
+             error.error?.message || 
+             (typeof error.body === "string" ? error.body : "") || 
+             error.reason || 
+             JSON.stringify(error);
+  }
+  const errMsg = rawMsg.toLowerCase();
   
   if (error?.code === 4001 || errMsg.includes("user rejected") || errMsg.includes("user denied")) {
     return "지갑에서 트랜잭션 승인을 취소하셨습니다.";
@@ -419,7 +430,7 @@ function errorMessage(error, fallback, symbol = "") {
     (errMsg.includes("execution reverted") && symbol && symbol !== "ETH");
   if (isTokenInsufficient) {
     if (symbol && symbol !== "ETH") {
-      return `결제에 필요한 ${symbol} 토큰 잔액이 부족합니다. 프로필 페이지의 테스트넷 Faucet에서 ${symbol}을 충전해 주세요.`;
+      return `결제에 필요한 ${symbol} 토큰 잔액이 부족합니다.`;
     }
     return "결제에 필요한 잔액이 부족합니다. (가스비 ETH 또는 보유 잔액 확인 필요)";
   }
