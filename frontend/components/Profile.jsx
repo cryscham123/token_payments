@@ -789,7 +789,7 @@ export default function Profile() {
                             
                             {wallet.primary && (
                               <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-extrabold text-amber-800 border border-amber-200">
-                                대표 지갑
+                                대표 · {getChainName(wallet.chainId)}
                               </span>
                             )}
                           </div>
@@ -840,17 +840,34 @@ export default function Profile() {
                         <h5 className="font-semibold text-slate-800 text-xs truncate">{store.displayName}</h5>
                         <span className="text-[9px] text-slate-400 block font-mono mt-0.5">ID: {store.publicStoreId}</span>
                       </div>
-                      <Link
-                        href={`/stores/${store.publicStoreId}`}
-                        className="shrink-0 inline-flex items-center gap-0.5 text-[9px] font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 px-2.5 py-1.5 rounded-lg transition-colors shadow-sm"
-                      >
-                        이동
-                        <ExternalLink className="h-2.5 w-2.5" />
-                      </Link>
+                      <div className="flex gap-2">
+                        <Link
+                          href={`/stores/${store.publicStoreId}`}
+                          className="shrink-0 inline-flex items-center gap-0.5 text-[9px] font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 px-2.5 py-1.5 rounded-lg transition-colors shadow-sm"
+                        >
+                          이동
+                          <ExternalLink className="h-2.5 w-2.5" />
+                        </Link>
+                        <Link
+                          href={`/merchant/stores/${store.publicStoreId}`}
+                          className="shrink-0 inline-flex items-center gap-0.5 text-[9px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2.5 py-1.5 rounded-lg transition-colors shadow-sm"
+                        >
+                          관리
+                        </Link>
+                      </div>
                     </div>
                   ))}
                 </div>
               )}
+
+              {/* Dev/Testing Merchant Wallet Info */}
+              <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50/50 p-4 space-y-2">
+                <h4 className="text-xs font-bold text-blue-900">💡 테스트 상점 계정</h4>
+                <div className="text-[10px] space-y-1 text-blue-700 font-mono">
+                  <div>• <b>지갑</b>: 0xFFcf8FDEE24F7110ad822D611AB9a4598cE17709</div>
+                  <div>• <b>개인키</b>: 0x6c29146783d558055c7c59802761d224003097f57a986d349696b9d70c440d95</div>
+                </div>
+              </div>
             </div>
 
             {/* Developer Tools - Testnet Faucet Station Card */}

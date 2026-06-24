@@ -117,6 +117,8 @@ class UpdateStoreProfileCommand:
     requested_at: datetime
     request_id: str
     payload_hash: str
+    supported_chain_ids: tuple[int, ...] | None = None
+    supported_payment_asset_ids: tuple[str, ...] | None = None
 
     def __post_init__(self) -> None:
         _validate_common(self)
@@ -132,6 +134,18 @@ class UpdateStoreProfileCommand:
             raise ValueError("UpdateStoreProfileCommand.support_email_public must be a bool")
         if not isinstance(self.platform_override, bool):
             raise ValueError("UpdateStoreProfileCommand.platform_override must be a bool")
+        if self.supported_chain_ids is not None:
+            if not isinstance(self.supported_chain_ids, tuple):
+                raise ValueError("UpdateStoreProfileCommand.supported_chain_ids must be a tuple of ints")
+            for chain_id in self.supported_chain_ids:
+                if not isinstance(chain_id, int) or chain_id <= 0:
+                    raise ValueError("supported_chain_ids must contain positive integers")
+        if self.supported_payment_asset_ids is not None:
+            if not isinstance(self.supported_payment_asset_ids, tuple):
+                raise ValueError("UpdateStoreProfileCommand.supported_payment_asset_ids must be a tuple of strings")
+            for asset_id in self.supported_payment_asset_ids:
+                if not isinstance(asset_id, str) or not asset_id.strip():
+                    raise ValueError("supported_payment_asset_ids must contain non-empty strings")
 
 
 @dataclass(frozen=True)

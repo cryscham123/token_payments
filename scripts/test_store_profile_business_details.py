@@ -204,6 +204,28 @@ def test_store_display_name_must_be_unique_except_product_titles() -> None:
     assert repository.stores[OTHER_STORE_ID].display_name == "Other Store"
 
 
+def test_update_store_profile_can_mutate_payment_settings() -> None:
+    repository = _seed_repository(_profile(display_name="Old Name"))
+    router = _router(repository, auth(OWNER_ID, UserRole.CUSTOMER, scopes=("store:write",)))
+
+    response = router.handle(
+        "PATCH",
+        f"/merchant/stores/{PUBLIC_STORE_ID}/profile",
+        headers={"Content-Type": "application/json", "Idempotency-Key": "update-profile-settings-001"},
+        body=json_body(
+            {
+                "supportedChainIds": [1, 1337],
+                "supportedPaymentAssetIds": ["local-usdc", "local-usdt"],
+            }
+        ),
+    )
+    payload = decode(response.body)
+
+    assert response.status_code == 200
+    assert repository.stores[STORE_ID].payment_settings.supported_chain_ids == (1, 1337)
+    assert repository.stores[STORE_ID].payment_settings.supported_payment_asset_ids == ("local-usdc", "local-usdt")
+
+
 def test_list_merchant_stores_returns_public_ids_without_internal_store_ids() -> None:
     repository = _seed_repository(_profile(display_name="Merchant Store", support_email_public=True))
     router = _router(repository, auth(OWNER_ID, UserRole.CUSTOMER, scopes=("store:read",)))

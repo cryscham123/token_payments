@@ -471,6 +471,8 @@ class StoreCatalogApplicationService:
             support_email_public=command.support_email_public,
             business_registration_label=command.business_registration_label,
             updated_at=command.requested_at,
+            supported_chain_ids=command.supported_chain_ids,
+            supported_payment_asset_ids=command.supported_payment_asset_ids,
         )
         display_name_conflict = self._store_display_name_conflict(updated.display_name, current_store_id=store.store_id)
         if display_name_conflict is not None:

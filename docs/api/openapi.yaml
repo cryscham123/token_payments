@@ -6165,6 +6165,16 @@ components:
         businessRegistrationLabel:
           type: string
           description: Private merchant business registration label.
+        supportedChainIds:
+          type: array
+          items:
+            type: integer
+          description: Supported blockchain network chain IDs.
+        supportedPaymentAssetIds:
+          type: array
+          items:
+            type: string
+          description: Supported payment token/asset IDs.
         idempotencyKey:
           type: string
           description: Body fallback for Idempotency-Key header.
