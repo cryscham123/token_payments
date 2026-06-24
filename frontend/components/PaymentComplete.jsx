@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Check, Info, Loader2, TriangleAlert } from "lucide-react";
+import { Check, CreditCard, Info, Loader2, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { getCheckoutTracking } from "@/lib/checkout-client";
 
@@ -18,6 +18,9 @@ const FAILED_STEPS = new Set([
   "ORDER_CANCELLED"
 ]);
 const FAILED_STATUSES = new Set(["FAILED", "EXPIRED", "CANCELLED", "REFUNDED"]);
+// Not signed yet: no transaction exists, so this is "awaiting signature", not "confirming".
+const AWAITING_STEPS = new Set(["ORDER_CREATED", "AWAITING_SIGNATURE"]);
+const AWAITING_STATUSES = new Set(["INITIATED", "AWAITING_SIGNATURE"]);
 
 function deriveOutcome(checkout) {
   if (!checkout) return "pending";
@@ -25,7 +28,8 @@ function deriveOutcome(checkout) {
   const status = checkout.status || "";
   if (checkout.failureReason || FAILED_STEPS.has(step) || FAILED_STATUSES.has(status)) return "failed";
   if (SUCCESS_STEPS.has(step) || SUCCESS_STATUSES.has(status)) return "success";
-  return "pending";
+  if (AWAITING_STEPS.has(step) || AWAITING_STATUSES.has(status)) return "awaiting";
+  return "pending"; // signed, waiting for on-chain confirmation
 }
 
 export default function PaymentComplete() {
@@ -56,7 +60,9 @@ export default function PaymentComplete() {
         const next = deriveOutcome(checkout);
         setFailureReason(checkout?.failureReason || "");
         setOutcome(next);
-        if (next !== "pending") {
+        // Keep polling while pending/awaiting (the customer may still sign); only a terminal
+        // success/failure stops it.
+        if (next === "success" || next === "failed") {
           clearInterval(pollRef.current);
           return;
         }
@@ -86,6 +92,16 @@ export default function PaymentComplete() {
       noteBody: "거래 확인이 완료되면 이 화면이 자동으로 갱신됩니다. 잠시만 기다려 주세요.",
       noteClass: "border-blue-100 bg-blue-50 text-blue-700",
       noteIcon: "bg-blue-100 text-blue-600"
+    },
+    awaiting: {
+      icon: <CreditCard className="h-10 w-10 text-white" />,
+      iconBg: "bg-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.35)]",
+      title: "결제 서명 대기 중입니다",
+      subtitle: "아직 결제가 완료되지 않았습니다. 지갑에서 결제 서명을 진행해 주세요.",
+      noteTitle: "결제 미완료",
+      noteBody: "아래 \"결제 이어서 진행\"을 눌러 지갑 서명을 마치면 결제가 완료됩니다.",
+      noteClass: "border-amber-100 bg-amber-50 text-amber-700",
+      noteIcon: "bg-amber-100 text-amber-600"
     },
     success: {
       icon: <Check className="h-10 w-10 text-white" />,
@@ -155,6 +171,11 @@ export default function PaymentComplete() {
             </div>
 
             <div className="flex flex-col gap-3 sm:flex-row">
+              {outcome === "awaiting" && details.trackingId && (
+                <Link href={`/pay?trackingId=${encodeURIComponent(details.trackingId)}`} className="flex-1 rounded-xl bg-blue-600 py-4 text-center font-bold text-white hover:bg-blue-700">
+                  결제 이어서 진행
+                </Link>
+              )}
               {outcome === "failed" ? (
                 <Link href="/cart" className="flex-1 rounded-xl border border-slate-300 bg-white py-4 text-center font-bold text-slate-700 hover:bg-slate-50">
                   장바구니로 돌아가기
