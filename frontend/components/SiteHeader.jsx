@@ -18,28 +18,6 @@ function SearchBar() {
     setSearchVal(searchParams.get("q") || "");
   }, [searchParams]);
 
-  useEffect(() => {
-    const currentQuery = searchParams.get("q") || "";
-    if (searchVal === currentQuery) return;
-
-    const timer = setTimeout(() => {
-      const params = new URLSearchParams(searchParams.toString());
-      if (searchVal.trim()) {
-        params.set("q", searchVal);
-      } else {
-        params.delete("q");
-      }
-      
-      const isSearchablePage = pathname === "/" || pathname.startsWith("/stores/");
-      if (isSearchablePage) {
-        router.push(`${pathname}?${params.toString()}`);
-      } else {
-        router.push(`/?${params.toString()}`);
-      }
-    }, 250);
-
-    return () => clearTimeout(timer);
-  }, [searchVal, pathname, router, searchParams]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
