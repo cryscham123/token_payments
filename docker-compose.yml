@@ -294,7 +294,9 @@ services:
     env_file:
       - path: .env
         required: false
-    image: nginx
+    # Unique tag: `nginx` collides with Docker Hub's official image, so `up` (without
+    # --build) would run the stock welcome-page nginx instead of our proxy config.
+    image: token_payments_nginx
     init: true
     volumes:
       - ./app/nginx/certs:/etc/ssl/certs
