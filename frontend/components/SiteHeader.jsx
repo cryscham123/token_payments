@@ -160,7 +160,7 @@ export default function SiteHeader({ cartCount, currentUser: propCurrentUser, on
               <span className="relative">
                 <ReceiptText size={25} />
                 {pendingCount > 0 && (
-                  <span className="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5 rounded-full bg-amber-500 animate-pulse border border-white" />
+                  <span className="absolute -right-2 -top-2 flex h-4 w-4 rounded-full bg-amber-500 border border-white" />
                 )}
               </span>
               <span className="mt-1 text-[11px]">주문내역</span>
