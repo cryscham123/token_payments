@@ -392,8 +392,10 @@ export default function Cart() {
                 return (
                   <div key={group.storeId} className="mb-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                     <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-3">
-                      <span className="text-sm font-bold text-slate-900">{group.storeName}</span>
-                      <span className="text-[11px] font-semibold text-slate-500">결제 대상 {group.activeItems.length}개</span>
+                      <Link href={`/stores/${group.storeId}`} className="text-sm font-bold text-slate-900 hover:text-blue-600 transition flex items-center gap-1.5">
+                        <span>{group.storeName}</span>
+                        <span className="text-[10px] text-slate-400 font-normal">스토어 바로가기 →</span>
+                      </Link>
                     </div>
                     <ul className="divide-y divide-slate-200">
                     {group.items.map((item) => {
@@ -424,10 +426,6 @@ export default function Cart() {
                                     선택된 결제 수단({group.selectedOption?.symbol || "ETH"}) 미지원 (결제 제외)
                                   </span>
                                 )}
-                                <br />
-                                <Link href={`/products/${item.publicProductId}`} className="mt-2 inline-flex text-xs font-bold text-blue-600 hover:text-blue-700">
-                                  상품 정보 보기
-                                </Link>
                               </div>
                               <button onClick={() => removeItem(cartItemKey(item))} className="text-slate-400 hover:text-red-500">
                                 <X size={18} />
@@ -574,4 +572,5 @@ function resolveItemUnitPrice(item, paymentOption) {
 // selectedWalletId
 // walletId: selectedWalletId
 // paymentAssetId: selectedPaymentAssetId
+// 상품 정보 보기
 
