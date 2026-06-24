@@ -52,6 +52,11 @@ export default function Profile() {
   const [googleIdentityId, setGoogleIdentityId] = useState(null);
   const [tokenAssets, setTokenAssets] = useState({ usdc: null, usdt: null });
 
+  // Wallet Link Selection States
+  const [availableAccounts, setAvailableAccounts] = useState([]);
+  const [selectedAccount, setSelectedAccount] = useState("");
+  const [linkingWalletState, setLinkingWalletState] = useState("idle");
+
   const [claimingState, setClaimingState] = useState({
     eth: false,
     usdc: false,
@@ -237,11 +242,13 @@ export default function Profile() {
   const handleLinkNewWallet = async () => {
     setErrorMsg("");
     setSuccessMsg("");
+    setLinkingWalletState("connecting");
     setLinkingWallet(true);
 
     const ethereum = typeof window !== "undefined" ? window.ethereum : undefined;
     if (!ethereum) {
       setErrorMsg("MetaMask가 설치되어 있지 않거나 브라우저 환경이 아닙니다.");
+      setLinkingWalletState("idle");
       setLinkingWallet(false);
       return;
     }
@@ -258,21 +265,52 @@ export default function Profile() {
       }
 
       const accounts = await ethereum.request({ method: "eth_requestAccounts" });
-      const account = accounts?.[0];
-      if (!account) throw new Error("연결된 계정이 없습니다.");
-
-      const alreadyLinked = wallets.some(
-        (w) => w.walletAddress.toLowerCase() === account.toLowerCase()
-      );
-      if (alreadyLinked) {
-        throw new Error("이미 이 계정에 연동된 지갑입니다.");
+      if (!accounts || accounts.length === 0) {
+        throw new Error("연결된 계정이 없습니다.");
       }
 
+      const linkedAddresses = wallets.map(w => w.walletAddress.toLowerCase());
+      const unlinked = accounts.filter(acc => !linkedAddresses.includes(acc.toLowerCase()));
+
+      if (unlinked.length === 0) {
+        throw new Error("연결된 모든 MetaMask 계정이 이미 연동되어 있습니다.");
+      }
+
+      setAvailableAccounts(unlinked);
+      setSelectedAccount(unlinked[0]);
+      setLinkingWalletState("select-account");
+    } catch (err) {
+      console.warn("Link wallet connection failed:", err);
+      setErrorMsg(err.message || "지갑 연결에 실패했습니다.");
+      setLinkingWalletState("idle");
+      setLinkingWallet(false);
+    }
+  };
+
+  const handleProceedLinkWallet = async () => {
+    if (!selectedAccount) {
+      setErrorMsg("선택된 지갑 계정이 없습니다.");
+      return;
+    }
+
+    setErrorMsg("");
+    setSuccessMsg("");
+    setLinkingWalletState("linking");
+
+    const ethereum = typeof window !== "undefined" ? window.ethereum : undefined;
+    if (!ethereum) {
+      setErrorMsg("MetaMask가 설치되어 있지 않거나 브라우저 환경이 아닙니다.");
+      setLinkingWalletState("idle");
+      setLinkingWallet(false);
+      return;
+    }
+
+    try {
       const chainHex = await ethereum.request({ method: "eth_chainId" });
       const chainId = parseChainId(chainHex);
 
       const challenge = await requestWalletLinkChallenge({
-        walletAddress: account,
+        walletAddress: selectedAccount,
         domain: window.location.host,
         uri: window.location.origin,
         chainId
@@ -280,26 +318,29 @@ export default function Profile() {
 
       const signature = await ethereum.request({
         method: "personal_sign",
-        params: [challenge.signingMessage, account]
+        params: [challenge.signingMessage, selectedAccount]
       });
 
       await linkWallet({
-        walletAddress: account,
+        walletAddress: selectedAccount,
         message: challenge.signingMessage,
         signature
       });
 
       setSuccessMsg("지갑이 성공적으로 추가되었습니다.");
+      setLinkingWalletState("idle");
+      setLinkingWallet(false);
+      setAvailableAccounts([]);
+      setSelectedAccount("");
       await reloadWallets();
       const userPayload = await getCurrentUser().catch(() => null);
       if (userPayload?.user) {
         setCurrentUser(userPayload.user);
       }
     } catch (err) {
-      console.warn("Link wallet failed:", err);
-      setErrorMsg(err.body?.error?.message || err.message || "지갑 추가에 실패했습니다.");
-    } finally {
-      setLinkingWallet(false);
+      console.warn("Proceed wallet link failed:", err);
+      setErrorMsg(err.body?.error?.message || err.message || "지갑 연동에 실패했습니다.");
+      setLinkingWalletState("select-account");
     }
   };
 
@@ -528,7 +569,7 @@ export default function Profile() {
       <div className="flex min-h-screen flex-col bg-slate-50 text-slate-800">
         <SiteHeader currentUser={currentUser} onCurrentUserChange={setCurrentUser} />
         <div className="flex h-96 flex-grow flex-col items-center justify-center">
-          <Loader2 className="h-10 w-10 animate-spin text-slate-650" />
+          <Loader2 className="h-10 w-10 animate-spin text-slate-600" />
           <span className="mt-4 text-slate-500 font-medium text-sm">프로필을 불러오는 중...</span>
         </div>
       </div>
@@ -539,7 +580,7 @@ export default function Profile() {
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans">
       <SiteHeader currentUser={currentUser} onCurrentUserChange={setCurrentUser} />
 
-      <main className="mx-auto w-full max-w-3xl flex-grow px-4 py-10 sm:px-6 lg:px-8">
+      <main className="mx-auto w-full max-w-4xl flex-grow px-4 py-10 sm:px-6 lg:px-8">
         <h1 className="mb-8 text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">내 정보</h1>
 
         {/* Notifications */}
@@ -635,14 +676,14 @@ export default function Profile() {
                   {isGoogleLinked ? (
                     <button
                       onClick={handleUnlinkGoogle}
-                      className="text-xs font-bold text-red-650 bg-red-50 hover:bg-red-100 border border-red-200 px-4.5 py-2.5 rounded-xl transition-all active:scale-95"
+                      className="text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 px-4 py-2 rounded-xl transition-all active:scale-95"
                     >
                       연동 해제
                     </button>
                   ) : (
                     <button
                       onClick={handleLinkGoogle}
-                      className="text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 px-4.5 py-2.5 rounded-xl transition-all active:scale-95 shadow-sm"
+                      className="text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 px-4 py-2 rounded-xl transition-all active:scale-95 shadow-sm"
                     >
                       Google 연동하기
                     </button>
@@ -657,10 +698,10 @@ export default function Profile() {
                 <h3 className="text-lg font-bold text-slate-900 tracking-tight">연동된 지갑 목록</h3>
                 <button
                   onClick={handleLinkNewWallet}
-                  disabled={linkingWallet}
+                  disabled={linkingWalletState !== "idle"}
                   className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-50 px-4 py-2.5 text-xs font-bold text-white shadow-sm active:scale-95 transition-all"
                 >
-                  {linkingWallet ? (
+                  {linkingWalletState === "connecting" || linkingWalletState === "linking" ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   ) : (
                     <Plus className="h-3.5 w-3.5" />
@@ -668,6 +709,51 @@ export default function Profile() {
                   지갑 추가
                 </button>
               </div>
+
+              {/* Wallet Select Account UI */}
+              {linkingWalletState === "select-account" && availableAccounts.length > 0 && (
+                <div className="rounded-xl border border-blue-100 bg-blue-50/20 p-4 space-y-3">
+                  <p className="text-xs font-bold text-slate-700">연동할 지갑 계정 선택</p>
+                  <div className="max-h-40 overflow-y-auto space-y-2">
+                    {availableAccounts.map((acc) => (
+                      <button
+                        key={acc}
+                        type="button"
+                        onClick={() => setSelectedAccount(acc)}
+                        className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-xs font-mono transition ${
+                          selectedAccount === acc
+                            ? "border-blue-500 bg-white text-blue-900 font-bold shadow-sm"
+                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                        }`}
+                      >
+                        <span className="truncate">{shortWallet(acc)}</span>
+                        {selectedAccount === acc && <span className="text-blue-500 font-extrabold">✓</span>}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handleProceedLinkWallet}
+                      className="flex-1 rounded-xl bg-blue-600 hover:bg-blue-700 text-white py-2 text-center text-xs font-bold transition active:scale-95"
+                    >
+                      선택한 지갑 추가하기
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLinkingWalletState("idle");
+                        setLinkingWallet(false);
+                        setAvailableAccounts([]);
+                        setSelectedAccount("");
+                      }}
+                      className="rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 px-4 py-2 text-xs font-bold transition active:scale-95"
+                    >
+                      취소
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {wallets.length === 0 ? (
                 <div className="text-center py-10 rounded-xl border border-dashed border-slate-200 bg-slate-50">
@@ -679,20 +765,8 @@ export default function Profile() {
                   {wallets.map((wallet) => (
                     <div
                       key={wallet.walletId}
-                      className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border p-4.5 transition-all duration-200 hover:bg-slate-50 relative overflow-hidden ${
-                        wallet.primary 
-                          ? "border-amber-400 bg-amber-50/10" 
-                          : "border-slate-200 bg-white"
-                      }`}
+                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border p-4 transition-all duration-200 hover:bg-slate-50 border-slate-200 bg-white"
                     >
-                      {wallet.primary && (
-                        <div className="absolute top-0 right-0 h-14 w-14 pointer-events-none overflow-hidden">
-                          <div className="bg-amber-500/10 text-amber-700 absolute rotate-45 text-[7px] font-black text-center py-0.5 w-[75px] top-[8px] right-[-24px] uppercase tracking-wider">
-                            Primary
-                          </div>
-                        </div>
-                      )}
-                      
                       <div className="flex items-start gap-3">
                         <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600 font-mono text-[10px] font-extrabold border border-slate-200">
                           W
@@ -705,7 +779,7 @@ export default function Profile() {
                             <button
                               type="button"
                               onClick={() => handleCopyWallet(wallet.walletAddress)}
-                              className="text-slate-400 hover:text-slate-600 active:scale-90 transition-all"
+                              className="text-slate-400 hover:text-slate-650 active:scale-90 transition-all"
                               title="주소 복사"
                             >
                               {copiedWallet === wallet.walletAddress ? (
@@ -716,7 +790,7 @@ export default function Profile() {
                             </button>
                             
                             {wallet.primary && (
-                              <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-2.5 py-0.5 text-[9px] font-extrabold text-amber-800 border border-amber-200">
+                              <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-extrabold text-amber-800 border border-amber-200">
                                 대표 지갑
                               </span>
                             )}
@@ -758,7 +832,7 @@ export default function Profile() {
 
               {stores.length === 0 ? (
                 <div className="text-center py-10 rounded-xl border border-dashed border-slate-200 bg-slate-50">
-                  <p className="text-xs font-semibold text-slate-500">소속된 상점이 존재하지 않습니다.</p>
+                  <p className="text-xs font-semibold text-slate-505">소속된 상점이 존재하지 않습니다.</p>
                 </div>
               ) : (
                 <div className="divide-y divide-slate-200">
@@ -787,13 +861,16 @@ export default function Profile() {
               
               {/* Grid Faucet Cards */}
               <div className="grid gap-4 sm:grid-cols-3">
-                {/* ETH Card */}
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 flex flex-col justify-between space-y-4">
-                  <div className="space-y-1">
+                {/* ETH Faucet */}
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 flex flex-col justify-between space-y-4 shadow-inner">
+                  <div className="space-y-1.5">
                     <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white border border-slate-200 text-slate-600">
                       <Coins className="h-4 w-4" />
                     </div>
-                    <h4 className="text-sm font-bold text-slate-800">ETH</h4>
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-800">ETH</h4>
+                      <span className="text-[10px] text-slate-400 font-medium">Ethereum 테스트넷</span>
+                    </div>
                   </div>
                   <button
                     type="button"
@@ -809,48 +886,82 @@ export default function Profile() {
                   </button>
                 </div>
 
-                {/* USDC Card */}
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 flex flex-col justify-between space-y-4">
-                  <div className="space-y-1">
+                {/* USDC Faucet */}
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 flex flex-col justify-between space-y-4 shadow-inner">
+                  <div className="space-y-1.5">
                     <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white border border-slate-200 text-slate-600">
                       <Coins className="h-4 w-4" />
                     </div>
-                    <h4 className="text-sm font-bold text-slate-800">USDC</h4>
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-800">USDC</h4>
+                      <span className="text-[10px] text-slate-400 font-medium">USD Coin 테스트넷</span>
+                    </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => handleFaucetClaim("usdc")}
-                    disabled={claimingState.usdc || !usdcReady}
-                    className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 active:scale-95 disabled:opacity-50 px-3 py-2 text-xs font-bold text-white transition-all shadow-sm"
-                  >
-                    {claimingState.usdc ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin text-white" />
-                    ) : (
-                      <span>100 USDC 청구</span>
-                    )}
-                  </button>
+                  <div className="space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => handleFaucetClaim("usdc")}
+                      disabled={claimingState.usdc || !usdcReady}
+                      className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 active:scale-95 disabled:opacity-50 px-3 py-2 text-xs font-bold text-white transition-all shadow-sm"
+                    >
+                      {claimingState.usdc ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-white" />
+                      ) : (
+                        <span>100 USDC 청구</span>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleWatchAsset("usdc")}
+                      disabled={watchingAsset.usdc || !usdcReady}
+                      className="w-full inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 px-3 py-1.5 text-[11px] font-bold transition active:scale-95 disabled:opacity-50 shadow-sm"
+                    >
+                      {watchingAsset.usdc ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        "지갑에 추가"
+                      )}
+                    </button>
+                  </div>
                 </div>
 
-                {/* USDT Card */}
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 flex flex-col justify-between space-y-4">
-                  <div className="space-y-1">
+                {/* USDT Faucet */}
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 flex flex-col justify-between space-y-4 shadow-inner">
+                  <div className="space-y-1.5">
                     <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white border border-slate-200 text-slate-600">
                       <Coins className="h-4 w-4" />
                     </div>
-                    <h4 className="text-sm font-bold text-slate-800">USDT</h4>
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-800">USDT</h4>
+                      <span className="text-[10px] text-slate-400 font-medium">Tether 테스트넷</span>
+                    </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => handleFaucetClaim("usdt")}
-                    disabled={claimingState.usdt || !usdtReady}
-                    className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 active:scale-95 disabled:opacity-50 px-3 py-2 text-xs font-bold text-white transition-all shadow-sm"
-                  >
-                    {claimingState.usdt ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin text-white" />
-                    ) : (
-                      <span>100 USDT 청구</span>
-                    )}
-                  </button>
+                  <div className="space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => handleFaucetClaim("usdt")}
+                      disabled={claimingState.usdt || !usdtReady}
+                      className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 active:scale-95 disabled:opacity-50 px-3 py-2 text-xs font-bold text-white transition-all shadow-sm"
+                    >
+                      {claimingState.usdt ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-white" />
+                      ) : (
+                        <span>100 USDT 청구</span>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleWatchAsset("usdt")}
+                      disabled={watchingAsset.usdt || !usdtReady}
+                      className="w-full inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 px-3 py-1.5 text-[11px] font-bold transition active:scale-95 disabled:opacity-50 shadow-sm"
+                    >
+                      {watchingAsset.usdt ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        "지갑에 추가"
+                      )}
+                    </button>
+                  </div>
                 </div>
               </div>
 
