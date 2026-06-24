@@ -45,7 +45,6 @@ def test_nginx_proxy_config_disables_ip_logs_and_does_not_forward_client_ip_head
 
     forbidden = (
         "$remote_addr",
-        "$binary_remote_addr",
         "$http_x_forwarded_for",
         "$proxy_add_x_forwarded_for",
         "X-Forwarded-For",
@@ -55,6 +54,19 @@ def test_nginx_proxy_config_disables_ip_logs_and_does_not_forward_client_ip_head
     )
     for term in forbidden:
         assert term not in config
+
+    # $binary_remote_addr is permitted, but ONLY as the in-memory key for per-IP rate
+    # limiting (limit_req_zone). It must never be logged or forwarded upstream: every
+    # occurrence has to sit on a limit_req_zone line, and it must not appear in any
+    # proxy_set_header / add_header / log_format directive.
+    for line in config.splitlines():
+        if "$binary_remote_addr" not in line:
+            continue
+        assert line.strip().startswith("limit_req_zone "), line
+    for directive in ("proxy_set_header", "add_header", "log_format"):
+        for line in config.splitlines():
+            if line.strip().startswith(directive):
+                assert "$binary_remote_addr" not in line, line
 
 
 def test_token_api_uvicorn_runner_disables_access_log_while_accepting_non_ip_proxy_metadata(

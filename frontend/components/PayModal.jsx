@@ -296,12 +296,17 @@ export default function PayModal() {
                     </Link>
                   </div>
 
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <InfoRow className="sm:col-span-2" label="수신 주소" value={transferTo} onCopy={() => copyToClipboard(transferTo, "주소")} />
-                    {checkout?.trackingId && <InfoRow label="Tracking ID" value={checkout.trackingId} onCopy={() => copyToClipboard(checkout.trackingId, "Tracking ID")} />}
-                    {checkout?.payerWallet?.walletId && <InfoRow label="결제 지갑" value={`${checkout.payerWallet.addressPreview || checkout.payerWallet.walletId} · Chain ${checkout.payerWallet.chainId}`} onCopy={() => copyToClipboard(checkout.payerWallet.addressPreview || checkout.payerWallet.walletId, "결제 지갑")} />}
-                    {txHash && <InfoRow className="sm:col-span-2" label="거래 해시" value={txHash} onCopy={() => copyToClipboard(txHash, "거래 해시")} />}
-                    {copied && <p className="sm:col-span-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700">{copied} 복사 완료</p>}
+                  <div className="flex flex-col gap-3 rounded-xl border border-slate-100 bg-slate-50 p-4">
+                    <p className="text-xs font-bold uppercase tracking-wide text-slate-400">결제 정보</p>
+                    <InfoRow label="수신 주소" value={transferTo} onCopy={() => copyToClipboard(transferTo, "주소")} />
+                    {checkout?.payerWallet?.addressPreview && (
+                      <div className="flex items-center justify-between gap-2 px-1 text-sm">
+                        <span className="font-semibold text-slate-500">결제 지갑</span>
+                        <span className="font-mono text-slate-700">{checkout.payerWallet.addressPreview}</span>
+                      </div>
+                    )}
+                    {txHash && <InfoRow label="거래 해시" value={txHash} onCopy={() => copyToClipboard(txHash, "거래 해시")} />}
+                    {copied && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700">{copied} 복사 완료</p>}
                   </div>
                 </div>
               </>
@@ -315,7 +320,7 @@ export default function PayModal() {
 
 function InfoRow({ label, value, onCopy, className = "" }) {
   return (
-    <div className={`rounded-xl border border-slate-100 bg-slate-50 p-3 ${className}`}>
+    <div className={`rounded-xl border border-slate-200 bg-white p-3 ${className}`}>
       <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</label>
       <div className="flex items-center justify-between gap-2">
         <span className="min-w-0 truncate font-mono text-sm font-bold text-slate-900" title={value}>{value}</span>
