@@ -170,8 +170,13 @@ export function newBrowserDeviceId() {
 // When multiple requests get 401 simultaneously, only one refresh is issued
 // and the others wait for the same promise.
 let _inflightRefresh = null;
+let _lastRefreshTime = 0;
+const REFRESH_GRACE_PERIOD_MS = 2000;
 
 async function _tryRefreshSession() {
+  if (typeof Date !== "undefined" && Date.now() - _lastRefreshTime < REFRESH_GRACE_PERIOD_MS) {
+    return true;
+  }
   if (_inflightRefresh) return _inflightRefresh;
 
   _inflightRefresh = (async () => {
@@ -190,6 +195,9 @@ async function _tryRefreshSession() {
       const payload = await response.json();
       if (payload && payload.csrfToken && typeof window !== "undefined") {
         document.cookie = `csrf_token=${payload.csrfToken}; path=/`;
+      }
+      if (typeof Date !== "undefined") {
+        _lastRefreshTime = Date.now();
       }
       return true;
     } catch {
