@@ -171,7 +171,8 @@ export function newBrowserDeviceId() {
 // and the others wait for the same promise.
 let _inflightRefresh = null;
 let _lastRefreshTime = 0;
-const REFRESH_GRACE_PERIOD_MS = 2000;
+let _cachedCsrfToken = "";
+const REFRESH_GRACE_PERIOD_MS = 15000;
 
 async function _tryRefreshSession() {
   if (typeof Date !== "undefined" && Date.now() - _lastRefreshTime < REFRESH_GRACE_PERIOD_MS) {
@@ -193,8 +194,11 @@ async function _tryRefreshSession() {
 
       if (!response.ok) return false;
       const payload = await response.json();
-      if (payload && payload.csrfToken && typeof window !== "undefined") {
-        document.cookie = `csrf_token=${payload.csrfToken}; path=/`;
+      if (payload && payload.csrfToken) {
+        _cachedCsrfToken = payload.csrfToken;
+        if (typeof window !== "undefined") {
+          document.cookie = `csrf_token=${payload.csrfToken}; path=/`;
+        }
       }
       if (typeof Date !== "undefined") {
         _lastRefreshTime = Date.now();
@@ -238,11 +242,14 @@ export async function apiJson(path, { method = "GET", body, idempotencyKey, _ret
     if (is401or403 && !_retried && !_isRefreshPath(path)) {
       const refreshed = await _tryRefreshSession();
       if (refreshed) {
+        // Wait 50ms for HttpOnly cookies to settle in the browser storage
+        await new Promise((resolve) => setTimeout(resolve, 50));
         return apiJson(path, { method, body, idempotencyKey, _retried: true });
       }
     }
 
     if (is401or403) {
+      _cachedCsrfToken = "";
       if (typeof window !== "undefined") {
         document.cookie = "csrf_token=; path=/; max-age=0;";
         window.dispatchEvent(new CustomEvent("token-payments-unauthorized"));
@@ -290,6 +297,7 @@ async function rawApiJson(path, { method = "GET", body } = {}) {
 }
 
 function csrfCookie() {
+  if (_cachedCsrfToken) return _cachedCsrfToken;
   if (typeof document === "undefined") return "";
   return document.cookie
     .split(";")
