@@ -524,46 +524,44 @@ export default function Profile() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50 text-slate-800">
+    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col">
       <SiteHeader currentUser={currentUser} onCurrentUserChange={setCurrentUser} />
 
-      <main className="flex-grow">
+      <main className="mx-auto w-full max-w-4xl flex-grow px-4 py-10 sm:px-6 lg:px-8">
         {/* Simple & Premium Page Title */}
-        <div className="border-b border-slate-200 bg-white px-6 py-8 shadow-sm">
-          <div className="mx-auto max-w-6xl flex flex-col md:flex-row md:items-center md:justify-between gap-6">
-            <div>
-              <div className="flex items-center gap-3">
-                <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
-                  {profile?.displayName || "사용자 정보"}
-                </h2>
-                {isGoogleLinked ? (
-                  <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 border border-emerald-100">
-                    Google 인증 완료
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center rounded-full bg-slate-150 px-2.5 py-0.5 text-xs font-semibold text-slate-500 border border-slate-200">
-                    Google 미인증
-                  </span>
-                )}
-              </div>
-              <p className="mt-1.5 text-sm text-slate-500">지갑 연동 관리 및 개인 설정을 단일 대시보드에서 제어합니다.</p>
+        <div className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-6 pb-6 border-b border-slate-200">
+          <div>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
+                {profile?.displayName || "사용자 정보"}
+              </h1>
+              {isGoogleLinked ? (
+                <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 border border-emerald-100">
+                  Google 인증 완료
+                </span>
+              ) : (
+                <span className="inline-flex items-center rounded-full bg-slate-150 px-2.5 py-0.5 text-xs font-semibold text-slate-500 border border-slate-200">
+                  Google 미인증
+                </span>
+              )}
             </div>
+            <p className="mt-1.5 text-xs text-slate-500">지갑 연동 관리 및 개인 설정을 단일 대시보드에서 제어합니다.</p>
+          </div>
 
-            <div className="flex gap-4 self-start md:self-auto text-sm">
-              <div className="rounded-xl border border-slate-200 px-4 py-2 bg-slate-50/50">
-                <div className="text-xs text-slate-400 font-medium">연동 지갑</div>
-                <div className="text-base font-bold font-mono text-slate-800">{wallets.length}</div>
-              </div>
-              <div className="rounded-xl border border-slate-200 px-4 py-2 bg-slate-50/50">
-                <div className="text-xs text-slate-400 font-medium">관리 상점</div>
-                <div className="text-base font-bold font-mono text-slate-800">{stores.length}</div>
-              </div>
+          <div className="flex gap-4 self-start md:self-auto text-sm">
+            <div className="rounded-xl border border-slate-200 px-4 py-2 bg-white shadow-sm">
+              <div className="text-xs text-slate-400 font-medium">연동 지갑</div>
+              <div className="text-base font-bold font-mono text-slate-800">{wallets.length}</div>
+            </div>
+            <div className="rounded-xl border border-slate-200 px-4 py-2 bg-white shadow-sm">
+              <div className="text-xs text-slate-400 font-medium">관리 상점</div>
+              <div className="text-base font-bold font-mono text-slate-800">{stores.length}</div>
             </div>
           </div>
         </div>
 
         {/* Unified Profile Setting Layout */}
-        <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
+        <div>
           
           {/* Notifications */}
           {errorMsg && (

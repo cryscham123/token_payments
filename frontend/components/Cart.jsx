@@ -373,19 +373,19 @@ export default function Cart() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800">
       <SiteHeader cartCount={cartItems.reduce((sum, item) => sum + item.quantity, 0)} currentUser={currentUser} onCurrentUserChange={setCurrentUser} />
-      <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
-        <h1 className="mb-8 text-2xl font-bold text-slate-950">장바구니</h1>
+      <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
+        <h1 className="mb-8 text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">장바구니</h1>
 
         {cartItems.length === 0 ? (
           <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center shadow-sm">
             <ShoppingCart className="mx-auto mb-4 h-16 w-16 text-slate-200" />
             <p className="mb-6 text-lg text-slate-500">장바구니에 담긴 상품이 없습니다.</p>
-            <Link href="/" className="inline-flex rounded-lg bg-slate-900 px-6 py-3 font-medium text-white">
+            <Link href="/" className="inline-flex rounded-lg bg-slate-900 px-6 py-3 font-medium text-white hover:bg-slate-800 transition">
               쇼핑 계속하기
             </Link>
           </div>
         ) : (
-          <div className="mx-auto max-w-3xl">
+          <div>
             <div>
               {storeGroups.map((group) => {
                 const storeBusy = storeStatus[group.storeId] === "creating";

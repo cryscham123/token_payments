@@ -181,12 +181,10 @@ export default function OrderHistory() {
   });
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50 text-slate-800">
+    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col">
       <SiteHeader currentUser={currentUser} onCurrentUserChange={setCurrentUser} />
-      <main className="mx-auto w-full max-w-5xl flex-grow px-4 py-10 sm:px-6 lg:px-8">
-        <div className="mb-8 flex items-end justify-between">
-          <h2 className="text-2xl font-extrabold text-slate-950">주문 내역</h2>
-        </div>
+      <main className="mx-auto w-full max-w-4xl flex-grow px-4 py-10 sm:px-6 lg:px-8">
+        <h1 className="mb-8 text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">주문 내역</h1>
 
         {displayOrders.length === 0 ? (
           <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center shadow-sm">
