@@ -124,6 +124,7 @@ class PaymentsApi:
                 order_id=order_id,
                 expired_at=request.received_at,
                 reason="cancelled by customer",
+                force=True,
                 causation_id=request.request_id,
             )
             result = self._handler.expire_awaiting_signature(command)

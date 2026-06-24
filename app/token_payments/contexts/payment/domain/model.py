@@ -486,6 +486,7 @@ class Payment:
         self,
         now: datetime | None = None,
         reason: str = "signature expired",
+        force: bool = False,
     ) -> Self:
         now = _require_aware_datetime(now or datetime.now(UTC), "now")
         reason = _require_text(reason, "reason")
@@ -494,7 +495,9 @@ class Payment:
         if _is_final_payment_status(self.status):
             return self
         self._ensure_status(PaymentStatus.AWAITING_SIGNATURE, "expire awaiting signature payment")
-        if now < self.expires_at:
+        # `force` is set for customer-initiated cancellations, which may happen before the
+        # automatic expiry deadline; the timeout worker leaves it False so it only fires after.
+        if not force and now < self.expires_at:
             raise ValueError("Payment cannot expire before expires_at")
         return replace(self, status=PaymentStatus.EXPIRED, failure_reason=reason)
 
@@ -651,13 +654,13 @@ class PaymentAuthorization:
             authorized_at=authorized_at,
         )
 
-    def expire(self, now: datetime | None = None) -> Self:
+    def expire(self, now: datetime | None = None, force: bool = False) -> Self:
         now = _require_aware_datetime(now or datetime.now(UTC), "now")
         if self.status is AuthorizationStatus.EXPIRED:
             return self
         if self.status in {AuthorizationStatus.AUTHORIZED, AuthorizationStatus.REJECTED}:
             return self
-        if now < self.signature_request.expires_at:
+        if not force and now < self.signature_request.expires_at:
             raise ValueError("PaymentAuthorization cannot expire before signature_request.expires_at")
         return replace(self, status=AuthorizationStatus.EXPIRED)
 

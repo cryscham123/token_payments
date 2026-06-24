@@ -280,8 +280,10 @@ class PaymentCommandHandler:
         payment = self._load_payment(command)
         authorization = self._load_authorization(command)
         try:
-            updated_payment = payment.expire_awaiting_signature(now=command.expired_at, reason=command.reason)
-            updated_authorization = authorization.expire(now=command.expired_at)
+            updated_payment = payment.expire_awaiting_signature(
+                now=command.expired_at, reason=command.reason, force=command.force
+            )
+            updated_authorization = authorization.expire(now=command.expired_at, force=command.force)
             event = updated_payment.record_expired(expired_at=command.expired_at)
         except ValueError as exc:
             raise self._invalid_state(command, exc) from exc

@@ -130,6 +130,9 @@ class ExpireAwaitingSignatureCommand:
     order_id: OrderId
     expired_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     reason: str = "signature expired"
+    # Set by customer-initiated cancellations, which may occur before the automatic
+    # expiry deadline. The timeout worker leaves it False so its time guard still applies.
+    force: bool = False
     causation_id: str | None = None
     event_message_id: MessageId = field(default_factory=MessageId.new)
 
