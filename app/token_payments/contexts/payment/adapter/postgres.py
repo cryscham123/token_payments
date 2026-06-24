@@ -217,6 +217,7 @@ SELECT
             'title', COALESCE(sp.title, oi.product_snapshot_name),
             'selectedOptions', oi.selected_options,
             'quantity', oi.quantity,
+            'media', sp.media,
             'unitPrice', json_build_object(
                 'amount', oi.unit_price_numeric::text,
                 'symbol', oi.unit_price_symbol,
@@ -278,6 +279,7 @@ SELECT
             'title', COALESCE(sp.title, oi.product_snapshot_name),
             'selectedOptions', oi.selected_options,
             'quantity', oi.quantity,
+            'media', sp.media,
             'unitPrice', json_build_object(
                 'amount', oi.unit_price_numeric::text,
                 'symbol', oi.unit_price_symbol,

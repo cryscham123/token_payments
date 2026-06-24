@@ -114,7 +114,11 @@ export default function OrderHistory() {
             title: item.title || item.name || "상품",
             quantity: item.quantity || 1,
             selectedOptions: item.selectedOptions || {},
-            thumb: item.thumb || item.image || PRODUCT_IMAGE_PLACEHOLDER,
+            thumb: (item.thumb && item.thumb !== PRODUCT_IMAGE_PLACEHOLDER)
+              ? item.thumb
+              : (item.image && item.image !== PRODUCT_IMAGE_PLACEHOLDER)
+                ? item.image
+                : productImageFromMedia(item.media),
             category: item.category || ""
           };
         })

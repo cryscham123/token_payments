@@ -255,6 +255,7 @@ def _history_item_payload(item: PaymentHistoryItem) -> dict[str, Any]:
                 "quantity": x.get("quantity"),
                 "thumb": x.get("thumb"),
                 "image": x.get("image"),
+                "media": x.get("media"),
                 "unitPrice": {
                     "amount": str(x.get("unitPrice", {}).get("amount", "0")),
                     "symbol": x.get("unitPrice", {}).get("symbol", "ETH"),
