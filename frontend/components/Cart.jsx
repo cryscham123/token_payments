@@ -134,10 +134,6 @@ export default function Cart() {
     const itemOptions = paymentOptionsForItem(item);
     return !selectedPaymentOption || itemOptions.some((opt) => opt.key === selectedPaymentOption.key);
   });
-  const cryptoTotal = activeCartItems.reduce(
-    (acc, item) => acc + (Number.parseFloat(resolveItemUnitPrice(item, selectedPaymentOption).amount) || 0) * item.quantity,
-    0
-  );
   const cryptoSymbol = selectedPaymentOption?.symbol || cartItems[0]?.cryptoSymbol || "ETH";
   const selectedPaymentAssetId = selectedPaymentOption?.paymentAssetId || "";
   const eligibleWallets = wallets.filter((wallet) => !selectedPaymentOption?.chainId || Number(wallet.chainId) === Number(selectedPaymentOption.chainId));
@@ -324,8 +320,62 @@ export default function Cart() {
             </Link>
           </div>
         ) : (
-          <div className="flex flex-col gap-8 lg:flex-row">
-            <div className="w-full lg:w-2/3">
+          <div className="mx-auto max-w-3xl">
+            <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">결제 수단</label>
+                  <select
+                    value={selectedPaymentOptionKey}
+                    onChange={(event) => setSelectedPaymentOptionKey(event.target.value)}
+                    disabled={busy || paymentOptions.length === 0}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                  >
+                    {paymentOptions.length === 0 ? (
+                      <option value="">선택 가능한 결제 수단 없음</option>
+                    ) : (
+                      paymentOptions.map((option) => (
+                        <option key={option.key} value={option.key}>{option.label}</option>
+                      ))
+                    )}
+                  </select>
+                </div>
+                <div>
+                  <div className="mb-2 flex items-center justify-between">
+                    <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">결제 지갑</label>
+                    <button
+                      type="button"
+                      onClick={handleLinkNewWallet}
+                      disabled={linkingWallet || busy || !currentUser}
+                      className="text-xs font-bold text-indigo-650 hover:text-indigo-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                    >
+                      {linkingWallet ? <Loader2 className="h-3 w-3 animate-spin" /> : "+ 지갑 추가"}
+                    </button>
+                  </div>
+                  <select
+                    value={selectedWalletId}
+                    onChange={(event) => setSelectedWalletId(event.target.value)}
+                    disabled={busy || eligibleWallets.length === 0 || linkingWallet}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                  >
+                    {eligibleWallets.length === 0 ? (
+                      <option value="">선택한 체인의 연결 지갑 없음</option>
+                    ) : (
+                      eligibleWallets.map((wallet) => (
+                        <option key={wallet.walletId} value={wallet.walletId}>{walletLabel(wallet)}</option>
+                      ))
+                    )}
+                  </select>
+                </div>
+              </div>
+              {message && (
+                <div className={`mt-4 flex gap-2 rounded-xl p-4 text-xs leading-relaxed ${status === "error" ? "border border-red-100 bg-red-50 text-red-700" : "border border-blue-100 bg-blue-50 text-blue-700"}`}>
+                  {status === "error" ? <TriangleAlert size={15} className="mt-0.5 shrink-0" /> : <Loader2 size={15} className="mt-0.5 shrink-0 animate-spin" />}
+                  <span>{message}</span>
+                </div>
+              )}
+            </div>
+            <div>
               {storeGroups.map((group) => (
                 <div key={group.storeId} className="mb-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                   <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-3">
@@ -415,82 +465,11 @@ export default function Cart() {
               ))}
             </div>
 
-            <div className="w-full lg:w-1/3">
-              <div className="sticky top-20 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h2 className="mb-6 text-lg font-bold text-slate-950">결제 정보</h2>
-                <div className="mb-6 space-y-4 border-b border-slate-200 pb-6 text-sm text-slate-600">
-                  <div className="flex justify-between">
-                    <span>전체 상품 금액</span>
-                    <span className="font-mono">{formatCryptoAmount(cryptoTotal)} {cryptoSymbol}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>스토어 수</span>
-                    <span>{storeGroups.length}곳</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>배송비</span>
-                    <span>무료</span>
-                  </div>
-                </div>
-                <div className="mb-5 space-y-4">
-                  <div>
-                    <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">결제 수단</label>
-                    <select
-                      value={selectedPaymentOptionKey}
-                      onChange={(event) => setSelectedPaymentOptionKey(event.target.value)}
-                      disabled={busy || paymentOptions.length === 0}
-                      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-                    >
-                      {paymentOptions.length === 0 ? (
-                        <option value="">선택 가능한 결제 수단 없음</option>
-                      ) : (
-                        paymentOptions.map((option) => (
-                          <option key={option.key} value={option.key}>{option.label}</option>
-                        ))
-                      )}
-                    </select>
-                  </div>
-                  <div>
-                    <div className="mb-2 flex items-center justify-between">
-                      <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">결제 지갑</label>
-                      <button
-                        type="button"
-                        onClick={handleLinkNewWallet}
-                        disabled={linkingWallet || busy || !currentUser}
-                        className="text-xs font-bold text-indigo-650 hover:text-indigo-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
-                      >
-                        {linkingWallet ? <Loader2 className="h-3 w-3 animate-spin" /> : "+ 지갑 추가"}
-                      </button>
-                    </div>
-                    <select
-                      value={selectedWalletId}
-                      onChange={(event) => setSelectedWalletId(event.target.value)}
-                      disabled={busy || eligibleWallets.length === 0 || linkingWallet}
-                      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-                    >
-                      {eligibleWallets.length === 0 ? (
-                        <option value="">선택한 체인의 연결 지갑 없음</option>
-                      ) : (
-                        eligibleWallets.map((wallet) => (
-                          <option key={wallet.walletId} value={wallet.walletId}>{walletLabel(wallet)}</option>
-                        ))
-                      )}
-                    </select>
-                  </div>
-                </div>
-                {message && (
-                  <div className={`mb-4 flex gap-2 rounded-xl p-4 text-xs leading-relaxed ${status === "error" ? "border border-red-100 bg-red-50 text-red-700" : "border border-blue-100 bg-blue-50 text-blue-700"}`}>
-                    {status === "error" ? <TriangleAlert size={15} className="mt-0.5 shrink-0" /> : <Loader2 size={15} className="mt-0.5 shrink-0 animate-spin" />}
-                    <span>{message}</span>
-                  </div>
-                )}
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs leading-relaxed text-slate-600">
-                  {storeGroups.length > 1
-                    ? "상품이 여러 스토어에 나뉘어 있어 스토어별로 결제합니다. 왼쪽에서 각 스토어의 “이 스토어 결제”를 눌러 진행해 주세요."
-                    : "왼쪽의 “이 스토어 결제” 버튼으로 결제를 진행해 주세요."}
-                </div>
-              </div>
-            </div>
+            {storeGroups.length > 1 && (
+              <p className="mt-1 px-1 text-xs leading-relaxed text-slate-500">
+                상품이 여러 스토어에 나뉘어 있어 스토어별로 결제합니다. 각 스토어의 “이 스토어 결제”를 눌러 진행해 주세요.
+              </p>
+            )}
           </div>
         )}
       </div>
