@@ -420,16 +420,29 @@ export default function Cart() {
           </div>
         ) : (
           <div>
-            <div className="mb-6 flex gap-3 rounded-2xl border border-blue-100 bg-blue-50/40 p-4 text-sm leading-relaxed text-blue-900 shadow-sm">
-              <Info size={18} className="mt-0.5 shrink-0 text-blue-500" />
-              <div>
-                <span className="font-bold">TIP: 테스트 결제가 필요하신가요?</span> 잔액이 부족하다면{" "}
-                <Link href="/profile" className="font-bold underline text-blue-700 hover:text-blue-900 transition-colors">
-                  내 정보
-                </Link>
-                의 Faucet Station에서 테스트용 토큰을 무료로 발급받으실 수 있습니다.
+            {currentUser && wallets.length === 0 ? (
+              <div className="mb-6 flex gap-3 rounded-2xl border border-amber-100 bg-amber-50/40 p-4 text-sm leading-relaxed text-amber-900 shadow-sm animate-pulse">
+                <TriangleAlert size={18} className="mt-0.5 shrink-0 text-amber-500" />
+                <div>
+                  <span className="font-bold">Metamask 지갑 연동 필요:</span> 현재 소셜 계정으로 로그인되어 있으나, 결제를 진행하려면 <span className="font-semibold text-amber-950">테스트 체인에 연결된 Metamask 지갑</span>이 필수적으로 연동되어야 합니다.{" "}
+                  <Link href="/profile" className="font-bold underline text-amber-700 hover:text-amber-900 transition-colors">
+                    내 정보
+                  </Link>
+                  에서 지갑을 먼저 연동해 주세요.
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="mb-6 flex gap-3 rounded-2xl border border-blue-100 bg-blue-50/40 p-4 text-sm leading-relaxed text-blue-900 shadow-sm">
+                <Info size={18} className="mt-0.5 shrink-0 text-blue-500" />
+                <div>
+                  <span className="font-bold">TIP: 테스트 결제가 필요하신가요?</span> 잔액이 부족하다면{" "}
+                  <Link href="/profile" className="font-bold underline text-blue-700 hover:text-blue-900 transition-colors">
+                    내 정보
+                  </Link>
+                  의 Faucet Station에서 테스트용 토큰을 무료로 발급받으실 수 있습니다.
+                </div>
+              </div>
+            )}
             <div>
               {storeGroups.map((group) => {
                 const storeBusy = storeStatus[group.storeId] === "creating";
