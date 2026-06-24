@@ -53,23 +53,19 @@ class CheckoutCommandDecision:
 
 
 class CheckoutProcessManager:
-    # Inventory is claimed only after the customer has actually paid (reserve-on-confirm).
-    # An unpaid order therefore locks no stock. ORDER_CREATED kicks off the payment
-    # request synchronously (see composition); the saga begins at PAYMENT_CONFIRMED.
     _COMMANDS_BY_EVENT: dict[CheckoutEventName, tuple[CheckoutCommandName, ...]] = {
-        CheckoutEventName.ORDER_CREATED: (),
-        CheckoutEventName.PAYMENT_CONFIRMED: (CheckoutCommandName.RESERVE_INVENTORY,),
-        CheckoutEventName.INVENTORY_RESERVED: (CheckoutCommandName.REQUEST_STORE_APPROVAL,),
+        CheckoutEventName.ORDER_CREATED: (CheckoutCommandName.RESERVE_INVENTORY,),
+        CheckoutEventName.INVENTORY_RESERVED: (CheckoutCommandName.INITIATE_PAYMENT,),
         CheckoutEventName.INVENTORY_CONFIRMED: (),
-        # The customer paid but the stock was claimed by someone else first: refund and cancel.
-        CheckoutEventName.INVENTORY_RESERVATION_FAILED: (
-            CheckoutCommandName.REFUND_PAYMENT,
+        CheckoutEventName.PAYMENT_CONFIRMED: (CheckoutCommandName.REQUEST_STORE_APPROVAL,),
+        CheckoutEventName.PAYMENT_FAILED: (
             CheckoutCommandName.RELEASE_INVENTORY,
             CheckoutCommandName.CANCEL_ORDER,
         ),
-        # No stock is held before payment, so failed/expired payments only cancel the order.
-        CheckoutEventName.PAYMENT_FAILED: (CheckoutCommandName.CANCEL_ORDER,),
-        CheckoutEventName.PAYMENT_EXPIRED: (CheckoutCommandName.CANCEL_ORDER,),
+        CheckoutEventName.PAYMENT_EXPIRED: (
+            CheckoutCommandName.RELEASE_INVENTORY,
+            CheckoutCommandName.CANCEL_ORDER,
+        ),
         CheckoutEventName.ORDER_APPROVED: (CheckoutCommandName.CONFIRM_INVENTORY,),
         CheckoutEventName.ORDER_REJECTED: (
             CheckoutCommandName.REFUND_PAYMENT,

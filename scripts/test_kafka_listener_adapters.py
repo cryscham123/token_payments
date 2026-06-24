@@ -97,25 +97,25 @@ def test_checkout_listener_deserializes_event_dispatches_process_manager_and_sav
 
     result = listener.handle(inbound)
 
-    # Reserve-on-confirm: an expired payment held no stock, so only the order is cancelled.
     assert result.duplicate_decision is None
     assert result.message_id == MESSAGE_ID
     assert [message.name for message in outbox_messages.saved] == [
+        CheckoutCommandName.RELEASE_INVENTORY.value,
         CheckoutCommandName.CANCEL_ORDER.value,
     ]
-    assert [message.kind for message in outbox_messages.saved] == [OutboxMessageKind.COMMAND]
-    assert [message.topic for message in outbox_messages.saved] == ["order.commands"]
-    cancel = outbox_messages.saved[0]
-    assert cancel.identity == str(CommandId.for_order_action(ORDER_ID, CheckoutCommandName.CANCEL_ORDER))
-    assert cancel.key == str(ORDER_ID)
-    assert cancel.headers["correlationId"] == str(ORDER_ID)
-    assert cancel.headers["causationId"] == str(MESSAGE_ID)
-    assert cancel.payload["commandName"] == CheckoutCommandName.CANCEL_ORDER.value
-    assert cancel.payload["commandId"] == cancel.identity
-    assert cancel.payload["orderId"] == str(ORDER_ID)
-    assert cancel.payload["issuedAt"] == NOW.isoformat()
-    assert cancel.payload["paymentId"] == str(PAYMENT_ID)
-    assert cancel.payload["sourceEventName"] == CheckoutEventName.PAYMENT_EXPIRED.value
+    assert [message.kind for message in outbox_messages.saved] == [OutboxMessageKind.COMMAND, OutboxMessageKind.COMMAND]
+    assert [message.topic for message in outbox_messages.saved] == ["inventory.commands", "order.commands"]
+    release = outbox_messages.saved[0]
+    assert release.identity == str(CommandId.for_order_action(ORDER_ID, CheckoutCommandName.RELEASE_INVENTORY))
+    assert release.key == str(ORDER_ID)
+    assert release.headers["correlationId"] == str(ORDER_ID)
+    assert release.headers["causationId"] == str(MESSAGE_ID)
+    assert release.payload["commandName"] == CheckoutCommandName.RELEASE_INVENTORY.value
+    assert release.payload["commandId"] == release.identity
+    assert release.payload["orderId"] == str(ORDER_ID)
+    assert release.payload["issuedAt"] == NOW.isoformat()
+    assert release.payload["paymentId"] == str(PAYMENT_ID)
+    assert release.payload["sourceEventName"] == CheckoutEventName.PAYMENT_EXPIRED.value
     assert processed_messages.records == [
         ProcessedMessage.record(
             message_id=MESSAGE_ID,
@@ -134,10 +134,9 @@ def test_checkout_listener_expands_order_items_into_inventory_reservation_comman
         outbox_messages=outbox_messages,
     )
 
-    # Reserve-on-confirm: the inventory claim is expanded per item at PAYMENT_CONFIRMED.
     listener.handle(
         _event_message(
-            CheckoutEventName.PAYMENT_CONFIRMED,
+            CheckoutEventName.ORDER_CREATED,
             {
                 "storeId": str(STORE_ID),
                 "items": [

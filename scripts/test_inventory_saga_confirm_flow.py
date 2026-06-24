@@ -43,7 +43,7 @@ def test_order_approved_event_decides_deterministic_confirm_inventory_command() 
     ]
 
 
-def test_rejection_releases_inventory_while_failed_expired_only_cancel() -> None:
+def test_failure_and_rejection_events_still_release_reserved_inventory() -> None:
     manager = CheckoutProcessManager()
 
     assert [command.name for command in manager.handle(_process_event(CheckoutEventName.ORDER_REJECTED))] == [
@@ -51,9 +51,9 @@ def test_rejection_releases_inventory_while_failed_expired_only_cancel() -> None
         CheckoutCommandName.RELEASE_INVENTORY,
         CheckoutCommandName.CANCEL_ORDER,
     ]
-    # Reserve-on-confirm: failed/expired payments held no stock, so they only cancel the order.
     for event_name in (CheckoutEventName.PAYMENT_FAILED, CheckoutEventName.PAYMENT_EXPIRED):
         assert [command.name for command in manager.handle(_process_event(event_name))] == [
+            CheckoutCommandName.RELEASE_INVENTORY,
             CheckoutCommandName.CANCEL_ORDER,
         ]
 
