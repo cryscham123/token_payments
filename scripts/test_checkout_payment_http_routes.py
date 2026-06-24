@@ -95,13 +95,13 @@ def test_checkout_http_routes_call_tracking_facade_with_path_params() -> None:
     tracking = router.handle(
         "GET",
         f"/checkouts/tracking/{TRACKING_ID}",
-        headers={"X-Request-Id": "req-checkout-track-path"},
+        headers={"X-Request-Id": "req-checkout-track-path", "X-User-Id": str(USER_ID)},
         received_at=NOW,
     )
     order = router.handle(
         "GET",
         f"/checkouts/orders/{ORDER_ID}",
-        headers={"X-Request-Id": "req-checkout-order-path"},
+        headers={"X-Request-Id": "req-checkout-order-path", "X-User-Id": str(USER_ID)},
         received_at=NOW,
     )
 
@@ -126,14 +126,14 @@ def test_checkout_http_routes_keep_query_string_lookup_compatible_with_facade_co
         "GET",
         f"/checkouts/tracking/{OTHER_TRACKING_ID}",
         query={"trackingId": str(TRACKING_ID)},
-        headers={"X-Request-Id": "req-checkout-track-query"},
+        headers={"X-Request-Id": "req-checkout-track-query", "X-User-Id": str(USER_ID)},
         received_at=NOW,
     )
     order = router.handle(
         "GET",
         f"/checkouts/orders/{OTHER_ORDER_ID}",
         query=f"orderId={ORDER_ID}",
-        headers={"X-Request-Id": "req-checkout-order-query"},
+        headers={"X-Request-Id": "req-checkout-order-query", "X-User-Id": str(USER_ID)},
         received_at=NOW,
     )
 
@@ -369,11 +369,11 @@ class FakeCheckoutTrackingQuery:
         self.order_id_calls: list[OrderId] = []
         self.tracking_id_calls: list[TrackingId] = []
 
-    def get_by_tracking_id(self, tracking_id: TrackingId) -> CheckoutTrackingSnapshot | None:
+    def get_by_tracking_id(self, tracking_id: TrackingId, user_id: object | None = None) -> CheckoutTrackingSnapshot | None:
         self.tracking_id_calls.append(tracking_id)
         return self.snapshot
 
-    def get_by_order_id(self, order_id: OrderId) -> CheckoutTrackingSnapshot | None:
+    def get_by_order_id(self, order_id: OrderId, user_id: object | None = None) -> CheckoutTrackingSnapshot | None:
         self.order_id_calls.append(order_id)
         return self.snapshot
 

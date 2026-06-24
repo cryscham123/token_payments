@@ -282,10 +282,12 @@ class CheckoutTrackingSnapshot:
 
 
 class CheckoutTrackingQueryPort(Protocol):
-    def get_by_tracking_id(self, tracking_id: TrackingId) -> CheckoutTrackingSnapshot | None:
+    # user_id, when provided, scopes the lookup to the owning customer (returns None for
+    # non-owners) so checkout tracking enforces object-level authorization.
+    def get_by_tracking_id(self, tracking_id: TrackingId, user_id: UserId | None = None) -> CheckoutTrackingSnapshot | None:
         ...
 
-    def get_by_order_id(self, order_id: OrderId) -> CheckoutTrackingSnapshot | None:
+    def get_by_order_id(self, order_id: OrderId, user_id: UserId | None = None) -> CheckoutTrackingSnapshot | None:
         ...
 
 

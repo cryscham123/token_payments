@@ -6,7 +6,7 @@ from typing import Any
 
 from token_payments.contexts.order.application import CheckoutTrackingQueryPort, CheckoutTrackingSnapshot
 from token_payments.contexts.order.domain import TrackingId
-from token_payments.shared.domain import Crypto, OrderId
+from token_payments.shared.domain import Crypto, OrderId, UserId
 
 from .contracts import ApiRequest, ApiResponse, json_response
 
@@ -19,16 +19,31 @@ class CheckoutApi:
 
     def get_tracking(self, request: ApiRequest) -> ApiResponse:
         try:
+            # Object-level authorization: a checkout exposes order/payment/wallet details, so
+            # only its owner may read it. Require a session and scope the lookup to that user.
+            user_id = _user_id_from_request(request)
+            if user_id is None:
+                return _error_response("AUTHENTICATION_REQUIRED", "authenticated session is required", 401, request.request_id)
             lookup_kind, lookup_value = _tracking_lookup(request)
             if lookup_kind == "trackingId":
-                snapshot = self._tracking_query.get_by_tracking_id(TrackingId(lookup_value))
+                snapshot = self._tracking_query.get_by_tracking_id(TrackingId(lookup_value), user_id)
             else:
-                snapshot = self._tracking_query.get_by_order_id(OrderId(lookup_value))
+                snapshot = self._tracking_query.get_by_order_id(OrderId(lookup_value), user_id)
             if snapshot is None:
                 return _error_response("CHECKOUT_NOT_FOUND", "checkout tracking record was not found", 404, request.request_id)
             return json_response({"checkout": _tracking_payload(snapshot)}, request_id=request.request_id)
         except ValueError as exc:
             return _error_response("VALIDATION_ERROR", str(exc), 400, request.request_id)
+
+
+def _user_id_from_request(request: ApiRequest) -> UserId | None:
+    if request.auth_context is not None and request.auth_context.user_id is not None:
+        return UserId(request.auth_context.user_id)
+    if request.local_auth_fallback_enabled:
+        for key, value in request.headers.items():
+            if key.lower() == "x-user-id" and value.strip():
+                return UserId(value.strip())
+    return None
 
 
 def _tracking_lookup(request: ApiRequest) -> tuple[str, str]:
