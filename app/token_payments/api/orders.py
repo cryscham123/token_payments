@@ -240,13 +240,30 @@ def _status_for_error(code: OrderErrorCode) -> int:
         OrderErrorCode.CUSTOMER_NOT_FOUND: 404,
         OrderErrorCode.STORE_NOT_FOUND: 404,
         OrderErrorCode.VALIDATION_ERROR: 400,
+        OrderErrorCode.OPEN_ORDER_EXISTS: 409,
     }[code]
 
 
 def _coerce_order_error(error: OrderApplicationError | ValueError) -> OrderApplicationError:
     if isinstance(error, OrderApplicationError):
         return error
-    return OrderApplicationError(OrderErrorCode.VALIDATION_ERROR, str(error))
+    return OrderApplicationError(OrderErrorCode.VALIDATION_ERROR, _public_order_error_message(str(error)))
+
+
+def _public_order_error_message(message: str) -> str:
+    lower = message.lower()
+    if (
+        ("eth_estimategas" in lower or "vm exception" in lower)
+        and (
+            "insufficient balance" in lower
+            or "exceeds balance" in lower
+            or "transfer amount exceeds balance" in lower
+        )
+    ):
+        return "payment token balance is insufficient"
+    if "json-rpc" in lower and "insufficient funds" in lower:
+        return "payment gas balance is insufficient"
+    return message
 
 
 __all__ = ["OrdersApi"]

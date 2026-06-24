@@ -29,6 +29,7 @@ class PaymentStatus(StrEnum):
     CONFIRMED = "CONFIRMED"
     FAILED = "FAILED"
     EXPIRED = "EXPIRED"
+    CANCELLED = "CANCELLED"
     REFUNDED = "REFUNDED"
 
 
@@ -490,16 +491,16 @@ class Payment:
     ) -> Self:
         now = _require_aware_datetime(now or datetime.now(UTC), "now")
         reason = _require_text(reason, "reason")
-        if self.status is PaymentStatus.EXPIRED:
-            return self
         if _is_final_payment_status(self.status):
             return self
         self._ensure_status(PaymentStatus.AWAITING_SIGNATURE, "expire awaiting signature payment")
-        # `force` is set for customer-initiated cancellations, which may happen before the
-        # automatic expiry deadline; the timeout worker leaves it False so it only fires after.
+        # `force` marks a customer-initiated cancellation: it may happen before the automatic
+        # expiry deadline, and resolves to CANCELLED so it reads as a cancellation rather than a
+        # timeout. The timeout worker leaves force False, only fires past expires_at, and EXPIRES.
         if not force and now < self.expires_at:
             raise ValueError("Payment cannot expire before expires_at")
-        return replace(self, status=PaymentStatus.EXPIRED, failure_reason=reason)
+        terminal_status = PaymentStatus.CANCELLED if force else PaymentStatus.EXPIRED
+        return replace(self, status=terminal_status, failure_reason=reason)
 
     def refund_payment(self, refund_receipt: TransactionReceipt) -> Self:
         if not isinstance(refund_receipt, TransactionReceipt):
@@ -887,6 +888,7 @@ def _is_final_payment_status(status: PaymentStatus) -> bool:
         PaymentStatus.CONFIRMED,
         PaymentStatus.FAILED,
         PaymentStatus.EXPIRED,
+        PaymentStatus.CANCELLED,
         PaymentStatus.REFUNDED,
     }
 

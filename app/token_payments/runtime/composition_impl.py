@@ -70,8 +70,10 @@ from token_payments.contexts.order.adapter import (
 from token_payments.contexts.order.application import (
     CancelOrderCommand,
     CreateOrderCommand,
+    OrderApplicationError,
     OrderApplicationService,
     OrderCommandHandler,
+    OrderErrorCode,
 )
 from token_payments.contexts.order.domain import TrackingId
 from token_payments.contexts.payment.adapter.blockchain import ClientBlockchainAdapter
@@ -1883,10 +1885,20 @@ class _TransactionalOrderUseCase:
 
     def _create_order_and_payment_request(self, connection: Any, command: CreateOrderCommand):
         outbox = PostgresOutboxMessageRepository(connection)
+        orders = PostgresOrderRepository(connection)
+        # One in-flight unpaid order per account: creating an order reserves stock (before
+        # signing), so cap each customer at a single PENDING order to bound how much stock a
+        # single account can hold. The customer must pay, cancel, or let it expire first.
+        customer = PostgresCustomerRepository(connection).get_by_user_id(command.authenticated_user_id)
+        if customer is not None and orders.open_order_exists(customer.customer_id):
+            raise OrderApplicationError(
+                OrderErrorCode.OPEN_ORDER_EXISTS,
+                "결제 대기 중인 주문이 이미 있습니다. 기존 주문을 결제하거나 취소한 뒤 다시 시도해 주세요.",
+            )
         result = OrderApplicationService(
             customers=PostgresCustomerRepository(connection),
             stores=PostgresStoreRepository(connection),
-            orders=PostgresOrderRepository(connection),
+            orders=orders,
             outbox_messages=outbox,
             wallets=PostgresUserWalletRepository(connection),
             payment_assets=_payment_asset_registry_for_connection(connection, self._config),

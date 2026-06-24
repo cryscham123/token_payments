@@ -586,6 +586,39 @@ class FakeResult:
         return self._rows[0]
 
 
+def test_open_order_exists_reports_pending_order_for_customer() -> None:
+    from token_payments.contexts.order.adapter.postgres import PostgresOrderRepository
+    from token_payments.shared.domain import CustomerId
+
+    class _RowResult:
+        def __init__(self, rows: list[Any]) -> None:
+            self._rows = rows
+
+        def fetchone(self) -> Any:
+            return self._rows[0] if self._rows else None
+
+    class _Conn:
+        def __init__(self, rows: list[Any]) -> None:
+            self._rows = rows
+            self.last_sql: str | None = None
+            self.last_params: Mapping[str, Any] | None = None
+
+        def execute(self, sql: str, params: Mapping[str, Any] | None = None) -> _RowResult:
+            self.last_sql = sql
+            self.last_params = params
+            return _RowResult(self._rows)
+
+    customer_id = CustomerId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c22")
+
+    has_open = _Conn([(1,)])
+    assert PostgresOrderRepository(has_open).open_order_exists(customer_id) is True
+    assert "status = 'PENDING'" in has_open.last_sql
+    assert has_open.last_params == {"customer_id": str(customer_id)}
+
+    no_open = _Conn([])
+    assert PostgresOrderRepository(no_open).open_order_exists(customer_id) is False
+
+
 class FakePostgresConnection:
     def __init__(self) -> None:
         self.statements: list[ExecutedStatement] = []

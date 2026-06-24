@@ -792,6 +792,7 @@ CREATE TABLE IF NOT EXISTS payments (
             'CONFIRMED',
             'FAILED',
             'EXPIRED',
+            'CANCELLED',
             'REFUNDED'
         )
     ),

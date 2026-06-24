@@ -6,7 +6,7 @@ import SiteHeader from "./SiteHeader";
 import { useEffect, useState } from "react";
 import { apiJson, getCurrentUser } from "@/lib/auth-client";
 import { cancelPayment } from "@/lib/checkout-client";
-import { formatCryptoAmount } from "@/lib/demo-data";
+import { formatCryptoAmount } from "@/lib/format";
 import { productImageFromMedia, PRODUCT_IMAGE_PLACEHOLDER, getCategoryFallback, resolveProductImage } from "@/lib/product-image";
 
 export default function OrderHistory() {
@@ -159,6 +159,9 @@ export default function OrderHistory() {
       statusColorClass = "bg-red-100 text-red-700";
     } else if (payment.status === "EXPIRED") {
       statusText = "시간 초과";
+      statusColorClass = "bg-slate-100 text-slate-700";
+    } else if (payment.status === "CANCELLED") {
+      statusText = "주문 취소";
       statusColorClass = "bg-slate-100 text-slate-700";
     } else if (payment.status === "REFUNDED") {
       statusText = "환불 완료";

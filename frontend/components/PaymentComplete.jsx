@@ -5,8 +5,11 @@ import { Check, Info, Loader2, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { getCheckoutTracking } from "@/lib/checkout-client";
 
-const SUCCESS_STEPS = new Set(["PAYMENT_CONFIRMED", "ORDER_APPROVED"]);
-const SUCCESS_STATUSES = new Set(["CONFIRMED", "PAID", "APPROVED"]);
+// Success is the order being APPROVED (payment confirmed *and* inventory finalized), not
+// merely PAYMENT_CONFIRMED — a confirmed payment can still be rejected/refunded, so we wait
+// for the saga's terminal approval before declaring completion.
+const SUCCESS_STEPS = new Set(["ORDER_APPROVED"]);
+const SUCCESS_STATUSES = new Set(["APPROVED"]);
 const FAILED_STEPS = new Set([
   "PAYMENT_FAILED",
   "PAYMENT_EXPIRED",
@@ -14,12 +17,13 @@ const FAILED_STEPS = new Set([
   "ORDER_CANCELLING",
   "ORDER_CANCELLED"
 ]);
+const FAILED_STATUSES = new Set(["FAILED", "EXPIRED", "CANCELLED", "REFUNDED"]);
 
 function deriveOutcome(checkout) {
   if (!checkout) return "pending";
   const step = checkout.currentStep || "";
   const status = checkout.status || "";
-  if (checkout.failureReason || FAILED_STEPS.has(step)) return "failed";
+  if (checkout.failureReason || FAILED_STEPS.has(step) || FAILED_STATUSES.has(status)) return "failed";
   if (SUCCESS_STEPS.has(step) || SUCCESS_STATUSES.has(status)) return "success";
   return "pending";
 }
