@@ -15,6 +15,7 @@ export default function Cart() {
   const [cartItems, setCartItems] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [wallets, setWallets] = useState([]);
+  const [loadingAuth, setLoadingAuth] = useState(true);
   const [selectedPaymentOptionKeys, setSelectedPaymentOptionKeys] = useState({});
   const [selectedWalletIds, setSelectedWalletIds] = useState({});
   const [storeStatus, setStoreStatus] = useState({});
@@ -29,10 +30,17 @@ export default function Cart() {
     let active = true;
     getCurrentUser()
       .then((payload) => {
-        if (active) setCurrentUser(payload?.user || null);
+        if (active) {
+          const user = payload?.user || null;
+          setCurrentUser(user);
+          if (!user) setLoadingAuth(false);
+        }
       })
       .catch(() => {
-        if (active) setCurrentUser(null);
+        if (active) {
+          setCurrentUser(null);
+          setLoadingAuth(false);
+        }
       });
     return () => { active = false; };
   }, []);
@@ -42,13 +50,20 @@ export default function Cart() {
     async function loadUserWallets() {
       if (!currentUser) {
         setWallets([]);
+        if (active) setLoadingAuth(false);
         return;
       }
       try {
         const payload = await listWallets();
-        if (active) setWallets((payload?.wallets || []).filter(isActiveWallet));
+        if (active) {
+          setWallets((payload?.wallets || []).filter(isActiveWallet));
+          setLoadingAuth(false);
+        }
       } catch {
-        if (active) setWallets([]);
+        if (active) {
+          setWallets([]);
+          setLoadingAuth(false);
+        }
       }
     }
     loadUserWallets();
@@ -420,7 +435,9 @@ export default function Cart() {
           </div>
         ) : (
           <div>
-            {currentUser && wallets.length === 0 ? (
+            {loadingAuth ? (
+              <div className="mb-6 h-[76px] w-full rounded-2xl bg-slate-200/50 animate-pulse" />
+            ) : currentUser && wallets.length === 0 ? (
               <div className="mb-6 flex gap-3 rounded-2xl border border-amber-100 bg-amber-50/40 p-4 text-sm leading-relaxed text-amber-900 shadow-sm animate-pulse">
                 <TriangleAlert size={18} className="mt-0.5 shrink-0 text-amber-500" />
                 <div>
