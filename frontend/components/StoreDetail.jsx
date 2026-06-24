@@ -2,12 +2,16 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import SiteHeader from "./SiteHeader";
 import { apiJson, getCurrentUser } from "@/lib/auth-client";
 import { formatCryptoAmount } from "@/lib/format";
 import { productImageFromMedia, PRODUCT_IMAGE_PLACEHOLDER, getCategoryFallback } from "@/lib/product-image";
 
 export default function StoreDetail({ publicStoreId }) {
+  const searchParams = useSearchParams();
+  const q = searchParams.get("q") || "";
+
   const [store, setStore] = useState(null);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -21,10 +25,11 @@ export default function StoreDetail({ publicStoreId }) {
       setLoading(true);
       setError("");
       try {
+        const productsQuery = q ? `?q=${encodeURIComponent(q)}` : "";
         const [userPayload, storePayload, productsPayload] = await Promise.all([
           getCurrentUser().catch(() => null),
           apiJson(`/stores/${publicStoreId}`),
-          apiJson(`/stores/${publicStoreId}/products`)
+          apiJson(`/stores/${publicStoreId}/products${productsQuery}`)
         ]);
 
         if (!active) return;
@@ -47,7 +52,7 @@ export default function StoreDetail({ publicStoreId }) {
     return () => {
       active = false;
     };
-  }, [publicStoreId]);
+  }, [publicStoreId, q]);
 
   if (loading) {
     return (
