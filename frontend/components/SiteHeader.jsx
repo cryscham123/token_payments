@@ -4,7 +4,7 @@ import Link from "next/link";
 import { ReceiptText, Search, ShoppingBag, ShoppingCart, Wallet, User } from "lucide-react";
 import { useEffect, useState } from "react";
 import WalletConnectModal from "./WalletConnectModal";
-import { getCurrentUser, logout } from "@/lib/auth-client";
+import { getCurrentUser, logout, apiJson } from "@/lib/auth-client";
 import { loadCart } from "@/lib/cart";
 import { demoStore } from "@/lib/demo-data";
 
@@ -12,6 +12,7 @@ export default function SiteHeader({ cartCount, currentUser: propCurrentUser, on
   const [openWallet, setOpenWallet] = useState(false);
   const [localCurrentUser, setLocalCurrentUser] = useState(null);
   const [storedCartCount, setStoredCartCount] = useState(0);
+  const [pendingCount, setPendingCount] = useState(0);
 
   const currentUser = propCurrentUser !== undefined ? propCurrentUser : localCurrentUser;
   const setCurrentUser = (user) => {
@@ -63,6 +64,37 @@ export default function SiteHeader({ cartCount, currentUser: propCurrentUser, on
       window.removeEventListener("token-payments-cart-changed", refreshCartCount);
     };
   }, []);
+
+  useEffect(() => {
+    if (!currentUser) {
+      setPendingCount(0);
+      return;
+    }
+    let active = true;
+    const fetchPendingCount = () => {
+      apiJson("/payments", { method: "GET" })
+        .then((res) => {
+          if (!active) return;
+          const waiting = (res?.payments || []).filter(
+            (p) => p.status === "AWAITING_SIGNATURE"
+          );
+          setPendingCount(waiting.length);
+        })
+        .catch((err) => {
+          console.error("Failed to load payments for pending count", err);
+        });
+    };
+
+    fetchPendingCount();
+    window.addEventListener("focus", fetchPendingCount);
+    window.addEventListener("token-payments-cart-changed", fetchPendingCount);
+
+    return () => {
+      active = false;
+      window.removeEventListener("focus", fetchPendingCount);
+      window.removeEventListener("token-payments-cart-changed", fetchPendingCount);
+    };
+  }, [currentUser]);
 
   const visibleCartCount = cartCount ?? storedCartCount;
 
@@ -126,8 +158,15 @@ export default function SiteHeader({ cartCount, currentUser: propCurrentUser, on
                 <span className="mt-1 text-[11px]">내 정보</span>
               </Link>
             )}
-            <Link href="/orders" className="flex flex-col items-center text-slate-600 transition-colors hover:text-blue-600">
-              <ReceiptText size={25} />
+            <Link href="/orders" className="relative flex flex-col items-center text-slate-600 transition-colors hover:text-blue-600">
+              <span className="relative">
+                <ReceiptText size={25} />
+                {pendingCount > 0 && (
+                  <span className="absolute -right-2 -top-2 flex h-4 w-4 items-center justify-center rounded-full bg-amber-500 text-[10px] font-bold text-white animate-pulse">
+                    {pendingCount}
+                  </span>
+                )}
+              </span>
               <span className="mt-1 text-[11px]">주문내역</span>
             </Link>
             <Link href="/cart" className="relative flex flex-col items-center text-slate-600 transition-colors hover:text-blue-600">
