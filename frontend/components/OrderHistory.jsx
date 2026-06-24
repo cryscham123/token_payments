@@ -114,11 +114,13 @@ export default function OrderHistory() {
             title: item.title || item.name || "상품",
             quantity: item.quantity || 1,
             selectedOptions: item.selectedOptions || {},
-            thumb: (item.thumb && item.thumb !== PRODUCT_IMAGE_PLACEHOLDER)
-              ? resolveProductImage(item.thumb)
-              : (item.image && item.image !== PRODUCT_IMAGE_PLACEHOLDER)
-                ? resolveProductImage(item.image)
-                : productImageFromMedia(item.media),
+            thumb: (() => {
+              const mediaImg = productImageFromMedia(item.media);
+              if (mediaImg && mediaImg !== PRODUCT_IMAGE_PLACEHOLDER) return mediaImg;
+              if (item.thumb && item.thumb !== PRODUCT_IMAGE_PLACEHOLDER) return resolveProductImage(item.thumb);
+              if (item.image && item.image !== PRODUCT_IMAGE_PLACEHOLDER) return resolveProductImage(item.image);
+              return PRODUCT_IMAGE_PLACEHOLDER;
+            })(),
             category: item.category || ""
           };
         })
