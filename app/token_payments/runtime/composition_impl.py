@@ -1977,7 +1977,14 @@ class _TransactionalOrderUseCase:
                 event_message_id=MessageId(_new_id(self._dependencies.id_generator, "payment_event_message_id")),
                 payer_wallet_id=_optional_payload_text(payload, "payerWalletId"),
                 payment_asset_id=_optional_payload_text(payload, "paymentAssetId"),
-                items=_checkout_items_payload(payload),
+                # Stamp storeId onto each item so payment events (PAYMENT_EXPIRED/FAILED) carry
+                # it: the RELEASE_INVENTORY compensation is hydrated from those events and needs
+                # storeId to locate the variant inventory. Without it the release is dropped as
+                # malformed and the reserved stock is never returned on cancel/timeout/failure.
+                items=tuple(
+                    {**item, "storeId": item.get("storeId") or str(result.order.store_id)}
+                    for item in _checkout_items_payload(payload)
+                ),
             )
         )
 
