@@ -229,7 +229,7 @@ export default function MerchantDashboard({ publicStoreId }) {
   const handleUpdateStoreProfile = async (e) => {
     e.preventDefault();
     if (!canWriteStore) {
-      setStoreError("상점 설정을 수정할 권한이 없습니다.");
+      setStoreError("현재 상점 설정을 수정할 수 있는 권한이 없습니다. 상점 소유주(Owner) 또는 관리자 권한을 가졌는지 확인해 주세요.");
       return;
     }
     setSavingStore(true);
@@ -336,7 +336,7 @@ export default function MerchantDashboard({ publicStoreId }) {
   const handleSaveProduct = async (e) => {
     e.preventDefault();
     if (!canWriteProducts) {
-      setProductError("상품을 수정할 권한이 없습니다.");
+      setProductError("현재 상점에 상품을 등록하거나 수정할 수 있는 권한이 없습니다. 소유주(Owner) 또는 관리자 권한을 가졌는지 확인해 주세요.");
       return;
     }
     setSavingProduct(true);
@@ -389,7 +389,7 @@ export default function MerchantDashboard({ publicStoreId }) {
   const handleCreateInvitation = async (e) => {
     e.preventDefault();
     if (!canInviteMembers) {
-      setInviteError("직원을 초대할 권한이 없습니다.");
+      setInviteError("현재 활성화된 상점(Active Store)에 멤버를 초대할 권한이 없습니다. 상점 소유주(Owner)나 초대 권한이 있는 관리자 계정인지 확인해 주세요.");
       return;
     }
     if (!internalStoreId) {
@@ -724,7 +724,8 @@ export default function MerchantDashboard({ publicStoreId }) {
               <button
                 type="submit"
                 disabled={!canWriteStore || savingStore}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 disabled:opacity-50 px-6 py-3.5 text-xs font-bold text-white transition shadow-lg shadow-blue-100"
+                title={!canWriteStore ? "현재 상점 설정을 수정할 수 있는 권한이 없습니다." : "설정 변경사항 저장"}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed px-6 py-3.5 text-xs font-bold text-white transition shadow-lg shadow-blue-100"
               >
                 {savingStore ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -748,7 +749,8 @@ export default function MerchantDashboard({ publicStoreId }) {
               <button
                 onClick={() => openProductModal(null)}
                 disabled={!canWriteProducts}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-95 px-4 py-3 text-xs font-bold text-white transition shadow-md"
+                title={!canWriteProducts ? "현재 상점에 상품을 등록할 수 있는 권한이 없습니다." : "신규 상품 등록"}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-95 px-4 py-3 text-xs font-bold text-white transition shadow-md disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <Plus size={16} />
                 신규 상품 등록
@@ -756,7 +758,7 @@ export default function MerchantDashboard({ publicStoreId }) {
             </div>
 
             {productsReadBlocked ? (
-              <PermissionNotice message="상품 목록을 볼 수 있는 권한이 없습니다." />
+              <PermissionNotice message="현재 상점 컨텍스트에서 상품 목록을 조회하거나 관리할 수 있는 권한이 부여되지 않았습니다." />
             ) : products.length === 0 ? (
               <div className="text-center py-20 bg-white rounded-2xl border border-slate-200 shadow-sm">
                 <p className="text-sm font-semibold text-slate-500">등록된 상품이 없습니다.</p>
@@ -824,7 +826,7 @@ export default function MerchantDashboard({ publicStoreId }) {
         {activeTab === "members" && (
           membersReadBlocked ? (
             <section className="space-y-6">
-              <PermissionNotice message="소속 스태프 목록과 초대 내역을 볼 수 있는 권한이 없습니다." />
+              <PermissionNotice message="현재 상점 컨텍스트에서 소속 스태프 목록과 초대 내역을 조회하거나 관리할 수 있는 권한이 부여되지 않았습니다." />
             </section>
           ) : (
           <section className="grid gap-6 md:grid-cols-3">
@@ -913,7 +915,7 @@ export default function MerchantDashboard({ publicStoreId }) {
                             <div key={member.userId} className="py-3 flex justify-between items-center text-xs">
                               <div>
                                 <span className="font-bold text-slate-800">{member.displayName || "이름 없음"}</span>
-                                <span className="text-[10px] text-slate-400 block font-mono mt-0.5">ID: {member.userId}</span>
+                                <span className="text-[10px] text-slate-400 block font-mono mt-0.5">지갑 주소: {member.walletAddress || member.userId}</span>
                               </div>
                               <div className="flex items-center gap-3">
                                 <span className={`text-[10px] font-bold border rounded-md px-2 py-0.5 ${
@@ -1253,8 +1255,13 @@ function PermissionNotice({ message }) {
       <div className="flex items-start gap-3">
         <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
         <div>
-          <p className="font-bold">권한이 없습니다</p>
+          <p className="font-bold">접근 권한이 부족합니다</p>
           <p className="mt-1 text-xs font-semibold leading-relaxed text-amber-800">{message}</p>
+          <p className="mt-2.5 text-[10px] text-amber-700 leading-normal border-t border-amber-200/50 pt-2">
+            💡 <b>안내:</b> 해당 영역의 데이터를 조회하거나 작업을 관리하려면 상점의 소유주(Owner) 또는 적절한 권한을 가진 계정으로 로그인해야 합니다. 
+            다중 상점을 관리하시는 경우 상단 <b>[관리 상점 전환]</b> 메뉴를 통해 올바른 상점 컨텍스트가 선택되어 있는지 확인해 주시고, 
+            지속적으로 발생 시 상점 소유주에게 멤버 권한 조정을 요청해 주세요.
+          </p>
         </div>
       </div>
     </div>
