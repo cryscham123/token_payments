@@ -282,7 +282,7 @@ export default function MerchantDashboard({ publicStoreId }) {
       setProductCategory(product.category || "fashion");
       setProductPrice(product.basePrice?.amount ? String(product.basePrice.amount) : (product.displayPrice?.amount ? String(product.displayPrice.amount) : "10.0"));
       setProductPriceCurrency(product.basePrice?.currency || product.displayPrice?.currency || "USD");
-      setProductStock(product.stock !== undefined ? String(product.stock) : "50");
+      setProductStock("0");
       setProductMediaUrls(product.media ? (Array.isArray(product.media) ? product.media : [product.media]) : []);
       setTempMediaUrl("");
       setProductVisibility(product.visibility || "VISIBLE");
@@ -293,7 +293,7 @@ export default function MerchantDashboard({ publicStoreId }) {
       setProductCategory("fashion");
       setProductPrice("10.0");
       setProductPriceCurrency("USD");
-      setProductStock("50");
+      setProductStock("0");
       setProductMediaUrls([]);
       setTempMediaUrl("");
       setProductVisibility("VISIBLE");
@@ -304,8 +304,13 @@ export default function MerchantDashboard({ publicStoreId }) {
 
   const handleAddMediaUrl = () => {
     if (!canWriteProducts) return;
-    if (tempMediaUrl.trim()) {
-      setProductMediaUrls(prev => [...prev, tempMediaUrl.trim()]);
+    const url = tempMediaUrl.trim();
+    if (url) {
+      if (!url.startsWith("http://") && !url.startsWith("https://")) {
+        alert("이미지 URL은 http:// 또는 https:// 경로로 시작해야 합니다.");
+        return;
+      }
+      setProductMediaUrls(prev => [...prev, url]);
       setTempMediaUrl("");
     }
   };
@@ -350,7 +355,7 @@ export default function MerchantDashboard({ publicStoreId }) {
         amount: String(productPrice),
         currency: productPriceCurrency
       },
-      stock: Number.parseInt(productStock),
+      stock: (editingProduct ? (editingProduct.stock || 0) : 0) + (Number.parseInt(productStock) || 0),
       media: productMediaUrls.filter(url => url && url.trim() !== ""),
       visibility: productVisibility,
       status: productStatus,
@@ -1105,14 +1110,21 @@ export default function MerchantDashboard({ publicStoreId }) {
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-500">재고 수량</label>
+                  <label className="text-xs font-bold text-slate-500">
+                    {editingProduct ? "추가할 재고 수량" : "초기 재고 수량"}
+                    {editingProduct && (
+                      <span className="text-[10px] text-slate-400 font-semibold ml-1.5">
+                        (현재 재고: {editingProduct.stock !== undefined ? editingProduct.stock : 0}개)
+                      </span>
+                    )}
+                  </label>
                   <input
                     type="number"
-                    min="0"
                     required
                     value={productStock}
                     onChange={(e) => setProductStock(e.target.value)}
                     disabled={!canWriteProducts}
+                    placeholder={editingProduct ? "추가할 재고 입력 (음수 시 차감)" : "초기 재고 입력"}
                     className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs outline-none focus:border-blue-500"
                   />
                 </div>
@@ -1123,8 +1135,8 @@ export default function MerchantDashboard({ publicStoreId }) {
                   <label className="text-xs font-bold text-slate-500">판매 가격</label>
                   <input
                     type="number"
-                    step="1"
-                    min="1"
+                    step="any"
+                    min="0.01"
                     required
                     value={productPrice}
                     onChange={(e) => setProductPrice(e.target.value)}
