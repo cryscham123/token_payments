@@ -424,7 +424,9 @@ def _run_happy_path_checkout() -> SmokeScenarioResult:
         CommandId,
         Crypto,
         CustomerId,
+        ExchangeRate,
         MessageId,
+        Money,
         OrderId,
         PaymentId,
         ProductId,
@@ -433,6 +435,7 @@ def _run_happy_path_checkout() -> SmokeScenarioResult:
         UserId,
         WalletAddress,
     )
+    from token_payments.contexts.payment.domain import PaymentAsset, PaymentAssetRegistry, PaymentChain
 
     now = datetime(2026, 5, 10, 10, 0, tzinfo=UTC)
     order_id = OrderId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c21")
@@ -449,13 +452,12 @@ def _run_happy_path_checkout() -> SmokeScenarioResult:
     token_address = WalletAddress("0x3333333333333333333333333333333333333333")
     tx_hash = TransactionHash("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
     chain = ChainNetwork(chain_id=11155111, name="Sepolia")
-    unit_price = Crypto(
-        amount=Decimal("1.25"),
-        symbol="USDC",
-        chain_id=chain.chain_id,
-        token_address=token_address,
-        decimals=6,
+    usd_price = Money(amount=Decimal("1.25"), currency="USD")
+    payment_assets = PaymentAssetRegistry(
+        chains=(PaymentChain(chain.chain_id, "Sepolia", "ETH"),),
+        assets=(PaymentAsset.erc20("local-usdc", chain.chain_id, "USDC", 6, token_address),),
     )
+    exchange_rate = ExchangeRate({"USDC": Decimal(1), "USDT": Decimal(1), "ETH": Decimal(3000)})
 
     outbox_messages = _InMemoryOutboxMessageRepository()
     processed_messages = _InMemoryProcessedMessageRepository()
@@ -475,7 +477,7 @@ def _run_happy_path_checkout() -> SmokeScenarioResult:
         primary=True,
         linked_at=now,
     )
-    order_product = OrderProduct(product_id=product_id, name="Deterministic Checkout Item", price=unit_price)
+    order_product = OrderProduct(product_id=product_id, name="Deterministic Checkout Item", price=usd_price)
     order_store = OrderStore(
         store_id=store_id,
         owner_user_id=owner_user_id,
@@ -491,6 +493,8 @@ def _run_happy_path_checkout() -> SmokeScenarioResult:
         orders=order_repository,
         outbox_messages=outbox_messages,
         wallets=_InMemoryUserWalletRepository((payer_wallet,)),
+        payment_assets=payment_assets,
+        exchange_rate=exchange_rate,
     )
     order_status_projector = OrderStatusEventProjector(order_repository, order_projected_messages)
 
@@ -502,6 +506,7 @@ def _run_happy_path_checkout() -> SmokeScenarioResult:
             items=(CreateOrderItem(product_id=product_id, quantity=1),),
             order_id=order_id,
             tracking_id=tracking_id,
+            payment_asset_id="local-usdc",
             event_message_id=MessageId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c22"),
             requested_at=now,
         )
@@ -724,7 +729,7 @@ def _run_happy_path_checkout() -> SmokeScenarioResult:
         ),
         CheckoutCommandName.REQUEST_STORE_APPROVAL.value,
     )
-    approval_product = ApprovalProduct(product_id=product_id, name=order_product.name, price=unit_price, available=True)
+    approval_product = ApprovalProduct(product_id=product_id, name=order_product.name, available=True)
     paid_order = order_repository.require(order_id)
     order_detail_repository = _InMemoryOrderDetailRepository(
         {
@@ -733,7 +738,14 @@ def _run_happy_path_checkout() -> SmokeScenarioResult:
                 store_id=store_id,
                 order_status=paid_order.status.value,
                 total_amount=order_result.total_amount,
-                products=(approval_product,),
+                products=(
+                    ApprovalProduct(
+                        product_id=product_id,
+                        name=order_product.name,
+                        price=order_result.total_amount,
+                        available=True,
+                    ),
+                ),
             )
         }
     )
@@ -1636,6 +1648,8 @@ def _build_compensation_fixture(marker: str) -> _CompensationCheckoutFixture:
         CheckoutCommandName,
         Crypto,
         CustomerId,
+        ExchangeRate,
+        Money,
         OrderId,
         PaymentId,
         ProductId,
@@ -1644,6 +1658,7 @@ def _build_compensation_fixture(marker: str) -> _CompensationCheckoutFixture:
         UserId,
         WalletAddress,
     )
+    from token_payments.contexts.payment.domain import PaymentAsset, PaymentAssetRegistry, PaymentChain
 
     now = datetime(2026, 5, 10, 11, 0, tzinfo=UTC)
     order_id = OrderId(str(_uuid(marker, "21")))
@@ -1660,13 +1675,12 @@ def _build_compensation_fixture(marker: str) -> _CompensationCheckoutFixture:
     token_address = WalletAddress("0x3333333333333333333333333333333333333333")
     confirmed_tx_hash = TransactionHash("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
     chain = ChainNetwork(chain_id=11155111, name="Sepolia")
-    unit_price = Crypto(
-        amount=Decimal("1.25"),
-        symbol="USDC",
-        chain_id=chain.chain_id,
-        token_address=token_address,
-        decimals=6,
+    usd_price = Money(amount=Decimal("1.25"), currency="USD")
+    payment_assets = PaymentAssetRegistry(
+        chains=(PaymentChain(chain.chain_id, "Sepolia", "ETH"),),
+        assets=(PaymentAsset.erc20("local-usdc", chain.chain_id, "USDC", 6, token_address),),
     )
+    exchange_rate = ExchangeRate({"USDC": Decimal(1), "USDT": Decimal(1), "ETH": Decimal(3000)})
 
     outbox_messages = _InMemoryOutboxMessageRepository()
     processed_messages = _InMemoryProcessedMessageRepository()
@@ -1687,7 +1701,7 @@ def _build_compensation_fixture(marker: str) -> _CompensationCheckoutFixture:
         primary=True,
         linked_at=now,
     )
-    order_product = OrderProduct(product_id=product_id, name="Deterministic Compensation Item", price=unit_price)
+    order_product = OrderProduct(product_id=product_id, name="Deterministic Compensation Item", price=usd_price)
     order_store = OrderStore(
         store_id=store_id,
         owner_user_id=owner_user_id,
@@ -1703,6 +1717,8 @@ def _build_compensation_fixture(marker: str) -> _CompensationCheckoutFixture:
         orders=order_repository,
         outbox_messages=outbox_messages,
         wallets=_InMemoryUserWalletRepository((payer_wallet,)),
+        payment_assets=payment_assets,
+        exchange_rate=exchange_rate,
     )
     order_command_handler = OrderCommandHandler(order_repository, order_processed_commands, outbox_messages)
     order_status_projector = OrderStatusEventProjector(order_repository, order_projected_messages)
@@ -1714,6 +1730,7 @@ def _build_compensation_fixture(marker: str) -> _CompensationCheckoutFixture:
             items=(CreateOrderItem(product_id=product_id, quantity=1),),
             order_id=order_id,
             tracking_id=tracking_id,
+            payment_asset_id="local-usdc",
             event_message_id=_message_id(marker, "22"),
             requested_at=now,
         )
@@ -1813,7 +1830,7 @@ def _build_compensation_fixture(marker: str) -> _CompensationCheckoutFixture:
         )
     )
 
-    approval_product = ApprovalProduct(product_id=product_id, name=order_product.name, price=unit_price, available=True)
+    approval_product = ApprovalProduct(product_id=product_id, name=order_product.name, available=True)
     approval_service = StoreApprovalService(
         store_repository=_InMemoryApprovalStoreRepository(
             {

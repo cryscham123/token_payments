@@ -126,7 +126,7 @@ class ProductSnapshot:
 class ProductVariantPrice:
     public_variant_id: str
     option_values: Mapping[str, str]
-    price_delta: Money | Crypto
+    price_delta: Money
     active: bool = True
 
     def __post_init__(self) -> None:
@@ -141,8 +141,8 @@ class ProductVariantPrice:
                 for key, value in self.option_values.items()
             }),
         )
-        if not isinstance(self.price_delta, (Money, Crypto)):
-            raise ValueError("ProductVariantPrice.price_delta must be a Money or Crypto value")
+        if not isinstance(self.price_delta, Money):
+            raise ValueError("ProductVariantPrice.price_delta must be a Money value")
         if not isinstance(self.active, bool):
             raise ValueError("ProductVariantPrice.active must be a bool")
 
@@ -153,7 +153,7 @@ class ProductOptionValuePrice:
     value_key: str
     display_value: str
     option_type: str
-    price_delta: Money | Crypto | None = None
+    price_delta: Money | None = None
     selection_type: str = "SINGLE"
     active: bool = True
 
@@ -163,8 +163,8 @@ class ProductOptionValuePrice:
         object.__setattr__(self, "display_value", _require_text(self.display_value, "ProductOptionValuePrice.display_value"))
         object.__setattr__(self, "option_type", _option_type(self.option_type))
         object.__setattr__(self, "selection_type", _selection_type(self.selection_type))
-        if self.price_delta is not None and not isinstance(self.price_delta, (Money, Crypto)):
-            raise ValueError("ProductOptionValuePrice.price_delta must be a Money or Crypto value or None")
+        if self.price_delta is not None and not isinstance(self.price_delta, Money):
+            raise ValueError("ProductOptionValuePrice.price_delta must be a Money value or None")
         if not isinstance(self.active, bool):
             raise ValueError("ProductOptionValuePrice.active must be a bool")
 
@@ -173,17 +173,16 @@ class ProductOptionValuePrice:
 class Product:
     product_id: ProductId
     name: str
-    price: Money | Crypto
+    price: Money
     variants: Mapping[str, ProductVariantPrice] | None = None
     option_values: Mapping[str, ProductOptionValuePrice] | None = None
-    asset_prices: Mapping[str, Crypto] | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.product_id, ProductId):
             raise ValueError("Product.product_id must be a ProductId")
         object.__setattr__(self, "name", _require_text(self.name, "Product.name"))
-        if not isinstance(self.price, (Money, Crypto)):
-            raise ValueError("Product.price must be a Money or Crypto value")
+        if not isinstance(self.price, Money):
+            raise ValueError("Product.price must be a Money value")
         if self.variants is not None:
             if not isinstance(self.variants, Mapping):
                 raise ValueError("Product.variants must be a mapping")
@@ -209,7 +208,7 @@ class Product:
 
     def snapshot_for_asset(
         self,
-        conversion: PriceConversion | str | None,
+        conversion: PriceConversion,
         created_date: datetime | None = None,
         *,
         public_variant_id: str | None = None,
@@ -230,18 +229,6 @@ class Product:
             media=media,
         )
 
-    def price_for_asset(self, payment_asset_id: str | None) -> Crypto:
-        if isinstance(self.price, Crypto):
-            if payment_asset_id is None:
-                return self.price
-            payment_asset_id = _require_text(payment_asset_id, "payment_asset_id")
-            prices = self.asset_prices if self.asset_prices is not None else getattr(self, "_asset_prices", None)
-            if not isinstance(prices, Mapping) or payment_asset_id not in prices:
-                raise ValueError(f"payment asset {payment_asset_id} is not supported by product {self.product_id}")
-            return _require_crypto(prices[payment_asset_id])
-        else:
-            raise ValueError("price_for_asset is not supported when product price is Money")
-
     def unit_price_usd(
         self,
         *,
@@ -249,8 +236,6 @@ class Product:
         selected_options: Mapping[str, object] | None = None,
     ) -> Money:
         """Fiat (USD) unit price for a selection: base plus variant/add-on deltas."""
-        if not isinstance(self.price, Money):
-            raise ValueError("unit_price_usd is only supported when product price is Money")
         selected_options = _canonical_selected_options(selected_options or {})
         unit_price = self.price
         variant = self._variant_for_selection(public_variant_id, selected_options)
@@ -263,33 +248,20 @@ class Product:
 
     def price_for_selection(
         self,
-        conversion: PriceConversion | str | None,
+        conversion: PriceConversion,
         *,
         public_variant_id: str | None = None,
         selected_options: Mapping[str, object] | None = None,
     ) -> Crypto:
         """On-chain unit price in the selected asset, converted from the USD price."""
-        if isinstance(self.price, Crypto):
-            payment_asset_id = conversion if isinstance(conversion, str) else None
-            base_price = self.price_for_asset(payment_asset_id)
-            selected_options = _canonical_selected_options(selected_options or {})
-            unit_price = base_price
-            variant = self._variant_for_selection(public_variant_id, selected_options)
-            if variant is not None:
-                unit_price = _add_crypto(unit_price, variant.price_delta, "variant priceDelta")
-            for value in self._selected_add_on_values(selected_options):
-                if value.price_delta is not None:
-                    unit_price = _add_crypto(unit_price, value.price_delta, "add-on priceDelta")
-            return unit_price
-        else:
-            if not isinstance(conversion, PriceConversion):
-                raise ValueError("price_for_selection requires a PriceConversion when price is Money")
-            return conversion.convert(
-                self.unit_price_usd(
-                    public_variant_id=public_variant_id,
-                    selected_options=selected_options,
-                )
+        if not isinstance(conversion, PriceConversion):
+            raise ValueError("price_for_selection requires a PriceConversion")
+        return conversion.convert(
+            self.unit_price_usd(
+                public_variant_id=public_variant_id,
+                selected_options=selected_options,
             )
+        )
 
     def _variant_for_selection(
         self,
@@ -518,7 +490,7 @@ class Order:
         item_requests: tuple[object, ...] | None = None,
         created_at: datetime | None = None,
         tracking_id: TrackingId | None = None,
-        conversion: PriceConversion | str | None = None,
+        conversion: PriceConversion | None = None,
     ) -> Self:
         if not isinstance(customer, Customer):
             raise ValueError("Order.initialize_order requires a Customer")
@@ -530,13 +502,10 @@ class Order:
             raise ValueError("Order.initialize_order requires an Address")
         if not product_quantities and not item_requests:
             raise ValueError("Order.initialize_order requires at least one product")
-        
-        is_modern = len(store.products) > 0 and isinstance(store.products[0].price, Money)
-        if is_modern:
-            if not isinstance(conversion, PriceConversion):
-                raise ValueError("Order.initialize_order requires a PriceConversion")
-            if not store.supports_chain(conversion.chain_id):
-                raise ValueError(f"store {store.store_id} does not support chain {conversion.chain_id}")
+        if not isinstance(conversion, PriceConversion):
+            raise ValueError("Order.initialize_order requires a PriceConversion")
+        if not store.supports_chain(conversion.chain_id):
+            raise ValueError(f"store {store.store_id} does not support chain {conversion.chain_id}")
 
         snapshotted_at = created_at or datetime.now(UTC)
         snapshotted_at = _require_aware_datetime(snapshotted_at, "created_at")
@@ -789,24 +758,3 @@ def _require_aware_datetime(value: datetime, field_name: str) -> datetime:
     return value
 
 
-def _require_crypto(value: object) -> Crypto:
-    if not isinstance(value, Crypto):
-        raise ValueError("asset price must be a Crypto value")
-    return value
-
-
-def _add_crypto(left: Crypto, right: Crypto, label: str) -> Crypto:
-    if (
-        left.symbol != right.symbol
-        or left.chain_id != right.chain_id
-        or left.token_address != right.token_address
-        or left.decimals != right.decimals
-    ):
-        raise ValueError(f"{label} asset must match product price asset")
-    return Crypto(
-        amount=left.amount + right.amount,
-        symbol=left.symbol,
-        chain_id=left.chain_id,
-        token_address=left.token_address,
-        decimals=left.decimals,
-    )

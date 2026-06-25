@@ -47,10 +47,14 @@ from token_payments.runtime.session_transport import (  # noqa: E402
     SessionKeyRing,
     SessionTokenSigner,
 )
+from decimal import Decimal  # noqa: E402
 from token_payments.shared.domain import (  # noqa: E402
     CheckoutEventName,
     Crypto,
     CustomerId,
+    ExchangeRate,
+    Money,
+    PriceConversion,
     MessageId,
     OrderId,
     OutboxMessage,
@@ -482,15 +486,16 @@ class CapturingOrderUseCase:
 
     def createOrder(self, command: CreateOrderCommand) -> OrderCreationResult:
         self.commands.append(command)
-        amount = Crypto(
-            amount="12.50",
+        conversion = PriceConversion(
+            rate=ExchangeRate({"USDC": Decimal(1)}),
+            asset_id="local-usdc",
             symbol="USDC",
             chain_id=11155111,
             token_address=TOKEN_ADDRESS,
             decimals=6,
         )
         customer = Customer(customer_id=CUSTOMER_ID, user_id=command.authenticated_user_id)
-        product = Product(product_id=PRODUCT_ID, name="Ledger Mug", price=amount)
+        product = Product(product_id=PRODUCT_ID, name="Ledger Mug", price=Money("12.50", "USD"))
         store = Store(
             store_id=STORE_ID,
             owner_user_id=OWNER_USER_ID,
@@ -506,6 +511,7 @@ class CapturingOrderUseCase:
             product_quantities={PRODUCT_ID: 2},
             tracking_id=TRACKING_ID,
             created_at=NOW,
+            conversion=conversion,
         )
         return OrderCreationResult(
             order=order,

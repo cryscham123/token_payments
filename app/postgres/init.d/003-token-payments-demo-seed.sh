@@ -416,7 +416,7 @@ INSERT INTO store_catalog_products (
     '["products/local-hoodie.png", "products/local-hoodie-back.png", "products/local-hoodie-detail.png", "products/local-hoodie-intro.pdf"]'::jsonb,
     '{"material":"cotton-blend","fit":"regular"}'::jsonb,
     'ACTIVE',
-    'PUBLIC', 0.010000000000000000, 'USD', true)
+    'PUBLIC', 30.00, 'USD', true)
 ON CONFLICT (store_id, product_id) DO UPDATE SET
     public_product_id = EXCLUDED.public_product_id,
     public_store_id = EXCLUDED.public_store_id,
@@ -555,7 +555,7 @@ INSERT INTO store_catalog_product_option_values (
     'val-gift-wrap-premium',
     'premium',
     '프리미엄 포장',
-    1, 0.001, 'USD', true)
+    1, 3.00, 'USD', true)
 ON CONFLICT (store_id, product_id, option_id, option_value_id) DO UPDATE SET
     value_key = EXCLUDED.value_key,
     display_value = EXCLUDED.display_value,
@@ -597,7 +597,7 @@ INSERT INTO store_catalog_product_variants (
     'LOCAL-HOODIE-L',
     'ACTIVE',
     true,
-    2, 0.002000000000000000, 'USD')
+    2, 6.00, 'USD')
 ON CONFLICT (store_id, product_id, public_variant_id) DO UPDATE SET
     display_name = EXCLUDED.display_name,
     option_values = EXCLUDED.option_values,
@@ -671,7 +671,7 @@ INSERT INTO order_store_products (
 ) VALUES (
     '44444444-4444-4444-8444-444444444444',
     '55555555-5555-4555-8555-555555555555',
-    'Local Hoodie', 0.010000000000000000, 'USD')
+    'Local Hoodie', 30.00, 'USD')
 ON CONFLICT (store_id, product_id) DO UPDATE SET
     name = EXCLUDED.name,
     price_amount = EXCLUDED.price_amount,

@@ -29,6 +29,8 @@ from token_payments.contexts.order.domain import Address, Customer, Product, Sto
 from token_payments.shared.domain import (  # noqa: E402
     Crypto,
     CustomerId,
+    ExchangeRate,
+    Money,
     MessageId,
     OrderId,
     ProductId,
@@ -68,6 +70,7 @@ def test_checkout_uses_selected_verified_wallet_id_and_preserves_canonical_refer
             delivery_address=Address(id="ship", street="1 Stable Ave"),
             items=(CreateOrderItem(product_id=PRODUCT_ID, quantity=2),),
             wallet_id=WALLET_ID,
+            payment_asset_id="local-usdc",
             order_id=ORDER_ID,
             tracking_id=TRACKING_ID,
             event_message_id=MESSAGE_ID,
@@ -98,6 +101,7 @@ def test_checkout_defaults_to_chain_primary_wallet_when_wallet_id_is_omitted() -
             store_id=STORE_ID,
             delivery_address=Address(id="ship", street="1 Stable Ave"),
             items=(CreateOrderItem(product_id=PRODUCT_ID, quantity=1),),
+            payment_asset_id="local-usdc",
             order_id=ORDER_ID,
             tracking_id=TRACKING_ID,
             event_message_id=MESSAGE_ID,
@@ -126,6 +130,7 @@ def test_checkout_rejects_foreign_revoked_and_chain_mismatch_wallets() -> None:
                     delivery_address=Address(id="ship", street="1 Stable Ave"),
                     items=(CreateOrderItem(product_id=PRODUCT_ID, quantity=1),),
                     wallet_id=wallet_id,
+                    payment_asset_id="local-usdc",
                     order_id=ORDER_ID,
                     tracking_id=TRACKING_ID,
                     event_message_id=MESSAGE_ID,
@@ -165,6 +170,14 @@ def test_order_api_accepts_wallet_id_without_accepting_raw_wallet_address_select
     assert not hasattr(command, "wallet_address")
 
 
+def _wallet_selection_registry():
+    from token_payments.contexts.payment.domain import PaymentAsset, PaymentAssetRegistry, PaymentChain
+    return PaymentAssetRegistry(
+        chains=(PaymentChain(1337, "Local", "ETH"),),
+        assets=(PaymentAsset.erc20("local-usdc", 1337, "USDC", 6, TOKEN_ADDRESS),),
+    )
+
+
 def _service() -> tuple[OrderApplicationService, "FakeWalletRepository", "FakeOutboxRepository"]:
     wallets = FakeWalletRepository(
         {
@@ -193,6 +206,8 @@ def _service() -> tuple[OrderApplicationService, "FakeWalletRepository", "FakeOu
             orders=FakeOrderRepository(),
             outbox_messages=outbox,
             wallets=wallets,
+            exchange_rate=ExchangeRate({"USDC": Decimal(1), "USDT": Decimal(1), "ETH": Decimal(3000)}),
+            payment_assets=_wallet_selection_registry(),
         ),
         wallets,
         outbox,
@@ -239,7 +254,7 @@ class FakeStoreRepository:
                 Product(
                     product_id=PRODUCT_ID,
                     name="Stable Mug",
-                    price=Crypto("12.50", "USDC", 1337, TOKEN_ADDRESS, 6),
+                    price=Money("12.50", "USD"),
                 ),
             ),
             active=True,

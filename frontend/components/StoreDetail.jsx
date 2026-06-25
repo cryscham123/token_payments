@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import SiteHeader from "./SiteHeader";
 import { apiJson, getCurrentUser } from "@/lib/auth-client";
-import { formatCryptoAmount } from "@/lib/format";
+import { formatCryptoAmount, formatFiatAmount, formatAssetPriceHint } from "@/lib/format";
 import { productImageFromMedia, PRODUCT_IMAGE_PLACEHOLDER, getCategoryFallback } from "@/lib/product-image";
 
 export default function StoreDetail({ publicStoreId }) {
@@ -138,8 +138,11 @@ export default function StoreDetail({ publicStoreId }) {
                     <div className="mt-auto pt-2">
                       <span className="block text-[11px] font-semibold text-slate-500">{homePaymentSummary(product.paymentCapability)}</span>
                       <span className="mt-0.5 block text-lg font-extrabold text-slate-950">
-                        {fromPriceLabel(product)}{formatCryptoAmount(product.displayPrice?.amount)} {product.displayPrice?.symbol || "ETH"}
+                        {fromPriceLabel(product)}{formatFiatAmount(product.displayPrice?.amount, product.displayPrice?.currency)}
                       </span>
+                      {formatAssetPriceHint(product.assetPrices) && (
+                        <span className="block text-[11px] font-medium text-slate-400">{formatAssetPriceHint(product.assetPrices)}</span>
+                      )}
                     </div>
                   </div>
                 </Link>

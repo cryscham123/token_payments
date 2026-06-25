@@ -718,11 +718,8 @@ class FakePostgresSession:
                 "store_id": str(STORE_ID),
                 "product_id": str(PRODUCT_ID),
                 "name": "Ledger Mug",
-                "price_numeric": Decimal("12.50"),
-                "price_symbol": "USDC",
-                "price_chain_id": 11155111,
-                "price_token_address": TOKEN_ADDRESS,
-                "price_decimals": 6,
+                "price_amount": Decimal("12.50"),
+                "price_currency": "USD",
             }
         ]
         self.inventory[(str(PRODUCT_ID), str(STORE_ID))] = {
@@ -753,11 +750,8 @@ class FakePostgresSession:
                 "option_values": {"size": "L"},
                 "active": True,
                 "status": "ACTIVE",
-                "price_delta_numeric": Decimal("2.00"),
-                "price_delta_symbol": "USDC",
-                "price_delta_chain_id": 11155111,
-                "price_delta_token_address": TOKEN_ADDRESS,
-                "price_delta_decimals": 6,
+                "price_delta_amount": Decimal("2.00"),
+                "price_delta_currency": "USD",
             }
         ]
         self.variant_inventory[(str(PRODUCT_ID), str(STORE_ID), VARIANT_ID)] = {

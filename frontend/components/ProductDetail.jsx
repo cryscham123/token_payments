@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import SiteHeader from "./SiteHeader";
 import { addCartItem } from "@/lib/cart";
 import { apiJson } from "@/lib/auth-client";
-import { formatCryptoAmount } from "@/lib/format";
+import { formatCryptoAmount, formatFiatAmount, formatAssetPriceHint } from "@/lib/format";
 import { findProductSummary } from "@/lib/checkout-client";
 import { getS3Url } from "@/lib/s3";
 import { productImageGallery, PRODUCT_IMAGE_PLACEHOLDER, getCategoryFallback } from "@/lib/product-image";
@@ -445,8 +445,11 @@ export default function ProductDetail({ publicProductId }) {
                   <span className="font-medium text-slate-500">총 상품 금액</span>
                   <div className="text-right">
                     <div className="text-3xl font-extrabold text-blue-600">
-                      {formatCryptoAmount(cryptoTotal)} {selectedSymbol}
+                      {formatFiatAmount(cryptoTotal, "USD")}
                     </div>
+                    {formatAssetPriceHint(product?.assetPrices) && (
+                      <div className="text-xs font-medium text-slate-400">{formatAssetPriceHint(product?.assetPrices)}</div>
+                    )}
                   </div>
                 </div>
                 <button
@@ -786,7 +789,7 @@ function priceDeltaLabel(priceDelta) {
   if (!priceDelta) return "";
   const amount = Number.parseFloat(priceDelta.amount || "0");
   if (!amount) return "";
-  return `+${formatCryptoAmount(priceDelta.amount)} ${priceDelta.symbol}`;
+  return `+${formatFiatAmount(priceDelta.amount, priceDelta.currency)}`;
 }
 
 function optionValueDisplayWithDelta(value, selectedPriceOption) {
