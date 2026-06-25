@@ -407,25 +407,11 @@ export default function MerchantDashboard({ publicStoreId }) {
 
       <main className="mx-auto w-full max-w-7xl flex-grow px-4 py-8 sm:px-6 lg:px-8">
         
-        {/* Upper Navigation Back Link */}
-        <div className="mb-6">
-          <Link href="/profile" className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors">
-            <ArrowLeft size={14} />
-            내 정보(프로필)로 돌아가기
-          </Link>
-        </div>
-
-        {/* Dashboard Title Header Card */}
-        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div className="flex items-center gap-3">
-            <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-600 text-white shadow-md shadow-blue-200">
-              <Store size={24} />
-            </span>
-            <div>
-              <h1 className="text-xl font-black tracking-tight text-slate-950">{store.displayName} 대시보드</h1>
-              <p className="text-xs text-slate-400 font-medium">상점의 결제 설정과 등록된 상품을 관리해 보세요.</p>
-            </div>
-          </div>
+        {/* Dashboard Title Header */}
+        <div className="mb-8 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
+            {store.displayName} 대시보드
+          </h1>
           <Link 
             href={`/stores/${publicStoreId}`}
             className="inline-flex items-center gap-1 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200/80 px-3.5 py-2 rounded-xl transition shadow-sm"
@@ -433,7 +419,7 @@ export default function MerchantDashboard({ publicStoreId }) {
             공개 스토어 홈 방문
             <ExternalLink size={12} />
           </Link>
-        </section>
+        </div>
 
         {/* Inner Tabs Navigation */}
         <div className="flex border-b border-slate-200 mb-6 gap-6 overflow-x-auto scrollbar-none">
@@ -550,8 +536,9 @@ export default function MerchantDashboard({ publicStoreId }) {
                 {/* Tokens checkboxes under chains */}
                 <div className="space-y-2">
                   <span className="text-xs font-bold text-slate-500 block mb-1.5">허용 결제 토큰</span>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-3 gap-2">
                     {[
+                      { id: "local-native-eth", symbol: "ETH" },
                       { id: "local-usdc", symbol: "USDC" },
                       { id: "local-usdt", symbol: "USDT" }
                     ].map(token => {
@@ -743,39 +730,46 @@ export default function MerchantDashboard({ publicStoreId }) {
             <div className="md:col-span-2 space-y-6">
               {/* Active Members */}
               <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h3 className="text-sm font-bold text-slate-900 border-b pb-3 mb-4">소속 스태프 목록 ({members.length})</h3>
-                {members.length === 0 ? (
-                  <p className="text-xs text-slate-400 py-6 text-center">등록된 스태프가 없습니다.</p>
-                ) : (
-                  <div className="divide-y divide-slate-100 font-medium">
-                    {members.map(member => (
-                      <div key={member.userId} className="py-3 flex justify-between items-center text-xs">
-                        <div>
-                          <span className="font-bold text-slate-800">{member.displayName || "이름 없음"}</span>
-                          <span className="text-[10px] text-slate-400 block font-mono mt-0.5">ID: {member.userId}</span>
+                {(() => {
+                  const staffMembers = members.filter(member => member.role !== "OWNER" && member.role !== "MERCHANT_OWNER");
+                  return (
+                    <>
+                      <h3 className="text-sm font-bold text-slate-900 border-b pb-3 mb-4">소속 스태프 목록 ({staffMembers.length})</h3>
+                      {staffMembers.length === 0 ? (
+                        <p className="text-xs text-slate-400 py-6 text-center">등록된 스태프가 없습니다.</p>
+                      ) : (
+                        <div className="divide-y divide-slate-100 font-medium">
+                          {staffMembers.map(member => (
+                            <div key={member.userId} className="py-3 flex justify-between items-center text-xs">
+                              <div>
+                                <span className="font-bold text-slate-800">{member.displayName || "이름 없음"}</span>
+                                <span className="text-[10px] text-slate-400 block font-mono mt-0.5">ID: {member.userId}</span>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <span className={`text-[10px] font-bold border rounded-md px-2 py-0.5 ${
+                                  (member.role === "ADMIN" || member.role === "MANAGER")
+                                    ? "text-blue-700 bg-blue-50 border-blue-100"
+                                    : "text-slate-600 bg-slate-50 border-slate-200"
+                                }`}>
+                                  {(member.role === "ADMIN" || member.role === "MANAGER") ? "관리자" : "스태프"}
+                                </span>
+                                {member.userId !== currentUser?.userId && (
+                                  <button
+                                    onClick={() => handleRemoveMember(member.userId)}
+                                    className="text-slate-400 hover:text-red-600 transition"
+                                    title="직원 삭제"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                        <div className="flex items-center gap-3">
-                          <span className={`text-[10px] font-bold border rounded-md px-2 py-0.5 ${
-                            (member.role === "ADMIN" || member.role === "MANAGER")
-                              ? "text-blue-700 bg-blue-50 border-blue-100"
-                              : "text-slate-600 bg-slate-50 border-slate-200"
-                          }`}>
-                            {(member.role === "ADMIN" || member.role === "MANAGER") ? "관리자" : "스태프"}
-                          </span>
-                          {member.userId !== currentUser?.userId && (
-                            <button
-                              onClick={() => handleRemoveMember(member.userId)}
-                              className="text-slate-400 hover:text-red-600 transition"
-                              title="직원 삭제"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                      )}
+                    </>
+                  );
+                })()}
               </div>
 
               {/* Pending Invitations */}
@@ -896,7 +890,7 @@ export default function MerchantDashboard({ publicStoreId }) {
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-500">초기 재고수량</label>
+                  <label className="text-xs font-bold text-slate-500">재고 수량</label>
                   <input
                     type="number"
                     min="0"
@@ -914,7 +908,7 @@ export default function MerchantDashboard({ publicStoreId }) {
                   <input
                     type="number"
                     step="1"
-                    min="0.01"
+                    min="1"
                     required
                     value={productPrice}
                     onChange={(e) => setProductPrice(e.target.value)}
