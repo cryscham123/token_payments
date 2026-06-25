@@ -499,6 +499,26 @@ export default function MerchantDashboard({ publicStoreId }) {
     }
   };
 
+  const handleUpdateMemberRole = async (userId, newRoleId) => {
+    if (!canManageMembers) {
+      alert("멤버 권한을 관리할 권한이 없습니다.");
+      return;
+    }
+    if (userId === currentUser?.userId) {
+      alert("본인의 권한은 변경할 수 없습니다.");
+      return;
+    }
+    try {
+      await apiJson(`/merchant/stores/${internalStoreId}/members/${userId}`, {
+        method: "PATCH",
+        body: { roleId: newRoleId }
+      });
+      loadMembershipData(); // Reload members
+    } catch (err) {
+      alert(err?.message || "역할 변경에 실패했습니다.");
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex min-h-screen flex-col bg-slate-100 text-slate-800">
@@ -918,19 +938,30 @@ export default function MerchantDashboard({ publicStoreId }) {
                                 <span className="text-[10px] text-slate-400 block font-mono mt-0.5">지갑 주소: {member.walletAddress || member.userId}</span>
                               </div>
                               <div className="flex items-center gap-3">
-                                <span className={`text-[10px] font-bold border rounded-md px-2 py-0.5 ${
-                                  (member.roleId === "MERCHANT_OWNER" || member.roleId === "OWNER")
-                                    ? "text-purple-700 bg-purple-50 border-purple-100"
-                                    : (member.roleId === "MERCHANT_ADMIN" || member.roleId === "MERCHANT_MANAGER" || member.roleId === "ADMIN" || member.roleId === "MANAGER")
-                                    ? "text-blue-700 bg-blue-50 border-blue-100"
-                                    : "text-slate-600 bg-slate-50 border-slate-200"
-                                }`}>
-                                  {(member.roleId === "MERCHANT_OWNER" || member.roleId === "OWNER")
-                                    ? "소유주"
-                                    : (member.roleId === "MERCHANT_ADMIN" || member.roleId === "MERCHANT_MANAGER" || member.roleId === "ADMIN" || member.roleId === "MANAGER")
-                                    ? "관리자"
-                                    : "스태프"}
-                                </span>
+                                {canManageMembers && member.userId !== currentUser?.userId && member.roleId !== "MERCHANT_OWNER" && member.roleId !== "OWNER" ? (
+                                  <select
+                                    value={member.roleId}
+                                    onChange={(e) => handleUpdateMemberRole(member.userId, e.target.value)}
+                                    className="text-[10px] font-bold border rounded-md px-1.5 py-0.5 bg-white text-slate-700 border-slate-200 outline-none focus:border-blue-500 cursor-pointer shadow-sm"
+                                  >
+                                    <option value="MERCHANT_ADMIN">관리자</option>
+                                    <option value="MERCHANT_STAFF">스태프</option>
+                                  </select>
+                                ) : (
+                                  <span className={`text-[10px] font-bold border rounded-md px-2 py-0.5 ${
+                                    (member.roleId === "MERCHANT_OWNER" || member.roleId === "OWNER")
+                                      ? "text-purple-700 bg-purple-50 border-purple-100"
+                                      : (member.roleId === "MERCHANT_ADMIN" || member.roleId === "MERCHANT_MANAGER" || member.roleId === "ADMIN" || member.roleId === "MANAGER")
+                                      ? "text-blue-700 bg-blue-50 border-blue-100"
+                                      : "text-slate-600 bg-slate-50 border-slate-200"
+                                  }`}>
+                                    {(member.roleId === "MERCHANT_OWNER" || member.roleId === "OWNER")
+                                      ? "소유주"
+                                      : (member.roleId === "MERCHANT_ADMIN" || member.roleId === "MERCHANT_MANAGER" || member.roleId === "ADMIN" || member.roleId === "MANAGER")
+                                      ? "관리자"
+                                      : "스태프"}
+                                  </span>
+                                )}
                                 {member.userId !== currentUser?.userId && member.roleId !== "MERCHANT_OWNER" && member.roleId !== "OWNER" && (
                                   <button
                                     onClick={() => handleRemoveMember(member.userId)}
