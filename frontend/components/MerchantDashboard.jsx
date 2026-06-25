@@ -478,7 +478,7 @@ export default function MerchantDashboard({ publicStoreId }) {
       });
       loadMembershipData(); // Reload invites
     } catch (err) {
-      alert(err?.message || "초대 취소에 실패했습니다.");
+      alert(getFriendlyErrorMessage(err, "초대 취소에 실패했습니다."));
     }
   };
 
@@ -495,7 +495,7 @@ export default function MerchantDashboard({ publicStoreId }) {
       });
       loadMembershipData(); // Reload members
     } catch (err) {
-      alert(err?.message || "멤버 삭제에 실패했습니다.");
+      alert(getFriendlyErrorMessage(err, "멤버 삭제에 실패했습니다."));
     }
   };
 
@@ -515,7 +515,7 @@ export default function MerchantDashboard({ publicStoreId }) {
       });
       loadMembershipData(); // Reload members
     } catch (err) {
-      alert(err?.message || "역할 변경에 실패했습니다.");
+      alert(getFriendlyErrorMessage(err, "역할 변경에 실패했습니다."));
     }
   };
 
@@ -1297,4 +1297,21 @@ function PermissionNotice({ message }) {
       </div>
     </div>
   );
+}
+
+function getFriendlyErrorMessage(err, defaultMsg) {
+  const msg = err?.message || "";
+  if (msg.includes("is required for store") || msg.includes("MERCHANT_MEMBER_FORBIDDEN")) {
+    return "현재 상점 컨텍스트에서 해당 작업을 수행할 수 있는 권한이 없습니다. 상점 소유주(Owner)이거나 적절한 관리 권한(초대/스태프 관리)을 가진 계정인지 확인해 주세요.";
+  }
+  if (msg.includes("ROLE_TEMPLATE_NOT_ALLOWED") || msg.includes("server-defined non-owner merchant staff templates")) {
+    return "서버에 정의된 비소유주 스태프 역할(관리자 또는 스태프)만 지정 가능합니다.";
+  }
+  if (msg.includes("OWNER_ROLE_PROTECTED")) {
+    return "소유주(Owner) 역할은 변경하거나 임의로 지정할 수 없습니다.";
+  }
+  if (msg.includes("VALIDATION_ERROR")) {
+    return "요청 데이터 검증에 실패했습니다. 입력값을 확인해 주세요.";
+  }
+  return msg || defaultMsg;
 }
