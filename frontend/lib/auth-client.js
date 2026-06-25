@@ -221,7 +221,7 @@ function _isRefreshPath(path) {
 }
 
 export async function apiJson(path, { method = "GET", body, idempotencyKey, _retried = false } = {}) {
-  const headers = body === undefined ? {} : { ...JSON_HEADERS };
+  const headers = { Accept: "application/json", ...(body === undefined ? {} : JSON_HEADERS) };
   const csrfToken = csrfCookie();
   if (csrfToken && !isSafeMethod(method)) headers["X-CSRF-Token"] = csrfToken;
   if (idempotencyKey) headers["Idempotency-Key"] = idempotencyKey;
@@ -273,7 +273,7 @@ export async function apiJson(path, { method = "GET", body, idempotencyKey, _ret
 
 // Low-level apiJson without refresh retry (used by refreshSession itself)
 async function rawApiJson(path, { method = "GET", body } = {}) {
-  const headers = body === undefined ? {} : { ...JSON_HEADERS };
+  const headers = { Accept: "application/json", ...(body === undefined ? {} : JSON_HEADERS) };
   const csrfToken = csrfCookie();
   if (csrfToken && !isSafeMethod(method)) headers["X-CSRF-Token"] = csrfToken;
 
