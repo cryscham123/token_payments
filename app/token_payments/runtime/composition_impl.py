@@ -1485,6 +1485,9 @@ class _TransactionalMerchantMembershipUseCase:
     def list_invitations(self, actor: Any, store_id: Any):
         return self._execute(lambda service: service.list_invitations(actor, store_id))
 
+    def list_user_invitations(self, actor: Any):
+        return self._execute(lambda service: service.list_user_invitations(actor))
+
     def create_invitation(self, actor: Any, store_id: Any, **kwargs: Any):
         return self._execute(lambda service: service.create_invitation(actor, store_id, **kwargs))
 

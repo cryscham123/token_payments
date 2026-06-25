@@ -236,6 +236,44 @@ def test_frontend_home_product_cards_show_catalog_context_without_fake_discounts
     assert "특가" not in home
 
 
+def test_frontend_product_card_images_use_fixed_cropping_frames() -> None:
+    home = (FRONTEND / "components" / "Home.jsx").read_text(encoding="utf-8")
+    store_detail = (FRONTEND / "components" / "StoreDetail.jsx").read_text(encoding="utf-8")
+    merchant_dashboard = (FRONTEND / "components" / "MerchantDashboard.jsx").read_text(encoding="utf-8")
+
+    assert home.count('className="relative aspect-square overflow-hidden bg-slate-50"') == 2
+    assert store_detail.count('className="relative aspect-square overflow-hidden bg-slate-50"') == 1
+    assert 'className="relative aspect-square overflow-hidden bg-slate-50 border-b border-slate-100"' in merchant_dashboard
+    assert 'className="relative aspect-video bg-slate-50 border-b border-slate-100"' not in merchant_dashboard
+    for source in (home, store_detail, merchant_dashboard):
+        assert "h-full w-full object-cover" in source
+
+
+def test_frontend_merchant_dashboard_separates_read_and_write_permission_states() -> None:
+    dashboard = (FRONTEND / "components" / "MerchantDashboard.jsx").read_text(encoding="utf-8")
+
+    assert 'hasScope("merchant_member:read")' in dashboard
+    assert 'hasScope("merchant_member:invite")' in dashboard
+    assert 'hasScope("merchant_member:manage")' in dashboard
+    assert 'hasScope("store:write")' in dashboard
+    assert 'hasScope("product:write")' in dashboard
+    assert "PermissionNotice" in dashboard
+    assert "membershipReadForbidden" in dashboard
+    assert "productReadForbidden" in dashboard
+    assert "권한이 없습니다" in dashboard
+    assert "disabled={!canWriteStore || savingStore}" in dashboard
+    assert "disabled={!canWriteProducts}" in dashboard
+    assert "disabled={!canInviteMembers || sendingInvite || hasPendingInviteForCurrentTarget || !internalStoreId}" in dashboard
+    assert "disabled={!canManageMembers}" in dashboard
+    assert "canRevokeInvitations" in dashboard
+    assert "disabled={!canRevokeInvitations}" in dashboard
+    assert "이미 대기 중인 초대가 있습니다." in dashboard
+    assert 'useState("")' in dashboard
+    assert "44444444-4444-4444-8444-444444444444" not in dashboard
+    assert "catch(() => ({ members: [] }))" not in dashboard
+    assert "catch(() => ({ invitations: [] }))" not in dashboard
+
+
 def test_frontend_header_product_nav_only_shows_real_destinations() -> None:
     header = (FRONTEND / "components" / "SiteHeader.jsx").read_text(encoding="utf-8")
 
@@ -253,6 +291,16 @@ def test_frontend_header_product_nav_only_shows_real_destinations() -> None:
     assert "패션의류" not in header
     assert "크립토 결제" not in header
     assert "신선식품" not in header
+
+
+def test_frontend_header_redirects_home_after_logout() -> None:
+    header = (FRONTEND / "components" / "SiteHeader.jsx").read_text(encoding="utf-8")
+
+    assert "const router = useRouter();" in header
+    assert "const handleWalletButtonClick = async () => {" in header
+    assert header.count("await logout();") == 1
+    assert header.index("await logout();") < header.index('router.push("/");')
+    assert header.count("onClick={handleWalletButtonClick}") == 2
 
 
 def test_frontend_store_nav_opens_public_store_list_before_store_detail() -> None:

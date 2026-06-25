@@ -31,6 +31,7 @@ NOW = datetime(2026, 5, 20, 4, 0, tzinfo=UTC)
 PLATFORM_USER = UserId("018f33aa-9e6d-73d8-9dc3-47d6cdcccc01")
 MERCHANT_USER = UserId("018f33aa-9e6d-73d8-9dc3-47d6cdcccc02")
 CUSTOMER_USER = UserId("018f33aa-9e6d-73d8-9dc3-47d6cdcccc03")
+STAFF_USER = UserId("018f33aa-9e6d-73d8-9dc3-47d6cdcccc0a")
 STORE_ID = StoreId("018f33aa-9e6d-73d8-9dc3-47d6cdcccc04")
 OTHER_STORE_ID = StoreId("018f33aa-9e6d-73d8-9dc3-47d6cdcccc05")
 PLATFORM_GROUP = GroupId("018f33aa-9e6d-73d8-9dc3-47d6cdcccc06")
@@ -71,6 +72,15 @@ def test_merchant_permissions_are_scoped_to_requested_store_and_ignore_role_name
     assert not policy.can(MERCHANT_USER, "product:write", ResourceRef.store(OTHER_STORE_ID))
     assert not policy.can(MERCHANT_USER, "merchant_member:manage", ResourceRef.store(STORE_ID))
     assert not policy.can(CUSTOMER_USER, "inventory:write", ResourceRef.store(STORE_ID))
+
+
+def test_merchant_staff_can_read_member_and_invitation_lists_without_membership_mutation() -> None:
+    policy = AuthorizationPolicy(_repository())
+
+    assert policy.can(STAFF_USER, "merchant_member:read", ResourceRef.store(STORE_ID))
+    assert not policy.can(STAFF_USER, "merchant_member:read", ResourceRef.store(OTHER_STORE_ID))
+    assert not policy.can(STAFF_USER, "merchant_member:invite", ResourceRef.store(STORE_ID))
+    assert not policy.can(STAFF_USER, "merchant_member:manage", ResourceRef.store(STORE_ID))
 
 
 def test_inactive_membership_inactive_role_and_missing_permission_are_denied() -> None:
@@ -137,6 +147,7 @@ def _repository() -> "InMemoryAuthorizationRepository":
         roles=[
             Role(RoleId("PLATFORM_ADMIN"), "platform admin", GroupType.PLATFORM),
             Role(RoleId("MERCHANT_MANAGER"), "merchant manager", GroupType.MERCHANT, merchant_assignable=True),
+            Role(RoleId("MERCHANT_STAFF"), "merchant staff", GroupType.MERCHANT, merchant_assignable=True),
             Role(RoleId("PERSONAL_CUSTOMER"), "personal customer", GroupType.PERSONAL),
         ],
         permissions=[
@@ -145,6 +156,7 @@ def _repository() -> "InMemoryAuthorizationRepository":
             Permission(PermissionName("outbox:retry")),
             Permission(PermissionName("product:write")),
             Permission(PermissionName("inventory:write")),
+            Permission(PermissionName("merchant_member:read")),
             Permission(PermissionName("merchant_member:invite")),
             Permission(PermissionName("user:self")),
         ],
@@ -155,11 +167,13 @@ def _repository() -> "InMemoryAuthorizationRepository":
             RolePermission(RoleId("MERCHANT_MANAGER"), PermissionName("product:write")),
             RolePermission(RoleId("MERCHANT_MANAGER"), PermissionName("inventory:write")),
             RolePermission(RoleId("MERCHANT_MANAGER"), PermissionName("merchant_member:invite")),
+            RolePermission(RoleId("MERCHANT_STAFF"), PermissionName("merchant_member:read")),
             RolePermission(RoleId("PERSONAL_CUSTOMER"), PermissionName("user:self")),
         ],
         memberships=[
             GroupMembership(PLATFORM_USER, PLATFORM_GROUP, RoleId("PLATFORM_ADMIN"), joined_at=NOW),
             GroupMembership(MERCHANT_USER, MERCHANT_GROUP, RoleId("MERCHANT_MANAGER"), joined_at=NOW),
+            GroupMembership(STAFF_USER, MERCHANT_GROUP, RoleId("MERCHANT_STAFF"), joined_at=NOW),
             GroupMembership(CUSTOMER_USER, PERSONAL_GROUP, RoleId("PERSONAL_CUSTOMER"), joined_at=NOW),
         ],
     )

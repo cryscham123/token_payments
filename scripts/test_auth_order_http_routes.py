@@ -125,7 +125,14 @@ def test_auth_route_manifest_exposes_stable_methods_paths_and_operations() -> No
 
 def test_auth_http_routes_call_existing_auth_facade_methods() -> None:
     use_case = FakeAuthUseCase()
-    router = HttpRouter(auth_context_factory=lambda _request: ApiAuthContext(user_id=USER_ID, session_id=SESSION_ID))
+    router = HttpRouter(
+        auth_context_factory=lambda _request: ApiAuthContext(
+            user_id=USER_ID,
+            session_id=SESSION_ID,
+            scopes=("merchant_member:read", "product:read"),
+            group_memberships=({"roleId": "MERCHANT_STAFF", "resourceType": "store", "resourceId": STORE_ID},),
+        )
+    )
 
     routes = register_auth_routes(router, AuthApi(use_case))
 
@@ -226,6 +233,10 @@ def test_auth_http_routes_call_existing_auth_facade_methods() -> None:
 
     assert current_user.status_code == 200
     assert _json(current_user.body)["user"]["userId"] == USER_ID
+    assert _json(current_user.body)["user"]["scopes"] == ["merchant_member:read", "product:read"]
+    assert _json(current_user.body)["user"]["groupMemberships"] == [
+        {"roleId": "MERCHANT_STAFF", "resourceType": "store", "resourceId": str(STORE_ID.value)}
+    ]
     assert isinstance(use_case.calls[-1], CurrentUserQuery)
 
     current_profile = router.handle(

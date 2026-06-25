@@ -884,6 +884,24 @@ WHERE m.user_id = %(user_id)s
 ORDER BY rp.permission_name ASC
 """
 
+SELECT_SCOPES_FOR_GROUP_SQL = """
+SELECT DISTINCT rp.permission_name
+FROM auth_group_memberships m
+JOIN auth_groups g ON m.group_id = g.group_id
+JOIN auth_roles r ON m.role_id = r.role_id
+JOIN auth_role_permissions rp ON r.role_id = rp.role_id
+JOIN auth_permissions p ON rp.permission_name = p.permission_name
+WHERE m.user_id = %(user_id)s
+  AND (m.group_id = %(group_id)s OR g.group_type = 'PERSONAL')
+  AND m.active = true
+  AND g.active = true
+  AND r.active = true
+  AND rp.active = true
+  AND p.active = true
+ORDER BY rp.permission_name ASC
+"""
+
+
 SELECT_PROCESSED_MEMBERSHIP_EVENT_SQL = """
 SELECT 1 FROM processed_messages
 WHERE consumer = 'auth-rbac-projector'
@@ -950,7 +968,7 @@ SELECT
 FROM auth_group_memberships m
 LEFT JOIN auth_users u ON m.user_id = u.user_id
 LEFT JOIN auth_user_profiles p ON m.user_id = p.user_id
-WHERE m.group_id = %(group_id)s::uuid
+WHERE m.group_id = %(group_id)s::uuid AND m.active = true
 ORDER BY m.joined_at ASC, m.user_id ASC
 """
 
@@ -1008,6 +1026,34 @@ FROM auth_group_invitations i
 LEFT JOIN auth_users u ON i.target_user_id = u.user_id
 LEFT JOIN auth_user_profiles p ON i.target_user_id = p.user_id
 WHERE i.group_id = %(group_id)s::uuid
+  AND i.status = 'PENDING'
+ORDER BY i.created_at DESC, i.invitation_id ASC
+"""
+
+SELECT_USER_INVITATIONS_SQL = """
+SELECT
+    i.invitation_id,
+    i.group_id,
+    i.invited_role_id,
+    i.invited_by_user_id,
+    i.target_user_id,
+    COALESCE(i.target_wallet_address, u.wallet_address) as target_wallet_address,
+    i.status,
+    i.created_at,
+    i.expires_at,
+    p.display_name as target_display_name,
+    COALESCE(s.display_name, g.name) as store_name
+FROM auth_group_invitations i
+LEFT JOIN auth_users u ON i.target_user_id = u.user_id
+LEFT JOIN auth_user_profiles p ON i.target_user_id = p.user_id
+LEFT JOIN auth_user_wallets w ON w.user_id = %(user_id)s::uuid
+    AND lower(w.wallet_address) = lower(i.target_wallet_address)
+    AND w.verification_status = 'VERIFIED'
+    AND w.revoked_at IS NULL
+LEFT JOIN auth_groups g ON i.group_id = g.group_id
+LEFT JOIN store_catalog_stores s ON s.group_id = i.group_id
+WHERE (i.target_user_id = %(user_id)s::uuid OR w.wallet_id IS NOT NULL)
+  AND i.status = 'PENDING'
 ORDER BY i.created_at DESC, i.invitation_id ASC
 """
 
@@ -1218,14 +1264,20 @@ class PostgresAuthRbacRepository:
             )
         return tuple(memberships)
 
-    def scopes_for_user(self, user_id: UserId) -> tuple[str, ...]:
+    def scopes_for_user(self, user_id: UserId, group_id: GroupId | None = None) -> tuple[str, ...]:
         if not isinstance(user_id, UserId):
             raise ValueError("PostgresAuthRbacRepository.scopes_for_user requires a UserId")
         
-        result = self._connection.execute(
-            SELECT_SCOPES_SQL,
-            {"user_id": str(user_id)}
-        )
+        if group_id is not None:
+            result = self._connection.execute(
+                SELECT_SCOPES_FOR_GROUP_SQL,
+                {"user_id": str(user_id), "group_id": str(group_id)}
+            )
+        else:
+            result = self._connection.execute(
+                SELECT_SCOPES_SQL,
+                {"user_id": str(user_id)}
+            )
         
         scopes = []
         for row in result:
@@ -1282,12 +1334,60 @@ class PostgresMerchantMembershipRepository:
                 "joined_at": membership.joined_at,
             },
         )
+        # Synchronize with store_catalog_store_memberships table
+        store_row = _fetch_one(
+            self._connection.execute(
+                "SELECT store_id FROM store_catalog_stores WHERE group_id = %(group_id)s::uuid LIMIT 1",
+                {"group_id": str(membership.group_id)},
+            )
+        )
+        if store_row is not None:
+            store_id = _row_value(store_row, "store_id")
+            role_map = {
+                "MERCHANT_OWNER": "OWNER",
+                "MERCHANT_STAFF": "MANAGER",
+                "MERCHANT_MANAGER": "MANAGER",
+            }
+            mapped_role = role_map.get(str(membership.role_id), "MANAGER")
+            self._connection.execute(
+                """
+                INSERT INTO store_catalog_store_memberships (
+                    store_id,
+                    user_id,
+                    role,
+                    active,
+                    updated_at
+                ) VALUES (
+                    %(store_id)s::uuid,
+                    %(user_id)s::uuid,
+                    %(role)s,
+                    %(active)s,
+                    now()
+                )
+                ON CONFLICT (store_id, user_id) DO UPDATE SET
+                    active = EXCLUDED.active,
+                    role = EXCLUDED.role,
+                    updated_at = now()
+                """,
+                {
+                    "store_id": str(store_id),
+                    "user_id": str(membership.user_id),
+                    "role": mapped_role,
+                    "active": membership.active,
+                }
+            )
 
     def invitations_for_group(self, group_id: GroupId) -> tuple[GroupInvitation, ...]:
         if not isinstance(group_id, GroupId):
             raise ValueError("PostgresMerchantMembershipRepository.invitations_for_group requires a GroupId")
         result = self._connection.execute(SELECT_GROUP_INVITATIONS_SQL, {"group_id": str(group_id)})
         return tuple(_row_to_group_invitation(row) for row in _fetch_all(result))
+
+    def invitations_for_user(self, user_id: UserId) -> tuple[tuple[GroupInvitation, str], ...]:
+        if not isinstance(user_id, UserId):
+            raise ValueError("PostgresMerchantMembershipRepository.invitations_for_user requires a UserId")
+        result = self._connection.execute(SELECT_USER_INVITATIONS_SQL, {"user_id": str(user_id)})
+        return tuple((_row_to_group_invitation(row), _row_value(row, "store_name") or "알 수 없는 상점") for row in _fetch_all(result))
 
     def get_invitation(self, invitation_id: InvitationId) -> GroupInvitation | None:
         if not isinstance(invitation_id, InvitationId):

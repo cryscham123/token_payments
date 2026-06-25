@@ -1787,6 +1787,25 @@
           }
         },
         {
+          "id": "listMerchantUserInvitations",
+          "name": "List merchant user invitations",
+          "description": "Lists pending merchant store invitations for the authenticated user.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/merchant/invitations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "merchant",
+                "invitations"
+              ]
+            }
+          }
+        },
+        {
           "id": "createMerchantStoreInvitation",
           "name": "Create merchant store invitation",
           "description": "Invites a user to a server-defined non-owner merchant role template.",

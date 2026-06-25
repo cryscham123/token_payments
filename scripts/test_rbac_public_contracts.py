@@ -81,6 +81,7 @@ def test_manual_seed_plan_contains_static_rbac_catalog_groups_and_memberships() 
     }
     assert ("MERCHANT_OWNER", "merchant_member:manage") in role_permissions
     assert ("MERCHANT_MANAGER", "merchant_member:invite") in role_permissions
+    assert ("MERCHANT_STAFF", "merchant_member:read") in role_permissions
     assert ("MERCHANT_STAFF", "inventory:read") in role_permissions
     assert ("PLATFORM_OPERATOR", "operator:read") in role_permissions
     assert ("PLATFORM_ADMIN", "rbac:manage") in role_permissions

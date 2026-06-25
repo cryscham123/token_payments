@@ -346,6 +346,20 @@ def test_inventory_query_sql_casts_nullable_store_filter_for_live_psycopg() -> N
     assert "memberships.user_id = %(owner_user_id)s::uuid" in combined_sql
 
 
+def test_merchant_user_invitation_sql_uses_store_catalog_display_names() -> None:
+    import token_payments.contexts.auth.adapter.postgres as auth_postgres
+
+    normalized_sql = _normalize_sql(auth_postgres.SELECT_USER_INVITATIONS_SQL)
+    group_sql = _normalize_sql(auth_postgres.SELECT_GROUP_INVITATIONS_SQL)
+
+    assert "g.display_name" not in normalized_sql
+    assert "store_catalog_stores" in normalized_sql
+    assert "coalesce(s.display_name, g.name) as store_name" in normalized_sql
+    assert "lower(w.wallet_address) = lower(i.target_wallet_address)" in normalized_sql
+    assert "i.status = 'pending'" in normalized_sql
+    assert "i.status = 'pending'" in group_sql
+
+
 def test_domain_and_application_layers_do_not_import_postgres_adapters() -> None:
     violations: dict[str, list[str]] = {}
     for context in ("inventory", "payment", "store_approval"):

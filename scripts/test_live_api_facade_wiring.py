@@ -108,7 +108,15 @@ def test_build_live_api_router_uses_route_registration_helpers_and_manifest_cont
     assert [(route.method, route.path_template, route.operation_id) for route in router.routes] == [
         (entry["method"], entry["path"], entry["operationId"]) for entry in http_route_manifest()
     ]
-    assert len(router.routes) == 58
+    assert len(router.routes) == 59
+
+
+def test_live_merchant_membership_facade_exposes_user_invitation_listing() -> None:
+    facades = build_live_api_facades(config=_config(), dependencies=_dependencies(FakePostgresSession()))
+
+    assert type(facades.merchant).__name__ == "MerchantMembershipApi"
+    assert type(facades.merchant._use_case).__name__ == "_TransactionalMerchantMembershipUseCase"
+    assert hasattr(facades.merchant._use_case, "list_user_invitations")
 
 
 def test_live_api_facade_wiring_dispatches_routes_through_injected_transactional_repositories() -> None:
@@ -136,6 +144,7 @@ def test_live_api_facade_wiring_dispatches_routes_through_injected_transactional
         body=_json_body(
             {
                 "storeId": str(STORE_ID),
+                "paymentAssetId": "native",
                 "deliveryAddress": {"id": "ship-to", "street": "2 River Rd"},
                 "items": [{"productId": str(PRODUCT_ID), "quantity": 2}],
             }
@@ -147,7 +156,7 @@ def test_live_api_facade_wiring_dispatches_routes_through_injected_transactional
     assert create_order.status_code == 201
     assert create_payload["order"]["orderId"] == str(ORDER_ID)
     assert create_payload["order"]["trackingId"] == TRACKING_ID
-    assert create_payload["order"]["totalAmount"]["amount"] == "25.00"
+    assert create_payload["order"]["totalAmount"]["amount"] == "0.008333333333333334"
     assert _transaction_sql(session, 1, "insert into orders")
     assert _transaction_sql(session, 1, "insert into outbox_messages")
     assert _transaction_sql(session, 1, "insert into product_variant_inventory")
@@ -162,7 +171,7 @@ def test_live_api_facade_wiring_dispatches_routes_through_injected_transactional
     assert len(payment_items) == 1
     assert payment_items[0]["productId"] == str(PRODUCT_ID)
     assert payment_items[0]["quantity"] == 2
-    assert payment_items[0]["unitPrice"]["amount"] == "12.50"
+    assert payment_items[0]["unitPrice"]["amount"] == "0.004166666666666667"
 
     tracking = router.handle(
         "GET",
@@ -179,12 +188,16 @@ def test_live_api_facade_wiring_dispatches_routes_through_injected_transactional
     assert tracking_payload["checkout"]["paymentRequest"] == {
         "requestId": "payment-request-live-wiring",
         "amount": {
-            "amount": "25.00",
-            "symbol": "USDC",
+            "amount": "0.008333333333333334",
+            "symbol": "ETH",
             "chainId": 11155111,
-            "tokenAddress": TOKEN_ADDRESS,
-            "decimals": 6,
+            "tokenAddress": None,
+            "decimals": 18,
         },
+        "amountMinorUnits": "8333333333333334",
+        "paymentAssetId": "native",
+        "transferType": "NATIVE_TRANSFER",
+        "chainId": 11155111,
         "to": STORE_WALLET,
         "expiresAt": EXPIRES_AT.isoformat(),
     }
@@ -318,6 +331,7 @@ def test_live_order_start_targets_variant_inventory_and_persists_payment_items()
         body=_json_body(
             {
                 "storeId": str(STORE_ID),
+                "paymentAssetId": "native",
                 "deliveryAddress": {"id": "ship-to", "street": "2 River Rd"},
                 "items": [
                     {
@@ -334,7 +348,7 @@ def test_live_order_start_targets_variant_inventory_and_persists_payment_items()
 
     create_payload = _json(create_order.body)
     assert create_order.status_code == 201
-    assert create_payload["order"]["totalAmount"]["amount"] == "29.00"
+    assert create_payload["order"]["totalAmount"]["amount"] == "0.009666666666666666"
     # Stock is tracked only on the selected variant; the base row holds no stock.
     assert "available_stock" not in session.inventory[(str(PRODUCT_ID), str(STORE_ID))]
     assert session.variant_inventory[(str(PRODUCT_ID), str(STORE_ID), VARIANT_ID)]["available_stock"] == 3
@@ -347,7 +361,7 @@ def test_live_order_start_targets_variant_inventory_and_persists_payment_items()
     assert payment_items[0]["publicVariantId"] == VARIANT_ID
     assert payment_items[0]["selectedOptions"] == {"size": "L"}
     assert payment_items[0]["quantity"] == 2
-    assert payment_items[0]["unitPrice"]["amount"] == "14.50"
+    assert payment_items[0]["unitPrice"]["amount"] == "0.004833333333333333"
 
 
 def test_live_api_facade_wiring_source_avoids_frameworks_drivers_sockets_and_docker() -> None:
@@ -631,6 +645,23 @@ class FakePostgresSession:
             return _one(self.stores.get(str(params["store_id"])))
         if "from order_store_products" in normalized:
             return FakeResult([dict(row) for row in self.products.get(str(params["store_id"]), [])])
+        if "from auth_user_wallets" in normalized:
+            return FakeResult(
+                [
+                    {
+                        "wallet_id": "018f33aa-9e6d-73d8-9dc3-47d6cdcc7110",
+                        "user_id": params.get("user_id"),
+                        "wallet_address": CUSTOMER_WALLET,
+                        "chain_id": params.get("chain_id"),
+                        "wallet_type": "EOA",
+                        "verification_status": "VERIFIED",
+                        "primary": True,
+                        "linked_at": NOW,
+                        "revoked_at": None,
+                    }
+                ],
+                rowcount=1,
+            )
         if "from store_catalog_product_variants" in normalized:
             return FakeResult([
                 dict(row)

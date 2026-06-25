@@ -1019,6 +1019,7 @@ def _public_store_payload(
         "description": store.description,
         "descriptionHtml": escape(store.description) if store.description is not None else None,
         "status": store.status.value,
+        "merchantGroupId": str(store.group_id) if store.group_id is not None else None,
     }
     if store.support_email_public and store.support_email is not None:
         payload["supportEmail"] = store.support_email

@@ -225,6 +225,14 @@ class WalletSignatureVerificationResult:
 class RefreshSessionCommand:
     session_id: SessionId
     refresh_token_hash: RefreshTokenHash
+    active_group_id: GroupId | None = None
+
+
+@dataclass(frozen=True)
+class SwitchSessionCommand:
+    session_id: SessionId
+    refresh_token_hash: RefreshTokenHash
+    active_group_id: GroupId
 
 
 @dataclass(frozen=True)
@@ -426,7 +434,7 @@ class AuthRbacRepository(Protocol):
     def session_memberships_for_user(self, user_id: UserId) -> tuple[SessionMembership, ...]:
         ...
 
-    def scopes_for_user(self, user_id: UserId) -> tuple[str, ...]:
+    def scopes_for_user(self, user_id: UserId, group_id: GroupId | None = None) -> tuple[str, ...]:
         ...
 
 

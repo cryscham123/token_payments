@@ -4167,6 +4167,56 @@ paths:
         codes:
         - MEMBERSHIP_ALREADY_EXISTS
         - OWNER_ROLE_PROTECTED
+  /merchant/invitations:
+    get:
+      summary: List merchant user invitations
+      description: Lists pending invitations for the authenticated user.
+      tags:
+      - rbac
+      operationId: listMerchantUserInvitations
+      responses:
+        '200':
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JsonObject'
+              example:
+                invitations: []
+        '400':
+          description: 'Validation error, malformed JSON, missing required input, unsupported enum, or rejected request shape. Possible error codes: VALIDATION_ERROR.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: VALIDATION_ERROR
+                  message: Validation error, malformed JSON, missing required input, unsupported enum, or rejected request shape.
+                  status: 400
+        '401':
+          description: 'Authentication is missing, invalid, expired, or required for the requested operation. Possible error codes: AUTHENTICATION_REQUIRED.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: AUTHENTICATION_REQUIRED
+                  message: Authentication is missing, invalid, expired, or required for the requested operation.
+                  status: 401
+      parameters:
+      - $ref: '#/components/parameters/XRequestIdHeader'
+      - $ref: '#/components/parameters/LocalUserIdHeader'
+      - $ref: '#/components/parameters/LocalScopesHeader'
+      - $ref: '#/components/parameters/CsrfTokenHeader'
+      x-errorCodes:
+      - status: 400
+        codes:
+        - VALIDATION_ERROR
+      - status: 401
+        codes:
+        - AUTHENTICATION_REQUIRED
   /merchant/invitations/{invitationId}/accept:
     post:
       summary: Accept merchant invitation

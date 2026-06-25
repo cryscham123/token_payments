@@ -8,14 +8,14 @@ description: Token Payments public HTTP API, OAuth, Postman 계약을 GitBook에
 
 Default `api`/`serve-api` commands keep the no-server-start preview boundary. Use `PYTHONPATH=app python3 -m token_payments serve-api --live --dry-run` for a bounded live server plan, and `PYTHONPATH=app python3 -m token_payments serve-api --live --confirm-live-api` only when an approved live environment is ready to start the long-running server.
 
-이 문서는 현재 로컬 backend API와 Phase 27 privacy-first identity contract를 기준으로 한다. Route surface는 현재 `app/token_payments/api/http.py`의 route manifest 58개를 기준으로 고정한다.
+이 문서는 현재 로컬 backend API와 Phase 27 privacy-first identity contract를 기준으로 한다. Route surface는 현재 `app/token_payments/api/http.py`의 route manifest 59개를 기준으로 고정한다.
 
 ## GitBook 탐색
 
 - [API 개요](api/README.md): base URL, 인증 방식, 공통 헤더와 오류 규약.
-- [OpenAPI Reference](api/openapi.yaml): GitBook OpenAPI import용 58-route interactive reference.
+- [OpenAPI Reference](api/openapi.yaml): GitBook OpenAPI import용 59-route interactive reference.
 - [공통 계약](api/runtime-contract.md): API evolution guardrail, route surface, runtime, header, cookie/CSRF, error, state, Postman 계약.
-- [전체 Route Summary](api/route-summary.md): 현재 58개 public HTTP route manifest의 GitBook용 전체 표.
+- [전체 Route Summary](api/route-summary.md): 현재 59개 public HTTP route manifest의 GitBook용 전체 표.
 - [인증과 OAuth](api/auth.md): SIWE, session, wallet link, user profile, provider-subject OAuth API.
 - [주문, 체크아웃, 결제](api/orders-checkout-payments.md): 주문 생성, checkout tracking, txHash 제출.
 - [상점과 상품 카탈로그](api/catalog-inventory.md): public store/product 읽기, merchant product 쓰기, store owner inventory.
@@ -43,7 +43,7 @@ Phase 26 hardens the public API and runtime architecture around externally safe 
 
 ### Public HTTP route surface
 
-Public HTTP route surface is exactly the current 58-route manifest from `app/token_payments/api/http.py`. This manifest contains auth session routes, OAuth provider-subject login/link/list/revoke routes, authenticated wallet link/list/primary/revoke routes, current user display profile routes, order creation, checkout tracking, customer payment history, payment txHash submission, public store profile reads, merchant store profile listing/update routes, admin store catalog provisioning routes, store-owner product registration, store owner inventory query/mutation routes, merchant member/invitation/search routes, operator dashboard/detail reads, and cancel/retry/replay operator actions. It does not include store owner manual approval routes, role/permission full CRUD, platform group CRUD, personal group CRUD, owner transfer, settlement wallet mutation, or checkout saga command endpoints.
+Public HTTP route surface is exactly the current 59-route manifest from `app/token_payments/api/http.py`. This manifest contains auth session routes, OAuth provider-subject login/link/list/revoke routes, authenticated wallet link/list/primary/revoke routes, current user display profile routes, order creation, checkout tracking, customer payment history, payment txHash submission, public store profile reads, merchant store profile listing/update routes, admin store catalog provisioning routes, store-owner product registration, store owner inventory query/mutation routes, merchant member/invitation/search routes, operator dashboard/detail reads, and cancel/retry/replay operator actions. It does not include store owner manual approval routes, role/permission full CRUD, platform group CRUD, personal group CRUD, owner transfer, settlement wallet mutation, or checkout saga command endpoints.
 
 ### Message listener input surface
 
@@ -320,6 +320,7 @@ Common status codes:
 | `setPrimaryWallet` | `PATCH` | `/auth/wallets/{walletId}/primary` |
 | `revokeWallet` | `DELETE` | `/auth/wallets/{walletId}` |
 | `refreshSession` | `POST` | `/auth/sessions/refresh` |
+| `switchSession` | `POST` | `/auth/sessions/switch` |
 | `logout` | `DELETE` | `/auth/sessions` |
 | `getCurrentUser` | `GET` | `/auth/me` |
 | `getCurrentUserProfile` | `GET` | `/auth/me/profile` |
@@ -351,6 +352,7 @@ Common status codes:
 | `resumeStoreOwnerInventorySales` | `POST` | `/store-owner/stores/{storeId}/inventory/{productId}/resume` |
 | `listMerchantStoreMembers` | `GET` | `/merchant/stores/{storeId}/members` |
 | `listMerchantStoreInvitations` | `GET` | `/merchant/stores/{storeId}/invitations` |
+| `listMerchantUserInvitations` | `GET` | `/merchant/invitations` |
 | `createMerchantStoreInvitation` | `POST` | `/merchant/stores/{storeId}/invitations` |
 | `acceptMerchantInvitation` | `POST` | `/merchant/invitations/{invitationId}/accept` |
 | `revokeMerchantInvitation` | `POST` | `/merchant/invitations/{invitationId}/revoke` |
@@ -773,6 +775,24 @@ Response `200`: same shape as `POST /auth/sessions`.
 Response headers rotate the refresh cookie and reissue the access cookie. Reuse detection is backed by the server-side session repository hash/salt/rotation model.
 
 Errors: `400 VALIDATION_ERROR`, `401 INVALID_SIGNATURE`, `409 EXPIRED_CHALLENGE`.
+
+### `POST /auth/sessions/switch`
+
+현재 세션에서 지정된 merchant group으로 context를 스위치하고 경량 토큰으로 세션을 갱신한다.
+
+Final browser request uses cookie authentication. Body must include `activeGroupId`:
+
+```json
+{
+  "activeGroupId": "018f33aa-9e6d-73d8-9dc3-47d6cdccb105"
+}
+```
+
+Response `200`: same shape as `POST /auth/sessions`.
+
+지정된 `activeGroupId`와 연관된 scopes 및 memberships(PERSONAL 및 active 상점 멤버십 최대 2개)만 남겨진 새 JWT를 발급하고 쿠키를 갱신하여 팽창을 방지한다.
+
+Errors: `400 VALIDATION_ERROR`, `403 AUTHORIZATION_ERROR` (유저가 해당 상점의 멤버가 아님).
 
 ### `DELETE /auth/sessions`
 

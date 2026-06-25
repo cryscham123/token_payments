@@ -11,6 +11,8 @@ from token_payments.contexts.auth.domain import (
     AuthNonce,
     AuthSession,
     ChallengePurpose,
+    GroupId,
+    GroupType,
     IssuedToken,
     LoginChallenge,
     LoginChallengeRejected,
@@ -605,7 +607,59 @@ class AuthApplicationService:
         if user is None or not user.active:
             raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, "session user is missing or inactive")
 
-        claims = self._claim_snapshot(user)
+        claims = self._claim_snapshot(user, command.active_group_id)
+        refresh_with_claims = getattr(self._token_issuer, "refresh_tokens_with_claims", None)
+        if callable(refresh_with_claims):
+            issued_token = refresh_with_claims(user, session, claims)
+        else:
+            refresh_for_user = getattr(self._token_issuer, "refresh_tokens_for_user", None)
+            if callable(refresh_for_user):
+                issued_token = refresh_for_user(user, session)
+            else:
+                issued_token = self._token_issuer.refresh_tokens(session)
+        rotated_hash = _refresh_token_hash(
+            issued_token.refresh_token,
+            salt=session.refresh_token_hash.salt,
+            rotation_version=session.refresh_token_hash.rotation_version + 1,
+        )
+        refreshed_session = AuthSession(
+            session_id=session.session_id,
+            user_id=session.user_id,
+            login_wallet_id=session.login_wallet_id,
+            refresh_token_hash=rotated_hash,
+            device_id=session.device_id,
+            expires_at=session.expires_at,
+            revoked_at=session.revoked_at,
+            wallet=session.wallet,
+        )
+        self._sessions.save(refreshed_session)
+        return LoginResult(user=user, session=refreshed_session, issued_token=issued_token)
+
+    def switchSession(self, command: SwitchSessionCommand) -> LoginResult:
+        now = self._now()
+        if not isinstance(command.session_id, SessionId):
+            raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, "session_id must be a SessionId")
+        if not isinstance(command.refresh_token_hash, RefreshTokenHash):
+            raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, "refresh_token_hash must be a RefreshTokenHash")
+        if not isinstance(command.active_group_id, GroupId):
+            raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, "active_group_id must be a GroupId")
+
+        session = self._sessions.get_by_refresh_token_hash(command.refresh_token_hash)
+        if session is None or session.session_id != command.session_id or not session.is_active(now):
+            raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, "session is missing, expired, or revoked")
+        user = self._users.get_by_id(session.user_id)
+        if user is None or not user.active:
+            raise AuthApplicationError(AuthErrorCode.VALIDATION_ERROR, "session user is missing or inactive")
+
+        if self._rbac is not None:
+            memberships = self._rbac.session_memberships_for_user(user.user_id)
+            if not any(m.group_id == command.active_group_id for m in memberships):
+                raise AuthApplicationError(
+                    AuthErrorCode.AUTHORIZATION_ERROR,
+                    "User is not a member of the target group"
+                )
+
+        claims = self._claim_snapshot(user, command.active_group_id)
         refresh_with_claims = getattr(self._token_issuer, "refresh_tokens_with_claims", None)
         if callable(refresh_with_claims):
             issued_token = refresh_with_claims(user, session, claims)
@@ -868,15 +922,35 @@ class AuthApplicationService:
             return
         self._rbac.ensure_personal_membership(user, joined_at)
 
-    def _claim_snapshot(self, user: User) -> dict[str, Any]:
+    def _claim_snapshot(self, user: User, active_group_id: GroupId | None = None) -> dict[str, Any]:
         if self._rbac is None:
             return {"scopes": (), "groupMemberships": (), "activeGroupId": None}
         memberships = self._rbac.session_memberships_for_user(user.user_id)
-        scopes = self._rbac.scopes_for_user(user.user_id)
+        if not memberships:
+            return {"scopes": (), "groupMemberships": (), "activeGroupId": None}
+        
+        if active_group_id is None:
+            merchant_memberships = [m for m in memberships if m.group_type == GroupType.MERCHANT or str(m.group_type) == "MERCHANT"]
+            if merchant_memberships:
+                active_group_id = merchant_memberships[0].group_id
+            else:
+                active_group_id = memberships[0].group_id
+        else:
+            active_group_id = GroupId(str(active_group_id))
+
+        scopes = self._rbac.scopes_for_user(user.user_id, active_group_id)
+        
+        filtered_memberships = []
+        for m in memberships:
+            is_personal = m.group_type == GroupType.PERSONAL or str(m.group_type) == "PERSONAL"
+            is_active = m.group_id == active_group_id
+            if is_personal or is_active:
+                filtered_memberships.append(m)
+
         return {
             "scopes": scopes[:32],
-            "groupMemberships": tuple(membership.to_payload() for membership in memberships[:16]),
-            "activeGroupId": str(memberships[0].group_id) if memberships else None,
+            "groupMemberships": tuple(membership.to_payload() for membership in filtered_memberships[:16]),
+            "activeGroupId": str(active_group_id),
         }
 
     def _handle_challenge_rejection(

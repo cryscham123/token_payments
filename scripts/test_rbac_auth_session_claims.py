@@ -18,6 +18,7 @@ from token_payments.contexts.auth.application import (  # noqa: E402
     CurrentUserQuery,
     LoginWithMetaMaskCommand,
     RefreshSessionCommand,
+    SwitchSessionCommand,
     RequestLoginChallengeCommand,
     WalletSignatureVerificationResult,
 )
@@ -110,6 +111,63 @@ def test_refresh_session_rebuilds_claim_snapshot_from_current_memberships() -> N
 
     assert refreshed.session.refresh_token_hash.rotation_version == 1
     assert tokens.refresh_claims["scopes"] == ("user:self", "inventory:read")
+
+
+def test_switch_session_updates_active_group_and_rebuilds_claims() -> None:
+    service, _repositories, tokens, rbac = _service()
+    challenge = service.requestLoginChallenge(
+        RequestLoginChallengeCommand(wallet_address=WALLET, domain="token-payments.local", chain_id=11155111)
+    )
+    login = service.loginWithMetaMask(
+        LoginWithMetaMaskCommand(
+            wallet_address=WALLET,
+            message=challenge.signing_message,
+            signature="signature-valid",
+            device_id="browser-1",
+        )
+    )
+    
+    store1_group_id = GroupId("018f33aa-9e6d-73d8-9dc3-47d6cdccb104")
+    store2_group_id = GroupId("018f33aa-9e6d-73d8-9dc3-47d6cdccb105")
+    
+    rbac.memberships = [
+        SessionMembership(
+            group_id=PERSONAL_GROUP_ID,
+            group_type=GroupType.PERSONAL,
+            role_id="PERSONAL_CUSTOMER",
+            resource_type="user",
+            resource_id=str(USER_ID),
+        ),
+        SessionMembership(
+            group_id=store1_group_id,
+            group_type=GroupType.MERCHANT,
+            role_id="MERCHANT_OPERATOR",
+            resource_type="merchant_group",
+            resource_id=str(store1_group_id),
+        ),
+        SessionMembership(
+            group_id=store2_group_id,
+            group_type=GroupType.MERCHANT,
+            role_id="MERCHANT_OPERATOR",
+            resource_type="merchant_group",
+            resource_id=str(store2_group_id),
+        )
+    ]
+    
+    switched = service.switchSession(
+        SwitchSessionCommand(
+            session_id=login.session.session_id,
+            refresh_token_hash=login.session.refresh_token_hash,
+            active_group_id=store2_group_id,
+        )
+    )
+    
+    assert switched.session.refresh_token_hash.rotation_version == 1
+    assert tokens.refresh_claims["activeGroupId"] == str(store2_group_id)
+    assert len(tokens.refresh_claims["groupMemberships"]) == 2
+    groups_in_payload = {m["groupId"] for m in tokens.refresh_claims["groupMemberships"]}
+    assert groups_in_payload == {str(PERSONAL_GROUP_ID), str(store2_group_id)}
+
 
 
 def test_session_claim_payload_uses_group_snapshot_and_no_role_claim() -> None:
@@ -256,12 +314,15 @@ class FakeRbacRepository:
     def __init__(self) -> None:
         self.personal_memberships: list[tuple[UserId, WalletAddress]] = []
         self.extra_scopes: tuple[str, ...] = ("user:self",)
+        self.memberships: list[SessionMembership] | None = None
 
     def ensure_personal_membership(self, user: User, _joined_at: datetime) -> tuple[SessionMembership, ...]:
         self.personal_memberships.append((user.user_id, user.primary_wallet))
         return self.session_memberships_for_user(user.user_id)
 
     def session_memberships_for_user(self, user_id: UserId) -> tuple[SessionMembership, ...]:
+        if self.memberships is not None:
+            return tuple(self.memberships)
         return (
             SessionMembership(
                 group_id=PERSONAL_GROUP_ID,
@@ -272,7 +333,7 @@ class FakeRbacRepository:
             ),
         )
 
-    def scopes_for_user(self, _user_id: UserId) -> tuple[str, ...]:
+    def scopes_for_user(self, _user_id: UserId, group_id: GroupId | None = None) -> tuple[str, ...]:
         return self.extra_scopes
 
 

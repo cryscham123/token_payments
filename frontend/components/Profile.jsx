@@ -22,6 +22,8 @@ import {
   getCurrentUserProfile,
   updateCurrentUserProfile,
   listMerchantStores,
+  listUserInvitations,
+  acceptInvitation,
   listPublicStores,
   listWallets,
   requestWalletLinkChallenge,
@@ -41,6 +43,7 @@ export default function Profile() {
   const [currentUser, setCurrentUser] = useState(undefined);
   const [profile, setProfile] = useState(null);
   const [stores, setStores] = useState([]);
+  const [invitations, setInvitations] = useState([]);
   const [wallets, setWallets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -110,7 +113,7 @@ export default function Profile() {
         setCurrentUser(activeUser);
       }
 
-      const [profileRes, storesRes, walletsRes, oauthRes, tokenAssetsRes] = await Promise.all([
+      const [profileRes, storesRes, walletsRes, oauthRes, tokenAssetsRes, invitesRes] = await Promise.all([
         getCurrentUserProfile().catch((err) => {
           if (err.status !== 404 && err.body?.error?.code !== "USER_PROFILE_NOT_FOUND") {
             console.error("Profile fetch failed:", err);
@@ -134,6 +137,10 @@ export default function Profile() {
         loadTestnetAssets().catch((err) => {
           console.error("Testnet token assets fetch failed:", err);
           return { usdc: null, usdt: null };
+        }),
+        listUserInvitations().catch((err) => {
+          console.error("Invitations fetch failed:", err);
+          return { invitations: [] };
         })
       ]);
 
@@ -142,6 +149,7 @@ export default function Profile() {
         setDisplayNameInput(profileRes.profile.displayName || "");
       }
       setStores(storesRes?.stores || []);
+      setInvitations(invitesRes?.invitations || []);
       setWallets((walletsRes?.wallets || []).filter(isActiveWallet));
       setTokenAssets(tokenAssetsRes || { usdc: null, usdt: null });
 
@@ -196,6 +204,20 @@ export default function Profile() {
     navigator.clipboard.writeText(address);
     setCopiedWallet(address);
     setTimeout(() => setCopiedWallet(null), 2000);
+  };
+
+  const handleAcceptInvite = async (invitationId, storeName) => {
+    if (!window.confirm(`정말 ${storeName} 상점의 스태프 초대를 수락하시겠습니까?`)) return;
+    setErrorMsg("");
+    setSuccessMsg("");
+    try {
+      await acceptInvitation(invitationId);
+      setSuccessMsg(`${storeName} 상점 초대를 수락했습니다.`);
+      loadProfileData();
+    } catch (err) {
+      console.error("Accept invitation failed:", err);
+      setErrorMsg(err.body?.error?.message || err.message || "초대 수락에 실패했습니다.");
+    }
   };
 
   const handleUpdateProfile = async (e) => {
@@ -858,7 +880,18 @@ export default function Profile() {
             {/* Belongs to Stores Permissions Card */}
             {activeTab === "stores" && (
               <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-6 space-y-4">
-                <h3 className="text-lg font-bold text-slate-900 tracking-tight">소속 상점 목록</h3>
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <h3 className="text-lg font-bold text-slate-900 tracking-tight">소속 상점 목록</h3>
+                  <button
+                    type="button"
+                    disabled
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-400 cursor-not-allowed opacity-75 transition-all"
+                    title="가게 생성 신청 (현재 비활성화)"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    가게 생성 신청
+                  </button>
+                </div>
 
                 {stores.length === 0 ? (
                   <div className="text-center py-10 rounded-xl border border-dashed border-slate-200 bg-slate-50">
@@ -883,11 +916,11 @@ export default function Profile() {
                               </h5>
                               {store.role && (
                                 <span className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[9px] font-extrabold border ${
-                                  store.role === "OWNER"
-                                    ? "bg-slate-100 text-slate-800 border-slate-200"
+                                  (store.role === "OWNER" || store.role === "MERCHANT_OWNER")
+                                    ? "bg-purple-100 text-purple-800 border-purple-200"
                                     : "bg-blue-100 text-blue-800 border-blue-200"
                                 }`}>
-                                  {store.role === "OWNER" ? "스태프" : "관리자"}
+                                  {(store.role === "OWNER" || store.role === "MERCHANT_OWNER") ? "소유주" : "관리자"}
                                 </span>
                               )}
                             </div>
@@ -911,6 +944,28 @@ export default function Profile() {
                         </div>
                       </div>
                     ))}
+                  </div>
+                )}
+
+                {invitations.length > 0 && (
+                  <div className="mt-6 rounded-xl border border-slate-200 bg-white p-4 space-y-3 shadow-sm">
+                    <h4 className="text-sm font-bold text-slate-900 border-b pb-2">받은 스태프 초대 목록</h4>
+                    <div className="divide-y divide-slate-100">
+                      {invitations.map((invite) => (
+                        <div key={invite.invitationId} className="flex items-center justify-between py-3 text-xs">
+                          <div>
+                            <span className="font-bold text-slate-800">{invite.storeName}</span>
+                            <span className="text-[10px] text-slate-400 block mt-0.5">역할: {invite.roleId === "MERCHANT_ADMIN" || invite.roleId === "ADMIN" ? "관리자" : "스태프"}</span>
+                          </div>
+                          <button
+                            onClick={() => handleAcceptInvite(invite.invitationId, invite.storeName)}
+                            className="text-[10px] font-extrabold text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg transition-all shadow-sm"
+                          >
+                            수락
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
 

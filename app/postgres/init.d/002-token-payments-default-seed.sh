@@ -122,6 +122,7 @@ INSERT INTO auth_role_permissions (
     ('MERCHANT_MANAGER', 'inventory:read', true),
     ('MERCHANT_MANAGER', 'inventory:write', true),
     ('MERCHANT_STAFF', 'store:read', true),
+    ('MERCHANT_STAFF', 'merchant_member:read', true),
     ('MERCHANT_STAFF', 'product:read', true),
     ('MERCHANT_STAFF', 'inventory:read', true),
     ('PLATFORM_OPERATOR', 'operator:read', true),

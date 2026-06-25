@@ -95,6 +95,13 @@ export async function refreshSession() {
   return rawApiJson("/auth/sessions/refresh", { method: "POST" });
 }
 
+export async function switchSession(activeGroupId) {
+  return apiJson("/auth/sessions/switch", {
+    method: "POST",
+    body: { activeGroupId }
+  });
+}
+
 export async function getCurrentUserProfile() {
   return apiJson("/auth/me/profile", { method: "GET" });
 }
@@ -108,6 +115,16 @@ export async function updateCurrentUserProfile(displayName) {
 
 export async function listMerchantStores() {
   return apiJson("/merchant/stores", { method: "GET" });
+}
+
+export async function listUserInvitations() {
+  return apiJson("/merchant/invitations", { method: "GET" });
+}
+
+export async function acceptInvitation(invitationId) {
+  return apiJson(`/merchant/invitations/${encodeURIComponent(invitationId)}/accept`, {
+    method: "POST"
+  });
 }
 
 export async function listPublicStores() {

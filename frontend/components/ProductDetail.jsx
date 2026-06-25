@@ -363,8 +363,8 @@ export default function ProductDetail({ publicProductId }) {
                                       />
                                       <span className="truncate font-bold text-slate-800">{value.displayValue || value.value}</span>
                                     </span>
-                                    {value.priceDelta && priceDeltaLabel(normalizePriceDelta(value.priceDelta, selectedPriceOption)) && (
-                                      <span className="shrink-0 text-xs font-bold text-blue-600">{priceDeltaLabel(normalizePriceDelta(value.priceDelta, selectedPriceOption))}</span>
+                                    {value.priceDelta && priceDeltaLabel(value.priceDelta, selectedPriceOption, product) && (
+                                      <span className="shrink-0 text-xs font-bold text-blue-600">{priceDeltaLabel(value.priceDelta, selectedPriceOption, product)}</span>
                                     )}
                                   </label>
                                 );
@@ -380,7 +380,7 @@ export default function ProductDetail({ publicProductId }) {
                               <option value="">선택 안 함</option>
                               {option.values.map((value) => (
                                 <option key={value.value} value={value.value}>
-                                  {optionValueDisplayWithDelta(value, selectedPriceOption)}
+                                  {optionValueDisplayWithDelta(value, selectedPriceOption, product)}
                                 </option>
                               ))}
                             </select>
@@ -445,11 +445,8 @@ export default function ProductDetail({ publicProductId }) {
                   <span className="font-medium text-slate-500">총 상품 금액</span>
                   <div className="text-right">
                     <div className="text-3xl font-extrabold text-blue-600">
-                      {formatFiatAmount(cryptoTotal, "USD")}
+                      {formatCryptoAmount(cryptoTotal)} {selectedSymbol}
                     </div>
-                    {formatAssetPriceHint(product?.assetPrices) && (
-                      <div className="text-xs font-medium text-slate-400">{formatAssetPriceHint(product?.assetPrices)}</div>
-                    )}
                   </div>
                 </div>
                 <button
@@ -552,7 +549,13 @@ function displayPriceOption(product) {
   const tokenAddress = product.cryptoTokenAddress || null;
   return {
     key: `${product.cryptoSymbol}:${chainId}:${tokenAddress || "native"}`,
-    paymentAssetId: "",
+    paymentAssetId: tokenAddress
+      ? ""
+      : (product.cryptoSymbol === "ETH"
+        ? (chainId === 1337
+          ? "local-native-eth"
+          : (chainId === 11155111 ? "sepolia-native-eth" : ""))
+        : ""),
     amount: product.cryptoAmount,
     symbol: product.cryptoSymbol,
     chainId,
@@ -602,9 +605,9 @@ function optionValueLabel(product, option, optionIndex, value, selectedValues, s
   if (!selectionComplete(options, candidate)) return display;
   const variant = variantForSelection(product, candidate);
   if (!variant) return `${display} · 선택 불가`;
-  const priceDelta = variantPriceDelta(variant, selectedPriceOption);
+  const priceDelta = variant?.priceDelta;
   const stock = variantAvailability(variant);
-  const deltaLabel = priceDelta ? priceDeltaLabel(priceDelta) : "";
+  const deltaLabel = priceDelta ? priceDeltaLabel(priceDelta, selectedPriceOption, product) : "";
   const stockLabel = stock === null ? "수량 확인 중" : `남은 수량 ${stock}개`;
   return [display, deltaLabel, stockLabel].filter(Boolean).join(" · ");
 }
@@ -694,7 +697,7 @@ function variantDisplayPrice(variant, selectedPriceOption, product) {
   if (displayPrice && (!selectedPriceOption || samePaymentAsset(displayPrice, selectedPriceOption))) return displayPrice;
   const basePriceOpt = basePriceOption(product, selectedPriceOption);
   if (basePriceOpt && variant.priceDelta) {
-    const delta = normalizePriceOption(variant.priceDelta);
+    const delta = normalizePriceDelta(variant.priceDelta, selectedPriceOption, product);
     if (delta) {
       return {
         ...basePriceOpt,
@@ -729,7 +732,7 @@ function selectedAddOnPriceDelta(product, selectedValues, selectedPriceOption) {
     });
 
   return addOnValues.reduce((total, value) => {
-    const delta = normalizePriceDelta(value.priceDelta, selectedPriceOption);
+    const delta = normalizePriceDelta(value.priceDelta, selectedPriceOption, product);
     if (!delta || Number.parseFloat(delta.amount || "0") === 0) return total;
     return addPriceOption(total, delta);
   }, null);
@@ -766,35 +769,60 @@ function buildPriceByOptionKey(product, variant, selectedValues, priceOptions) {
   return map;
 }
 
-function normalizePriceDelta(priceDelta, selectedPriceOption) {
-  const delta = normalizePriceOption(priceDelta || {});
-  if (!delta) return null;
-  if (selectedPriceOption) {
-    return {
-      ...delta,
-      symbol: selectedPriceOption.symbol,
-      chainId: selectedPriceOption.chainId,
-      tokenAddress: selectedPriceOption.tokenAddress,
-      decimals: selectedPriceOption.decimals
-    };
+function normalizePriceDelta(priceDelta, selectedPriceOption, product) {
+  if (!priceDelta) return null;
+  const deltaAmount = Number.parseFloat(priceDelta.amount || "0");
+  if (!deltaAmount) return null;
+
+  if (selectedPriceOption && product) {
+    const productBaseAmount = Number.parseFloat(product.basePrice?.amount || product.displayPrice?.amount || "0");
+    const optionAmount = Number.parseFloat(selectedPriceOption.amount || "0");
+    if (productBaseAmount > 0 && optionAmount > 0) {
+      const convertedDelta = (deltaAmount * optionAmount) / productBaseAmount;
+      return {
+        key: selectedPriceOption.key,
+        paymentAssetId: selectedPriceOption.paymentAssetId || "",
+        amount: convertedDelta.toString(),
+        symbol: selectedPriceOption.symbol,
+        chainId: selectedPriceOption.chainId,
+        tokenAddress: selectedPriceOption.tokenAddress,
+        decimals: selectedPriceOption.decimals || 18
+      };
+    }
   }
-  return delta;
+  return {
+    key: "",
+    paymentAssetId: "",
+    amount: priceDelta.amount,
+    symbol: "USD",
+    chainId: 0,
+    tokenAddress: null,
+    decimals: 2
+  };
 }
 
-function variantPriceDelta(variant, selectedPriceOption) {
-  return normalizePriceDelta(variant?.priceDelta, selectedPriceOption);
+function variantPriceDelta(variant, selectedPriceOption, product) {
+  return normalizePriceDelta(variant?.priceDelta, selectedPriceOption, product);
 }
 
-function priceDeltaLabel(priceDelta) {
+function priceDeltaLabel(priceDelta, selectedPriceOption, product) {
   if (!priceDelta) return "";
   const amount = Number.parseFloat(priceDelta.amount || "0");
   if (!amount) return "";
-  return `+${formatFiatAmount(priceDelta.amount, priceDelta.currency)}`;
+  if (selectedPriceOption && product) {
+    const productBaseAmount = Number.parseFloat(product.basePrice?.amount || product.displayPrice?.amount || "0");
+    const optionAmount = Number.parseFloat(selectedPriceOption.amount || "0");
+    if (productBaseAmount > 0 && optionAmount > 0) {
+      const convertedAmount = (amount * optionAmount) / productBaseAmount;
+      return `+${formatCryptoAmount(convertedAmount)} ${selectedPriceOption.symbol}`;
+    }
+  }
+  return `+${formatFiatAmount(priceDelta.amount, priceDelta.currency || "USD")}`;
 }
 
-function optionValueDisplayWithDelta(value, selectedPriceOption) {
+function optionValueDisplayWithDelta(value, selectedPriceOption, product) {
   const label = value.displayValue || value.value;
-  const deltaLabel = value.priceDelta ? priceDeltaLabel(normalizePriceDelta(value.priceDelta, selectedPriceOption)) : "";
+  const deltaLabel = value.priceDelta ? priceDeltaLabel(value.priceDelta, selectedPriceOption, product) : "";
   return [label, deltaLabel].filter(Boolean).join(" · ");
 }
 

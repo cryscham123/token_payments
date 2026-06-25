@@ -34,6 +34,15 @@ class MerchantMembershipApi:
         except ValueError as exc:
             return _error_response("VALIDATION_ERROR", str(exc), 400, request.request_id)
 
+    def list_user_invitations(self, request: ApiRequest) -> ApiResponse:
+        try:
+            return _result_response(
+                self._use_case.list_user_invitations(_actor(request)),
+                request.request_id,
+            )
+        except ValueError as exc:
+            return _error_response("VALIDATION_ERROR", str(exc), 400, request.request_id)
+
     def create_invitation(self, request: ApiRequest) -> ApiResponse:
         try:
             body = _body(request)
@@ -144,7 +153,7 @@ def _status_for_error(code: str) -> int:
         return 403
     if code.endswith("_NOT_FOUND"):
         return 404
-    if code in {"INVITATION_NOT_ACCEPTABLE", "MEMBERSHIP_ALREADY_EXISTS", "OWNER_ROLE_PROTECTED"}:
+    if code in {"INVITATION_ALREADY_PENDING", "INVITATION_NOT_ACCEPTABLE", "MEMBERSHIP_ALREADY_EXISTS", "OWNER_ROLE_PROTECTED"}:
         return 409
     return 400
 

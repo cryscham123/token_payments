@@ -71,6 +71,7 @@ function SearchBar() {
 }
 
 export default function SiteHeader({ cartCount, currentUser: propCurrentUser, onCurrentUserChange }) {
+  const router = useRouter();
   const [openWallet, setOpenWallet] = useState(false);
   const [localCurrentUser, setLocalCurrentUser] = useState(null);
   const [storedCartCount, setStoredCartCount] = useState(0);
@@ -176,26 +177,31 @@ export default function SiteHeader({ cartCount, currentUser: propCurrentUser, on
 
   const visibleCartCount = cartCount ?? storedCartCount;
 
+  const handleWalletButtonClick = async () => {
+    if (!currentUser) {
+      setOpenWallet(true);
+      return;
+    }
+
+    if (!window.confirm("정말 로그아웃 하시겠습니까?")) return;
+
+    try {
+      await logout();
+      setCurrentUser(null);
+      setMobileMenuOpen(false);
+      router.push("/");
+    } catch (e) {
+      console.error("로그아웃 실패:", e);
+    }
+  };
+
   return (
     <>
       {/* 데스크톱 지갑 탑 배너 */}
       <div className="hidden border-b border-slate-200 bg-slate-50 sm:block">
         <div className="mx-auto flex h-10 max-w-7xl items-center justify-end gap-4 px-4 text-[11px] text-slate-500 sm:px-6 lg:px-8">
           <button
-            onClick={async () => {
-              if (currentUser) {
-                if (window.confirm("정말 로그아웃 하시겠습니까?")) {
-                  try {
-                    await logout();
-                    setCurrentUser(null);
-                  } catch (e) {
-                    console.error("로그아웃 실패:", e);
-                  }
-                }
-              } else {
-                setOpenWallet(true);
-              }
-            }}
+            onClick={handleWalletButtonClick}
             className="inline-flex h-8 items-center gap-1.5 rounded-md bg-slate-900 px-3 text-xs font-bold text-white shadow-sm transition-colors hover:bg-slate-700"
           >
             <Wallet size={15} />
@@ -285,20 +291,7 @@ export default function SiteHeader({ cartCount, currentUser: propCurrentUser, on
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <span className="text-xs font-semibold text-slate-500">지갑 연결 상태</span>
               <button
-                onClick={async () => {
-                  if (currentUser) {
-                    if (window.confirm("정말 로그아웃 하시겠습니까?")) {
-                      try {
-                        await logout();
-                        setCurrentUser(null);
-                      } catch (e) {
-                        console.error("로그아웃 실패:", e);
-                      }
-                    }
-                  } else {
-                    setOpenWallet(true);
-                  }
-                }}
+                onClick={handleWalletButtonClick}
                 className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-slate-900 px-3 text-xs font-bold text-white shadow-sm hover:bg-slate-700 transition"
               >
                 <Wallet size={14} />
