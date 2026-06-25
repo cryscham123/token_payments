@@ -41,6 +41,9 @@ from token_payments.shared.domain import (  # noqa: E402
     ChainNetwork,
     CheckoutEventName,
     Crypto,
+    ExchangeRate,
+    Money,
+    PriceConversion,
     EventMetadata,
     IdempotencyDecision,
     MessageId,
@@ -224,7 +227,7 @@ def _event(
 
 
 def _order(status: OrderStatus) -> Order:
-    product = Product(product_id=PRODUCT_ID, name="Ledger Mug", price=_amount())
+    product = Product(product_id=PRODUCT_ID, name="Ledger Mug", price=_usd())
     customer = Customer(
         customer_id=CUSTOMER_ID,
         user_id=USER_ID,
@@ -243,6 +246,7 @@ def _order(status: OrderStatus) -> Order:
         delivery_address=Address(id="ship-to", street="2 River Rd"),
         product_quantities={PRODUCT_ID: 1},
         created_at=NOW,
+        conversion=_conversion(),
     )
     return Order(
         order_id=ORDER_ID,
@@ -252,6 +256,21 @@ def _order(status: OrderStatus) -> Order:
         items=initialized.items,
         tracking_id=TrackingId.new(),
         status=status,
+    )
+
+
+def _usd() -> Money:
+    return Money(amount=Decimal("12.50"), currency="USD")
+
+
+def _conversion() -> PriceConversion:
+    return PriceConversion(
+        rate=ExchangeRate({"USDC": Decimal(1)}),
+        asset_id="local-usdc",
+        symbol="USDC",
+        chain_id=11155111,
+        token_address=TOKEN_ADDRESS,
+        decimals=6,
     )
 
 

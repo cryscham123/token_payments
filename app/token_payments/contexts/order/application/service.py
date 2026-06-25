@@ -2,22 +2,18 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum
-from typing import Any, Mapping
+from typing import Any
 
 from token_payments.contexts.auth.domain.wallet import UserWallet, WalletId
 from token_payments.contexts.order.domain import (
-    Address,
     Customer,
     Order,
     OrderCancelledEvent,
     OrderItem,
     OrderStatus,
-    Product,
-    ProductOptionValuePrice,
-    ProductVariantPrice,
     Store,
 )
 from token_payments.contexts.payment.domain import PaymentAsset, PaymentAssetRegistry
@@ -29,7 +25,6 @@ from token_payments.shared.domain import (
     ExchangeRate,
     IdempotencyDecision,
     MessageId,
-    Money,
     OrderId,
     OutboxMessage,
     PaymentId,
@@ -42,7 +37,7 @@ from token_payments.shared.domain import (
     WalletAddress,
 )
 
-from .commands import CancelOrderCommand, CreateOrderCommand, CreateOrderItem
+from .commands import CancelOrderCommand, CreateOrderCommand
 from .ports import (
     CustomerRepository,
     OrderCreationResult,
@@ -208,17 +203,10 @@ class OrderApplicationService:
 
         try:
             selected_asset = _selected_asset(self._payment_assets, command.payment_asset_id)
-            is_modern_pricing = (
-                self._exchange_rate is not None
-                and len(store.products) > 0
-                and isinstance(store.products[0].price, Money)
-            )
-            if is_modern_pricing:
-                conversion = self._price_conversion(store, selected_asset)
-            else:
-                conversion = command.payment_asset_id
-                if selected_asset is not None:
-                    store = _store_with_asset_prices(store, selected_asset)
+            # Products are priced in fiat (USD). Pair the selected payment asset with the
+            # runtime exchange rate so the domain can convert each USD price into the asset's
+            # on-chain amount at order-creation time.
+            conversion = self._price_conversion(store, selected_asset)
             selected_wallet = self._resolve_wallet(command, selected_asset)
             order = Order.initialize_order(
                 order_id=command.order_id,
@@ -231,8 +219,7 @@ class OrderApplicationService:
                 conversion=conversion,
             )
             total_amount = _total_amount(order.items)
-            if selected_asset is not None:
-                _require_asset_matches_amount(selected_asset, total_amount)
+            _require_asset_matches_amount(selected_asset, total_amount)
             if selected_wallet is None:
                 selected_wallet = self._resolve_wallet_for_amount(command, total_amount)
             _require_wallet_matches_amount(selected_wallet, total_amount)
@@ -757,45 +744,3 @@ def _require_text(value: str, field_name: str) -> str:
     return value.strip()
 
 
-def _store_with_asset_prices(store: Store, asset: PaymentAsset) -> Store:
-    if store.supported_payment_asset_ids and asset.asset_id not in store.supported_payment_asset_ids:
-        raise ValueError(f"payment asset {asset.asset_id} is not supported by store {store.store_id}")
-    enriched_products: list[Product] = []
-    for product in store.products:
-        existing = dict(product.asset_prices) if product.asset_prices else {}
-        if asset.asset_id not in existing:
-            existing[asset.asset_id] = asset.crypto(product.price.amount) if isinstance(product.price, Money) else asset.crypto(product.price.amount)
-        variants = _variants_for_asset(product.variants, asset)
-        option_values = _option_values_for_asset(product.option_values, asset)
-        enriched_products.append(
-            replace(product, asset_prices=existing, variants=variants, option_values=option_values)
-        )
-    return replace(store, products=tuple(enriched_products))
-
-
-def _variants_for_asset(
-    variants: Mapping[str, ProductVariantPrice] | None,
-    asset: PaymentAsset,
-) -> Mapping[str, ProductVariantPrice] | None:
-    if not variants:
-        return variants
-    return {
-        variant_id: replace(variant, price_delta=asset.crypto(variant.price_delta.amount))
-        for variant_id, variant in variants.items()
-    }
-
-
-def _option_values_for_asset(
-    option_values: Mapping[str, ProductOptionValuePrice] | None,
-    asset: PaymentAsset,
-) -> Mapping[str, ProductOptionValuePrice] | None:
-    if not option_values:
-        return option_values
-    return {
-        key: (
-            value
-            if value.price_delta is None
-            else replace(value, price_delta=asset.crypto(value.price_delta.amount))
-        )
-        for key, value in option_values.items()
-    }

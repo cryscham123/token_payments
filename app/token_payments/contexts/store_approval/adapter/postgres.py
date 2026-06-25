@@ -25,11 +25,6 @@ SELECT
     store_id,
     product_id,
     name,
-    price_numeric,
-    price_symbol,
-    price_chain_id,
-    price_token_address,
-    price_decimals,
     available
 FROM store_approval_products
 WHERE store_id = %(store_id)s
@@ -275,21 +270,11 @@ def _order_detail_from_canonical_rows(
     )
 
 
-def _optional_crypto_from_row(row: Mapping[str, Any] | object, prefix: str) -> Crypto | None:
-    try:
-        val = _row_value(row, f"{prefix}_numeric")
-        if val is None:
-            return None
-    except (KeyError, AttributeError):
-        return None
-    return _crypto_from_row(row, prefix)
-
-
 def _product_from_row(row: Mapping[str, Any] | object) -> Product:
+    # The catalog projection does not carry price; approval matches on id/name/availability.
     return Product(
         product_id=ProductId(_row_value(row, "product_id")),
         name=str(_row_value(row, "name")),
-        price=_optional_crypto_from_row(row, "price"),
         available=bool(_row_value(row, "available")),
     )
 

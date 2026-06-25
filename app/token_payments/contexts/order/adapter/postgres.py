@@ -614,7 +614,7 @@ def _row_to_product(
     return Product(
         product_id=ProductId(_row_value(row, "product_id")),
         name=str(_row_value(row, "name")),
-        price=_product_price_from_row(row, "price"),
+        price=_money_from_row(row, "price"),
         variants={
             str(_row_value(variant_row, "public_variant_id")): _row_to_product_variant_price(variant_row)
             for variant_row in (variant_rows or [])
@@ -652,7 +652,7 @@ def _row_to_product_variant_price(row: Mapping[str, Any] | object) -> ProductVar
     return ProductVariantPrice(
         public_variant_id=str(_row_value(row, "public_variant_id")),
         option_values=_json_mapping(_row_value(row, "option_values")),
-        price_delta=_product_price_from_row(row, "price_delta"),
+        price_delta=_money_from_row(row, "price_delta"),
         active=bool(_row_value_or_default(row, "active", True)) and str(_row_value_or_default(row, "status", "ACTIVE")) == "ACTIVE",
     )
 
@@ -664,7 +664,7 @@ def _row_to_product_option_value_price(row: Mapping[str, Any] | object) -> Produ
         display_value=str(_row_value(row, "display_value")),
         option_type=str(_row_value(row, "option_type")),
         selection_type=str(_row_value(row, "selection_type")),
-        price_delta=_product_price_from_row(row, "price_delta"),
+        price_delta=_optional_money_from_row(row, "price_delta"),
         active=bool(_row_value_or_default(row, "active", True)),
     )
 
@@ -733,20 +733,6 @@ def _money_from_row(row: Mapping[str, Any] | object, prefix: str) -> Money:
         amount=_row_value(row, f"{prefix}_amount"),
         currency=str(_row_value(row, f"{prefix}_currency") or "USD"),
     )
-
-
-def _product_price_from_row(row: Mapping[str, Any] | object, prefix: str) -> Money | Crypto | None:
-    chain_id = _row_value_or_default(row, f"{prefix}_chain_id", None)
-    if chain_id is not None:
-        return _crypto_from_row(row, prefix)
-    amount = _row_value_or_default(row, f"{prefix}_amount", None)
-    if amount is not None:
-        return _money_from_row(row, prefix)
-    numeric = _row_value_or_default(row, f"{prefix}_numeric", None)
-    if numeric is not None:
-        currency = str(_row_value_or_default(row, f"{prefix}_currency", "USD") or "USD")
-        return Money(amount=numeric, currency=currency)
-    return None
 
 
 def _optional_money_from_row(row: Mapping[str, Any] | object, prefix: str) -> Money | None:

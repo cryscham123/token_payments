@@ -38,10 +38,14 @@ from token_payments.contexts.order.domain import (  # noqa: E402
     Store,
 )
 from token_payments.shared.adapter.postgres import PostgresOutboxMessageRepository  # noqa: E402
+from token_payments.contexts.auth.domain.wallet import UserWallet, WalletId, WalletType, WalletVerificationStatus  # noqa: E402
 from token_payments.shared.domain import (  # noqa: E402
     CheckoutEventName,
     Crypto,
     CustomerId,
+    ExchangeRate,
+    Money,
+    PriceConversion,
     MessageId,
     OrderId,
     OutboxMessage,
@@ -73,6 +77,38 @@ USDC = Crypto(
     decimals=6,
 )
 
+USD_PRICE = Money(amount=Decimal("12.50"), currency="USD")
+EXCHANGE_RATE = ExchangeRate({"USDC": Decimal(1), "USDT": Decimal(1), "ETH": Decimal(3000)})
+
+
+def _registry():
+    from token_payments.contexts.payment.domain import PaymentAsset, PaymentAssetRegistry, PaymentChain
+    return PaymentAssetRegistry(
+        chains=(PaymentChain(11155111, "Sepolia", "ETH"),),
+        assets=(PaymentAsset.erc20("local-usdc", 11155111, "USDC", 6, TOKEN_ADDRESS),),
+    )
+
+
+WALLET_ID = WalletId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c2a")
+
+
+class FakeWalletRepository:
+    def get_by_id(self, wallet_id):
+        if wallet_id == WALLET_ID:
+            return self._wallet()
+        return None
+
+    def get_primary_for_user_chain(self, user_id, chain_id):
+        if user_id == USER_ID and chain_id == 11155111:
+            return self._wallet()
+        return None
+
+    def _wallet(self):
+        return UserWallet(
+            WALLET_ID, USER_ID, str(CUSTOMER_WALLET), 11155111,
+            WalletType.EOA, WalletVerificationStatus.VERIFIED, True, NOW,
+        )
+
 
 def test_order_use_case_creates_order_snapshot_and_order_created_outbox_event() -> None:
     service, repositories = _service()
@@ -86,6 +122,7 @@ def test_order_use_case_creates_order_snapshot_and_order_created_outbox_event() 
             order_id=ORDER_ID,
             tracking_id=TRACKING_ID,
             event_message_id=MESSAGE_ID,
+            payment_asset_id="local-usdc",
             requested_at=NOW,
             causation_id="req-1",
         )
@@ -126,11 +163,13 @@ def test_order_use_case_creates_order_snapshot_and_order_created_outbox_event() 
     assert outbox.payload["productId"] == str(PRODUCT_ID)
     assert outbox.payload["quantity"] == 2
     assert outbox.payload["amount"] == {
-        "amount": "25.00",
+        "amount": "25.000000",
         "symbol": "USDC",
         "chainId": 11155111,
         "tokenAddress": str(TOKEN_ADDRESS),
         "decimals": 6,
+        "assetId": "local-usdc",
+        "amountMinorUnits": "25000000",
     }
     assert outbox.payload["walletFrom"] == str(CUSTOMER_WALLET)
     assert outbox.payload["walletTo"] == str(STORE_WALLET)
@@ -142,18 +181,22 @@ def test_order_use_case_creates_order_snapshot_and_order_created_outbox_event() 
             "name": "Ledger Mug",
             "quantity": 2,
             "unitPrice": {
-                "amount": "12.50",
+                "amount": "12.500000",
                 "symbol": "USDC",
                 "chainId": 11155111,
                 "tokenAddress": str(TOKEN_ADDRESS),
                 "decimals": 6,
+                "assetId": "local-usdc",
+                "amountMinorUnits": "12500000",
             },
             "subTotal": {
-                "amount": "25.00",
+                "amount": "25.000000",
                 "symbol": "USDC",
                 "chainId": 11155111,
                 "tokenAddress": str(TOKEN_ADDRESS),
                 "decimals": 6,
+                "assetId": "local-usdc",
+                "amountMinorUnits": "25000000",
             },
             "media": [],
         }
@@ -181,6 +224,7 @@ def test_order_use_case_prices_variant_and_add_on_selection_server_side() -> Non
             order_id=ORDER_ID,
             tracking_id=TRACKING_ID,
             event_message_id=MESSAGE_ID,
+            payment_asset_id="local-usdc",
             requested_at=NOW,
             causation_id="req-variant",
         )
@@ -196,8 +240,8 @@ def test_order_use_case_prices_variant_and_add_on_selection_server_side() -> Non
     payload_item = repositories.outbox.saved[0].payload["items"][0]
     assert payload_item["publicVariantId"] == "hoodie-l"
     assert payload_item["selectedOptions"] == {"giftWrap": ["premium"], "size": "L"}
-    assert payload_item["unitPrice"]["amount"] == "15.50"
-    assert payload_item["subTotal"]["amount"] == "31.00"
+    assert payload_item["unitPrice"]["amount"] == "15.500000"
+    assert payload_item["subTotal"]["amount"] == "31.000000"
     assert repositories.outbox.saved[0].payload["publicVariantId"] == "hoodie-l"
 
 
@@ -221,6 +265,7 @@ def test_order_use_case_rejects_mismatched_variant_option_selection() -> None:
                 order_id=ORDER_ID,
                 tracking_id=TRACKING_ID,
                 event_message_id=MESSAGE_ID,
+                payment_asset_id="local-usdc",
                 requested_at=NOW,
             )
         )
@@ -261,7 +306,7 @@ def test_order_api_returns_tracking_response_and_maps_validation_errors() -> Non
     assert response.body["order"]["trackingId"]
     assert response.body["order"]["status"] == "PENDING"
     assert response.body["order"]["totalAmount"] == {
-        "amount": "31.00",
+        "amount": "31.000000",
         "symbol": "USDC",
         "chainId": 11155111,
         "tokenAddress": str(TOKEN_ADDRESS),
@@ -442,11 +487,8 @@ def test_order_postgres_repositories_and_outbox_share_injected_connection_bounda
             "store_id": str(STORE_ID),
             "product_id": str(PRODUCT_ID),
             "name": "Ledger Mug",
-            "price_numeric": Decimal("12.50"),
-            "price_symbol": "USDC",
-            "price_chain_id": 11155111,
-            "price_token_address": str(TOKEN_ADDRESS),
-            "price_decimals": 6,
+            "price_amount": Decimal("12.50"),
+            "price_currency": "USD",
         }
     ]
     service = OrderApplicationService(
@@ -454,6 +496,8 @@ def test_order_postgres_repositories_and_outbox_share_injected_connection_bounda
         stores=PostgresStoreRepository(connection),
         orders=PostgresOrderRepository(connection),
         outbox_messages=PostgresOutboxMessageRepository(connection),
+        exchange_rate=EXCHANGE_RATE,
+        payment_assets=_registry(),
     )
 
     result = service.createOrder(
@@ -465,6 +509,7 @@ def test_order_postgres_repositories_and_outbox_share_injected_connection_bounda
             order_id=ORDER_ID,
             tracking_id=TRACKING_ID,
             event_message_id=MESSAGE_ID,
+            payment_asset_id="local-usdc",
             requested_at=NOW,
             causation_id="req-1",
         )
@@ -474,7 +519,7 @@ def test_order_postgres_repositories_and_outbox_share_injected_connection_bounda
     assert len(connection.order_items) == 1
     assert next(iter(connection.order_items.values()))["product_snapshot_name"] == "Ledger Mug"
     assert connection.outbox_messages[str(MESSAGE_ID)]["name"] == CheckoutEventName.ORDER_CREATED.value
-    assert connection.outbox_messages[str(MESSAGE_ID)]["payload"]["amount"]["amount"] == "25.00"
+    assert connection.outbox_messages[str(MESSAGE_ID)]["payload"]["amount"]["amount"] == "25.000000"
     normalized_sql = _normalize_sql("\n".join(statement.sql for statement in connection.statements))
     assert "from order_customers" in normalized_sql
     assert "from order_stores" in normalized_sql
@@ -580,6 +625,9 @@ def _service(store: Store | None = None) -> tuple[OrderApplicationService, FakeR
         stores=repositories.stores,
         orders=repositories.orders,
         outbox_messages=repositories.outbox,
+        wallets=FakeWalletRepository(),
+        exchange_rate=EXCHANGE_RATE,
+        payment_assets=_registry(),
     )
     return service, repositories
 
@@ -594,7 +642,7 @@ def _store() -> Store:
     return Store(
         store_id=STORE_ID,
         owner_user_id=OWNER_USER_ID,
-        products=(Product(product_id=PRODUCT_ID, name="Ledger Mug", price=USDC),),
+        products=(Product(product_id=PRODUCT_ID, name="Ledger Mug", price=USD_PRICE),),
         active=True,
         store_address=Address(id="store-address", street="1 Market St"),
         store_wallet=STORE_WALLET,
@@ -606,17 +654,17 @@ def _variant_store() -> Store:
     product = Product(
         product_id=PRODUCT_ID,
         name="Ledger Hoodie",
-        price=USDC,
+        price=USD_PRICE,
         variants={
             "hoodie-m": ProductVariantPrice(
                 public_variant_id="hoodie-m",
                 option_values={"size": "M"},
-                price_delta=Crypto("0.00", "USDC", 11155111, TOKEN_ADDRESS, 6),
+                price_delta=Money("0.00", "USD"),
             ),
             "hoodie-l": ProductVariantPrice(
                 public_variant_id="hoodie-l",
                 option_values={"size": "L"},
-                price_delta=Crypto("2.00", "USDC", 11155111, TOKEN_ADDRESS, 6),
+                price_delta=Money("2.00", "USD"),
             ),
         },
         option_values={
@@ -640,7 +688,7 @@ def _variant_store() -> Store:
                 display_value="Premium wrap",
                 option_type="ADD_ON",
                 selection_type="MULTI",
-                price_delta=Crypto("1.00", "USDC", 11155111, TOKEN_ADDRESS, 6),
+                price_delta=Money("1.00", "USD"),
             ),
         },
     )

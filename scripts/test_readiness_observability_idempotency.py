@@ -43,6 +43,9 @@ from token_payments.shared.domain import (  # noqa: E402
     CommandId,
     Crypto,
     CustomerId,
+    ExchangeRate,
+    Money,
+    PriceConversion,
     MessageId,
     OrderId,
     OutboxMessage,
@@ -314,8 +317,9 @@ class CapturingOrderUseCase:
 
     def createOrder(self, command: CreateOrderCommand) -> OrderCreationResult:
         self.commands.append(command)
-        amount = Crypto(
-            amount=Decimal("12.50"),
+        conversion = PriceConversion(
+            rate=ExchangeRate({"USDC": Decimal(1)}),
+            asset_id="local-usdc",
             symbol="USDC",
             chain_id=11155111,
             token_address=TOKEN_ADDRESS,
@@ -329,7 +333,7 @@ class CapturingOrderUseCase:
         store = Store(
             store_id=STORE_ID,
             owner_user_id=OWNER_USER_ID,
-            products=(Product(product_id=PRODUCT_ID, name="Ledger Mug", price=amount),),
+            products=(Product(product_id=PRODUCT_ID, name="Ledger Mug", price=Money("12.50", "USD")),),
             store_wallet="0x2222222222222222222222222222222222222222",
             supported_chain_ids=(11155111,),
         )
@@ -341,6 +345,7 @@ class CapturingOrderUseCase:
             product_quantities={PRODUCT_ID: 2},
             created_at=NOW,
             tracking_id=TRACKING_ID,
+            conversion=conversion,
         )
         return OrderCreationResult(
             order=order,

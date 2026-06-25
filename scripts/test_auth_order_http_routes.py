@@ -51,6 +51,9 @@ from token_payments.shared.domain import (  # noqa: E402
     CheckoutEventName,
     Crypto,
     CustomerId,
+    ExchangeRate,
+    Money,
+    PriceConversion,
     MessageId,
     OrderId,
     OutboxMessage,
@@ -298,7 +301,7 @@ def test_order_http_route_calls_orders_facade_and_preserves_user_header() -> Non
     assert response.status_code == 201
     assert _json(response.body)["order"]["status"] == "PENDING"
     assert _json(response.body)["order"]["totalAmount"] == {
-        "amount": "25.00",
+        "amount": "25.000000",
         "chainId": 11155111,
         "decimals": 6,
         "symbol": "USDC",
@@ -395,8 +398,9 @@ class FakeOrderUseCase:
 
     def createOrder(self, command: CreateOrderCommand) -> OrderCreationResult:
         self.commands.append(command)
-        amount = Crypto(
-            amount=Decimal("12.50"),
+        conversion = PriceConversion(
+            rate=ExchangeRate({"USDC": Decimal(1)}),
+            asset_id="local-usdc",
             symbol="USDC",
             chain_id=11155111,
             token_address=TOKEN_ADDRESS,
@@ -409,7 +413,7 @@ class FakeOrderUseCase:
         store = Store(
             store_id=STORE_ID,
             owner_user_id=OWNER_USER_ID,
-            products=(Product(product_id=PRODUCT_ID, name="Ledger Mug", price=amount),),
+            products=(Product(product_id=PRODUCT_ID, name="Ledger Mug", price=Money("12.50", "USD")),),
             store_wallet="0x2222222222222222222222222222222222222222",
             supported_chain_ids=(11155111,),
         )
@@ -421,6 +425,7 @@ class FakeOrderUseCase:
             product_quantities={PRODUCT_ID: 2},
             created_at=NOW,
             tracking_id=TRACKING_ID,
+            conversion=conversion,
         )
         return OrderCreationResult(
             order=order,

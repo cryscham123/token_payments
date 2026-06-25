@@ -444,12 +444,13 @@ def _order_detail() -> OrderDetail:
         store_id=STORE_ID,
         order_status="PAID",
         total_amount=_amount(),
-        products=(_product(),),
+        products=(Product(product_id=PRODUCT_ID, name="Ledger Mug", price=_amount(), available=True),),
     )
 
 
 def _product() -> Product:
-    return Product(product_id=PRODUCT_ID, name="Ledger Mug", price=_amount(), available=True)
+    # Store catalog projection no longer carries price (not used for approval).
+    return Product(product_id=PRODUCT_ID, name="Ledger Mug", available=True)
 
 
 def _amount(amount: Decimal | str = Decimal("12.50")) -> Crypto:
@@ -691,13 +692,6 @@ class FakePostgresConnection:
                 "store_id": str(store.store_id),
                 "product_id": str(product.product_id),
                 "name": product.name,
-                "price_numeric": product.price.amount,
-                "price_symbol": product.price.symbol,
-                "price_chain_id": product.price.chain_id,
-                "price_token_address": (
-                    str(product.price.token_address) if product.price.token_address is not None else None
-                ),
-                "price_decimals": product.price.decimals,
                 "available": product.available,
             }
 

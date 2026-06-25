@@ -7,7 +7,7 @@ import SiteHeader from "./SiteHeader";
 import { loadCart, saveCart } from "@/lib/cart";
 import { getCurrentUser, listWallets, requestWalletLinkChallenge, linkWallet } from "@/lib/auth-client";
 import { createOrder, findProductSummary, getStoreProduct, ensureChain } from "@/lib/checkout-client";
-import { formatCryptoAmount } from "@/lib/format";
+import { formatCryptoAmount, formatFiatAmount } from "@/lib/format";
 import { isActiveWallet, walletLabel, paymentOptionsForItem } from "@/lib/payment-options";
 import { getCategoryFallback } from "@/lib/product-image";
 export default function Cart() {
@@ -510,7 +510,7 @@ export default function Cart() {
                                 </button>
                               </div>
                               <span className="text-lg font-bold font-mono">
-                                {formatCryptoAmount((Number.parseFloat(unitPrice.amount) || 0) * item.quantity)} {unitPrice.symbol}
+                                {formatFiatAmount((Number.parseFloat(unitPrice.amount) || 0) * item.quantity, unitPrice.currency)}
                               </span>
                             </div>
                           </div>
@@ -578,7 +578,7 @@ export default function Cart() {
                     <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
                       <div className="text-sm">
                         <span className="text-slate-500">스토어 합계 </span>
-                        <span className="font-mono font-bold text-slate-900">{formatCryptoAmount(group.subtotal)} {group.selectedOption?.symbol || "ETH"}</span>
+                        <span className="font-mono font-bold text-slate-900">{formatFiatAmount(group.subtotal, "USD")}</span>
                       </div>
                       <button
                         onClick={() => startCheckout(group.storeId)}
