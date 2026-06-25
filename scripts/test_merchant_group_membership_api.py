@@ -271,6 +271,48 @@ def test_merchant_facing_apis_reject_owner_and_platform_role_assignment() -> Non
     assert _json(platform_invite.body)["error"]["code"] == "ROLE_TEMPLATE_NOT_ALLOWED"
 
 
+def test_merchant_invitation_rejects_self_or_admin() -> None:
+    repository = FakeMerchantRepository()
+    admin_wallet = WalletAddress("0x32b31C74fE628e9164996f727F0D11A3C49EC27f")
+    admin_id = UserId("018f33aa-9e6d-73d8-9dc3-47d6cdccdd99")
+    repository.seed_user(admin_id, admin_wallet)
+    repository.seed_user(OWNER_ID, OWNER_WALLET)
+
+    router = _router(repository, _auth(OWNER_ID, "merchant_member:invite"))
+
+    # Attempt to invite self (OWNER_ID)
+    self_invite = router.handle(
+        "POST",
+        f"/merchant/stores/{STORE_ID}/invitations",
+        headers={"Content-Type": "application/json"},
+        body=_json_body({"targetUserId": str(OWNER_ID), "roleId": "MERCHANT_STAFF"}),
+        received_at=NOW,
+    )
+    # Attempt to invite admin by user ID
+    admin_invite_by_id = router.handle(
+        "POST",
+        f"/merchant/stores/{STORE_ID}/invitations",
+        headers={"Content-Type": "application/json"},
+        body=_json_body({"targetUserId": str(admin_id), "roleId": "MERCHANT_STAFF"}),
+        received_at=NOW,
+    )
+    # Attempt to invite admin by wallet Address
+    admin_invite_by_wallet = router.handle(
+        "POST",
+        f"/merchant/stores/{STORE_ID}/invitations",
+        headers={"Content-Type": "application/json"},
+        body=_json_body({"targetWallet": str(admin_wallet), "roleId": "MERCHANT_STAFF"}),
+        received_at=NOW,
+    )
+
+    assert self_invite.status_code == 400
+    assert _json(self_invite.body)["error"]["code"] == "INVITATION_TARGET_INVALID"
+    assert admin_invite_by_id.status_code == 400
+    assert _json(admin_invite_by_id.body)["error"]["code"] == "INVITATION_TARGET_INVALID"
+    assert admin_invite_by_wallet.status_code == 400
+    assert _json(admin_invite_by_wallet.body)["error"]["code"] == "INVITATION_TARGET_INVALID"
+
+
 def test_member_role_update_and_removal_allow_staff_only_and_protect_owner() -> None:
     repository = FakeMerchantRepository()
     repository.group_memberships[(GROUP_ID, STAFF_ID)] = GroupMembership(STAFF_ID, GROUP_ID, RoleId("MERCHANT_STAFF"), joined_at=NOW)
@@ -294,6 +336,34 @@ def test_member_role_update_and_removal_allow_staff_only_and_protect_owner() -> 
     assert _json(owner_removed.body)["error"]["code"] == "OWNER_ROLE_PROTECTED"
 
 
+def test_revoke_merchant_invitation_succeeds_for_authorized_actor() -> None:
+    repository = FakeMerchantRepository()
+    owner_router = _router(repository, _auth(OWNER_ID, "merchant_member:invite"))
+
+    # Create invitation
+    created = owner_router.handle(
+        "POST",
+        f"/merchant/stores/{STORE_ID}/invitations",
+        headers={"Content-Type": "application/json"},
+        body=_json_body({"targetUserId": str(STAFF_ID), "roleId": "MERCHANT_STAFF"}),
+        received_at=NOW,
+    )
+    assert created.status_code == 201
+
+    # Revoke invitation with authorized actor
+    revoke_router = _router(repository, _auth(OWNER_ID, "merchant_member:invite"))
+    revoked = revoke_router.handle(
+        "POST",
+        f"/merchant/invitations/{INVITATION_ID}/revoke",
+        received_at=NOW + timedelta(minutes=5),
+    )
+
+    assert revoked.status_code == 200
+    payload = _json(revoked.body)
+    assert payload["invitation"]["status"] == "REVOKED"
+    assert repository.invitations[INVITATION_ID].status == InvitationStatus.REVOKED
+
+
 def test_role_catalog_exposes_only_non_owner_merchant_staff_templates_and_route_manifest() -> None:
     response = _router(FakeMerchantRepository(), _auth(OWNER_ID)).handle("GET", "/merchant/role-catalog")
     roles = _json(response.body)["roles"]
@@ -311,6 +381,7 @@ def test_role_catalog_exposes_only_non_owner_merchant_staff_templates_and_route_
         "updateMerchantStoreMemberRole",
         "removeMerchantStoreMember",
         "getMerchantRoleCatalog",
+        "searchMerchantUsers",
     }
 
 
@@ -416,8 +487,37 @@ class FakeMerchantRepository:
         group_id = self.store_groups.get(store_id)
         return self.groups.get(group_id) if group_id is not None else None
 
+    def store_id_for_group(self, group_id: GroupId) -> StoreId | None:
+        for store_id, gid in self.store_groups.items():
+            if gid == group_id:
+                return store_id
+        return None
+
     def members_for_group(self, group_id: GroupId) -> tuple[GroupMembership, ...]:
-        return tuple(membership for (gid, _uid), membership in self.group_memberships.items() if gid == group_id)
+        results = []
+        for (gid, uid), membership in self.group_memberships.items():
+            if gid == group_id:
+                profile = self.user_profiles.get(uid)
+                display_name = profile.display_name if profile else None
+                user = self.users.get(uid)
+                wallet_address = getattr(user, "wallet_address", None) if user else None
+                if wallet_address is None:
+                    for w, u in self.wallet_owners.items():
+                        if u == uid:
+                            wallet_address = w
+                            break
+                results.append(
+                    GroupMembership(
+                        user_id=membership.user_id,
+                        group_id=membership.group_id,
+                        role_id=membership.role_id,
+                        active=membership.active,
+                        joined_at=membership.joined_at,
+                        display_name=display_name,
+                        wallet_address=wallet_address,
+                    )
+                )
+        return tuple(results)
 
     def save_membership(self, membership):  # type: ignore[no-redef]
         if isinstance(membership, GroupMembership):

@@ -13,7 +13,7 @@ from token_payments.contexts.store_catalog.domain import (
     PublicStoreId,
     StoreMembershipRole,
 )
-from token_payments.shared.domain import CommandId, Crypto, ProductId, StoreId, UserId, WalletAddress
+from token_payments.shared.domain import CommandId, Money, ProductId, StoreId, UserId, WalletAddress
 
 
 @dataclass(frozen=True)
@@ -179,7 +179,7 @@ class RegisterStoreProductCommand:
     public_store_id: PublicStoreId
     product_id: ProductId
     title: str
-    price: Crypto
+    price: Money
     initial_total_stock: int
     requested_at: datetime
     request_id: str
@@ -206,8 +206,8 @@ class RegisterStoreProductCommand:
         if self.public_product_id is not None and not isinstance(self.public_product_id, PublicProductId):
             object.__setattr__(self, "public_product_id", PublicProductId(str(self.public_product_id)))
         object.__setattr__(self, "title", _text(self.title, "RegisterStoreProductCommand.title"))
-        if not isinstance(self.price, Crypto):
-            raise ValueError("RegisterStoreProductCommand.price must be a Crypto")
+        if not isinstance(self.price, Money):
+            raise ValueError("RegisterStoreProductCommand.price must be a Money")
         if isinstance(self.initial_total_stock, bool) or not isinstance(self.initial_total_stock, int) or self.initial_total_stock < 0:
             raise ValueError("RegisterStoreProductCommand.initial_total_stock must be a non-negative integer")
         if not isinstance(self.active, bool):
@@ -245,7 +245,7 @@ class UpdateStoreProductCommand:
     requested_at: datetime
     request_id: str
     payload_hash: str
-    price: Crypto | None = None
+    price: Money | None = None
     platform_override: bool = False
 
     def __post_init__(self) -> None:
@@ -270,8 +270,8 @@ class UpdateStoreProductCommand:
             object.__setattr__(self, "status", ProductStatus(_text(str(self.status), "status")))
         if self.visibility is not None and not isinstance(self.visibility, ProductVisibility):
             object.__setattr__(self, "visibility", ProductVisibility(_text(str(self.visibility), "visibility")))
-        if self.price is not None and not isinstance(self.price, Crypto):
-            raise ValueError("UpdateStoreProductCommand.price must be a Crypto")
+        if self.price is not None and not isinstance(self.price, Money):
+            raise ValueError("UpdateStoreProductCommand.price must be a Money")
         if not isinstance(self.platform_override, bool):
             raise ValueError("UpdateStoreProductCommand.platform_override must be a bool")
 

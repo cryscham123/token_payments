@@ -15,7 +15,7 @@ from typing import Any, Mapping, Self
 from uuid import UUID
 
 from token_payments.contexts.auth.domain import GroupId
-from token_payments.shared.domain import Crypto, ProductId, StoreId, UserId, WalletAddress
+from token_payments.shared.domain import Money, ProductId, StoreId, UserId, WalletAddress
 
 
 _PUBLIC_STORE_ID_RE = re.compile(r"^[a-z][a-z0-9_-]{7,63}$")
@@ -322,7 +322,7 @@ class StoreProduct:
     attributes: Mapping[str, Any]
     status: ProductStatus
     visibility: ProductVisibility
-    price: Crypto
+    price: Money
     created_at: datetime
     updated_at: datetime
 
@@ -331,7 +331,7 @@ class StoreProduct:
         *,
         store_id: StoreId,
         product_id: ProductId,
-        price: Crypto,
+        price: Money,
         public_product_id: PublicProductId | str | None = None,
         public_store_id: PublicStoreId | str | None = None,
         title: str | None = None,
@@ -351,8 +351,8 @@ class StoreProduct:
             raise ValueError("StoreProduct.store_id must be a StoreId")
         if not isinstance(product_id, ProductId):
             raise ValueError("StoreProduct.product_id must be a ProductId")
-        if not isinstance(price, Crypto):
-            raise ValueError("StoreProduct.price must be a Crypto")
+        if not isinstance(price, Money):
+            raise ValueError("StoreProduct.price must be a Money")
         if not isinstance(active, bool):
             raise ValueError("StoreProduct.active must be a bool")
         if public_product_id is None:
@@ -411,7 +411,7 @@ class StoreProduct:
         attributes: Mapping[str, Any] | None = None,
         status: ProductStatus | str | None = None,
         visibility: ProductVisibility | str | None = None,
-        price: Crypto | None = None,
+        price: Money | None = None,
         updated_at: datetime,
     ) -> Self:
         return type(self)(
@@ -476,7 +476,7 @@ class ProductOptionValue:
     display_value: str
     sort_order: int = 0
     option_value_id: str | None = None
-    price_delta: Crypto | None = None
+    price_delta: Money | None = None
     active: bool = True
 
     def __post_init__(self) -> None:
@@ -493,8 +493,8 @@ class ProductOptionValue:
             object.__setattr__(self, "option_value_id", f"val_{value_key.casefold()}")
         else:
             object.__setattr__(self, "option_value_id", _bounded_text(self.option_value_id, "ProductOptionValue.option_value_id", max_length=120))
-        if self.price_delta is not None and not isinstance(self.price_delta, Crypto):
-            raise ValueError("ProductOptionValue.price_delta must be a Crypto or None")
+        if self.price_delta is not None and not isinstance(self.price_delta, Money):
+            raise ValueError("ProductOptionValue.price_delta must be a Money or None")
         if not isinstance(self.active, bool):
             raise ValueError("ProductOptionValue.active must be a bool")
 
@@ -506,7 +506,7 @@ class ProductVariant:
     public_variant_id: PublicVariantId
     display_name: str
     option_values: Mapping[str, Any]
-    price_delta: Crypto
+    price_delta: Money
     status: ProductStatus | str = ProductStatus.ACTIVE
     active: bool = True
     sku: str | None = None
@@ -523,8 +523,8 @@ class ProductVariant:
         if not isinstance(self.option_values, Mapping):
             raise ValueError("ProductVariant.option_values must be a JSON object")
         object.__setattr__(self, "option_values", MappingProxyType(_variant_option_values(self.option_values)))
-        if not isinstance(self.price_delta, Crypto):
-            raise ValueError("ProductVariant.price_delta must be a Crypto")
+        if not isinstance(self.price_delta, Money):
+            raise ValueError("ProductVariant.price_delta must be a Money")
         object.__setattr__(self, "status", _product_status(self.status))
         if not isinstance(self.active, bool):
             raise ValueError("ProductVariant.active must be a bool")

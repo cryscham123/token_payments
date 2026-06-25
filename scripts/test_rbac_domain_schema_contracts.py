@@ -126,7 +126,7 @@ def test_group_invitation_targets_users_or_wallets_without_nested_group_membersh
         "0x2222222222222222222222222222222222222222",
         NOW,
     )
-    assert {field.name for field in fields(GroupMembership)} == {"user_id", "group_id", "role_id", "active", "joined_at"}
+    assert {field.name for field in fields(GroupMembership)} == {"user_id", "group_id", "role_id", "active", "joined_at", "wallet_address", "display_name"}
 
 
 def test_postgres_schema_adds_additive_rbac_tables_and_store_group_link() -> None:

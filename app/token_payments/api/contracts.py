@@ -227,6 +227,11 @@ def _to_json_safe_mapping(value: Mapping[str, Any], field_name: str) -> dict[str
 
 
 def _to_json_safe(value: Any) -> JsonValue:
+    from token_payments.shared.domain.value_objects import WalletAddress
+    if isinstance(value, WalletAddress):
+        from eth_utils import to_checksum_address
+        return to_checksum_address(value.address)
+
     if value is None or isinstance(value, (bool, int, str)):
         return value
     if isinstance(value, float):

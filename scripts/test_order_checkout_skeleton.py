@@ -34,9 +34,12 @@ from token_payments.shared.domain import (  # noqa: E402
     Crypto,
     CustomerId,
     EventMetadata,
+    ExchangeRate,
     MessageId,
+    Money,
     OrderId,
     PaymentId,
+    PriceConversion,
     ProductId,
     StoreId,
     UserId,
@@ -53,17 +56,26 @@ USER_ID = UserId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c25")
 PAYMENT_ID = PaymentId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c26")
 WALLET = WalletAddress("0x1234567890abcdef1234567890abcdef12345678")
 STORE_WALLET = WalletAddress("0x2222222222222222222222222222222222222222")
+TOKEN_ADDRESS = WalletAddress("0x3333333333333333333333333333333333333333")
 USDC = Crypto(
     amount=Decimal("12.50"),
     symbol="USDC",
     chain_id=11155111,
-    token_address=WalletAddress("0x3333333333333333333333333333333333333333"),
+    token_address=TOKEN_ADDRESS,
+    decimals=6,
+)
+CONV = PriceConversion(
+    rate=ExchangeRate({"ETH": Decimal(3000), "USDC": Decimal(1), "USDT": Decimal(1)}),
+    asset_id="local-usdc",
+    symbol="USDC",
+    chain_id=11155111,
+    token_address=TOKEN_ADDRESS,
     decimals=6,
 )
 
 
 def test_order_initialization_creates_pending_order_with_product_snapshot() -> None:
-    product = Product(product_id=PRODUCT_ID, name="Ledger Mug", price=USDC)
+    product = Product(product_id=PRODUCT_ID, name="Ledger Mug", price=Money("12.50", "USD"))
     store = Store(
         store_id=STORE_ID,
         owner_user_id=USER_ID,
@@ -82,6 +94,7 @@ def test_order_initialization_creates_pending_order_with_product_snapshot() -> N
         delivery_address=Address(id="ship-to", street="2 River Rd"),
         product_quantities={PRODUCT_ID: 2},
         created_at=NOW,
+        conversion=CONV,
     )
 
     assert order.status == OrderStatus.PENDING
@@ -94,6 +107,7 @@ def test_order_initialization_creates_pending_order_with_product_snapshot() -> N
             product=product,
             quantity=2,
             snapshotted_at=NOW,
+            conversion=CONV,
         ),
     )
     assert order.items[0].product_snapshot == ProductSnapshot(
@@ -197,13 +211,13 @@ def test_checkout_process_manager_is_pure_domain_logic_without_adapters() -> Non
 
 
 def _order() -> Order:
-    product = Product(product_id=PRODUCT_ID, name="Ledger Mug", price=USDC)
+    product = Product(product_id=PRODUCT_ID, name="Ledger Mug", price=Money("12.50", "USD"))
     return Order(
         order_id=ORDER_ID,
         customer_id=CUSTOMER_ID,
         store_id=STORE_ID,
         delivery_address=Address(id="ship-to", street="2 River Rd"),
-        items=(OrderItem.from_product(ORDER_ID, product, 1, NOW),),
+        items=(OrderItem.from_product(ORDER_ID, product, 1, NOW, conversion=CONV),),
         tracking_id=TrackingId.new(),
         status=OrderStatus.PENDING,
     )

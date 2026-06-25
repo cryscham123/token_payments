@@ -41,6 +41,7 @@ from token_payments.shared.domain import UserId, WalletAddress  # noqa: E402
 NOW = datetime(2026, 5, 18, 0, 0, tzinfo=UTC)
 WALLET = "0xABCDabcdABCDabcdABCDabcdABCDabcdABCDabcd"
 NORMALIZED_WALLET = "0xabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd"
+CHECKSUM_WALLET = "0xABCDabcdABcDabcDaBCDAbcdABcdAbCdABcDABCd"
 OTHER_WALLET = "0x9999999999999999999999999999999999999999"
 DOMAIN = "token-payments.local"
 CHAIN_ID = 1337
@@ -65,9 +66,9 @@ def test_challenge_response_contains_siwe_required_fields_and_message() -> None:
 
     assert response.status_code == 201
     body = response.body
-    assert body["walletAddress"] == NORMALIZED_WALLET
+    assert body["walletAddress"] == CHECKSUM_WALLET
     assert body["domain"] == DOMAIN
-    assert body["address"] == NORMALIZED_WALLET
+    assert body["address"] == CHECKSUM_WALLET
     assert body["uri"] == SIWE_URI
     assert body["version"] == "1"
     assert body["chainId"] == CHAIN_ID

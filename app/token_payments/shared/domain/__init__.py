@@ -24,7 +24,7 @@ from .messaging import (
     ProcessedCommand,
     ProcessedMessage,
 )
-from .value_objects import ChainNetwork, Crypto, TransactionHash, WalletAddress
+from .value_objects import ChainNetwork, Crypto, ExchangeRate, Money, PriceConversion, TransactionHash, WalletAddress
 
 __all__ = [
     "ChainNetwork",
@@ -36,13 +36,16 @@ __all__ = [
     "CustomerId",
     "DEFAULT_VARIANT_KEY",
     "EventMetadata",
+    "ExchangeRate",
     "IdempotencyDecision",
     "MessageId",
+    "Money",
     "OrderId",
     "OutboxMessage",
     "OutboxMessageKind",
     "OutboxPublishStatus",
     "PaymentId",
+    "PriceConversion",
     "ProcessedCommand",
     "ProcessedMessage",
     "ProductId",

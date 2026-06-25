@@ -101,6 +101,7 @@ from token_payments.shared.domain import (
     CommandId,
     CommandMetadata,
     ChainNetwork,
+    ExchangeRate,
     MessageId,
     OrderId,
     OutboxMessage,
@@ -162,6 +163,10 @@ DEFAULT_BLOCKCHAIN_CHAIN_ID = 1337
 DEFAULT_BLOCKCHAIN_NATIVE_SYMBOL = "ETH"
 DEFAULT_BLOCKCHAIN_NATIVE_DECIMALS = 18
 DEFAULT_BLOCKCHAIN_GAS_BUFFER_RATE = Decimal("0.10")
+# Fixed fiat price of 1 ETH. Products are priced in USD and converted to the buyer's chosen
+# asset at this rate; USD-pegged stablecoins (USDC/USDT) convert 1:1.
+DEFAULT_ETH_USD_RATE = Decimal("3000")
+DEFAULT_STABLECOIN_USD_RATES = {"USDC": Decimal("1"), "USDT": Decimal("1"), "DAI": Decimal("1")}
 
 REQUIRED_LIVE_DEPENDENCIES = (
     "postgres_session_factory",
@@ -229,6 +234,7 @@ class LiveRuntimeConfig:
     blockchain_native_symbol: str = DEFAULT_BLOCKCHAIN_NATIVE_SYMBOL
     blockchain_native_decimals: int = DEFAULT_BLOCKCHAIN_NATIVE_DECIMALS
     blockchain_gas_buffer_rate: Decimal | str | int | float = DEFAULT_BLOCKCHAIN_GAS_BUFFER_RATE
+    eth_usd_rate: Decimal | str | int | float = DEFAULT_ETH_USD_RATE
     session_key_ring: SessionKeyRing | None = field(default=None, repr=False)
     session_access_ttl_seconds: int = DEFAULT_SESSION_ACCESS_TTL_SECONDS
     session_refresh_ttl_seconds: int = DEFAULT_SESSION_REFRESH_TTL_SECONDS
@@ -246,6 +252,12 @@ class LiveRuntimeConfig:
     worker_batch_size: int = 100
     worker_poll_interval_seconds: float = 1.0
     receipt_poll_interval_seconds: float = 5.0
+
+    def exchange_rate(self) -> ExchangeRate:
+        """Fixed fiat<->asset rate: native symbol priced at ``eth_usd_rate``, stablecoins 1:1."""
+        rates = dict(DEFAULT_STABLECOIN_USD_RATES)
+        rates[self.blockchain_native_symbol] = self.eth_usd_rate
+        return ExchangeRate(rates)
 
     def worker_loop_options(self) -> WorkerLoopOptions:
         return WorkerLoopOptions(
@@ -335,6 +347,10 @@ class LiveRuntimeConfig:
                 "ADAPTER_BLOCKCHAIN_GAS_BUFFER_RATE",
             ),
         )
+        eth_usd_rate = _require_non_negative_decimal(self.eth_usd_rate, "ETH_USD_RATE")
+        if eth_usd_rate <= 0:
+            raise ValueError("ETH_USD_RATE must be a positive decimal number")
+        object.__setattr__(self, "eth_usd_rate", eth_usd_rate)
         if self.session_key_ring is None:
             object.__setattr__(
                 self,
@@ -471,6 +487,7 @@ class LiveRuntimeConfig:
                 "ADAPTER_BLOCKCHAIN_GAS_BUFFER_RATE",
                 DEFAULT_BLOCKCHAIN_GAS_BUFFER_RATE,
             ),
+            eth_usd_rate=_parse_decimal(source, "ETH_USD_RATE", DEFAULT_ETH_USD_RATE),
             session_key_ring=session_key_config.key_ring,
             session_access_ttl_seconds=session_key_config.access_ttl_seconds,
             session_refresh_ttl_seconds=session_key_config.refresh_ttl_seconds,
@@ -1459,6 +1476,9 @@ class _TransactionalMerchantMembershipUseCase:
     def role_catalog(self, actor: Any):
         return self._execute(lambda service: service.role_catalog(actor))
 
+    def search_users(self, actor: Any, query: Any):
+        return self._execute(lambda service: service.search_users(actor, query))
+
     def list_members(self, actor: Any, store_id: Any):
         return self._execute(lambda service: service.list_members(actor, store_id))
 
@@ -1908,6 +1928,7 @@ class _TransactionalOrderUseCase:
             outbox_messages=outbox,
             wallets=PostgresUserWalletRepository(connection),
             payment_assets=_payment_asset_registry_for_connection(connection, self._config),
+            exchange_rate=self._config.exchange_rate(),
         ).createOrder(command)
         self._reserve_inventory(connection, command, result)
         self._start_payment_request(connection, command, result)
@@ -2437,6 +2458,7 @@ class _TransactionalStoreCatalogUseCase:
                     repository=PostgresStoreCatalogRepository(connection),
                     user_id_generator=self._dependencies.id_generator,
                     payment_assets=_payment_asset_registry_for_connection(connection, self._config),
+                    exchange_rate=self._config.exchange_rate(),
                 )
             ),
         )

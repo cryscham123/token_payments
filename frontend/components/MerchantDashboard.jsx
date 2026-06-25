@@ -16,12 +16,17 @@ import {
   AlertTriangle,
   ExternalLink,
   Trash2,
-  X
+  X,
+  Upload,
+  Image as ImageIcon
 } from "lucide-react";
 import SiteHeader from "./SiteHeader";
+import UserSearchInput from "./UserSearchInput";
 import { apiJson, getCurrentUser } from "@/lib/auth-client";
-import { formatCryptoAmount } from "@/lib/format";
-import { productImageFromMedia, getCategoryFallback } from "@/lib/product-image";
+import { formatCryptoAmount, formatFiatAmount, formatAssetPriceHint } from "@/lib/format";
+import { productImageFromMedia, getCategoryFallback, resolveProductImage } from "@/lib/product-image";
+
+
 
 export default function MerchantDashboard({ publicStoreId }) {
   const [currentUser, setCurrentUser] = useState(null);
@@ -50,11 +55,12 @@ export default function MerchantDashboard({ publicStoreId }) {
   const [editingProduct, setEditingProduct] = useState(null);
   const [productTitle, setProductTitle] = useState("");
   const [productDesc, setProductDesc] = useState("");
-  const [productCategory, setProductCategory] = useState("hoodie");
+  const [productCategory, setProductCategory] = useState("fashion");
   const [productPrice, setProductPrice] = useState("10.0");
-  const [productPriceSymbol, setProductPriceSymbol] = useState("USDC");
+  const [productPriceCurrency, setProductPriceCurrency] = useState("USD");
   const [productStock, setProductStock] = useState("50");
-  const [productMediaUrl, setProductMediaUrl] = useState("");
+  const [productMediaUrls, setProductMediaUrls] = useState([]);
+  const [tempMediaUrl, setTempMediaUrl] = useState("");
   const [productVisibility, setProductVisibility] = useState("VISIBLE");
   const [productStatus, setProductStatus] = useState("ACTIVE");
   const [savingProduct, setSavingProduct] = useState(false);
@@ -75,7 +81,7 @@ export default function MerchantDashboard({ publicStoreId }) {
       const [userPayload, storePayload, productsPayload] = await Promise.all([
         getCurrentUser().catch(() => null),
         apiJson(`/stores/${publicStoreId}`),
-        apiJson(`/stores/${publicStoreId}/products`)
+        apiJson(`/merchant/stores/${publicStoreId}/products`)
       ]);
 
       if (userPayload?.user) {
@@ -97,10 +103,12 @@ export default function MerchantDashboard({ publicStoreId }) {
         }
       }
 
-      if (productsPayload?.products) {
-        setProducts(productsPayload.products);
-        if (productsPayload.products.length > 0 && productsPayload.products[0].storeId) {
-          setInternalStoreId(productsPayload.products[0].storeId);
+      if (productsPayload) {
+        if (productsPayload.products) {
+          setProducts(productsPayload.products);
+        }
+        if (productsPayload.store?.storeId) {
+          setInternalStoreId(productsPayload.store.storeId);
         }
       }
     } catch (err) {
@@ -181,25 +189,55 @@ export default function MerchantDashboard({ publicStoreId }) {
     if (product) {
       setProductTitle(product.title || "");
       setProductDesc(product.description || "");
-      setProductCategory(product.category || "hoodie");
-      setProductPrice(product.displayPrice?.amount ? String(product.displayPrice.amount) : "10.0");
-      setProductPriceSymbol(product.displayPrice?.symbol || "USDC");
+      setProductCategory(product.category || "fashion");
+      setProductPrice(product.basePrice?.amount ? String(product.basePrice.amount) : (product.displayPrice?.amount ? String(product.displayPrice.amount) : "10.0"));
+      setProductPriceCurrency(product.basePrice?.currency || product.displayPrice?.currency || "USD");
       setProductStock(product.stock !== undefined ? String(product.stock) : "50");
-      setProductMediaUrl(product.media && product.media.length > 0 ? product.media[0] : "");
+      setProductMediaUrls(product.media ? (Array.isArray(product.media) ? product.media : [product.media]) : []);
+      setTempMediaUrl("");
       setProductVisibility(product.visibility || "VISIBLE");
       setProductStatus(product.status || "ACTIVE");
     } else {
       setProductTitle("");
       setProductDesc("");
-      setProductCategory("hoodie");
+      setProductCategory("fashion");
       setProductPrice("10.0");
-      setProductPriceSymbol("USDC");
+      setProductPriceCurrency("USD");
       setProductStock("50");
-      setProductMediaUrl("");
+      setProductMediaUrls([]);
+      setTempMediaUrl("");
       setProductVisibility("VISIBLE");
       setProductStatus("ACTIVE");
     }
     setShowProductModal(true);
+  };
+
+  const handleAddMediaUrl = () => {
+    if (tempMediaUrl.trim()) {
+      setProductMediaUrls(prev => [...prev, tempMediaUrl.trim()]);
+      setTempMediaUrl("");
+    }
+  };
+
+  const handleRemoveMediaUrl = (indexToRemove) => {
+    setProductMediaUrls(prev => prev.filter((_, idx) => idx !== indexToRemove));
+  };
+
+  const handleLocalImageUpload = (e) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    
+    Array.from(files).forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const base64Url = event.target.result;
+        if (base64Url) {
+          setProductMediaUrls(prev => [...prev, base64Url]);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = "";
   };
 
   const handleSaveProduct = async (e) => {
@@ -212,12 +250,11 @@ export default function MerchantDashboard({ publicStoreId }) {
       description: productDesc,
       category: productCategory,
       price: {
-        amount: Number.parseFloat(productPrice),
-        symbol: productPriceSymbol,
-        decimals: productPriceSymbol === "ETH" ? 18 : 6
+        amount: String(productPrice),
+        currency: productPriceCurrency
       },
       stock: Number.parseInt(productStock),
-      media: productMediaUrl ? [productMediaUrl] : [],
+      media: productMediaUrls.filter(url => url && url.trim() !== ""),
       visibility: productVisibility,
       status: productStatus,
       idempotencyKey: `save-product-${Date.now()}`
@@ -239,7 +276,7 @@ export default function MerchantDashboard({ publicStoreId }) {
 
       if (res) {
         // Reload products list
-        const productsPayload = await apiJson(`/stores/${publicStoreId}/products`);
+        const productsPayload = await apiJson(`/merchant/stores/${publicStoreId}/products`);
         if (productsPayload?.products) {
           setProducts(productsPayload.products);
         }
@@ -271,6 +308,23 @@ export default function MerchantDashboard({ publicStoreId }) {
       setInviteError("초대할 닉네임(Display Name) 또는 지갑 주소를 입력하세요.");
       setSendingInvite(false);
       return;
+    }
+
+    const normalizedWallet = inviteWallet?.toLowerCase();
+    const currentWallet = currentUser?.walletAddress?.toLowerCase();
+    const adminWallet = "0x32b31C74fE628e9164996f727F0D11A3C49EC27f".toLowerCase();
+
+    if (normalizedWallet) {
+      if (normalizedWallet === currentWallet) {
+        setInviteError("본인을 스태프로 초대할 수 없습니다.");
+        setSendingInvite(false);
+        return;
+      }
+      if (normalizedWallet === adminWallet) {
+        setInviteError("플랫폼 관리자는 상점 스태프로 초대할 수 없습니다.");
+        setSendingInvite(false);
+        return;
+      }
     }
 
     try {
@@ -493,11 +547,10 @@ export default function MerchantDashboard({ publicStoreId }) {
                 {/* Tokens checkboxes under chains */}
                 <div className="space-y-2">
                   <span className="text-xs font-bold text-slate-500 block mb-1.5">허용 결제 토큰</span>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     {[
                       { id: "local-usdc", symbol: "USDC" },
-                      { id: "local-usdt", symbol: "USDT" },
-                      { id: "local-disabled-dai", symbol: "DAI" }
+                      { id: "local-usdt", symbol: "USDT" }
                     ].map(token => {
                       const active = supportedAssets.includes(token.id);
                       return (
@@ -641,34 +694,23 @@ export default function MerchantDashboard({ publicStoreId }) {
                   </div>
                 )}
                 <div className="space-y-1">
-                  <label htmlFor="invite-name" className="text-xs font-bold text-slate-500">초대할 닉네임</label>
-                  <input
-                    id="invite-name"
-                    type="text"
-                    value={inviteDisplayName}
-                    onChange={(e) => {
-                      setInviteDisplayName(e.target.value);
-                      setInviteWallet("");
+                  <label htmlFor="invite-search" className="text-xs font-bold text-slate-500">직원 검색 및 초대</label>
+                  <UserSearchInput
+                    value={inviteDisplayName || inviteWallet}
+                    onChange={(val) => {
+                      if (val.startsWith("0x")) {
+                        setInviteWallet(val);
+                        setInviteDisplayName("");
+                      } else {
+                        setInviteDisplayName(val);
+                        setInviteWallet("");
+                      }
                     }}
-                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs outline-none focus:border-blue-500"
-                    placeholder="상대방의 닉네임(Display Name)"
-                  />
-                </div>
-                <div className="relative text-center text-slate-300 py-1 text-[10px] font-bold uppercase tracking-wider">
-                  <span>OR</span>
-                </div>
-                <div className="space-y-1">
-                  <label htmlFor="invite-wallet" className="text-xs font-bold text-slate-500">초대할 지갑 주소</label>
-                  <input
-                    id="invite-wallet"
-                    type="text"
-                    value={inviteWallet}
-                    onChange={(e) => {
-                      setInviteWallet(e.target.value);
-                      setInviteDisplayName("");
+                    onSelectUser={(user) => {
+                      setInviteDisplayName(user.displayName || "");
+                      setInviteWallet(user.walletAddress || "");
                     }}
-                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs outline-none focus:border-blue-500 font-mono"
-                    placeholder="0x..."
+                    placeholder="초대할 유저의 닉네임 또는 지갑 주소"
                   />
                 </div>
                 <div className="space-y-1">
@@ -681,7 +723,6 @@ export default function MerchantDashboard({ publicStoreId }) {
                   >
                     <option value="MERCHANT_STAFF">스태프 (STAFF)</option>
                     <option value="MERCHANT_ADMIN">관리자 (ADMIN)</option>
-                    <option value="MERCHANT_OWNER">공동 소유자 (OWNER)</option>
                   </select>
                 </div>
                 <button
@@ -711,8 +752,12 @@ export default function MerchantDashboard({ publicStoreId }) {
                           <span className="text-[10px] text-slate-400 block font-mono mt-0.5">ID: {member.userId}</span>
                         </div>
                         <div className="flex items-center gap-3">
-                          <span className="text-[10px] font-black uppercase text-blue-700 bg-blue-50 border border-blue-100 rounded-md px-2 py-0.5">
-                            {member.role || "STAFF"}
+                          <span className={`text-[10px] font-bold border rounded-md px-2 py-0.5 ${
+                            (member.role === "ADMIN" || member.role === "MANAGER")
+                              ? "text-blue-700 bg-blue-50 border-blue-100"
+                              : "text-slate-600 bg-slate-50 border-slate-200"
+                          }`}>
+                            {(member.role === "ADMIN" || member.role === "MANAGER") ? "관리자" : "스태프"}
                           </span>
                           {member.userId !== currentUser?.userId && (
                             <button
@@ -743,7 +788,9 @@ export default function MerchantDashboard({ publicStoreId }) {
                           <span className="font-bold text-slate-800">
                             {invite.targetDisplayName || (invite.targetWallet ? `${invite.targetWallet.slice(0, 6)}...${invite.targetWallet.slice(-4)}` : "대상 미지정")}
                           </span>
-                          <span className="text-[10px] text-slate-400 block font-mono mt-0.5">역할: {invite.roleId}</span>
+                          <span className="text-[10px] text-slate-400 block font-sans mt-0.5">
+                            역할: {(invite.roleId === "MERCHANT_ADMIN" || invite.roleId === "MERCHANT_MANAGER") ? "관리자" : "스태프"}
+                          </span>
                         </div>
                         <div className="flex items-center gap-3">
                           <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-100 rounded-md px-2 py-0.5">
@@ -823,10 +870,26 @@ export default function MerchantDashboard({ publicStoreId }) {
                     onChange={(e) => setProductCategory(e.target.value)}
                     className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs outline-none bg-white"
                   >
-                    <option value="hoodie">의류 (HOODIE)</option>
-                    <option value="electronics">전자기기 (ELECTRONICS)</option>
-                    <option value="coffee">식품/커피 (COFFEE)</option>
-                    <option value="other">기타 (OTHER)</option>
+                    <option value="fashion">패션 / 의류 (Fashion)</option>
+                    <option value="coffee">커피 / 식음료 (Coffee)</option>
+                    <option value="electronics">가전 / 디지털 (Electronics)</option>
+                    <option value="books">도서 (Books)</option>
+                    <option value="groceries">식료품 (Groceries)</option>
+                    <option value="sports">스포츠 / 레저 (Sports)</option>
+                    <option value="beauty">뷰티 / 화장품 (Beauty)</option>
+                    <option value="home-decor">가구 / 홈데코 (Home & Decor)</option>
+                    <option value="toys">완구 / 장난감 (Toys)</option>
+                    <option value="pets">반려동물 용품 (Pets)</option>
+                    <option value="music">음반 / 악기 (Music)</option>
+                    <option value="art-craft">미술 / 공예 (Art & Craft)</option>
+                    <option value="travel">여행 / 레저 (Travel)</option>
+                    <option value="health-food">건강식품 (Health Food)</option>
+                    <option value="digital-goods">디지털 자산 / 상품 (Digital Goods)</option>
+                    
+                    {/* fallback for any category values not currently listed */}
+                    {!["fashion", "coffee", "electronics", "books", "groceries", "sports", "beauty", "home-decor", "toys", "pets", "music", "art-craft", "travel", "health-food", "digital-goods"].includes(productCategory) && (
+                      <option value={productCategory}>{productCategory} (기존 카테고리)</option>
+                    )}
                   </select>
                 </div>
                 <div className="space-y-1">
@@ -847,8 +910,8 @@ export default function MerchantDashboard({ publicStoreId }) {
                   <label className="text-xs font-bold text-slate-500">판매 가격</label>
                   <input
                     type="number"
-                    step="0.000001"
-                    min="0.000001"
+                    step="0.01"
+                    min="0.01"
                     required
                     value={productPrice}
                     onChange={(e) => setProductPrice(e.target.value)}
@@ -858,26 +921,92 @@ export default function MerchantDashboard({ publicStoreId }) {
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-slate-500">가격 통화단위 (Symbol)</label>
                   <select
-                    value={productPriceSymbol}
-                    onChange={(e) => setProductPriceSymbol(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs outline-none bg-white"
+                    value={productPriceCurrency}
+                    onChange={(e) => setProductPriceCurrency(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs text-slate-500 outline-none cursor-not-allowed"
+                    disabled
                   >
-                    <option value="USDC">USDC</option>
-                    <option value="USDT">USDT</option>
-                    <option value="ETH">ETH</option>
+                    <option value="USD">USD</option>
                   </select>
                 </div>
               </div>
 
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-500">상품 이미지 URL</label>
-                <input
-                  type="text"
-                  value={productMediaUrl}
-                  onChange={(e) => setProductMediaUrl(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs outline-none focus:border-blue-500"
-                  placeholder="https://..."
-                />
+              <div className="space-y-3">
+                <label className="text-xs font-bold text-slate-500">상품 이미지 목록</label>
+                
+                {/* Image Thumbnails Grid */}
+                <div className="flex flex-wrap gap-2">
+                  {productMediaUrls.map((url, idx) => (
+                    <div 
+                      key={idx} 
+                      className="relative w-16 h-16 rounded-xl border border-slate-200 overflow-hidden bg-slate-50 shadow-sm group hover:scale-[1.02] hover:border-slate-350 transition-all duration-200"
+                    >
+                      <img 
+                        src={resolveProductImage(url)} 
+                        alt={`Product image ${idx + 1}`}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          e.target.src = resolveProductImage(""); // fallback on broken image
+                        }}
+                      />
+                      <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveMediaUrl(idx)}
+                          className="p-1 bg-red-600 hover:bg-red-700 text-white rounded-full transition shadow-sm transform scale-90 group-hover:scale-100 duration-200"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+
+                  {productMediaUrls.length === 0 && (
+                    <div className="w-full py-4 flex flex-col items-center justify-center border border-dashed border-slate-200 rounded-xl bg-slate-50 text-slate-400 text-[10px]">
+                      <ImageIcon className="w-5 h-5 mb-0.5 text-slate-300" />
+                      등록된 이미지가 없습니다.
+                    </div>
+                  )}
+                </div>
+
+                {/* Controls */}
+                <div className="flex flex-col gap-2">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={tempMediaUrl}
+                      onChange={(e) => setTempMediaUrl(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          handleAddMediaUrl();
+                        }
+                      }}
+                      className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 outline-none focus:border-blue-500 transition hover:border-slate-300"
+                      placeholder="이미지 URL을 입력하세요"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddMediaUrl}
+                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl transition shadow-sm flex items-center shrink-0"
+                    >
+                      <Plus className="w-3.5 h-3.5 mr-0.5" />
+                      추가
+                    </button>
+                  </div>
+
+                  <label className="flex items-center justify-center px-3 py-1.5 bg-slate-50 border border-slate-200 hover:border-slate-300 hover:bg-slate-100 rounded-xl cursor-pointer text-xs font-semibold text-slate-700 transition">
+                    <Upload className="w-3.5 h-3.5 mr-1 text-slate-500" />
+                    컴퓨터에서 파일 업로드
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*"
+                      onChange={handleLocalImageUpload}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">

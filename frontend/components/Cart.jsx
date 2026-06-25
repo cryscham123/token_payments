@@ -53,6 +53,7 @@ export default function Cart() {
         if (active) setLoadingAuth(false);
         return;
       }
+      if (active) setLoadingAuth(true);
       try {
         const payload = await listWallets();
         if (active) {
@@ -422,7 +423,7 @@ export default function Cart() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800">
       <SiteHeader cartCount={cartItems.reduce((sum, item) => sum + item.quantity, 0)} currentUser={currentUser} onCurrentUserChange={setCurrentUser} />
-      <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         <h1 className="mb-8 text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">장바구니</h1>
 
         {cartItems.length === 0 ? (
@@ -435,31 +436,16 @@ export default function Cart() {
           </div>
         ) : (
           <div>
-            {loadingAuth ? (
-              <div className="mb-6 h-[76px] w-full rounded-2xl bg-slate-200/50 animate-pulse" />
-            ) : currentUser && wallets.length === 0 ? (
-              <div className="mb-6 flex gap-3 rounded-2xl border border-amber-100 bg-amber-50/40 p-4 text-sm leading-relaxed text-amber-900 shadow-sm animate-pulse">
-                <TriangleAlert size={18} className="mt-0.5 shrink-0 text-amber-500" />
-                <div>
-                  <span className="font-bold">Metamask 지갑 연동 필요:</span> 현재 소셜 계정으로 로그인되어 있으나, 결제를 진행하려면 <span className="font-semibold text-amber-950">테스트 체인에 연결된 Metamask 지갑</span>이 필수적으로 연동되어야 합니다.{" "}
-                  <Link href="/profile" className="font-bold underline text-amber-700 hover:text-amber-900 transition-colors">
-                    내 정보
-                  </Link>
-                  에서 지갑을 먼저 연동해 주세요.
-                </div>
+            <div className="mb-6 flex gap-3 rounded-2xl border border-blue-100 bg-blue-50/40 p-4 text-sm leading-relaxed text-blue-900 shadow-sm">
+              <Info size={18} className="mt-0.5 shrink-0 text-blue-500" />
+              <div>
+                <span className="font-bold">TIP: 테스트 결제가 필요하신가요?</span> 잔액이 부족하다면{" "}
+                <Link href="/profile" className="font-bold underline text-blue-700 hover:text-blue-900 transition-colors">
+                  내 정보
+                </Link>
+                의 Faucet Station에서 테스트용 토큰을 무료로 발급받으실 수 있습니다.
               </div>
-            ) : (
-              <div className="mb-6 flex gap-3 rounded-2xl border border-blue-100 bg-blue-50/40 p-4 text-sm leading-relaxed text-blue-900 shadow-sm">
-                <Info size={18} className="mt-0.5 shrink-0 text-blue-500" />
-                <div>
-                  <span className="font-bold">TIP: 테스트 결제가 필요하신가요?</span> 잔액이 부족하다면{" "}
-                  <Link href="/profile" className="font-bold underline text-blue-700 hover:text-blue-900 transition-colors">
-                    내 정보
-                  </Link>
-                  의 Faucet Station에서 테스트용 토큰을 무료로 발급받으실 수 있습니다.
-                </div>
-              </div>
-            )}
+            </div>
             <div>
               {storeGroups.map((group) => {
                 const storeBusy = storeStatus[group.storeId] === "creating";
@@ -603,6 +589,19 @@ export default function Cart() {
                         이 스토어 결제
                       </button>
                     </div>
+
+                    {currentUser && !loadingAuth && group.selectedOption && group.eligibleWallets.length === 0 && (
+                      <div className="flex gap-2 border-t border-slate-200 bg-amber-50/40 px-6 py-3 text-xs leading-relaxed text-amber-900">
+                        <TriangleAlert size={15} className="mt-0.5 shrink-0 text-amber-500" />
+                        <div>
+                          결제를 진행하려면 <span className="font-semibold text-amber-950">테스트 체인에 연결된 Metamask 지갑</span>이 필요합니다.{" "}
+                          <Link href="/profile" className="font-bold underline text-amber-700 hover:text-amber-900 transition-colors">
+                            내 정보
+                          </Link>
+                          에서 지갑을 먼저 연동해 주세요.
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}

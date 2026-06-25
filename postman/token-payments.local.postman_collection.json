@@ -1974,6 +1974,31 @@
           }
         },
         {
+          "id": "searchMerchantUsers",
+          "name": "Search merchant users",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/merchant/users/search",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "merchant",
+                "users",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "query",
+                  "value": "demo"
+                }
+              ]
+            }
+          }
+        },
+        {
           "id": "getOperatorDashboard",
           "name": "Get operator dashboard",
           "description": "Local Postman request skeleton for the API route manifest; authentication uses the Postman cookie jar.",

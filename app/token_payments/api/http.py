@@ -636,6 +636,7 @@ def register_merchant_membership_routes(router: HttpRouter, merchant_api: Any) -
         _add_manifest_route(router, MERCHANT_MEMBERSHIP_HTTP_ROUTES["update_member_role"], merchant_api.update_member_role),
         _add_manifest_route(router, MERCHANT_MEMBERSHIP_HTTP_ROUTES["remove_member"], merchant_api.remove_member),
         _add_manifest_route(router, MERCHANT_MEMBERSHIP_HTTP_ROUTES["role_catalog"], merchant_api.role_catalog),
+        _add_manifest_route(router, MERCHANT_MEMBERSHIP_HTTP_ROUTES["search_users"], merchant_api.search_users),
     )
 
 
@@ -1222,6 +1223,7 @@ MERCHANT_MEMBERSHIP_HTTP_ROUTES: Mapping[str, HttpRouteSpec] = MappingProxyType(
         "update_member_role": HttpRouteSpec("PATCH", "/merchant/stores/{storeId}/members/{userId}", "updateMerchantStoreMemberRole"),
         "remove_member": HttpRouteSpec("DELETE", "/merchant/stores/{storeId}/members/{userId}", "removeMerchantStoreMember"),
         "role_catalog": HttpRouteSpec("GET", "/merchant/role-catalog", "getMerchantRoleCatalog"),
+        "search_users": HttpRouteSpec("GET", "/merchant/users/search", "searchMerchantUsers"),
     }
 )
 

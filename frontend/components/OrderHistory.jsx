@@ -182,7 +182,7 @@ export default function OrderHistory() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col">
       <SiteHeader currentUser={currentUser} onCurrentUserChange={setCurrentUser} />
-      <main className="mx-auto w-full max-w-4xl flex-grow px-4 py-10 sm:px-6 lg:px-8">
+      <main className="mx-auto w-full max-w-7xl flex-grow px-4 py-8 sm:px-6 lg:px-8">
         <h1 className="mb-8 text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">주문 내역</h1>
 
         {displayOrders.length === 0 ? (

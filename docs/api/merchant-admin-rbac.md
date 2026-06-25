@@ -34,6 +34,7 @@ business profile 수정은 `displayName`, `description`, `supportEmail`, `suppor
 | invitation 생성 | `POST` | `/merchant/stores/{storeId}/invitations` | `merchant_member:invite` |
 | invitation 수락 | `POST` | `/merchant/invitations/{invitationId}/accept` | invited user |
 | invitation revoke | `POST` | `/merchant/invitations/{invitationId}/revoke` | `merchant_member:invite` |
+| merchant user 검색 | `GET` | `/merchant/users/search` | active merchant/admin session |
 | member role 변경 | `PATCH` | `/merchant/stores/{storeId}/members/{userId}` | `merchant_member:manage` |
 | member 제거 | `DELETE` | `/merchant/stores/{storeId}/members/{userId}` | `merchant_member:manage` |
 | merchant role catalog 조회 | `GET` | `/merchant/role-catalog` | active merchant/admin session |
@@ -58,6 +59,7 @@ RBAC 판단은 `AuthorizationPolicy.can(...)`에 permission과 resource scope를
 | `POST /merchant/stores/{storeId}/invitations` | active merchant session, `merchant_member:invite` | JSON body: invitee wallet/user target and server-defined merchant role template; CSRF for browser | `201` `invitation` with bounded expiration/status | `400 VALIDATION_ERROR`, `401 AUTHENTICATION_REQUIRED`, `403 FORBIDDEN`, `404 STORE_NOT_FOUND`, `409 INVITATION_CONFLICT` |
 | `POST /merchant/invitations/{invitationId}/accept` | invited active user/session | path `invitationId`; optional body confirmation | `200` accepted invitation and active `membership` | `401 AUTHENTICATION_REQUIRED`, `403 FORBIDDEN`, `404 INVITATION_NOT_FOUND`, `409 INVITATION_NOT_ACCEPTABLE` |
 | `POST /merchant/invitations/{invitationId}/revoke` | active merchant session, `merchant_member:invite` | path `invitationId`; JSON body optional `reason`; CSRF for browser | `200` revoked `invitation` | `401 AUTHENTICATION_REQUIRED`, `403 FORBIDDEN`, `404 INVITATION_NOT_FOUND`, `409 INVITATION_NOT_REVOKABLE` |
+| `GET /merchant/users/search` | active merchant/admin session | query `query` (검색어) | `200` `users[]` with user id, display name, wallet address | `400 VALIDATION_ERROR`, `401 AUTHENTICATION_REQUIRED`, `403 FORBIDDEN` |
 | `PATCH /merchant/stores/{storeId}/members/{userId}` | active merchant session, `merchant_member:manage` | path `storeId`, `userId`; JSON body server-defined merchant role template; platform/personal roles 거부 | `200` updated `membership` | `400 VALIDATION_ERROR`, `401 AUTHENTICATION_REQUIRED`, `403 FORBIDDEN`, `404 MEMBERSHIP_NOT_FOUND`, `409 ROLE_CHANGE_REJECTED` |
 | `DELETE /merchant/stores/{storeId}/members/{userId}` | active merchant session, `merchant_member:manage` | path `storeId`, `userId`; optional reason | `200` removed/revoked `membership` | `401 AUTHENTICATION_REQUIRED`, `403 FORBIDDEN`, `404 MEMBERSHIP_NOT_FOUND`, `409 MEMBER_REMOVE_REJECTED` |
 | `GET /merchant/role-catalog` | active merchant/admin session | no body | `200` server-defined merchant role templates and assignability metadata | `401 AUTHENTICATION_REQUIRED`, `403 FORBIDDEN` |

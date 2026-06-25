@@ -39,6 +39,7 @@ from token_payments.shared.domain import (
     ChainNetwork,
     Crypto,
     CustomerId,
+    Money,
     OrderId,
     OutboxPublishStatus,
     PaymentId,
@@ -79,11 +80,8 @@ SELECT
     store_id,
     product_id,
     name,
-    price_numeric,
-    price_symbol,
-    price_chain_id,
-    price_token_address,
-    price_decimals
+    price_amount,
+    price_currency
 FROM order_store_products
 WHERE store_id = %(store_id)s
 ORDER BY product_id
@@ -95,11 +93,8 @@ SELECT
     option_values,
     active,
     status,
-    price_delta_numeric,
-    price_delta_symbol,
-    price_delta_chain_id,
-    price_delta_token_address,
-    price_delta_decimals
+    price_delta_amount,
+    price_delta_currency
 FROM store_catalog_product_variants
 WHERE store_id = %(store_id)s
   AND product_id = %(product_id)s
@@ -114,11 +109,8 @@ SELECT
     values.value_key,
     values.display_value,
     values.active,
-    values.price_delta_numeric,
-    values.price_delta_symbol,
-    values.price_delta_chain_id,
-    values.price_delta_token_address,
-    values.price_delta_decimals
+    values.price_delta_amount,
+    values.price_delta_currency
 FROM store_catalog_product_option_values values
 JOIN store_catalog_product_options options
   ON options.store_id = values.store_id
@@ -622,7 +614,7 @@ def _row_to_product(
     return Product(
         product_id=ProductId(_row_value(row, "product_id")),
         name=str(_row_value(row, "name")),
-        price=_crypto_from_row(row, "price"),
+        price=_product_price_from_row(row, "price"),
         variants={
             str(_row_value(variant_row, "public_variant_id")): _row_to_product_variant_price(variant_row)
             for variant_row in (variant_rows or [])
@@ -660,7 +652,7 @@ def _row_to_product_variant_price(row: Mapping[str, Any] | object) -> ProductVar
     return ProductVariantPrice(
         public_variant_id=str(_row_value(row, "public_variant_id")),
         option_values=_json_mapping(_row_value(row, "option_values")),
-        price_delta=_crypto_from_row(row, "price_delta"),
+        price_delta=_product_price_from_row(row, "price_delta"),
         active=bool(_row_value_or_default(row, "active", True)) and str(_row_value_or_default(row, "status", "ACTIVE")) == "ACTIVE",
     )
 
@@ -672,7 +664,7 @@ def _row_to_product_option_value_price(row: Mapping[str, Any] | object) -> Produ
         display_value=str(_row_value(row, "display_value")),
         option_type=str(_row_value(row, "option_type")),
         selection_type=str(_row_value(row, "selection_type")),
-        price_delta=_optional_crypto_from_row(row, "price_delta"),
+        price_delta=_product_price_from_row(row, "price_delta"),
         active=bool(_row_value_or_default(row, "active", True)),
     )
 
@@ -734,6 +726,37 @@ def _crypto_params(prefix: str, value: Crypto) -> dict[str, Any]:
         f"{prefix}_token_address": str(value.token_address) if value.token_address is not None else None,
         f"{prefix}_decimals": value.decimals,
     }
+
+
+def _money_from_row(row: Mapping[str, Any] | object, prefix: str) -> Money:
+    return Money(
+        amount=_row_value(row, f"{prefix}_amount"),
+        currency=str(_row_value(row, f"{prefix}_currency") or "USD"),
+    )
+
+
+def _product_price_from_row(row: Mapping[str, Any] | object, prefix: str) -> Money | Crypto | None:
+    chain_id = _row_value_or_default(row, f"{prefix}_chain_id", None)
+    if chain_id is not None:
+        return _crypto_from_row(row, prefix)
+    amount = _row_value_or_default(row, f"{prefix}_amount", None)
+    if amount is not None:
+        return _money_from_row(row, prefix)
+    numeric = _row_value_or_default(row, f"{prefix}_numeric", None)
+    if numeric is not None:
+        currency = str(_row_value_or_default(row, f"{prefix}_currency", "USD") or "USD")
+        return Money(amount=numeric, currency=currency)
+    return None
+
+
+def _optional_money_from_row(row: Mapping[str, Any] | object, prefix: str) -> Money | None:
+    amount = _row_value_or_default(row, f"{prefix}_amount", None)
+    if amount is None:
+        return None
+    return Money(
+        amount=amount,
+        currency=str(_optional_row_value(row, f"{prefix}_currency") or "USD"),
+    )
 
 
 def _crypto_from_row(row: Mapping[str, Any] | object, prefix: str) -> Crypto:

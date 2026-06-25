@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronRight, Search } from "lucide-react";
+import { Search, PackageSearch } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import SiteHeader from "./SiteHeader";
 import { apiJson } from "@/lib/auth-client";
-import { formatCryptoAmount } from "@/lib/format";
+import { formatCryptoAmount, formatFiatAmount, formatAssetPriceHint } from "@/lib/format";
 import { productImageFromMedia, PRODUCT_IMAGE_PLACEHOLDER, getCategoryFallback } from "@/lib/product-image";
 
 export default function Home() {
@@ -45,11 +45,9 @@ export default function Home() {
           publicStoreId: p.publicStoreId || p.storePublicId || "",
           storeDisplayName: p.storeDisplayName || p.store?.displayName || p.publicStoreId || "스토어",
           title: p.title,
-          cryptoAmount: p.displayPrice?.amount || "0",
-          cryptoSymbol: p.displayPrice?.symbol || "ETH",
-          cryptoChainId: p.displayPrice?.chainId || null,
-          cryptoTokenAddress: p.displayPrice?.tokenAddress || null,
-          cryptoDecimals: p.displayPrice?.decimals || 18,
+          usdAmount: p.displayPrice?.amount || p.basePrice?.amount || "0",
+          usdCurrency: p.displayPrice?.currency || p.basePrice?.currency || "USD",
+          assetPrices: p.assetPrices || null,
           paymentCapability: p.paymentCapability || null,
           availability: p.availability || null,
           category: p.category || "product",
@@ -130,101 +128,137 @@ export default function Home() {
     );
   }
 
+  /* ── 검색 중 or 비어 있음 판단 ── */
+  const isEmpty = !searching && productsList.length === 0;
+
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800">
       <SiteHeader />
 
-
-      <section id="new-products" className={`mx-auto mt-6 mb-8 max-w-7xl scroll-mt-16 px-4 sm:px-6 lg:px-8 transition-opacity duration-200 ${searching ? "opacity-50" : ""}`}>
-        <h3 className="mb-6 text-xl font-bold text-slate-950">신상품</h3>
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
-          {productsList.slice(0, 10).map((product) => (
-            <Link
-              key={`new-${product.publicProductId}`}
-              href={`/products/${product.publicProductId}`}
-              className="group flex flex-col overflow-hidden rounded-md border border-slate-200 bg-white transition-shadow duration-200 hover:shadow-lg"
-            >
-              <div className="relative aspect-square bg-slate-50">
-                <img
-                  src={product.thumb}
-                  alt={product.title}
-                  className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                  onError={(e) => {
-                    e.target.onerror = null;
-                    e.target.src = getCategoryFallback(product.category);
-                  }}
-                />
-              </div>
-              <div className="flex flex-1 flex-col p-3">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-blue-600 border border-blue-100/50 truncate">
-                    {product.category}
-                  </span>
-                  <span className="shrink-0 truncate text-[11px] font-semibold text-slate-500">{product.storeDisplayName}</span>
-                </div>
-                <p className="text-sm font-semibold leading-snug text-slate-900">{product.title}</p>
-                <div className="mt-auto pt-2">
-                  <span className="block text-[11px] font-semibold text-slate-500">{homePaymentSummary(product.paymentCapability)}</span>
-                  <span className="mt-0.5 block text-lg font-extrabold text-slate-950">
-                    {fromPriceLabel(product)}{formatCryptoAmount(product.cryptoAmount)} {product.cryptoSymbol}
-                  </span>
-                </div>
-              </div>
-            </Link>
-          ))}
+      {/* 검색 중 오버레이 스피너 */}
+      {searching && (
+        <div className="flex h-64 items-center justify-center">
+          <div className="flex flex-col items-center gap-3">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent" />
+            <span className="text-sm font-medium text-slate-500">검색 중...</span>
+          </div>
         </div>
-      </section>
+      )}
 
-      <main id="products" className="mx-auto mb-20 max-w-7xl scroll-mt-16 px-4 sm:px-6 lg:px-8">
-        <h3 className="mb-6 text-xl font-bold text-slate-950">오늘의 상품</h3>
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
-          {productsList.map((product) => (
-            <Link
-              key={product.publicProductId}
-              href={`/products/${product.publicProductId}`}
-              className="group flex flex-col overflow-hidden rounded-md border border-slate-200 bg-white transition-shadow duration-200 hover:shadow-lg"
-            >
-              <div className="relative aspect-square bg-slate-50">
-                <img
-                  src={product.thumb}
-                  alt={product.title}
-                  className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                  onError={(e) => {
-                    e.target.onerror = null;
-                    e.target.src = getCategoryFallback(product.category);
-                  }}
-                />
-              </div>
-              <div className="flex flex-1 flex-col p-3">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-blue-600 border border-blue-100/50 truncate">
-                    {product.category}
-                  </span>
-                  <span className="shrink-0 truncate text-[11px] font-semibold text-slate-500">{product.storeDisplayName}</span>
-                </div>
-                <p className="text-sm font-semibold leading-snug text-slate-900">{product.title}</p>
-                <div className="mt-auto pt-2">
-                  <span className="block text-[11px] font-semibold text-slate-500">{homePaymentSummary(product.paymentCapability)}</span>
-                  <span className="mt-0.5 block text-lg font-extrabold text-slate-950">
-                    {fromPriceLabel(product)}{formatCryptoAmount(product.cryptoAmount)} {product.cryptoSymbol}
-                  </span>
-                </div>
-              </div>
-            </Link>
-          ))}
+      {/* 빈 상태 */}
+      {isEmpty && (
+        <div className="flex flex-col items-center justify-center gap-4 py-24 text-center">
+          <PackageSearch className="h-16 w-16 text-slate-300" strokeWidth={1.2} />
+          <p className="text-lg font-semibold text-slate-500">
+            {q ? `"${q}"에 해당하는 상품이 없습니다` : "표시할 상품이 없습니다"}
+          </p>
+          {q && (
+            <p className="text-sm text-slate-400">다른 검색어를 입력해 보세요</p>
+          )}
         </div>
+      )}
 
-        {hasMore && (
-          <div id="scroll-sentinel" className="flex justify-center py-8">
-            {loadingMore && (
-              <div className="flex flex-col items-center gap-2">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
-                <span className="text-xs font-semibold text-slate-500">상품을 더 불러오는 중...</span>
+      {/* 상품 목록 */}
+      {!searching && !isEmpty && (
+        <>
+          <section id="new-products" className="mx-auto mt-6 mb-8 max-w-7xl scroll-mt-16 px-4 sm:px-6 lg:px-8">
+            <h3 className="mb-6 text-xl font-bold text-slate-950">신상품</h3>
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
+              {productsList.slice(0, 10).map((product) => (
+                <Link
+                  key={`new-${product.publicProductId}`}
+                  href={`/products/${product.publicProductId}`}
+                  className="group flex flex-col overflow-hidden rounded-md border border-slate-200 bg-white transition-shadow duration-200 hover:shadow-lg"
+                >
+                  <div className="relative aspect-square bg-slate-50">
+                    <img
+                      src={product.thumb}
+                      alt={product.title}
+                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                      onError={(e) => {
+                        e.target.onerror = null;
+                        e.target.src = getCategoryFallback(product.category);
+                      }}
+                    />
+                  </div>
+                  <div className="flex flex-1 flex-col p-3">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-blue-600 border border-blue-100/50 truncate">
+                        {product.category}
+                      </span>
+                      <span className="shrink-0 truncate text-[11px] font-semibold text-slate-500">{product.storeDisplayName}</span>
+                    </div>
+                    <p className="text-sm font-semibold leading-snug text-slate-900">{product.title}</p>
+                    <div className="mt-auto pt-2">
+                      <span className="block text-[11px] font-semibold text-slate-500">{homePaymentSummary(product.paymentCapability)}</span>
+                      <span className="mt-0.5 block text-lg font-extrabold text-slate-950">
+                        {fromPriceLabel(product)}{formatFiatAmount(product.usdAmount, product.usdCurrency)}
+                      </span>
+                      {formatAssetPriceHint(product.assetPrices) && (
+                        <span className="block text-[11px] font-medium text-slate-400">{formatAssetPriceHint(product.assetPrices)}</span>
+                      )}
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </section>
+
+          <main id="products" className="mx-auto mb-20 max-w-7xl scroll-mt-16 px-4 sm:px-6 lg:px-8">
+            <h3 className="mb-6 text-xl font-bold text-slate-950">오늘의 상품</h3>
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
+              {productsList.map((product) => (
+                <Link
+                  key={product.publicProductId}
+                  href={`/products/${product.publicProductId}`}
+                  className="group flex flex-col overflow-hidden rounded-md border border-slate-200 bg-white transition-shadow duration-200 hover:shadow-lg"
+                >
+                  <div className="relative aspect-square bg-slate-50">
+                    <img
+                      src={product.thumb}
+                      alt={product.title}
+                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                      onError={(e) => {
+                        e.target.onerror = null;
+                        e.target.src = getCategoryFallback(product.category);
+                      }}
+                    />
+                  </div>
+                  <div className="flex flex-1 flex-col p-3">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-blue-600 border border-blue-100/50 truncate">
+                        {product.category}
+                      </span>
+                      <span className="shrink-0 truncate text-[11px] font-semibold text-slate-500">{product.storeDisplayName}</span>
+                    </div>
+                    <p className="text-sm font-semibold leading-snug text-slate-900">{product.title}</p>
+                    <div className="mt-auto pt-2">
+                      <span className="block text-[11px] font-semibold text-slate-500">{homePaymentSummary(product.paymentCapability)}</span>
+                      <span className="mt-0.5 block text-lg font-extrabold text-slate-950">
+                        {fromPriceLabel(product)}{formatFiatAmount(product.usdAmount, product.usdCurrency)}
+                      </span>
+                      {formatAssetPriceHint(product.assetPrices) && (
+                        <span className="block text-[11px] font-medium text-slate-400">{formatAssetPriceHint(product.assetPrices)}</span>
+                      )}
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+
+            {hasMore && (
+              <div id="scroll-sentinel" className="flex justify-center py-8">
+                {loadingMore && (
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
+                    <span className="text-xs font-semibold text-slate-500">상품을 더 불러오는 중...</span>
+                  </div>
+                )}
               </div>
             )}
-          </div>
-        )}
-      </main>
+          </main>
+        </>
+      )}
     </div>
   );
 }

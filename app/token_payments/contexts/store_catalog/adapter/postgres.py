@@ -26,7 +26,7 @@ from token_payments.contexts.store_catalog.domain import (
 from token_payments.shared.adapter.postgres import PostgresConnection
 from token_payments.shared.adapter.postgres import PostgresOutboxMessageRepository
 from token_payments.shared.domain import (
-    Crypto,
+    Money,
     OutboxMessage,
     ProductId,
     StoreId,
@@ -191,11 +191,8 @@ SELECT
     p.attributes,
     p.status,
     p.visibility,
-    p.price_numeric,
-    p.price_symbol,
-    p.price_chain_id,
-    p.price_token_address,
-    p.price_decimals,
+    p.price_amount,
+    p.price_currency,
     p.active,
     p.created_at,
     p.updated_at
@@ -419,11 +416,8 @@ SELECT
     attributes,
     status,
     visibility,
-    price_numeric,
-    price_symbol,
-    price_chain_id,
-    price_token_address,
-    price_decimals,
+    price_amount,
+    price_currency,
     active,
     created_at,
     updated_at
@@ -446,11 +440,8 @@ SELECT
     attributes,
     status,
     visibility,
-    price_numeric,
-    price_symbol,
-    price_chain_id,
-    price_token_address,
-    price_decimals,
+    price_amount,
+    price_currency,
     active,
     created_at,
     updated_at
@@ -502,11 +493,8 @@ SELECT
     value_key,
     display_value,
     sort_order,
-    price_delta_numeric,
-    price_delta_symbol,
-    price_delta_chain_id,
-    price_delta_token_address,
-    price_delta_decimals,
+    price_delta_amount,
+    price_delta_currency,
     active
 FROM store_catalog_product_option_values
 WHERE store_id = %(store_id)s
@@ -526,11 +514,8 @@ SELECT
     status,
     active,
     sort_order,
-    price_delta_numeric,
-    price_delta_symbol,
-    price_delta_chain_id,
-    price_delta_token_address,
-    price_delta_decimals
+    price_delta_amount,
+    price_delta_currency
 FROM store_catalog_product_variants
 WHERE store_id = %(store_id)s
   AND product_id = %(product_id)s
@@ -559,11 +544,8 @@ SELECT
     attributes,
     status,
     visibility,
-    price_numeric,
-    price_symbol,
-    price_chain_id,
-    price_token_address,
-    price_decimals,
+    price_amount,
+    price_currency,
     active,
     created_at,
     updated_at
@@ -585,11 +567,8 @@ INSERT INTO store_catalog_products (
     attributes,
     status,
     visibility,
-    price_numeric,
-    price_symbol,
-    price_chain_id,
-    price_token_address,
-    price_decimals,
+    price_amount,
+    price_currency,
     active
 ) VALUES (
     %(store_id)s,
@@ -605,11 +584,8 @@ INSERT INTO store_catalog_products (
     %(attributes)s::jsonb,
     %(status)s,
     %(visibility)s,
-    %(price_numeric)s,
-    %(price_symbol)s,
-    %(price_chain_id)s,
-    %(price_token_address)s,
-    %(price_decimals)s,
+    %(price_amount)s,
+    %(price_currency)s,
     %(active)s
 )
 ON CONFLICT (store_id, product_id) DO UPDATE SET
@@ -624,11 +600,8 @@ ON CONFLICT (store_id, product_id) DO UPDATE SET
     attributes = EXCLUDED.attributes,
     status = EXCLUDED.status,
     visibility = EXCLUDED.visibility,
-    price_numeric = EXCLUDED.price_numeric,
-    price_symbol = EXCLUDED.price_symbol,
-    price_chain_id = EXCLUDED.price_chain_id,
-    price_token_address = EXCLUDED.price_token_address,
-    price_decimals = EXCLUDED.price_decimals,
+    price_amount = EXCLUDED.price_amount,
+    price_currency = EXCLUDED.price_currency,
     active = EXCLUDED.active,
     updated_at = now()
 """
@@ -638,28 +611,19 @@ INSERT INTO order_store_products (
     store_id,
     product_id,
     name,
-    price_numeric,
-    price_symbol,
-    price_chain_id,
-    price_token_address,
-    price_decimals
+    price_amount,
+    price_currency
 ) VALUES (
     %(store_id)s,
     %(product_id)s,
     %(name)s,
-    %(price_numeric)s,
-    %(price_symbol)s,
-    %(price_chain_id)s,
-    %(price_token_address)s,
-    %(price_decimals)s
+    %(price_amount)s,
+    %(price_currency)s
 )
 ON CONFLICT (store_id, product_id) DO UPDATE SET
     name = EXCLUDED.name,
-    price_numeric = EXCLUDED.price_numeric,
-    price_symbol = EXCLUDED.price_symbol,
-    price_chain_id = EXCLUDED.price_chain_id,
-    price_token_address = EXCLUDED.price_token_address,
-    price_decimals = EXCLUDED.price_decimals,
+    price_amount = EXCLUDED.price_amount,
+    price_currency = EXCLUDED.price_currency,
     updated_at = now()
 """
 
@@ -668,30 +632,15 @@ INSERT INTO store_approval_products (
     store_id,
     product_id,
     name,
-    price_numeric,
-    price_symbol,
-    price_chain_id,
-    price_token_address,
-    price_decimals,
     available
 ) VALUES (
     %(store_id)s,
     %(product_id)s,
     %(name)s,
-    %(price_numeric)s,
-    %(price_symbol)s,
-    %(price_chain_id)s,
-    %(price_token_address)s,
-    %(price_decimals)s,
     %(available)s
 )
 ON CONFLICT (store_id, product_id) DO UPDATE SET
     name = EXCLUDED.name,
-    price_numeric = EXCLUDED.price_numeric,
-    price_symbol = EXCLUDED.price_symbol,
-    price_chain_id = EXCLUDED.price_chain_id,
-    price_token_address = EXCLUDED.price_token_address,
-    price_decimals = EXCLUDED.price_decimals,
     available = EXCLUDED.available,
     updated_at = now()
 """
@@ -722,11 +671,8 @@ INSERT INTO store_catalog_product_variants (
     status,
     active,
     sort_order,
-    price_delta_numeric,
-    price_delta_symbol,
-    price_delta_chain_id,
-    price_delta_token_address,
-    price_delta_decimals
+    price_delta_amount,
+    price_delta_currency
 ) VALUES (
     %(store_id)s,
     %(product_id)s,
@@ -737,10 +683,7 @@ INSERT INTO store_catalog_product_variants (
     true,
     0,
     0,
-    %(price_symbol)s,
-    %(price_chain_id)s,
-    %(price_token_address)s,
-    %(price_decimals)s
+    %(price_delta_currency)s
 )
 ON CONFLICT (store_id, product_id, public_variant_id) DO NOTHING
 """
@@ -897,7 +840,7 @@ class PostgresStoreCatalogRepository:
             "title": "p.title",
             "createdAt": "p.created_at",
             "updatedAt": "p.updated_at",
-            "price": "p.price_numeric",
+            "price": "p.price_amount",
         }
         if sort_by not in order_columns:
             raise ValueError("sort_by is not allowed")
@@ -1041,7 +984,7 @@ class PostgresStoreCatalogRepository:
             "title": "title",
             "createdAt": "created_at",
             "updatedAt": "updated_at",
-            "price": "price_numeric",
+            "price": "price_amount",
         }
         if sort_by not in order_columns:
             raise ValueError("sort_by is not allowed")
@@ -1151,9 +1094,17 @@ class PostgresStoreCatalogRepository:
         self._connection.execute(UPSERT_ORDER_PRODUCT_SQL, _product_params(product))
 
     def save_store_approval_product_projection(self, product: StoreProduct) -> None:
-        params = _product_params(product)
-        params["available"] = product.active
-        self._connection.execute(UPSERT_APPROVAL_PRODUCT_SQL, params)
+        # The approval read-model identifies products by id/name/availability only; it does not
+        # use price, so the fiat catalog price is intentionally not projected here.
+        self._connection.execute(
+            UPSERT_APPROVAL_PRODUCT_SQL,
+            {
+                "store_id": str(product.store_id),
+                "product_id": str(product.product_id),
+                "name": product.name,
+                "available": product.active,
+            },
+        )
 
     def save_inventory_projection(self, product: StoreProduct, initial_total_stock: int) -> None:
         product_id = str(product.product_id)
@@ -1170,10 +1121,7 @@ class PostgresStoreCatalogRepository:
                 "store_id": store_id,
                 "product_id": product_id,
                 "public_variant_id": default_variant_id,
-                "price_symbol": product.price.symbol,
-                "price_chain_id": product.price.chain_id,
-                "price_token_address": str(product.price.token_address) if product.price.token_address is not None else None,
-                "price_decimals": product.price.decimals,
+                "price_delta_currency": product.price.currency,
             },
         )
         self._connection.execute(
@@ -1297,12 +1245,9 @@ def _row_to_product(row: Mapping[str, Any] | object) -> StoreProduct:
         attributes=dict(_json_mapping(_optional_row_value(row, "attributes"))),
         status=ProductStatus(str(_optional_row_value(row, "status") or ("ACTIVE" if _row_value(row, "active") else "INACTIVE"))),
         visibility=ProductVisibility(str(_optional_row_value(row, "visibility") or "PUBLIC")),
-        price=Crypto(
-            amount=_row_value(row, "price_numeric"),
-            symbol=str(_row_value(row, "price_symbol")),
-            chain_id=int(_row_value(row, "price_chain_id")),
-            token_address=_optional_row_value(row, "price_token_address"),
-            decimals=int(_row_value(row, "price_decimals")),
+        price=Money(
+            amount=_row_value(row, "price_amount"),
+            currency=str(_row_value(row, "price_currency") or "USD"),
         ),
         active=bool(_row_value(row, "active")),
         created_at=_optional_row_value(row, "created_at"),
@@ -1334,7 +1279,7 @@ def _row_to_product_option_value(row: Mapping[str, Any] | object) -> ProductOpti
         value_key=str(_row_value(row, "value_key")),
         display_value=str(_row_value(row, "display_value")),
         sort_order=int(_row_value(row, "sort_order")),
-        price_delta=_optional_crypto_from_row(row, "price_delta"),
+        price_delta=_optional_money_from_row(row, "price_delta"),
         active=bool(_row_value(row, "active")),
     )
 
@@ -1350,12 +1295,9 @@ def _row_to_product_variant(row: Mapping[str, Any] | object) -> ProductVariant:
         status=ProductStatus(str(_row_value(row, "status"))),
         active=bool(_row_value(row, "active")),
         sort_order=int(_row_value(row, "sort_order")),
-        price_delta=Crypto(
-            amount=_row_value(row, "price_delta_numeric"),
-            symbol=str(_row_value(row, "price_delta_symbol")),
-            chain_id=int(_row_value(row, "price_delta_chain_id")),
-            token_address=_optional_row_value(row, "price_delta_token_address"),
-            decimals=int(_row_value(row, "price_delta_decimals")),
+        price_delta=Money(
+            amount=_row_value(row, "price_delta_amount"),
+            currency=str(_row_value(row, "price_delta_currency") or "USD"),
         ),
     )
 
@@ -1394,11 +1336,8 @@ def _product_params(product: StoreProduct) -> dict[str, Any]:
         "attributes": json.dumps(dict(product.attributes)),
         "status": product.status.value,
         "visibility": product.visibility.value,
-        "price_numeric": product.price.amount,
-        "price_symbol": product.price.symbol,
-        "price_chain_id": product.price.chain_id,
-        "price_token_address": str(product.price.token_address) if product.price.token_address is not None else None,
-        "price_decimals": product.price.decimals,
+        "price_amount": product.price.amount,
+        "price_currency": product.price.currency,
         "active": product.active,
     }
 
@@ -1442,16 +1381,13 @@ def _json_mapping(value: Any) -> Mapping[str, Any]:
     raise ValueError("JSON object column must be a mapping")
 
 
-def _optional_crypto_from_row(row: Mapping[str, Any] | object, prefix: str) -> Crypto | None:
-    amount = _optional_row_value(row, f"{prefix}_numeric")
+def _optional_money_from_row(row: Mapping[str, Any] | object, prefix: str) -> Money | None:
+    amount = _optional_row_value(row, f"{prefix}_amount")
     if amount is None:
         return None
-    return Crypto(
+    return Money(
         amount=amount,
-        symbol=str(_row_value(row, f"{prefix}_symbol")),
-        chain_id=int(_row_value(row, f"{prefix}_chain_id")),
-        token_address=_optional_row_value(row, f"{prefix}_token_address"),
-        decimals=int(_row_value(row, f"{prefix}_decimals")),
+        currency=str(_optional_row_value(row, f"{prefix}_currency") or "USD"),
     )
 
 

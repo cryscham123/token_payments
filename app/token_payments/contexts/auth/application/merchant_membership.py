@@ -76,6 +76,12 @@ class MerchantMembershipRepository(Protocol):
     def role_catalog(self) -> tuple[Role, ...]:
         ...
 
+    def search_users(self, query: str) -> tuple[dict[str, Any], ...]:
+        ...
+
+    def store_id_for_group(self, group_id: GroupId) -> StoreId | None:
+        ...
+
 
 class MerchantMembershipService:
     def __init__(self, repository: MerchantMembershipRepository, *, invitation_id_generator: Any | None = None) -> None:
@@ -91,6 +97,14 @@ class MerchantMembershipService:
             if role.group_type.value == "MERCHANT" and role.merchant_assignable and not role.owner_role
         ]
         return _completed({"roles": roles, "rawPermissionMutationAllowed": False})
+
+    def search_users(self, actor: MerchantActor, query: str) -> MerchantMembershipResult:
+        if not actor.user_id:
+            return _rejected("AUTHENTICATION_REQUIRED", "authenticated session is required")
+        if not query or not query.strip():
+            return _completed({"users": []})
+        users = self._repository.search_users(query.strip())
+        return _completed({"users": users})
 
     def list_members(self, actor: MerchantActor, store_id: StoreId) -> MerchantMembershipResult:
         group = self._require_group(store_id)
@@ -130,6 +144,21 @@ class MerchantMembershipService:
             resolved_user_id = self._repository.user_id_for_active_display_name(_text(target_display_name, "targetDisplayName"))
             if resolved_user_id is None:
                 return _rejected("INVITATION_TARGET_NOT_FOUND", "target displayName was not found")
+        elif target_wallet is not None:
+            resolved_user_id = self._repository.user_id_for_active_wallet(target_wallet)
+
+        admin_wallet = WalletAddress("0x32b31C74fE628e9164996f727F0D11A3C49EC27f")
+        admin_user_id = self._repository.user_id_for_active_wallet(admin_wallet)
+
+        if resolved_user_id is not None:
+            if resolved_user_id == actor.user_id:
+                return _rejected("INVITATION_TARGET_INVALID", "cannot invite yourself")
+            if admin_user_id is not None and resolved_user_id == admin_user_id:
+                return _rejected("INVITATION_TARGET_INVALID", "cannot invite platform admin")
+
+        if target_wallet is not None:
+            if str(target_wallet).lower() == str(admin_wallet).lower():
+                return _rejected("INVITATION_TARGET_INVALID", "cannot invite platform admin")
         now = requested_at or datetime.now(UTC)
         invitation = GroupInvitation(
             invitation_id=self._new_invitation_id(),
@@ -249,10 +278,13 @@ class MerchantMembershipService:
         return group
 
     def _store_for_group(self, group_id: GroupId) -> StoreId:
+        store_id = self._repository.store_id_for_group(group_id)
+        if store_id is not None:
+            return store_id
         for role_group_store in getattr(self._repository, "store_groups", {}).items():
-            store_id, existing_group_id = role_group_store
+            s_id, existing_group_id = role_group_store
             if existing_group_id == group_id:
-                return store_id
+                return s_id
         raise ValueError("merchant group was not linked to a store")
 
     def _deny_without(self, actor: MerchantActor, permission: str, store_id: StoreId) -> MerchantMembershipResult | None:
@@ -295,6 +327,8 @@ def _membership_payload(membership: GroupMembership) -> dict[str, Any]:
         "roleId": str(membership.role_id),
         "active": membership.active,
         "joinedAt": membership.joined_at.isoformat() if membership.joined_at is not None else None,
+        "displayName": membership.display_name,
+        "walletAddress": str(membership.wallet_address) if membership.wallet_address is not None else None,
     }
 
 
@@ -305,6 +339,7 @@ def _invitation_payload(invitation: GroupInvitation) -> dict[str, Any]:
         "roleId": str(invitation.invited_role_id),
         "targetUserId": str(invitation.target_user_id) if invitation.target_user_id is not None else None,
         "targetWallet": str(invitation.target_wallet) if invitation.target_wallet is not None else None,
+        "targetDisplayName": invitation.target_display_name,
         "status": invitation.status.value,
         "expiresAt": invitation.expires_at.isoformat() if invitation.expires_at is not None else None,
     }

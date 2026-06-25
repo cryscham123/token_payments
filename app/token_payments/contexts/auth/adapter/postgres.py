@@ -939,17 +939,35 @@ LIMIT 1
 """
 
 SELECT_GROUP_MEMBERSHIPS_SQL = """
-SELECT group_id, user_id, role_id, active, joined_at
-FROM auth_group_memberships
-WHERE group_id = %(group_id)s::uuid
-ORDER BY joined_at ASC, user_id ASC
+SELECT 
+    m.group_id, 
+    m.user_id, 
+    m.role_id, 
+    m.active, 
+    m.joined_at,
+    p.display_name,
+    u.wallet_address
+FROM auth_group_memberships m
+LEFT JOIN auth_users u ON m.user_id = u.user_id
+LEFT JOIN auth_user_profiles p ON m.user_id = p.user_id
+WHERE m.group_id = %(group_id)s::uuid
+ORDER BY m.joined_at ASC, m.user_id ASC
 """
 
 SELECT_GROUP_MEMBERSHIP_SQL = """
-SELECT group_id, user_id, role_id, active, joined_at
-FROM auth_group_memberships
-WHERE group_id = %(group_id)s::uuid
-  AND user_id = %(user_id)s::uuid
+SELECT 
+    m.group_id, 
+    m.user_id, 
+    m.role_id, 
+    m.active, 
+    m.joined_at,
+    p.display_name,
+    u.wallet_address
+FROM auth_group_memberships m
+LEFT JOIN auth_users u ON m.user_id = u.user_id
+LEFT JOIN auth_user_profiles p ON m.user_id = p.user_id
+WHERE m.group_id = %(group_id)s::uuid
+  AND m.user_id = %(user_id)s::uuid
 LIMIT 1
 """
 
@@ -976,33 +994,39 @@ ON CONFLICT (group_id, user_id) DO UPDATE SET
 
 SELECT_GROUP_INVITATIONS_SQL = """
 SELECT
-    invitation_id,
-    group_id,
-    invited_role_id,
-    invited_by_user_id,
-    target_user_id,
-    target_wallet_address,
-    status,
-    created_at,
-    expires_at
-FROM auth_group_invitations
-WHERE group_id = %(group_id)s::uuid
-ORDER BY created_at DESC, invitation_id ASC
+    i.invitation_id,
+    i.group_id,
+    i.invited_role_id,
+    i.invited_by_user_id,
+    i.target_user_id,
+    COALESCE(i.target_wallet_address, u.wallet_address) as target_wallet_address,
+    i.status,
+    i.created_at,
+    i.expires_at,
+    p.display_name as target_display_name
+FROM auth_group_invitations i
+LEFT JOIN auth_users u ON i.target_user_id = u.user_id
+LEFT JOIN auth_user_profiles p ON i.target_user_id = p.user_id
+WHERE i.group_id = %(group_id)s::uuid
+ORDER BY i.created_at DESC, i.invitation_id ASC
 """
 
 SELECT_GROUP_INVITATION_SQL = """
 SELECT
-    invitation_id,
-    group_id,
-    invited_role_id,
-    invited_by_user_id,
-    target_user_id,
-    target_wallet_address,
-    status,
-    created_at,
-    expires_at
-FROM auth_group_invitations
-WHERE invitation_id = %(invitation_id)s::uuid
+    i.invitation_id,
+    i.group_id,
+    i.invited_role_id,
+    i.invited_by_user_id,
+    i.target_user_id,
+    COALESCE(i.target_wallet_address, u.wallet_address) as target_wallet_address,
+    i.status,
+    i.created_at,
+    i.expires_at,
+    p.display_name as target_display_name
+FROM auth_group_invitations i
+LEFT JOIN auth_users u ON i.target_user_id = u.user_id
+LEFT JOIN auth_user_profiles p ON i.target_user_id = p.user_id
+WHERE i.invitation_id = %(invitation_id)s::uuid
 LIMIT 1
 """
 
@@ -1320,6 +1344,57 @@ class PostgresMerchantMembershipRepository:
         result = self._connection.execute(SELECT_ROLE_CATALOG_SQL)
         return tuple(_row_to_role(row) for row in _fetch_all(result))
 
+    def search_users(self, query: str) -> tuple[dict[str, Any], ...]:
+        if not isinstance(query, str):
+            raise ValueError("search_users query must be a string")
+        search_pattern = f"%{query}%"
+        result = self._connection.execute(
+            """
+            SELECT 
+                u.user_id,
+                u.wallet_address,
+                p.display_name
+            FROM auth_users u
+            LEFT JOIN auth_user_profiles p ON u.user_id = p.user_id
+            WHERE u.active = true
+              AND (
+                lower(u.wallet_address) LIKE lower(%(query)s)
+                OR (p.display_name IS NOT NULL AND lower(p.display_name) LIKE lower(%(query)s))
+              )
+            ORDER BY p.display_name ASC, u.wallet_address ASC
+            LIMIT 10
+            """,
+            {"query": search_pattern}
+        )
+        rows = _fetch_all(result)
+        return tuple(
+            {
+                "userId": str(_row_value(row, "user_id")),
+                "walletAddress": str(_row_value(row, "wallet_address")),
+                "displayName": _optional_row_value(row, "display_name")
+            }
+            for row in rows
+        )
+
+    def store_id_for_group(self, group_id: GroupId) -> StoreId | None:
+        if not isinstance(group_id, GroupId):
+            raise ValueError("PostgresMerchantMembershipRepository.store_id_for_group requires a GroupId")
+        row = _fetch_one(
+            self._connection.execute(
+                """
+                SELECT resource_id
+                FROM auth_groups
+                WHERE group_id = %(group_id)s::uuid
+                  AND group_type = 'MERCHANT'
+                  AND resource_type = 'store'
+                LIMIT 1
+                """,
+                {"group_id": str(group_id)}
+            )
+        )
+        val = _row_value(row, "resource_id") if row is not None else None
+        return StoreId(str(val)) if val is not None else None
+
 
 def _row_to_user(row: Mapping[str, Any] | object) -> User:
     return User(
@@ -1419,18 +1494,22 @@ def _row_to_group(row: Mapping[str, Any] | object) -> Group:
 
 
 def _row_to_group_membership(row: Mapping[str, Any] | object) -> GroupMembership:
+    wallet = _optional_row_value(row, "wallet_address")
     return GroupMembership(
         user_id=UserId(_row_value(row, "user_id")),
         group_id=GroupId(_row_value(row, "group_id")),
         role_id=RoleId(str(_row_value(row, "role_id"))),
         active=bool(_row_value(row, "active")),
         joined_at=_row_value(row, "joined_at"),
+        display_name=_optional_row_value(row, "display_name"),
+        wallet_address=WalletAddress(wallet) if wallet is not None else None,
     )
 
 
 def _row_to_group_invitation(row: Mapping[str, Any] | object) -> GroupInvitation:
     target_user_id = _optional_row_value(row, "target_user_id")
     target_wallet = _optional_row_value(row, "target_wallet_address")
+    target_display_name = _optional_row_value(row, "target_display_name")
     return GroupInvitation(
         invitation_id=InvitationId(_row_value(row, "invitation_id")),
         group_id=GroupId(_row_value(row, "group_id")),
@@ -1441,6 +1520,7 @@ def _row_to_group_invitation(row: Mapping[str, Any] | object) -> GroupInvitation
         status=InvitationStatus(_row_value(row, "status")),
         created_at=_row_value(row, "created_at"),
         expires_at=_row_value(row, "expires_at"),
+        target_display_name=target_display_name,
     )
 
 

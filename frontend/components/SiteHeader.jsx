@@ -78,6 +78,15 @@ export default function SiteHeader({ cartCount, currentUser: propCurrentUser, on
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [merchantStores, setMerchantStores] = useState([]);
 
+  const currentUser = propCurrentUser !== undefined ? propCurrentUser : localCurrentUser;
+  const setCurrentUser = (user) => {
+    if (onCurrentUserChange) {
+      onCurrentUserChange(user);
+    } else {
+      setLocalCurrentUser(user);
+    }
+  };
+
   useEffect(() => {
     if (!currentUser) {
       setMerchantStores([]);
@@ -91,15 +100,6 @@ export default function SiteHeader({ cartCount, currentUser: propCurrentUser, on
         console.error("Failed to fetch merchant stores in header", err);
       });
   }, [currentUser]);
-
-  const currentUser = propCurrentUser !== undefined ? propCurrentUser : localCurrentUser;
-  const setCurrentUser = (user) => {
-    if (onCurrentUserChange) {
-      onCurrentUserChange(user);
-    } else {
-      setLocalCurrentUser(user);
-    }
-  };
 
   useEffect(() => {
     if (propCurrentUser !== undefined) return;
@@ -208,7 +208,7 @@ export default function SiteHeader({ cartCount, currentUser: propCurrentUser, on
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 sm:px-6 md:flex-row md:items-center justify-between lg:px-8">
           <div className="flex w-full items-center justify-between md:w-auto md:shrink-0">
             <Link href="/" className="flex shrink-0 items-center">
-              <img src="/logo.png?v=4" alt="Skkrypto Market" className="mr-2 h-11 w-auto sm:h-12" />
+              <img src="/logo.png?v=4" alt="Skkrypto Market" className="mr-3 h-9 w-auto sm:h-9" />
               <h1 className="text-xl sm:text-2xl font-black leading-none tracking-normal text-slate-950">Skkrypto Market</h1>
             </Link>
             

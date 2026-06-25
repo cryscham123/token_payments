@@ -21,7 +21,7 @@ from token_payments.contexts.store_catalog.domain import (
     StoreProduct,
     StoreProfile,
 )
-from token_payments.shared.domain import Crypto, EventMetadata, MessageId, OutboxMessage, UserId
+from token_payments.shared.domain import EventMetadata, MessageId, Money, OutboxMessage, UserId
 
 from .commands import (
     CreateOrReuseStoreUserCommand,
@@ -59,10 +59,12 @@ class StoreCatalogApplicationService:
         repository: CatalogWriteRepository,
         user_id_generator: Any | None = None,
         payment_assets: Any | None = None,
+        exchange_rate: Any | None = None,
     ) -> None:
         self._repository = repository
         self._user_id_generator = user_id_generator
         self._payment_assets = payment_assets
+        self._exchange_rate = exchange_rate
 
     def create_or_reuse_store_user(self, command: CreateOrReuseStoreUserCommand) -> StoreCatalogCommandResult:
         return self._idempotent(
@@ -87,7 +89,15 @@ class StoreCatalogApplicationService:
         )
 
     def list_merchant_stores(self, query: ListMerchantStoresQuery) -> tuple[Mapping[str, Any], ...]:
-        return tuple(_public_store_payload(store) for store in self._repository.list_stores_for_member(query.actor_user_id))
+        stores = self._repository.list_stores_for_member(query.actor_user_id)
+        payloads = []
+        for store in stores:
+            payload = _public_store_payload(store)
+            if payload is not None:
+                role = self._repository.get_store_role(store.store_id, query.actor_user_id)
+                payload["role"] = role.value if role is not None else None
+                payloads.append(payload)
+        return tuple(payloads)
 
     def list_public_stores(self, *, limit: int, offset: int) -> Mapping[str, Any]:
         stores = self._stores_for_public_listing(limit=limit, offset=offset)
@@ -149,6 +159,7 @@ class StoreCatalogApplicationService:
                     variants=self._variants_for_product(product),
                     variant_availability=self._variant_availability_for_product(product),
                     asset_registry=self._payment_assets,
+                    exchange_rate=self._exchange_rate,
                 )
             )
         return {
@@ -230,6 +241,7 @@ class StoreCatalogApplicationService:
                     variants=self._variants_for_product(product),
                     variant_availability=self._variant_availability_for_product(product),
                     asset_registry=self._payment_assets,
+                    exchange_rate=self._exchange_rate,
                 )
                 for product in products
             ],
@@ -264,6 +276,7 @@ class StoreCatalogApplicationService:
                 variants=self._variants_for_product(product),
                 variant_availability=self._variant_availability_for_product(product),
                 asset_registry=self._payment_assets,
+                exchange_rate=self._exchange_rate,
             ),
         }
 
@@ -550,8 +563,12 @@ class StoreCatalogApplicationService:
             return _rejected("STORE_NOT_FOUND", "product registration requires an existing store")
         if not store.active:
             return _rejected("STORE_INACTIVE", "product registration requires an active store")
-        if not store.supports_chain(command.price.chain_id):
-            return _rejected("UNSUPPORTED_PRICE_CHAIN", "product price chain id is not supported by the store")
+
+        # Verify that the store supports at least one chain that the system supports
+        system_supported_chains = {1337, 11155111}
+        store_chains = set(store.supported_chain_ids)
+        if not store_chains.intersection(system_supported_chains):
+            return _rejected("UNSUPPORTED_PRICE_CHAIN", "store does not support any system-supported chains")
 
         store_role = self._repository.get_store_role(store.store_id, command.actor_user_id)
         if not command.platform_override and store_role is None:
@@ -607,7 +624,7 @@ class StoreCatalogApplicationService:
             "publicStoreId": str(product.public_store_id),
             "publicProductId": str(product.public_product_id),
             "title": product.title,
-            "price": _crypto_payload(product.price),
+            "price": _money_payload(product.price),
             "initialTotalStock": command.initial_total_stock,
             "active": product.active,
             "available": product.active,
@@ -1012,6 +1029,7 @@ def _public_store_payload(
 
 def _owner_store_payload(store: StoreProfile) -> dict[str, Any]:
     return {
+        "storeId": str(store.store_id),
         "publicStoreId": str(store.public_store_id),
         "groupId": str(store.group_id) if store.group_id is not None else None,
         "displayName": store.display_name,
@@ -1063,7 +1081,7 @@ def _product_payload(product: StoreProduct | None) -> dict[str, Any] | None:
         "attributes": dict(product.attributes),
         "status": product.status.value,
         "visibility": product.visibility.value,
-        "price": _crypto_payload(product.price),
+        "price": _money_payload(product.price),
         "active": product.active,
     }
 
@@ -1082,7 +1100,7 @@ def _owner_product_payload(product: StoreProduct) -> dict[str, Any]:
         "attributes": dict(product.attributes),
         "status": product.status.value,
         "visibility": product.visibility.value,
-        "price": _crypto_payload(product.price),
+        "price": _money_payload(product.price),
         "active": product.active,
     }
 
@@ -1098,14 +1116,18 @@ def _public_product_payload(
     variants: tuple[ProductVariant, ...] = (),
     variant_availability: Mapping[str, Mapping[str, Any]] | None = None,
     asset_registry: Any | None = None,
+    exchange_rate: Any | None = None,
 ) -> dict[str, Any]:
     option_values = option_values or {}
     variant_availability = variant_availability or {}
     display_price = _display_price_payload(product, variants, variant_availability)
     display_availability = _aggregate_availability(availability, variants, variant_availability)
-    
+
+    # Per-asset display amounts: the product is priced in fiat (USD); convert it into each
+    # accepted on-chain asset at the fixed exchange rate so the storefront can show, e.g.,
+    # "$30 ≈ 0.01 ETH / 30 USDC".
     asset_prices = {}
-    if asset_registry is not None:
+    if asset_registry is not None and exchange_rate is not None:
         chain_ids = set(store.supported_chain_ids)
         configured_asset_ids = set(store.supported_payment_asset_ids)
         for asset in asset_registry.assets:
@@ -1114,11 +1136,18 @@ def _public_product_payload(
                 and asset.chain_id in chain_ids
                 and (not configured_asset_ids or asset.asset_id in configured_asset_ids)
             ):
+                converted = exchange_rate.to_crypto(
+                    product.price,
+                    symbol=asset.symbol,
+                    chain_id=asset.chain_id,
+                    token_address=asset.contract_address,
+                    decimals=asset.decimals,
+                )
                 asset_prices[asset.asset_id] = {
                     "assetId": asset.asset_id,
                     "chainId": asset.chain_id,
                     "symbol": asset.symbol,
-                    "amount": format(product.price.amount, "f"),
+                    "amount": format(converted.amount, "f"),
                     "decimals": asset.decimals,
                     "tokenAddress": str(asset.contract_address) if asset.contract_address is not None else None,
                 }
@@ -1136,10 +1165,10 @@ def _public_product_payload(
         "media": list(product.media),
         "status": product.status.value,
         "visibility": product.visibility.value,
-        "basePrice": _crypto_payload(product.price),
+        "basePrice": _money_payload(product.price),
         "displayPrice": display_price,
         "availability": display_availability,
-        "paymentCapability": _payment_capability_payload(store, product.price, asset_registry=asset_registry),
+        "paymentCapability": _payment_capability_payload(store, asset_registry=asset_registry),
         "assetPrices": asset_prices,
         "options": [_public_option_payload(option, option_values.get(option.option_id, ())) for option in options if option.active],
         "variants": [
@@ -1158,8 +1187,17 @@ def _merchant_product_payload(
     availability: Mapping[str, Any],
     *,
     include_internal: bool = False,
+    asset_registry: Any | None = None,
+    exchange_rate: Any | None = None,
 ) -> dict[str, Any]:
-    payload = _public_product_payload(store, product, availability, include_detail=True)
+    payload = _public_product_payload(
+        store,
+        product,
+        availability,
+        include_detail=True,
+        asset_registry=asset_registry,
+        exchange_rate=exchange_rate,
+    )
     if include_internal:
         payload["productId"] = str(product.product_id)
         payload["storeId"] = str(product.store_id)
@@ -1179,7 +1217,7 @@ def _public_option_payload(option: ProductOption, values: tuple[ProductOptionVal
                 "value": value.value_key,
                 "displayValue": value.display_value,
                 "sortOrder": value.sort_order,
-                "priceDelta": _crypto_payload(value.price_delta) if value.price_delta is not None else None,
+                "priceDelta": _money_payload(value.price_delta) if value.price_delta is not None else None,
             }
             for value in sorted(values, key=lambda value: value.sort_order)
             if value.active
@@ -1196,8 +1234,8 @@ def _public_variant_payload(
         "publicVariantId": str(variant.public_variant_id),
         "displayName": variant.display_name,
         "optionValues": dict(variant.option_values),
-        "priceDelta": _crypto_payload(variant.price_delta),
-        "displayPrice": _crypto_payload(_variant_display_price(product, variant)),
+        "priceDelta": _money_payload(variant.price_delta),
+        "displayPrice": _money_payload(_variant_display_price(product, variant)),
         "availability": dict(availability or {"availableStock": 0, "saleStatus": "UNAVAILABLE"}),
         "status": variant.status.value,
         "active": variant.saleable,
@@ -1217,9 +1255,9 @@ def _display_price_payload(
         if _variant_is_available(variant, variant_availability.get(str(variant.public_variant_id), {}))
     ]
     if not saleable_variants:
-        return _crypto_payload(product.price)
+        return _money_payload(product.price)
     lowest = min(saleable_variants, key=lambda variant: _variant_display_price(product, variant).amount)
-    payload = _crypto_payload(_variant_display_price(product, lowest))
+    payload = _money_payload(_variant_display_price(product, lowest))
     payload["priceLabel"] = "from"
     payload["publicVariantId"] = str(lowest.public_variant_id)
     return payload
@@ -1249,30 +1287,12 @@ def _variant_available_stock(variant: ProductVariant, availability: Mapping[str,
     return int(availability.get("availableStock", 0))
 
 
-def _variant_display_price(product: StoreProduct, variant: ProductVariant) -> Crypto:
-    if not _same_crypto_asset(product.price, variant.price_delta):
-        raise ValueError("variant priceDelta asset must match product base price asset")
-    return Crypto(
-        amount=product.price.amount + variant.price_delta.amount,
-        symbol=product.price.symbol,
-        chain_id=product.price.chain_id,
-        token_address=product.price.token_address,
-        decimals=product.price.decimals,
-    )
-
-
-def _same_crypto_asset(left: Crypto, right: Crypto) -> bool:
-    return (
-        left.symbol == right.symbol
-        and left.chain_id == right.chain_id
-        and left.token_address == right.token_address
-        and left.decimals == right.decimals
-    )
+def _variant_display_price(product: StoreProduct, variant: ProductVariant) -> Money:
+    return product.price.add(variant.price_delta)
 
 
 def _payment_capability_payload(
     store: StoreProfile,
-    price: Any | None = None,
     *,
     asset_registry: Any | None = None,
 ) -> dict[str, Any]:
@@ -1301,19 +1321,9 @@ def _payment_capability_payload(
             "settlement": {"available": store.store_wallet is not None},
         }
 
-    assets = []
-    if price is not None:
-        assets.append(
-            {
-                "symbol": price.symbol,
-                "chainId": price.chain_id,
-                "tokenAddress": str(price.token_address) if price.token_address is not None else None,
-                "decimals": price.decimals,
-            }
-        )
     return {
         "supportedChainIds": list(store.supported_chain_ids),
-        "assets": assets,
+        "assets": [],
         "settlement": {"available": store.store_wallet is not None},
     }
 
@@ -1335,13 +1345,10 @@ def _pagination(*, limit: int, offset: int, count: int) -> dict[str, int | None]
     return {"limit": limit, "offset": offset, "nextOffset": offset + limit if count == limit else None}
 
 
-def _crypto_payload(price: Any) -> dict[str, Any]:
+def _money_payload(price: Any) -> dict[str, Any]:
     return {
         "amount": format(price.amount, "f"),
-        "symbol": price.symbol,
-        "chainId": price.chain_id,
-        "tokenAddress": str(price.token_address) if price.token_address is not None else None,
-        "decimals": price.decimals,
+        "currency": price.currency,
     }
 
 

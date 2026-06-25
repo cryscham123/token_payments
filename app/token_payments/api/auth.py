@@ -359,7 +359,7 @@ class AuthApi:
 def _challenge_payload(result: LoginChallengeResult) -> dict[str, Any]:
     challenge = result.challenge
     payload = {
-        "walletAddress": str(challenge.wallet),
+        "walletAddress": challenge.wallet,
         "nonce": challenge.nonce.value,
         "expiresAt": challenge.expires_at.isoformat(),
         "signingMessage": result.signing_message,
@@ -369,7 +369,7 @@ def _challenge_payload(result: LoginChallengeResult) -> dict[str, Any]:
         payload.update(
             {
                 "domain": challenge.domain,
-                "address": str(challenge.wallet),
+                "address": challenge.wallet,
                 "uri": challenge.uri,
                 "version": SIWE_VERSION,
                 "chainId": challenge.chain_id,
@@ -399,7 +399,7 @@ def _wallet_payload(wallet: Any) -> dict[str, Any]:
     return {
         "walletId": str(wallet.wallet_id),
         "userId": str(wallet.user_id),
-        "walletAddress": str(wallet.address),
+        "walletAddress": wallet.address,
         "chainId": wallet.chain_id,
         "walletType": wallet.wallet_type.value,
         "verificationStatus": wallet.verification_status.value,
@@ -474,7 +474,7 @@ def _oauth_identity_payload(identity: OAuthIdentity) -> dict[str, Any]:
 def _user_payload(user: User) -> dict[str, Any]:
     return {
         "userId": str(user.user_id),
-        "walletAddress": str(user.primary_wallet),
+        "walletAddress": user.primary_wallet,
         "active": user.active,
         "lastLoginAt": user.last_login_at.isoformat() if user.last_login_at is not None else None,
     }
@@ -483,7 +483,7 @@ def _user_payload(user: User) -> dict[str, Any]:
 def _session_payload(session: AuthSession) -> dict[str, Any]:
     return {
         "userId": str(session.user_id),
-        "walletAddress": str(session.wallet),
+        "walletAddress": session.wallet,
         "deviceId": session.device_id,
         "expiresAt": session.expires_at.isoformat(),
         "revokedAt": session.revoked_at.isoformat() if session.revoked_at is not None else None,
