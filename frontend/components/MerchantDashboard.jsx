@@ -904,7 +904,7 @@ export default function MerchantDashboard({ publicStoreId }) {
                     className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs outline-none bg-white"
                   >
                     <option value="MERCHANT_STAFF">스태프 (STAFF)</option>
-                    <option value="MERCHANT_ADMIN">관리자 (ADMIN)</option>
+                    <option value="MERCHANT_MANAGER">관리자 (ADMIN)</option>
                   </select>
                 </div>
                 <button
@@ -944,7 +944,7 @@ export default function MerchantDashboard({ publicStoreId }) {
                                     onChange={(e) => handleUpdateMemberRole(member.userId, e.target.value)}
                                     className="text-[10px] font-bold border rounded-md px-1.5 py-0.5 bg-white text-slate-700 border-slate-200 outline-none focus:border-blue-500 cursor-pointer shadow-sm"
                                   >
-                                    <option value="MERCHANT_ADMIN">관리자</option>
+                                    <option value="MERCHANT_MANAGER">관리자</option>
                                     <option value="MERCHANT_STAFF">스태프</option>
                                   </select>
                                 ) : (
