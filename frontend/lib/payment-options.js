@@ -21,7 +21,7 @@ export function paymentOptionsForItem(item) {
   return [
     {
       key: `${item.cryptoSymbol}:${chainId}:${item.cryptoTokenAddress || "native"}`,
-      paymentAssetId: "",
+      paymentAssetId: item.cryptoTokenAddress ? "" : inferNativeAssetId(chainId, item.cryptoSymbol || "ETH"),
       symbol: item.cryptoSymbol || "ETH",
       chainId,
       tokenAddress: item.cryptoTokenAddress || null,
@@ -51,7 +51,7 @@ function paymentOptionFromAsset(asset, chainLabels) {
   if (!chainId) return null;
   const tokenAddress = asset.tokenContract?.address || asset.tokenAddress || null;
   const assetType = asset.assetType || (tokenAddress ? "ERC20" : "NATIVE");
-  const paymentAssetId = assetType === "NATIVE" ? "" : asset.assetId || "";
+  const paymentAssetId = asset.assetId || (assetType === "NATIVE" ? inferNativeAssetId(chainId, symbol) : "");
   const key = paymentAssetId || `${symbol}:${chainId}:${tokenAddress || "native"}`;
   const chainLabel = chainLabels.get(chainId) || `Chain ${chainId}`;
   return {
@@ -85,4 +85,12 @@ function uniqueOptions(options) {
     seen.add(option.key);
     return true;
   });
+}
+
+function inferNativeAssetId(chainId, symbol) {
+  if (symbol === "ETH") {
+    if (chainId === 1337) return "local-native-eth";
+    if (chainId === 11155111) return "sepolia-native-eth";
+  }
+  return "";
 }

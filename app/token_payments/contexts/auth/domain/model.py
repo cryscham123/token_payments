@@ -412,7 +412,7 @@ class GroupInvitation:
 
     def is_open_for(self, user_id: UserId, wallet: WalletAddress | str | None, now: datetime) -> bool:
         now = _require_aware_datetime(now, "now")
-        if self.status is not InvitationStatus.PENDING:
+        if self.status != InvitationStatus.PENDING:
             return False
         if self.expires_at is not None and now >= self.expires_at:
             return False

@@ -97,6 +97,7 @@ def test_default_postgres_seed_bootstraps_only_rbac_catalog_and_platform_admin()
     assert "MERCHANT_OWNER" in seed_script
     assert "product:write" in seed_script
     assert "inventory:write" in seed_script
+    assert "('MERCHANT_STAFF', 'merchant_member:read', true)" in seed_script
     assert "ON CONFLICT" in seed_script
 
     for forbidden in FORBIDDEN_PLACEHOLDER_SEED_VALUES:

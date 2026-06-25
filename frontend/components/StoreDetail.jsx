@@ -116,7 +116,7 @@ export default function StoreDetail({ publicStoreId }) {
                   href={`/products/${product.publicProductId}`}
                   className="group flex flex-col overflow-hidden rounded-md border border-slate-200 bg-white transition-shadow duration-200 hover:shadow-lg"
                 >
-                  <div className="relative aspect-square bg-slate-50">
+                  <div className="relative aspect-square overflow-hidden bg-slate-50">
                     <img
                       src={productImageFromMedia(product.media, 500)}
                       alt={product.title}
@@ -136,8 +136,7 @@ export default function StoreDetail({ publicStoreId }) {
                     </div>
                     <p className="text-sm font-semibold leading-snug text-slate-900">{product.title}</p>
                     <div className="mt-auto pt-2">
-                      <span className="block text-[11px] font-semibold text-slate-500">{homePaymentSummary(product.paymentCapability)}</span>
-                      <span className="mt-0.5 block text-lg font-extrabold text-slate-950">
+                      <span className="block text-lg font-extrabold text-slate-950">
                         {fromPriceLabel(product)}{formatFiatAmount(product.displayPrice?.amount, product.displayPrice?.currency)}
                       </span>
                       {formatAssetPriceHint(product.assetPrices) && (
@@ -155,14 +154,7 @@ export default function StoreDetail({ publicStoreId }) {
   );
 }
 
-function homePaymentSummary(capability) {
-  const assets = capability?.acceptedAssets || capability?.assets || [];
-  if (assets.length > 0) {
-    return assets.map((asset) => asset.symbol || "TOKEN").join(" / ");
-  }
-  const chainIds = capability?.supportedChainIds || [];
-  return chainIds.length > 0 ? `Chain ${chainIds.join(", ")}` : "결제 수단 확인";
-}
+
 
 function fromPriceLabel(product) {
   return product.displayPrice?.priceLabel === "from" ? "" : "";

@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT / "app"))
 
 from token_payments.api import ApiRequest  # noqa: E402
 from token_payments.api.orders import OrdersApi  # noqa: E402
+from token_payments.contexts.auth.adapter import PostgresUserWalletRepository  # noqa: E402
 from token_payments.contexts.order.adapter import (  # noqa: E402
     PostgresCustomerRepository,
     PostgresOrderRepository,
@@ -286,6 +287,7 @@ def test_order_api_returns_tracking_response_and_maps_validation_errors() -> Non
             headers={"X-User-Id": str(USER_ID)},
             body={
                 "storeId": str(STORE_ID),
+                "paymentAssetId": "local-usdc",
                 "deliveryAddress": {"id": "ship-to", "street": "2 River Rd"},
                 "items": [
                     {
@@ -324,6 +326,7 @@ def test_order_api_returns_tracking_response_and_maps_validation_errors() -> Non
             headers={"X-User-Id": str(USER_ID)},
             body={
                 "storeId": str(STORE_ID),
+                "paymentAssetId": "local-usdc",
                 "deliveryAddress": {"id": "ship-to", "street": "2 River Rd"},
                 "items": [],
             },
@@ -342,6 +345,7 @@ def test_order_api_returns_tracking_response_and_maps_validation_errors() -> Non
             headers={"X-User-Id": str(OWNER_USER_ID)},
             body={
                 "storeId": str(STORE_ID),
+                "paymentAssetId": "local-usdc",
                 "deliveryAddress": {"id": "ship-to", "street": "2 River Rd"},
                 "items": [{"productId": str(PRODUCT_ID), "quantity": 1}],
             },
@@ -372,6 +376,7 @@ def test_order_api_maps_all_order_error_codes(code: OrderErrorCode, expected_sta
             headers={"X-User-Id": str(USER_ID)},
             body={
                 "storeId": str(STORE_ID),
+                "paymentAssetId": "local-usdc",
                 "deliveryAddress": {"id": "ship-to", "street": "2 River Rd"},
                 "items": [{"productId": str(PRODUCT_ID), "quantity": 1}],
             },
@@ -401,6 +406,7 @@ def test_order_api_sanitizes_raw_estimate_gas_insufficient_balance_errors() -> N
             headers={"X-User-Id": str(USER_ID)},
             body={
                 "storeId": str(STORE_ID),
+                "paymentAssetId": "local-usdc",
                 "deliveryAddress": {"id": "ship-to", "street": "2 River Rd"},
                 "items": [{"productId": str(PRODUCT_ID), "quantity": 1}],
             },
@@ -430,6 +436,7 @@ def test_order_api_resolves_public_store_and_product_ids_via_resolver() -> None:
             headers={"X-User-Id": str(USER_ID)},
             body={
                 "publicStoreId": "st_demo_store_001",
+                "paymentAssetId": "local-usdc",
                 "deliveryAddress": {"id": "ship-to", "street": "2 River Rd"},
                 "items": [{"publicProductId": "prd_demo_001", "quantity": 1}],
             },
@@ -455,6 +462,7 @@ def test_order_api_rejects_unresolvable_public_product_id_without_internal_uuid(
             headers={"X-User-Id": str(USER_ID)},
             body={
                 "publicStoreId": "st_demo_store_001",
+                "paymentAssetId": "local-usdc",
                 "deliveryAddress": {"id": "ship-to", "street": "2 River Rd"},
                 "items": [{"publicProductId": "prd_missing", "quantity": 1}],
             },
@@ -496,6 +504,7 @@ def test_order_postgres_repositories_and_outbox_share_injected_connection_bounda
         stores=PostgresStoreRepository(connection),
         orders=PostgresOrderRepository(connection),
         outbox_messages=PostgresOutboxMessageRepository(connection),
+        wallets=PostgresUserWalletRepository(connection),
         exchange_rate=EXCHANGE_RATE,
         payment_assets=_registry(),
     )
@@ -842,6 +851,23 @@ class FakePostgresConnection:
                         pass
             self.outbox_messages[str(params["message_identity"])] = stored_params
             return FakeResult(rowcount=1)
+        if "from auth_user_wallets" in normalized:
+            return FakeResult(
+                [
+                    {
+                        "wallet_id": "018f33aa-9e6d-73d8-9dc3-47d6cdcc6c29",
+                        "user_id": params.get("user_id"),
+                        "wallet_address": str(CUSTOMER_WALLET),
+                        "chain_id": params.get("chain_id"),
+                        "wallet_type": "EOA",
+                        "verification_status": "VERIFIED",
+                        "primary": True,
+                        "linked_at": NOW,
+                        "revoked_at": None,
+                    }
+                ],
+                rowcount=1,
+            )
 
         raise AssertionError(f"unexpected SQL: {sql}")
 

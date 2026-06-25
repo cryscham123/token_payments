@@ -45,6 +45,7 @@ INVITATION_ID = InvitationId("018f33aa-9e6d-73d8-9dc3-47d6cdccdd02")
 STAFF_ID = UserId("018f33aa-9e6d-73d8-9dc3-47d6cdccdd03")
 OTHER_STORE_ID = StoreId("018f33aa-9e6d-73d8-9dc3-47d6cdccdd04")
 INTRUDER_ID = UserId("018f33aa-9e6d-73d8-9dc3-47d6cdccdd05")
+OTHER_GROUP_ID = GroupId("018f33aa-9e6d-73d8-9dc3-47d6cdccdd06")
 STAFF_WALLET = WalletAddress("0x5555555555555555555555555555555555555555")
 STAFF_PRIMARY_WALLET = WalletAddress("0x6666666666666666666666666666666666666666")
 
@@ -144,14 +145,113 @@ def test_merchant_member_invitation_accept_and_lists_are_store_scoped() -> None:
         f"/merchant/stores/{STORE_ID}/members",
         received_at=NOW,
     )
+    listed_after_accept = router.handle("GET", f"/merchant/stores/{STORE_ID}/invitations", received_at=NOW)
 
     assert created.status_code == 201
     assert _json(created.body)["invitation"]["roleId"] == "MERCHANT_STAFF"
     assert listed.status_code == 200
     assert len(_json(listed.body)["invitations"]) == 1
     assert accepted.status_code == 200
+    assert repository.invitations[INVITATION_ID].status == InvitationStatus.ACCEPTED
     assert repository.group_memberships[(GROUP_ID, STAFF_ID)].role_id == RoleId("MERCHANT_STAFF")
     assert {member["userId"] for member in _json(members.body)["members"]} == {str(OWNER_ID), str(STAFF_ID)}
+    assert _json(listed_after_accept.body)["invitations"] == []
+
+
+def test_pending_invitation_cannot_be_sent_twice_for_same_target_in_store() -> None:
+    repository = FakeMerchantRepository()
+    owner_router = _router(repository, _auth(OWNER_ID, "merchant_member:invite"))
+
+    first = owner_router.handle(
+        "POST",
+        f"/merchant/stores/{STORE_ID}/invitations",
+        headers={"Content-Type": "application/json"},
+        body=_json_body({"targetUserId": str(STAFF_ID), "roleId": "MERCHANT_STAFF"}),
+        received_at=NOW,
+    )
+    duplicate = owner_router.handle(
+        "POST",
+        f"/merchant/stores/{STORE_ID}/invitations",
+        headers={"Content-Type": "application/json"},
+        body=_json_body({"targetUserId": str(STAFF_ID), "roleId": "MERCHANT_MANAGER"}),
+        received_at=NOW + timedelta(minutes=1),
+    )
+
+    assert first.status_code == 201
+    assert duplicate.status_code == 409
+    assert _json(duplicate.body)["error"]["code"] == "INVITATION_ALREADY_PENDING"
+    assert [invite.target_user_id for invite in repository.invitations.values()] == [STAFF_ID]
+
+
+def test_store_invitation_list_only_shows_invitations_for_requested_store_group() -> None:
+    repository = FakeMerchantRepository()
+    repository.groups[OTHER_GROUP_ID] = Group(
+        OTHER_GROUP_ID,
+        GroupType.MERCHANT,
+        "Other store group",
+        resource_type="store",
+        resource_id=str(OTHER_STORE_ID),
+    )
+    repository.store_groups[OTHER_STORE_ID] = OTHER_GROUP_ID
+    router = _router(repository, _auth(OWNER_ID, "merchant_member:read", "merchant_member:invite"))
+
+    created = router.handle(
+        "POST",
+        f"/merchant/stores/{STORE_ID}/invitations",
+        headers={"Content-Type": "application/json"},
+        body=_json_body({"targetUserId": str(STAFF_ID), "roleId": "MERCHANT_STAFF"}),
+        received_at=NOW,
+    )
+    source_store = router.handle("GET", f"/merchant/stores/{STORE_ID}/invitations", received_at=NOW)
+    other_store = router.handle("GET", f"/merchant/stores/{OTHER_STORE_ID}/invitations", received_at=NOW)
+
+    assert created.status_code == 201
+    assert len(_json(source_store.body)["invitations"]) == 1
+    assert _json(other_store.body)["invitations"] == []
+
+
+def test_user_invitation_list_shows_pending_targeted_invitations() -> None:
+    repository = FakeMerchantRepository()
+    repository.seed_user(STAFF_ID, STAFF_PRIMARY_WALLET)
+    repository.link_wallet(STAFF_ID, STAFF_WALLET)
+    owner_router = _router(repository, _auth(OWNER_ID, "merchant_member:invite"))
+
+    by_user_id = owner_router.handle(
+        "POST",
+        f"/merchant/stores/{STORE_ID}/invitations",
+        headers={"Content-Type": "application/json"},
+        body=_json_body({"targetUserId": str(STAFF_ID), "roleId": "MERCHANT_STAFF"}),
+        received_at=NOW,
+    )
+    repository.invitations[InvitationId("018f33aa-9e6d-73d8-9dc3-47d6cdccdd12")] = GroupInvitation(
+        invitation_id=InvitationId("018f33aa-9e6d-73d8-9dc3-47d6cdccdd12"),
+        group_id=GROUP_ID,
+        invited_role_id=RoleId("MERCHANT_MANAGER"),
+        invited_by_user_id=OWNER_ID,
+        target_wallet=STAFF_WALLET,
+        status=InvitationStatus.PENDING,
+        created_at=NOW + timedelta(minutes=1),
+    )
+    repository.invitations[InvitationId("018f33aa-9e6d-73d8-9dc3-47d6cdccdd13")] = GroupInvitation(
+        invitation_id=InvitationId("018f33aa-9e6d-73d8-9dc3-47d6cdccdd13"),
+        group_id=GROUP_ID,
+        invited_role_id=RoleId("MERCHANT_STAFF"),
+        invited_by_user_id=OWNER_ID,
+        target_user_id=INTRUDER_ID,
+        status=InvitationStatus.PENDING,
+        created_at=NOW + timedelta(minutes=2),
+    )
+
+    listed = _router(repository, _auth(STAFF_ID)).handle("GET", "/merchant/invitations", received_at=NOW)
+
+    assert by_user_id.status_code == 201
+    assert listed.status_code == 200
+    payload = _json(listed.body)
+    assert {invite["invitationId"] for invite in payload["invitations"]} == {
+        str(INVITATION_ID),
+        "018f33aa-9e6d-73d8-9dc3-47d6cdccdd12",
+    }
+    assert {invite["storeName"] for invite in payload["invitations"]} == {"Demo store group"}
 
 
 def test_wallet_targeted_invitation_accepts_user_who_owns_linked_wallet_without_body_wallet() -> None:
@@ -316,7 +416,7 @@ def test_merchant_invitation_rejects_self_or_admin() -> None:
 def test_member_role_update_and_removal_allow_staff_only_and_protect_owner() -> None:
     repository = FakeMerchantRepository()
     repository.group_memberships[(GROUP_ID, STAFF_ID)] = GroupMembership(STAFF_ID, GROUP_ID, RoleId("MERCHANT_STAFF"), joined_at=NOW)
-    router = _router(repository, _auth(OWNER_ID, "merchant_member:manage"))
+    router = _router(repository, _auth(OWNER_ID, "merchant_member:read", "merchant_member:manage"))
 
     updated = router.handle(
         "PATCH",
@@ -332,6 +432,8 @@ def test_member_role_update_and_removal_allow_staff_only_and_protect_owner() -> 
     assert repository.group_memberships[(GROUP_ID, STAFF_ID)].role_id == RoleId("MERCHANT_MANAGER")
     assert removed.status_code == 200
     assert repository.group_memberships[(GROUP_ID, STAFF_ID)].active is False
+    members_after_removal = router.handle("GET", f"/merchant/stores/{STORE_ID}/members", received_at=NOW)
+    assert {member["userId"] for member in _json(members_after_removal.body)["members"]} == {str(OWNER_ID)}
     assert owner_removed.status_code == 409
     assert _json(owner_removed.body)["error"]["code"] == "OWNER_ROLE_PROTECTED"
 
@@ -362,6 +464,12 @@ def test_revoke_merchant_invitation_succeeds_for_authorized_actor() -> None:
     payload = _json(revoked.body)
     assert payload["invitation"]["status"] == "REVOKED"
     assert repository.invitations[INVITATION_ID].status == InvitationStatus.REVOKED
+    listed_after_revoke = _router(repository, _auth(OWNER_ID, "merchant_member:read")).handle(
+        "GET",
+        f"/merchant/stores/{STORE_ID}/invitations",
+        received_at=NOW,
+    )
+    assert _json(listed_after_revoke.body)["invitations"] == []
 
 
 def test_role_catalog_exposes_only_non_owner_merchant_staff_templates_and_route_manifest() -> None:
@@ -375,6 +483,7 @@ def test_role_catalog_exposes_only_non_owner_merchant_staff_templates_and_route_
     } == {
         "listMerchantStoreMembers",
         "listMerchantStoreInvitations",
+        "listMerchantUserInvitations",
         "createMerchantStoreInvitation",
         "acceptMerchantInvitation",
         "revokeMerchantInvitation",
@@ -496,7 +605,7 @@ class FakeMerchantRepository:
     def members_for_group(self, group_id: GroupId) -> tuple[GroupMembership, ...]:
         results = []
         for (gid, uid), membership in self.group_memberships.items():
-            if gid == group_id:
+            if gid == group_id and membership.active:
                 profile = self.user_profiles.get(uid)
                 display_name = profile.display_name if profile else None
                 user = self.users.get(uid)
@@ -532,6 +641,25 @@ class FakeMerchantRepository:
 
     def invitations_for_group(self, group_id: GroupId) -> tuple[GroupInvitation, ...]:
         return tuple(invitation for invitation in self.invitations.values() if invitation.group_id == group_id)
+
+    def invitations_for_user(self, user_id: UserId) -> tuple[tuple[GroupInvitation, str], ...]:
+        owned_wallets = {
+            str(wallet).lower()
+            for wallet, owner_id in self.wallet_owners.items()
+            if owner_id == user_id
+        }
+        matches = []
+        for invitation in self.invitations.values():
+            if invitation.status != InvitationStatus.PENDING:
+                continue
+            wallet_matches = (
+                invitation.target_wallet is not None
+                and str(invitation.target_wallet).lower() in owned_wallets
+            )
+            if invitation.target_user_id == user_id or wallet_matches:
+                group = self.groups.get(invitation.group_id)
+                matches.append((invitation, group.name if group is not None else "알 수 없는 상점"))
+        return tuple(sorted(matches, key=lambda item: item[0].created_at, reverse=True))
 
     def get_invitation(self, invitation_id: InvitationId) -> GroupInvitation | None:
         return self.invitations.get(invitation_id)

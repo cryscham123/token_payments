@@ -510,7 +510,7 @@ export default function Cart() {
                                 </button>
                               </div>
                               <span className="text-lg font-bold font-mono">
-                                {formatFiatAmount((Number.parseFloat(unitPrice.amount) || 0) * item.quantity, unitPrice.currency)}
+                                {formatCryptoAmount((Number.parseFloat(unitPrice.amount) || 0) * item.quantity)} {unitPrice.symbol}
                               </span>
                             </div>
                           </div>
@@ -578,7 +578,7 @@ export default function Cart() {
                     <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
                       <div className="text-sm">
                         <span className="text-slate-500">스토어 합계 </span>
-                        <span className="font-mono font-bold text-slate-900">{formatFiatAmount(group.subtotal, "USD")}</span>
+                        <span className="font-mono font-bold text-slate-900">{formatCryptoAmount(group.subtotal)} {group.selectedOption?.symbol || "ETH"}</span>
                       </div>
                       <button
                         onClick={() => startCheckout(group.storeId)}

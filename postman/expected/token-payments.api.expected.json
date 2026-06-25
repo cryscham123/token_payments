@@ -54,6 +54,7 @@
     "replayOperatorMessage",
     "listMerchantStoreMembers",
     "listMerchantStoreInvitations",
+    "listMerchantUserInvitations",
     "createMerchantStoreInvitation",
     "acceptMerchantInvitation",
     "revokeMerchantInvitation",
@@ -1128,6 +1129,19 @@
       "status": 200,
       "headers": {
         "X-Request-Id": "postman-listMerchantStoreInvitations"
+      },
+      "body": {
+        "invitations": []
+      }
+    },
+    {
+      "operationId": "listMerchantUserInvitations",
+      "requestName": "listMerchantUserInvitations",
+      "method": "GET",
+      "path": "/merchant/invitations",
+      "status": 200,
+      "headers": {
+        "X-Request-Id": "postman-listMerchantUserInvitations"
       },
       "body": {
         "invitations": []

@@ -1114,6 +1114,19 @@
       ],
       "values": {
         "role_id": "MERCHANT_STAFF",
+        "permission_name": "merchant_member:read",
+        "active": true
+      }
+    },
+    {
+      "table": "auth_role_permissions",
+      "columns": [
+        "role_id",
+        "permission_name",
+        "active"
+      ],
+      "values": {
+        "role_id": "MERCHANT_STAFF",
         "permission_name": "product:read",
         "active": true
       }

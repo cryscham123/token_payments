@@ -459,6 +459,14 @@ def register_auth_routes(
         ),
         _add_manifest_route(
             router,
+            AUTH_HTTP_ROUTES["switch_session"],
+            _csrf_issue_handler(
+                _cookie_login_handler(auth_api.switch_session, session_transport),
+                csrf_token_service,
+            ),
+        ),
+        _add_manifest_route(
+            router,
             AUTH_HTTP_ROUTES["logout"],
             _cookie_logout_handler(auth_api.logout, session_transport),
         ),
@@ -630,6 +638,7 @@ def register_merchant_membership_routes(router: HttpRouter, merchant_api: Any) -
     return (
         _add_manifest_route(router, MERCHANT_MEMBERSHIP_HTTP_ROUTES["list_members"], merchant_api.list_members),
         _add_manifest_route(router, MERCHANT_MEMBERSHIP_HTTP_ROUTES["list_invitations"], merchant_api.list_invitations),
+        _add_manifest_route(router, MERCHANT_MEMBERSHIP_HTTP_ROUTES["list_user_invitations"], merchant_api.list_user_invitations),
         _add_manifest_route(router, MERCHANT_MEMBERSHIP_HTTP_ROUTES["create_invitation"], merchant_api.create_invitation),
         _add_manifest_route(router, MERCHANT_MEMBERSHIP_HTTP_ROUTES["accept_invitation"], merchant_api.accept_invitation),
         _add_manifest_route(router, MERCHANT_MEMBERSHIP_HTTP_ROUTES["revoke_invitation"], merchant_api.revoke_invitation),
@@ -1073,6 +1082,7 @@ AUTH_HTTP_ROUTES: Mapping[str, HttpRouteSpec] = MappingProxyType(
         "set_primary_wallet": HttpRouteSpec("PATCH", "/auth/wallets/{walletId}/primary", "setPrimaryWallet"),
         "revoke_wallet": HttpRouteSpec("DELETE", "/auth/wallets/{walletId}", "revokeWallet"),
         "refresh_session": HttpRouteSpec("POST", "/auth/sessions/refresh", "refreshSession"),
+        "switch_session": HttpRouteSpec("POST", "/auth/sessions/switch", "switchSession"),
         "logout": HttpRouteSpec("DELETE", "/auth/sessions", "logout"),
         "current_user": HttpRouteSpec("GET", "/auth/me", "getCurrentUser"),
         "current_user_profile": HttpRouteSpec("GET", "/auth/me/profile", "getCurrentUserProfile"),
@@ -1217,6 +1227,7 @@ MERCHANT_MEMBERSHIP_HTTP_ROUTES: Mapping[str, HttpRouteSpec] = MappingProxyType(
     {
         "list_members": HttpRouteSpec("GET", "/merchant/stores/{storeId}/members", "listMerchantStoreMembers"),
         "list_invitations": HttpRouteSpec("GET", "/merchant/stores/{storeId}/invitations", "listMerchantStoreInvitations"),
+        "list_user_invitations": HttpRouteSpec("GET", "/merchant/invitations", "listMerchantUserInvitations"),
         "create_invitation": HttpRouteSpec("POST", "/merchant/stores/{storeId}/invitations", "createMerchantStoreInvitation"),
         "accept_invitation": HttpRouteSpec("POST", "/merchant/invitations/{invitationId}/accept", "acceptMerchantInvitation"),
         "revoke_invitation": HttpRouteSpec("POST", "/merchant/invitations/{invitationId}/revoke", "revokeMerchantInvitation"),

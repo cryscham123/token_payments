@@ -170,7 +170,7 @@ export default function Home() {
                   href={`/products/${product.publicProductId}`}
                   className="group flex flex-col overflow-hidden rounded-md border border-slate-200 bg-white transition-shadow duration-200 hover:shadow-lg"
                 >
-                  <div className="relative aspect-square bg-slate-50">
+                  <div className="relative aspect-square overflow-hidden bg-slate-50">
                     <img
                       src={product.thumb}
                       alt={product.title}
@@ -190,13 +190,13 @@ export default function Home() {
                     </div>
                     <p className="text-sm font-semibold leading-snug text-slate-900">{product.title}</p>
                     <div className="mt-auto pt-2">
-                      <span className="block text-[11px] font-semibold text-slate-500">{homePaymentSummary(product.paymentCapability)}</span>
-                      <span className="mt-0.5 block text-lg font-extrabold text-slate-950">
+                      <span className="block text-lg font-extrabold text-slate-950">
                         {fromPriceLabel(product)}{formatFiatAmount(product.usdAmount, product.usdCurrency)}
                       </span>
                       {formatAssetPriceHint(product.assetPrices) && (
                         <span className="block text-[11px] font-medium text-slate-400">{formatAssetPriceHint(product.assetPrices)}</span>
                       )}
+
                     </div>
                   </div>
                 </Link>
@@ -213,7 +213,7 @@ export default function Home() {
                   href={`/products/${product.publicProductId}`}
                   className="group flex flex-col overflow-hidden rounded-md border border-slate-200 bg-white transition-shadow duration-200 hover:shadow-lg"
                 >
-                  <div className="relative aspect-square bg-slate-50">
+                  <div className="relative aspect-square overflow-hidden bg-slate-50">
                     <img
                       src={product.thumb}
                       alt={product.title}
@@ -233,13 +233,13 @@ export default function Home() {
                     </div>
                     <p className="text-sm font-semibold leading-snug text-slate-900">{product.title}</p>
                     <div className="mt-auto pt-2">
-                      <span className="block text-[11px] font-semibold text-slate-500">{homePaymentSummary(product.paymentCapability)}</span>
-                      <span className="mt-0.5 block text-lg font-extrabold text-slate-950">
+                      <span className="block text-lg font-extrabold text-slate-950">
                         {fromPriceLabel(product)}{formatFiatAmount(product.usdAmount, product.usdCurrency)}
                       </span>
                       {formatAssetPriceHint(product.assetPrices) && (
                         <span className="block text-[11px] font-medium text-slate-400">{formatAssetPriceHint(product.assetPrices)}</span>
                       )}
+
                     </div>
                   </div>
                 </Link>
@@ -263,14 +263,7 @@ export default function Home() {
   );
 }
 
-function homePaymentSummary(capability) {
-  const assets = capability?.acceptedAssets || capability?.assets || [];
-  if (assets.length > 0) {
-    return assets.map((asset) => asset.symbol || "TOKEN").join(" / ");
-  }
-  const chainIds = capability?.supportedChainIds || [];
-  return chainIds.length > 0 ? `Chain ${chainIds.join(", ")}` : "결제 수단 확인";
-}
+
 
 function homeStoreLabel(storeProfile) {
   return storeProfile?.displayName || "스토어";
@@ -278,4 +271,13 @@ function homeStoreLabel(storeProfile) {
 
 function fromPriceLabel(product) {
   return product.displayPrice?.priceLabel === "from" ? "" : "";
+}
+
+function homePaymentSummary(capability) {
+  const assets = capability?.acceptedAssets || capability?.assets || [];
+  if (assets.length > 0) {
+    return assets.map((asset) => asset.symbol || "TOKEN").join(" / ");
+  }
+  const chainIds = capability?.supportedChainIds || [];
+  return chainIds.length > 0 ? `Chain ${chainIds.join(", ")}` : "결제 수단 확인";
 }

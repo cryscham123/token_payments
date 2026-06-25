@@ -48,6 +48,7 @@
 | `resumeStoreOwnerInventorySales` | `POST /store-owner/stores/{storeId}/inventory/{productId}/resume` | 재고 |
 | `listMerchantStoreMembers` | `GET /merchant/stores/{storeId}/members` | RBAC |
 | `listMerchantStoreInvitations` | `GET /merchant/stores/{storeId}/invitations` | RBAC |
+| `listMerchantUserInvitations` | `GET /merchant/invitations` | RBAC |
 | `createMerchantStoreInvitation` | `POST /merchant/stores/{storeId}/invitations` | RBAC |
 | `acceptMerchantInvitation` | `POST /merchant/invitations/{invitationId}/accept` | RBAC |
 | `revokeMerchantInvitation` | `POST /merchant/invitations/{invitationId}/revoke` | RBAC |

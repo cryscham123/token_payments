@@ -61,6 +61,9 @@ class MerchantMembershipRepository(Protocol):
     def invitations_for_group(self, group_id: GroupId) -> tuple[GroupInvitation, ...]:
         ...
 
+    def invitations_for_user(self, user_id: UserId) -> tuple[tuple[GroupInvitation, str], ...]:
+        ...
+
     def get_invitation(self, invitation_id: InvitationId) -> GroupInvitation | None:
         ...
 
@@ -118,7 +121,25 @@ class MerchantMembershipService:
         denied = self._deny_without(actor, "merchant_member:read", store_id)
         if denied is not None:
             return denied
-        return _completed({"storeId": str(store_id), "invitations": [_invitation_payload(item) for item in self._repository.invitations_for_group(group.group_id)]})
+        invitations = (
+            item
+            for item in self._repository.invitations_for_group(group.group_id)
+            if item.status == InvitationStatus.PENDING
+        )
+        return _completed({"storeId": str(store_id), "invitations": [_invitation_payload(item) for item in invitations]})
+
+    def list_user_invitations(self, actor: MerchantActor) -> MerchantMembershipResult:
+        if not actor.user_id:
+            return _rejected("AUTHENTICATION_REQUIRED", "authenticated session is required")
+        invitations = self._repository.invitations_for_user(actor.user_id)
+
+        payloads = []
+        for invite, store_name in invitations:
+            payload = _invitation_payload(invite)
+            payload["storeName"] = store_name
+            payloads.append(payload)
+
+        return _completed({"invitations": payloads})
 
     def create_invitation(
         self,
@@ -155,10 +176,16 @@ class MerchantMembershipService:
                 return _rejected("INVITATION_TARGET_INVALID", "cannot invite yourself")
             if admin_user_id is not None and resolved_user_id == admin_user_id:
                 return _rejected("INVITATION_TARGET_INVALID", "cannot invite platform admin")
+            existing = self._repository.get_membership(group.group_id, resolved_user_id)
+            if existing is not None and existing.active:
+                return _rejected("MEMBERSHIP_ALREADY_EXISTS", "target user is already an active merchant member")
 
         if target_wallet is not None:
             if str(target_wallet).lower() == str(admin_wallet).lower():
                 return _rejected("INVITATION_TARGET_INVALID", "cannot invite platform admin")
+        pending_duplicate = self._pending_invitation_for_target(group.group_id, resolved_user_id, target_wallet)
+        if pending_duplicate is not None:
+            return _rejected("INVITATION_ALREADY_PENDING", "target already has a pending merchant invitation")
         now = requested_at or datetime.now(UTC)
         invitation = GroupInvitation(
             invitation_id=self._new_invitation_id(),
@@ -224,7 +251,7 @@ class MerchantMembershipService:
         denied = self._deny_without_any(actor, ("merchant_member:invite", "merchant_member:manage"), store_id)
         if denied is not None:
             return denied
-        if invitation.status is not InvitationStatus.PENDING:
+        if invitation.status != InvitationStatus.PENDING:
             return _rejected("INVITATION_NOT_PENDING", "only pending invitations can be revoked")
         revoked = GroupInvitation(
             invitation_id=invitation.invitation_id,
@@ -298,6 +325,26 @@ class MerchantMembershipService:
             return _rejected("OWNER_ROLE_PROTECTED", "MERCHANT_OWNER assignment or transfer is not merchant-facing")
         if role_id.value not in MERCHANT_ASSIGNABLE_ROLE_IDS:
             return _rejected("ROLE_TEMPLATE_NOT_ALLOWED", "merchant APIs accept only server-defined non-owner merchant staff templates")
+        return None
+
+    def _pending_invitation_for_target(
+        self,
+        group_id: GroupId,
+        target_user_id: UserId | None,
+        target_wallet: WalletAddress | None,
+    ) -> GroupInvitation | None:
+        normalized_wallet = str(target_wallet).lower() if target_wallet is not None else None
+        for invitation in self._repository.invitations_for_group(group_id):
+            if invitation.status != InvitationStatus.PENDING:
+                continue
+            if target_user_id is not None and invitation.target_user_id == target_user_id:
+                return invitation
+            if (
+                normalized_wallet is not None
+                and invitation.target_wallet is not None
+                and str(invitation.target_wallet).lower() == normalized_wallet
+            ):
+                return invitation
         return None
 
     def _new_invitation_id(self) -> InvitationId:

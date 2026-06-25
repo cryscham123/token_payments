@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { 
   ArrowLeft, 
   Store, 
@@ -22,19 +23,23 @@ import {
 } from "lucide-react";
 import SiteHeader from "./SiteHeader";
 import UserSearchInput from "./UserSearchInput";
-import { apiJson, getCurrentUser } from "@/lib/auth-client";
+import { apiJson, getCurrentUser, listMerchantStores, switchSession } from "@/lib/auth-client";
 import { formatCryptoAmount, formatFiatAmount, formatAssetPriceHint } from "@/lib/format";
 import { productImageFromMedia, getCategoryFallback, resolveProductImage } from "@/lib/product-image";
 
 
 
 export default function MerchantDashboard({ publicStoreId }) {
+  const router = useRouter();
   const [currentUser, setCurrentUser] = useState(null);
   const [store, setStore] = useState(null);
   const [products, setProducts] = useState([]);
   const [members, setMembers] = useState([]);
+  const [merchantStores, setMerchantStores] = useState([]);
   const [invitations, setInvitations] = useState([]);
-  const [internalStoreId, setInternalStoreId] = useState("44444444-4444-4444-8444-444444444444"); // Default fallback
+  const [internalStoreId, setInternalStoreId] = useState("");
+  const [productReadForbidden, setProductReadForbidden] = useState(false);
+  const [membershipReadForbidden, setMembershipReadForbidden] = useState(false);
   
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -74,18 +79,69 @@ export default function MerchantDashboard({ publicStoreId }) {
   const [inviteSuccess, setInviteSuccess] = useState("");
   const [inviteError, setInviteError] = useState("");
 
+  const currentStoreSummary = merchantStores.find((s) => (
+    s.publicStoreId === publicStoreId || s.storeId === internalStoreId
+  ));
+  const currentStoreRole = currentStoreSummary?.role || "";
+  const ownerRoles = ["OWNER", "MERCHANT_OWNER"];
+  const managerRoles = ["MANAGER", "MERCHANT_MANAGER", "MERCHANT_ADMIN", "ADMIN"];
+  const staffRoles = ["STAFF", "MERCHANT_STAFF"];
+
+  function hasScope(scope) {
+    return Array.isArray(currentUser?.scopes) && currentUser.scopes.includes(scope);
+  }
+
+  const isOwnerLike = ownerRoles.includes(currentStoreRole);
+  const isManagerLike = managerRoles.includes(currentStoreRole);
+  const isStaffLike = staffRoles.includes(currentStoreRole);
+  const canReadProducts = hasScope("product:read") || hasScope("product:read:any") || isOwnerLike || isManagerLike || isStaffLike;
+  const canWriteProducts = hasScope("product:write") || hasScope("product:write:any") || isOwnerLike || isManagerLike;
+  const canWriteStore = hasScope("store:write") || hasScope("store:write:any") || isOwnerLike || isManagerLike;
+  const canReadMembers = hasScope("merchant_member:read") || isOwnerLike || isManagerLike || isStaffLike;
+  const canInviteMembers = hasScope("merchant_member:invite") || isOwnerLike || isManagerLike;
+  const canManageMembers = hasScope("merchant_member:manage") || isOwnerLike;
+  const canRevokeInvitations = canInviteMembers || canManageMembers;
+  const productsReadBlocked = productReadForbidden || (currentUser && !canReadProducts);
+  const membersReadBlocked = membershipReadForbidden || (currentUser && !canReadMembers);
+  const normalizedInviteWallet = inviteWallet?.toLowerCase();
+  const hasPendingInviteForCurrentTarget = invitations.some((invite) => {
+    if (invite.status && invite.status !== "PENDING") return false;
+    if (inviteDisplayName && invite.targetDisplayName === inviteDisplayName) return true;
+    if (normalizedInviteWallet && invite.targetWallet?.toLowerCase() === normalizedInviteWallet) return true;
+    return false;
+  });
+
+  function isForbiddenPayload(payload) {
+    const code = payload?.error?.code || payload?.code || "";
+    return payload?.status === 403 || code === "FORBIDDEN" || code.endsWith("_FORBIDDEN");
+  }
+
+  function isForbiddenError(err) {
+    const code = err?.error?.code || err?.code || "";
+    return err?.status === 403 || code === "FORBIDDEN" || code.endsWith("_FORBIDDEN");
+  }
+
   async function loadDashboardData() {
     setLoading(true);
     setError("");
+    setInternalStoreId("");
+    setMembers([]);
+    setInvitations([]);
+    setMembershipReadForbidden(false);
     try {
-      const [userPayload, storePayload, productsPayload] = await Promise.all([
+      const [userPayload, storePayload, storesRes] = await Promise.all([
         getCurrentUser().catch(() => null),
         apiJson(`/stores/${publicStoreId}`),
-        apiJson(`/merchant/stores/${publicStoreId}/products`)
+        listMerchantStores().catch(() => ({ stores: [] }))
       ]);
 
-      if (userPayload?.user) {
-        setCurrentUser(userPayload.user);
+      let currentUserObj = userPayload?.user || null;
+      if (currentUserObj) {
+        setCurrentUser(currentUserObj);
+      }
+
+      if (storesRes?.stores) {
+        setMerchantStores(storesRes.stores);
       }
 
       if (storePayload?.store) {
@@ -101,9 +157,28 @@ export default function MerchantDashboard({ publicStoreId }) {
         if (s.paymentCapability?.acceptedAssets) {
           setSupportedAssets(s.paymentCapability.acceptedAssets.map(a => a.assetId));
         }
+
+        const targetGroupId = s.merchantGroupId;
+        if (targetGroupId && currentUserObj && currentUserObj.activeGroupId !== targetGroupId) {
+          try {
+            await switchSession(targetGroupId);
+            const newUserPayload = await getCurrentUser().catch(() => null);
+            if (newUserPayload?.user) {
+              currentUserObj = newUserPayload.user;
+              setCurrentUser(currentUserObj);
+            }
+          } catch (switchErr) {
+            console.error("Failed to switch session to store context:", switchErr);
+          }
+        }
       }
 
-      if (productsPayload) {
+      const productsPayload = await apiJson(`/merchant/stores/${publicStoreId}/products`);
+      if (isForbiddenPayload(productsPayload)) {
+        setProductReadForbidden(true);
+        setProducts([]);
+      } else if (productsPayload) {
+        setProductReadForbidden(false);
         if (productsPayload.products) {
           setProducts(productsPayload.products);
         }
@@ -123,12 +198,20 @@ export default function MerchantDashboard({ publicStoreId }) {
     if (!internalStoreId) return;
     try {
       const [membersPayload, invitesPayload] = await Promise.all([
-        apiJson(`/merchant/stores/${internalStoreId}/members`).catch(() => ({ members: [] })),
-        apiJson(`/merchant/stores/${internalStoreId}/invitations`).catch(() => ({ invitations: [] }))
+        apiJson(`/merchant/stores/${internalStoreId}/members`),
+        apiJson(`/merchant/stores/${internalStoreId}/invitations`)
       ]);
-      setMembers(membersPayload?.members || []);
-      setInvitations(invitesPayload?.invitations || []);
+      const forbidden = isForbiddenPayload(membersPayload) || isForbiddenPayload(invitesPayload);
+      setMembershipReadForbidden(forbidden);
+      setMembers(forbidden ? [] : membersPayload?.members || []);
+      setInvitations(forbidden ? [] : invitesPayload?.invitations || []);
     } catch (err) {
+      if (isForbiddenError(err)) {
+        setMembershipReadForbidden(true);
+        setMembers([]);
+        setInvitations([]);
+        return;
+      }
       console.error("Failed to load members or invitations:", err);
     }
   }
@@ -145,6 +228,10 @@ export default function MerchantDashboard({ publicStoreId }) {
 
   const handleUpdateStoreProfile = async (e) => {
     e.preventDefault();
+    if (!canWriteStore) {
+      setStoreError("상점 설정을 수정할 권한이 없습니다.");
+      return;
+    }
     setSavingStore(true);
     setStoreSuccess("");
     setStoreError("");
@@ -171,12 +258,14 @@ export default function MerchantDashboard({ publicStoreId }) {
   };
 
   const handleToggleChain = (chainId) => {
+    if (!canWriteStore) return;
     setSupportedChains(prev => 
       prev.includes(chainId) ? prev.filter(c => c !== chainId) : [...prev, chainId]
     );
   };
 
   const handleToggleAsset = (assetId) => {
+    if (!canWriteStore) return;
     setSupportedAssets(prev => 
       prev.includes(assetId) ? prev.filter(a => a !== assetId) : [...prev, assetId]
     );
@@ -184,6 +273,7 @@ export default function MerchantDashboard({ publicStoreId }) {
 
   // Product Add / Edit Modal Trigger
   const openProductModal = (product = null) => {
+    if (!canWriteProducts) return;
     setEditingProduct(product);
     setProductError("");
     if (product) {
@@ -213,6 +303,7 @@ export default function MerchantDashboard({ publicStoreId }) {
   };
 
   const handleAddMediaUrl = () => {
+    if (!canWriteProducts) return;
     if (tempMediaUrl.trim()) {
       setProductMediaUrls(prev => [...prev, tempMediaUrl.trim()]);
       setTempMediaUrl("");
@@ -220,10 +311,12 @@ export default function MerchantDashboard({ publicStoreId }) {
   };
 
   const handleRemoveMediaUrl = (indexToRemove) => {
+    if (!canWriteProducts) return;
     setProductMediaUrls(prev => prev.filter((_, idx) => idx !== indexToRemove));
   };
 
   const handleLocalImageUpload = (e) => {
+    if (!canWriteProducts) return;
     const files = e.target.files;
     if (!files || files.length === 0) return;
     
@@ -242,6 +335,10 @@ export default function MerchantDashboard({ publicStoreId }) {
 
   const handleSaveProduct = async (e) => {
     e.preventDefault();
+    if (!canWriteProducts) {
+      setProductError("상품을 수정할 권한이 없습니다.");
+      return;
+    }
     setSavingProduct(true);
     setProductError("");
 
@@ -291,6 +388,14 @@ export default function MerchantDashboard({ publicStoreId }) {
 
   const handleCreateInvitation = async (e) => {
     e.preventDefault();
+    if (!canInviteMembers) {
+      setInviteError("직원을 초대할 권한이 없습니다.");
+      return;
+    }
+    if (!internalStoreId) {
+      setInviteError("현재 상점의 내부 식별자를 확인하지 못해 초대장을 발송할 수 없습니다.");
+      return;
+    }
     setSendingInvite(true);
     setInviteSuccess("");
     setInviteError("");
@@ -310,7 +415,7 @@ export default function MerchantDashboard({ publicStoreId }) {
       return;
     }
 
-    const normalizedWallet = inviteWallet?.toLowerCase();
+    const normalizedWallet = normalizedInviteWallet;
     const currentWallet = currentUser?.walletAddress?.toLowerCase();
     const adminWallet = "0x32b31C74fE628e9164996f727F0D11A3C49EC27f".toLowerCase();
 
@@ -325,6 +430,24 @@ export default function MerchantDashboard({ publicStoreId }) {
         setSendingInvite(false);
         return;
       }
+    }
+
+    const isAlreadyMember = members.some((m) => {
+      if (inviteDisplayName && m.displayName === inviteDisplayName) return true;
+      if (inviteWallet && m.walletAddress?.toLowerCase() === normalizedWallet) return true;
+      return false;
+    });
+
+    if (isAlreadyMember) {
+      setInviteError("이미 가게에 소속된 멤버는 초대할 수 없습니다.");
+      setSendingInvite(false);
+      return;
+    }
+
+    if (hasPendingInviteForCurrentTarget) {
+      setInviteError("이미 대기 중인 초대가 있습니다.");
+      setSendingInvite(false);
+      return;
     }
 
     try {
@@ -347,6 +470,7 @@ export default function MerchantDashboard({ publicStoreId }) {
   };
 
   const handleRevokeInvitation = async (invitationId) => {
+    if (!canRevokeInvitations) return;
     if (!window.confirm("정말 이 초대를 취소하시겠습니까?")) return;
     try {
       await apiJson(`/merchant/invitations/${invitationId}/revoke`, {
@@ -359,6 +483,7 @@ export default function MerchantDashboard({ publicStoreId }) {
   };
 
   const handleRemoveMember = async (userId) => {
+    if (!canManageMembers) return;
     if (userId === currentUser?.userId) {
       alert("본인을 상점 멤버에서 내보낼 수 없습니다.");
       return;
@@ -409,9 +534,27 @@ export default function MerchantDashboard({ publicStoreId }) {
         
         {/* Dashboard Title Header */}
         <div className="mb-8 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
-            {store.displayName} 대시보드
-          </h1>
+          <div className="flex flex-col gap-2">
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
+              {store.displayName} 대시보드
+            </h1>
+            {merchantStores.length > 1 && (
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-slate-500 font-bold">관리 상점 전환:</span>
+                <select
+                  value={publicStoreId}
+                  onChange={(e) => router.push(`/merchant/stores/${e.target.value}`)}
+                  className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-extrabold text-slate-800 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 cursor-pointer shadow-sm"
+                >
+                  {merchantStores.map((s) => (
+                    <option key={s.publicStoreId} value={s.publicStoreId}>
+                      {s.displayName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
           <Link 
             href={`/stores/${publicStoreId}`}
             className="inline-flex items-center gap-1 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200/80 px-3.5 py-2 rounded-xl transition shadow-sm"
@@ -461,6 +604,9 @@ export default function MerchantDashboard({ publicStoreId }) {
                 {storeError}
               </div>
             )}
+            {!canWriteStore && (
+              <PermissionNotice message="상점 설정을 수정할 권한이 없어 입력과 저장 버튼이 비활성화되었습니다." />
+            )}
 
             <div className="grid gap-6 md:grid-cols-2">
               {/* Store Profile details box */}
@@ -477,6 +623,7 @@ export default function MerchantDashboard({ publicStoreId }) {
                     value={displayName}
                     onChange={(e) => setDisplayName(e.target.value)}
                     required
+                    disabled={!canWriteStore}
                     className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                     placeholder="상점 노출 이름을 입력하세요"
                   />
@@ -488,6 +635,7 @@ export default function MerchantDashboard({ publicStoreId }) {
                     rows={4}
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
+                    disabled={!canWriteStore}
                     className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 resize-none"
                     placeholder="상점 소개글을 상세하게 적어보세요"
                   />
@@ -515,6 +663,7 @@ export default function MerchantDashboard({ publicStoreId }) {
                           key={chain.id}
                           type="button"
                           onClick={() => handleToggleChain(chain.id)}
+                          disabled={!canWriteStore}
                           className={`w-full flex items-center justify-between rounded-xl border p-3.5 text-left transition active:scale-[0.99] ${
                             active 
                               ? "border-blue-600 bg-blue-50/50 text-blue-900 font-bold" 
@@ -548,6 +697,7 @@ export default function MerchantDashboard({ publicStoreId }) {
                           key={token.id}
                           type="button"
                           onClick={() => handleToggleAsset(token.id)}
+                          disabled={!canWriteStore}
                           className={`flex flex-col items-center justify-center rounded-xl border p-3 text-center transition active:scale-[0.99] ${
                             active 
                               ? "border-emerald-600 bg-emerald-50/50 text-emerald-900 font-bold" 
@@ -573,7 +723,7 @@ export default function MerchantDashboard({ publicStoreId }) {
             <div className="flex justify-end pt-2">
               <button
                 type="submit"
-                disabled={savingStore}
+                disabled={!canWriteStore || savingStore}
                 className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 disabled:opacity-50 px-6 py-3.5 text-xs font-bold text-white transition shadow-lg shadow-blue-100"
               >
                 {savingStore ? (
@@ -597,6 +747,7 @@ export default function MerchantDashboard({ publicStoreId }) {
               </div>
               <button
                 onClick={() => openProductModal(null)}
+                disabled={!canWriteProducts}
                 className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-95 px-4 py-3 text-xs font-bold text-white transition shadow-md"
               >
                 <Plus size={16} />
@@ -604,7 +755,9 @@ export default function MerchantDashboard({ publicStoreId }) {
               </button>
             </div>
 
-            {products.length === 0 ? (
+            {productsReadBlocked ? (
+              <PermissionNotice message="상품 목록을 볼 수 있는 권한이 없습니다." />
+            ) : products.length === 0 ? (
               <div className="text-center py-20 bg-white rounded-2xl border border-slate-200 shadow-sm">
                 <p className="text-sm font-semibold text-slate-500">등록된 상품이 없습니다.</p>
               </div>
@@ -612,7 +765,7 @@ export default function MerchantDashboard({ publicStoreId }) {
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {products.map(product => (
                   <div key={product.publicProductId} className="flex flex-col bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition">
-                    <div className="relative aspect-video bg-slate-50 border-b border-slate-100">
+                    <div className="relative aspect-square overflow-hidden bg-slate-50 border-b border-slate-100">
                       <img
                         src={productImageFromMedia(product.media, 500)}
                         alt={product.title}
@@ -652,6 +805,7 @@ export default function MerchantDashboard({ publicStoreId }) {
                         </span>
                         <button
                           onClick={() => openProductModal(product)}
+                          disabled={!canWriteProducts}
                           className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-600 hover:text-blue-700 transition"
                         >
                           <Edit3 size={12} />
@@ -668,6 +822,11 @@ export default function MerchantDashboard({ publicStoreId }) {
 
         {/* Tab content: Members & Invitations Management */}
         {activeTab === "members" && (
+          membersReadBlocked ? (
+            <section className="space-y-6">
+              <PermissionNotice message="소속 스태프 목록과 초대 내역을 볼 수 있는 권한이 없습니다." />
+            </section>
+          ) : (
           <section className="grid gap-6 md:grid-cols-3">
             {/* Invite Staff Box Form */}
             <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-4 md:col-span-1 h-fit">
@@ -681,6 +840,16 @@ export default function MerchantDashboard({ publicStoreId }) {
                 {inviteError && (
                   <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-xl text-[10px] font-semibold">
                     {inviteError}
+                  </div>
+                )}
+                {hasPendingInviteForCurrentTarget && (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[10px] font-semibold text-amber-800">
+                    이미 대기 중인 초대가 있습니다.
+                  </div>
+                )}
+                {!canInviteMembers && (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-[10px] font-semibold text-slate-500">
+                    직원 초대 권한이 없어 초대장 발송이 비활성화되었습니다.
                   </div>
                 )}
                 <div className="space-y-1">
@@ -709,6 +878,7 @@ export default function MerchantDashboard({ publicStoreId }) {
                     id="invite-role"
                     value={inviteRole}
                     onChange={(e) => setInviteRole(e.target.value)}
+                    disabled={!canInviteMembers}
                     className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs outline-none bg-white"
                   >
                     <option value="MERCHANT_STAFF">스태프 (STAFF)</option>
@@ -717,7 +887,7 @@ export default function MerchantDashboard({ publicStoreId }) {
                 </div>
                 <button
                   type="submit"
-                  disabled={sendingInvite}
+                  disabled={!canInviteMembers || sendingInvite || hasPendingInviteForCurrentTarget || !internalStoreId}
                   className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-95 disabled:opacity-50 py-3 text-xs font-bold text-white transition"
                 >
                   {sendingInvite && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
@@ -731,12 +901,12 @@ export default function MerchantDashboard({ publicStoreId }) {
               {/* Active Members */}
               <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 {(() => {
-                  const staffMembers = members.filter(member => member.role !== "OWNER" && member.role !== "MERCHANT_OWNER");
+                  const staffMembers = members;
                   return (
                     <>
-                      <h3 className="text-sm font-bold text-slate-900 border-b pb-3 mb-4">소속 스태프 목록 ({staffMembers.length})</h3>
+                      <h3 className="text-sm font-bold text-slate-900 border-b pb-3 mb-4">소속 멤버 목록 ({staffMembers.length})</h3>
                       {staffMembers.length === 0 ? (
-                        <p className="text-xs text-slate-400 py-6 text-center">등록된 스태프가 없습니다.</p>
+                        <p className="text-xs text-slate-400 py-6 text-center">등록된 멤버가 없습니다.</p>
                       ) : (
                         <div className="divide-y divide-slate-100 font-medium">
                           {staffMembers.map(member => (
@@ -747,15 +917,22 @@ export default function MerchantDashboard({ publicStoreId }) {
                               </div>
                               <div className="flex items-center gap-3">
                                 <span className={`text-[10px] font-bold border rounded-md px-2 py-0.5 ${
-                                  (member.role === "ADMIN" || member.role === "MANAGER")
+                                  (member.roleId === "MERCHANT_OWNER" || member.roleId === "OWNER")
+                                    ? "text-purple-700 bg-purple-50 border-purple-100"
+                                    : (member.roleId === "MERCHANT_ADMIN" || member.roleId === "MERCHANT_MANAGER" || member.roleId === "ADMIN" || member.roleId === "MANAGER")
                                     ? "text-blue-700 bg-blue-50 border-blue-100"
                                     : "text-slate-600 bg-slate-50 border-slate-200"
                                 }`}>
-                                  {(member.role === "ADMIN" || member.role === "MANAGER") ? "관리자" : "스태프"}
+                                  {(member.roleId === "MERCHANT_OWNER" || member.roleId === "OWNER")
+                                    ? "소유주"
+                                    : (member.roleId === "MERCHANT_ADMIN" || member.roleId === "MERCHANT_MANAGER" || member.roleId === "ADMIN" || member.roleId === "MANAGER")
+                                    ? "관리자"
+                                    : "스태프"}
                                 </span>
-                                {member.userId !== currentUser?.userId && (
+                                {member.userId !== currentUser?.userId && member.roleId !== "MERCHANT_OWNER" && member.roleId !== "OWNER" && (
                                   <button
                                     onClick={() => handleRemoveMember(member.userId)}
+                                    disabled={!canManageMembers}
                                     className="text-slate-400 hover:text-red-600 transition"
                                     title="직원 삭제"
                                   >
@@ -795,6 +972,7 @@ export default function MerchantDashboard({ publicStoreId }) {
                           </span>
                           <button
                             onClick={() => handleRevokeInvitation(invite.invitationId)}
+                            disabled={!canRevokeInvitations}
                             className="text-slate-400 hover:text-red-600 transition"
                             title="초대 취소"
                           >
@@ -808,6 +986,7 @@ export default function MerchantDashboard({ publicStoreId }) {
               </div>
             </div>
           </section>
+          )
         )}
 
       </main>
@@ -843,6 +1022,7 @@ export default function MerchantDashboard({ publicStoreId }) {
                   required
                   value={productTitle}
                   onChange={(e) => setProductTitle(e.target.value)}
+                  disabled={!canWriteProducts}
                   className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs outline-none focus:border-blue-500"
                   placeholder="예: 크립토 후드티"
                 />
@@ -854,6 +1034,7 @@ export default function MerchantDashboard({ publicStoreId }) {
                   rows={3}
                   value={productDesc}
                   onChange={(e) => setProductDesc(e.target.value)}
+                  disabled={!canWriteProducts}
                   className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs outline-none focus:border-blue-500 resize-none"
                   placeholder="상품에 대한 상세 설명을 적어보세요"
                 />
@@ -865,6 +1046,7 @@ export default function MerchantDashboard({ publicStoreId }) {
                   <select
                     value={productCategory}
                     onChange={(e) => setProductCategory(e.target.value)}
+                    disabled={!canWriteProducts}
                     className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs outline-none bg-white"
                   >
                     <option value="fashion">패션 / 의류 (Fashion)</option>
@@ -897,6 +1079,7 @@ export default function MerchantDashboard({ publicStoreId }) {
                     required
                     value={productStock}
                     onChange={(e) => setProductStock(e.target.value)}
+                    disabled={!canWriteProducts}
                     className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs outline-none focus:border-blue-500"
                   />
                 </div>
@@ -912,6 +1095,7 @@ export default function MerchantDashboard({ publicStoreId }) {
                     required
                     value={productPrice}
                     onChange={(e) => setProductPrice(e.target.value)}
+                    disabled={!canWriteProducts}
                     className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs outline-none focus:border-blue-500"
                   />
                 </div>
@@ -950,6 +1134,7 @@ export default function MerchantDashboard({ publicStoreId }) {
                         <button
                           type="button"
                           onClick={() => handleRemoveMediaUrl(idx)}
+                          disabled={!canWriteProducts}
                           className="p-1 bg-red-600 hover:bg-red-700 text-white rounded-full transition shadow-sm transform scale-90 group-hover:scale-100 duration-200"
                         >
                           <X className="w-3 h-3" />
@@ -973,6 +1158,7 @@ export default function MerchantDashboard({ publicStoreId }) {
                       type="text"
                       value={tempMediaUrl}
                       onChange={(e) => setTempMediaUrl(e.target.value)}
+                      disabled={!canWriteProducts}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
                           e.preventDefault();
@@ -985,6 +1171,7 @@ export default function MerchantDashboard({ publicStoreId }) {
                     <button
                       type="button"
                       onClick={handleAddMediaUrl}
+                      disabled={!canWriteProducts}
                       className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl transition shadow-sm flex items-center shrink-0"
                     >
                       <Plus className="w-3.5 h-3.5 mr-0.5" />
@@ -1000,6 +1187,7 @@ export default function MerchantDashboard({ publicStoreId }) {
                       multiple
                       accept="image/*"
                       onChange={handleLocalImageUpload}
+                      disabled={!canWriteProducts}
                       className="hidden"
                     />
                   </label>
@@ -1012,6 +1200,7 @@ export default function MerchantDashboard({ publicStoreId }) {
                   <select
                     value={productVisibility}
                     onChange={(e) => setProductVisibility(e.target.value)}
+                    disabled={!canWriteProducts}
                     className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs outline-none bg-white"
                   >
                     <option value="VISIBLE">노출 (VISIBLE)</option>
@@ -1023,6 +1212,7 @@ export default function MerchantDashboard({ publicStoreId }) {
                   <select
                     value={productStatus}
                     onChange={(e) => setProductStatus(e.target.value)}
+                    disabled={!canWriteProducts}
                     className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs outline-none bg-white"
                   >
                     <option value="ACTIVE">판매중 (ACTIVE)</option>
@@ -1041,7 +1231,7 @@ export default function MerchantDashboard({ publicStoreId }) {
                 </button>
                 <button
                   type="submit"
-                  disabled={savingProduct}
+                  disabled={!canWriteProducts || savingProduct}
                   className="inline-flex items-center gap-1 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 disabled:opacity-50 px-5 py-2.5 text-xs font-bold text-white transition shadow-md shadow-blue-100"
                 >
                   {savingProduct && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
@@ -1053,6 +1243,20 @@ export default function MerchantDashboard({ publicStoreId }) {
         </div>
       )}
 
+    </div>
+  );
+}
+
+function PermissionNotice({ message }) {
+  return (
+    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-900 shadow-sm">
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+        <div>
+          <p className="font-bold">권한이 없습니다</p>
+          <p className="mt-1 text-xs font-semibold leading-relaxed text-amber-800">{message}</p>
+        </div>
+      </div>
     </div>
   );
 }

@@ -26,6 +26,7 @@ from token_payments.contexts.auth.application import (
     OAuthIdentityResult,
     OAuthSessionResult,
     RefreshSessionCommand,
+    SwitchSessionCommand,
     RequestOAuthAuthorizationCommand,
     RequestLoginChallengeCommand,
     RequestWalletLinkChallengeCommand,
@@ -38,7 +39,7 @@ from token_payments.contexts.auth.application import (
     WalletsResult,
 )
 from token_payments.contexts.auth.application.siwe import SIWE_VERSION
-from token_payments.contexts.auth.domain import AuthSession, OAuthIdentity, OAuthIdentityId, RefreshTokenHash, SessionId, User, UserProfile
+from token_payments.contexts.auth.domain import AuthSession, GroupId, OAuthIdentity, OAuthIdentityId, RefreshTokenHash, SessionId, User, UserProfile
 from token_payments.contexts.auth.domain.wallet import WalletId
 from token_payments.shared.domain import UserId
 
@@ -247,15 +248,35 @@ class AuthApi:
     def refresh_session(self, request: ApiRequest) -> ApiResponse:
         try:
             body = _optional_request_body(request)
+            active_group_id = None
+            if request.auth_context is not None and request.auth_context.active_group_id:
+                active_group_id = GroupId(request.auth_context.active_group_id)
             result = self._use_case.refreshSession(
                 RefreshSessionCommand(
                     session_id=SessionId(_session_id_from_request(request, body)),
                     refresh_token_hash=_refresh_token_hash_from_body(_refresh_hash_mapping_from_request(request, body)),
+                    active_group_id=active_group_id,
                 )
             )
             return json_response(_login_payload(result), status_code=200, request_id=request.request_id)
         except (AuthApplicationError, ValueError) as exc:
             return _error_response(_coerce_auth_error(exc), request.request_id)
+
+    def switch_session(self, request: ApiRequest) -> ApiResponse:
+        try:
+            body = _request_body(request)
+            target_group_id = _required_text(body, "activeGroupId")
+            result = self._use_case.switchSession(
+                SwitchSessionCommand(
+                    session_id=SessionId(_session_id_from_request(request, body)),
+                    refresh_token_hash=_refresh_token_hash_from_body(_refresh_hash_mapping_from_request(request, body)),
+                    active_group_id=GroupId(target_group_id),
+                )
+            )
+            return json_response(_login_payload(result), status_code=200, request_id=request.request_id)
+        except (AuthApplicationError, ValueError) as exc:
+            return _error_response(_coerce_auth_error(exc), request.request_id)
+
 
     def logout(self, request: ApiRequest) -> ApiResponse:
         try:
@@ -281,7 +302,11 @@ class AuthApi:
                     request.request_id,
                     status_code=404,
                 )
-            return json_response({"user": _user_payload(user)}, status_code=200, request_id=request.request_id)
+            return json_response(
+                {"user": _user_payload(user, auth_context=request.auth_context)},
+                status_code=200,
+                request_id=request.request_id,
+            )
         except (AuthApplicationError, ValueError) as exc:
             return _error_response(_coerce_auth_error(exc), request.request_id)
 
@@ -471,13 +496,31 @@ def _oauth_identity_payload(identity: OAuthIdentity) -> dict[str, Any]:
     }
 
 
-def _user_payload(user: User) -> dict[str, Any]:
-    return {
+def _user_payload(user: User, *, auth_context: Any | None = None) -> dict[str, Any]:
+    payload = {
         "userId": str(user.user_id),
         "walletAddress": user.primary_wallet,
         "active": user.active,
         "lastLoginAt": user.last_login_at.isoformat() if user.last_login_at is not None else None,
     }
+    if auth_context is not None:
+        payload["scopes"] = list(auth_context.scopes)
+        payload["groupMemberships"] = [
+            _auth_context_group_membership_payload(membership) for membership in auth_context.group_memberships
+        ]
+        payload["activeGroupId"] = auth_context.active_group_id
+    return payload
+
+
+def _auth_context_group_membership_payload(membership: Mapping[str, Any]) -> dict[str, Any]:
+    payload = dict(membership)
+    resource_id = payload.get("resourceId")
+    if resource_id is not None:
+        raw_resource_id = getattr(resource_id, "value", resource_id)
+        if isinstance(raw_resource_id, Mapping) and "value" in raw_resource_id:
+            raw_resource_id = raw_resource_id["value"]
+        payload["resourceId"] = str(raw_resource_id)
+    return payload
 
 
 def _session_payload(session: AuthSession) -> dict[str, Any]:
