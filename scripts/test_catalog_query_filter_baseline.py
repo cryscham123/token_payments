@@ -79,7 +79,7 @@ def test_public_store_and_product_reads_use_public_ids_and_redact_internal_ids()
     assert [product["publicProductId"] for product in list_payload["products"]] == [str(PUBLIC_PRODUCT_ID)]
     listed_product = list_payload["products"][0]
     assert listed_product["title"] == "Ledger Mug"
-    assert listed_product["displayPrice"]["symbol"] == "USDC"
+    assert listed_product["displayPrice"]["currency"] == "USD"
     assert listed_product["displayPrice"]["amount"] == "10.00"
     assert listed_product["displayPrice"]["priceLabel"] == "from"
     assert listed_product["availability"]["availableStock"] == 11

@@ -9,6 +9,7 @@ from typing import Any, Mapping
 
 from token_payments.contexts.auth.domain.wallet import UserWallet, WalletId
 from token_payments.contexts.order.domain import (
+    Address,
     Customer,
     Order,
     OrderCancelledEvent,
@@ -25,16 +26,23 @@ from token_payments.shared.domain import (
     CommandId,
     Crypto,
     EventMetadata,
+    ExchangeRate,
     IdempotencyDecision,
+    MessageId,
+    Money,
     OrderId,
     OutboxMessage,
+    PaymentId,
+    PriceConversion,
     ProcessedCommand,
     ProcessedMessage,
     ProductId,
+    StoreId,
+    UserId,
+    WalletAddress,
 )
-from token_payments.shared.domain import MessageId, PaymentId
 
-from .commands import CancelOrderCommand, CreateOrderCommand
+from .commands import CancelOrderCommand, CreateOrderCommand, CreateOrderItem
 from .ports import (
     CustomerRepository,
     OrderCreationResult,
@@ -173,6 +181,7 @@ class OrderApplicationService:
         outbox_messages: OutboxMessageRepository,
         wallets: Any | None = None,
         payment_assets: PaymentAssetRegistry | None = None,
+        exchange_rate: ExchangeRate | None = None,
     ) -> None:
         self._customers = customers
         self._stores = stores
@@ -180,6 +189,7 @@ class OrderApplicationService:
         self._outbox_messages = outbox_messages
         self._wallets = wallets
         self._payment_assets = payment_assets
+        self._exchange_rate = exchange_rate
 
     def createOrder(self, command: CreateOrderCommand) -> OrderCreationResult:
         customer = self._customers.get_by_user_id(command.authenticated_user_id)
@@ -198,11 +208,17 @@ class OrderApplicationService:
 
         try:
             selected_asset = _selected_asset(self._payment_assets, command.payment_asset_id)
-            # Inject asset_prices into products so price_for_asset can resolve
-            # ERC20 payment assets. The order DB adapter does not store per-asset
-            # prices, so we derive them at order-creation time from the registry.
-            if selected_asset is not None:
-                store = _store_with_asset_prices(store, selected_asset)
+            is_modern_pricing = (
+                self._exchange_rate is not None
+                and len(store.products) > 0
+                and isinstance(store.products[0].price, Money)
+            )
+            if is_modern_pricing:
+                conversion = self._price_conversion(store, selected_asset)
+            else:
+                conversion = command.payment_asset_id
+                if selected_asset is not None:
+                    store = _store_with_asset_prices(store, selected_asset)
             selected_wallet = self._resolve_wallet(command, selected_asset)
             order = Order.initialize_order(
                 order_id=command.order_id,
@@ -212,7 +228,7 @@ class OrderApplicationService:
                 item_requests=command.items,
                 created_at=command.requested_at,
                 tracking_id=command.tracking_id,
-                payment_asset_id=command.payment_asset_id,
+                conversion=conversion,
             )
             total_amount = _total_amount(order.items)
             if selected_asset is not None:
@@ -227,6 +243,24 @@ class OrderApplicationService:
         self._orders.save(order)
         self._outbox_messages.save(outbox_message)
         return OrderCreationResult(order=order, total_amount=total_amount, outbox_message=outbox_message)
+
+    def _price_conversion(self, store: Store, selected_asset: PaymentAsset | None) -> PriceConversion:
+        if selected_asset is None:
+            raise ValueError("a payment asset must be selected to price the order")
+        if store.supported_payment_asset_ids and selected_asset.asset_id not in store.supported_payment_asset_ids:
+            raise ValueError(
+                f"payment asset {selected_asset.asset_id} is not supported by store {store.store_id}"
+            )
+        if self._exchange_rate is None:
+            raise ValueError("an exchange rate is required to price the order")
+        return PriceConversion(
+            rate=self._exchange_rate,
+            asset_id=selected_asset.asset_id,
+            symbol=selected_asset.symbol,
+            chain_id=selected_asset.chain_id,
+            token_address=selected_asset.contract_address,
+            decimals=selected_asset.decimals,
+        )
 
     def _resolve_wallet(self, command: CreateOrderCommand, selected_asset: PaymentAsset | None) -> UserWallet | None:
         if command.wallet_id is None and selected_asset is None:
@@ -668,63 +702,6 @@ def _chain_payload(value: Crypto) -> dict[str, Any]:
     return {"chainId": value.chain_id, "name": f"chain-{value.chain_id}"}
 
 
-def _store_with_asset_prices(store: Store, asset: PaymentAsset) -> Store:
-    """Return a copy of *store* whose products carry *asset_prices* for the selected asset.
-
-    The order-context DB adapter does not persist per-asset price mappings.
-    When a buyer selects an ERC-20 payment asset (e.g. ``local-usdc``), the
-    domain ``Product.price_for_asset`` needs an ``asset_prices`` entry to
-    resolve the price.  We derive it here from the product's base price
-    amount and the asset's on-chain metadata (symbol, decimals,
-    contract_address, chain_id).
-
-    If the store has configured ``supported_payment_asset_ids``, the selected
-    asset must be in that list; otherwise the request is rejected early.
-    """
-    if store.supported_payment_asset_ids and asset.asset_id not in store.supported_payment_asset_ids:
-        raise ValueError(f"payment asset {asset.asset_id} is not supported by store {store.store_id}")
-    enriched_products: list[Product] = []
-    for product in store.products:
-        existing = dict(product.asset_prices) if product.asset_prices else {}
-        if asset.asset_id not in existing:
-            existing[asset.asset_id] = asset.crypto(product.price.amount)
-        # Variant / add-on price deltas are stored in the product's base price asset only.
-        # Re-express them in the selected asset (same numeric amount, like the base price)
-        # so price_for_selection can add base + delta without an asset-mismatch error.
-        variants = _variants_for_asset(product.variants, asset)
-        option_values = _option_values_for_asset(product.option_values, asset)
-        enriched_products.append(
-            replace(product, asset_prices=existing, variants=variants, option_values=option_values)
-        )
-    return replace(store, products=tuple(enriched_products))
-
-
-def _variants_for_asset(
-    variants: Mapping[str, ProductVariantPrice] | None,
-    asset: PaymentAsset,
-) -> Mapping[str, ProductVariantPrice] | None:
-    if not variants:
-        return variants
-    return {
-        variant_id: replace(variant, price_delta=asset.crypto(variant.price_delta.amount))
-        for variant_id, variant in variants.items()
-    }
-
-
-def _option_values_for_asset(
-    option_values: Mapping[str, ProductOptionValuePrice] | None,
-    asset: PaymentAsset,
-) -> Mapping[str, ProductOptionValuePrice] | None:
-    if not option_values:
-        return option_values
-    return {
-        key: (
-            value
-            if value.price_delta is None
-            else replace(value, price_delta=asset.crypto(value.price_delta.amount))
-        )
-        for key, value in option_values.items()
-    }
 
 
 def _selected_asset(registry: PaymentAssetRegistry | None, payment_asset_id: str | None) -> PaymentAsset | None:
@@ -778,3 +755,47 @@ def _require_text(value: str, field_name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field_name} must be a non-empty string")
     return value.strip()
+
+
+def _store_with_asset_prices(store: Store, asset: PaymentAsset) -> Store:
+    if store.supported_payment_asset_ids and asset.asset_id not in store.supported_payment_asset_ids:
+        raise ValueError(f"payment asset {asset.asset_id} is not supported by store {store.store_id}")
+    enriched_products: list[Product] = []
+    for product in store.products:
+        existing = dict(product.asset_prices) if product.asset_prices else {}
+        if asset.asset_id not in existing:
+            existing[asset.asset_id] = asset.crypto(product.price.amount) if isinstance(product.price, Money) else asset.crypto(product.price.amount)
+        variants = _variants_for_asset(product.variants, asset)
+        option_values = _option_values_for_asset(product.option_values, asset)
+        enriched_products.append(
+            replace(product, asset_prices=existing, variants=variants, option_values=option_values)
+        )
+    return replace(store, products=tuple(enriched_products))
+
+
+def _variants_for_asset(
+    variants: Mapping[str, ProductVariantPrice] | None,
+    asset: PaymentAsset,
+) -> Mapping[str, ProductVariantPrice] | None:
+    if not variants:
+        return variants
+    return {
+        variant_id: replace(variant, price_delta=asset.crypto(variant.price_delta.amount))
+        for variant_id, variant in variants.items()
+    }
+
+
+def _option_values_for_asset(
+    option_values: Mapping[str, ProductOptionValuePrice] | None,
+    asset: PaymentAsset,
+) -> Mapping[str, ProductOptionValuePrice] | None:
+    if not option_values:
+        return option_values
+    return {
+        key: (
+            value
+            if value.price_delta is None
+            else replace(value, price_delta=asset.crypto(value.price_delta.amount))
+        )
+        for key, value in option_values.items()
+    }

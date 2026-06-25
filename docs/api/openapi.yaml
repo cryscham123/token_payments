@@ -4655,6 +4655,78 @@ paths:
       - status: 403
         codes:
         - MERCHANT_MEMBER_FORBIDDEN
+  /merchant/users/search:
+    get:
+      summary: Search merchant users
+      description: Search merchant users by displayName or walletAddress.
+      tags:
+      - rbac
+      operationId: searchMerchantUsers
+      responses:
+        '200':
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JsonObject'
+              example:
+                users:
+                - userId: 11111111-1111-1111-8111-111111111111
+                  displayName: Demo User
+                  walletAddress: "0x1111111111111111111111111111111111111111"
+        '400':
+          description: 'Validation error. Possible error codes: VALIDATION_ERROR.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: VALIDATION_ERROR
+                  message: Query is too short
+                  status: 400
+        '401':
+          description: 'Authentication is missing, invalid, expired, or required for the requested operation. Possible error codes: AUTHENTICATION_REQUIRED.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: AUTHENTICATION_REQUIRED
+                  message: Authentication is missing
+                  status: 401
+        '403':
+          description: 'Authenticated actor lacks permission, scoped membership, or required CSRF validation. Possible error codes: MERCHANT_MEMBER_FORBIDDEN.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: MERCHANT_MEMBER_FORBIDDEN
+                  message: Scoped merchant group membership is required
+                  status: 403
+      parameters:
+      - $ref: '#/components/parameters/XRequestIdHeader'
+      - name: query
+        in: query
+        required: true
+        schema:
+          type: string
+        description: Search query
+      - $ref: '#/components/parameters/LocalUserIdHeader'
+      - $ref: '#/components/parameters/LocalScopesHeader'
+      x-errorCodes:
+      - status: 400
+        codes:
+        - VALIDATION_ERROR
+      - status: 401
+        codes:
+        - AUTHENTICATION_REQUIRED
+      - status: 403
+        codes:
+        - MERCHANT_MEMBER_FORBIDDEN
   /operator/dashboard:
     get:
       summary: Get operator dashboard

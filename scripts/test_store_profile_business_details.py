@@ -243,6 +243,7 @@ def test_list_merchant_stores_returns_public_ids_without_internal_store_ids() ->
             "descriptionHtml": "Wallet-safe checkout store",
             "status": "ACTIVE",
             "supportEmail": "support@example.com",
+            "role": "OWNER",
         }
     ]
     assert "storeId" not in payload["stores"][0]

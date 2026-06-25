@@ -20,15 +20,17 @@ class ApprovalStatus(StrEnum):
 class Product:
     product_id: ProductId
     name: str
-    price: Crypto
+    # Order snapshots carry the charged on-chain unit price; the catalog read-model projection
+    # does not project price (it is not used for approval), so price is optional.
+    price: Crypto | None = None
     available: bool = True
 
     def __post_init__(self) -> None:
         if not isinstance(self.product_id, ProductId):
             raise ValueError("Product.product_id must be a ProductId")
         object.__setattr__(self, "name", _require_text(self.name, "Product.name"))
-        if not isinstance(self.price, Crypto):
-            raise ValueError("Product.price must be a Crypto value")
+        if self.price is not None and not isinstance(self.price, Crypto):
+            raise ValueError("Product.price must be a Crypto value or None")
         if not isinstance(self.available, bool):
             raise ValueError("Product.available must be a bool")
 

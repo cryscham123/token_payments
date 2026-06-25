@@ -293,7 +293,8 @@ def test_nginx_routes_frontend_root_and_api_paths_separately() -> None:
 
     assert "upstream token_payments_web" in config
     assert "server token_payments_web:3000;" in config
-    assert "location ~ ^/(auth|checkouts?|payments|stores|merchant|admin|operator|healthz|readyz)(/|$)" in config
+    assert "location ~ ^/(auth|checkouts?|payments|stores|admin|operator|healthz|readyz)(/|$)" in config
+    assert "location ~ ^/merchant(/|$)" in config
     assert "location ~ ^/orders(/|$)" in config
     assert "proxy_pass http://token_payments_api;" in config
     assert "proxy_pass http://token_payments_web;" in config

@@ -1,6 +1,6 @@
 # 전체 Route Summary
 
-이 페이지는 `app/token_payments/api/http.py`의 현재 public HTTP route manifest 57개를 GitBook에서 검색하기 위한 전체 표다. 요청/응답/오류/권한은 각 도메인별 페이지를 기준으로 한다.
+이 페이지는 `app/token_payments/api/http.py`의 현재 public HTTP route manifest 58개를 GitBook에서 검색하기 위한 전체 표다. 요청/응답/오류/권한은 각 도메인별 페이지를 기준으로 한다.
 
 | Operation ID | Route | 영역 |
 | --- | --- | --- |
@@ -54,6 +54,7 @@
 | `updateMerchantStoreMemberRole` | `PATCH /merchant/stores/{storeId}/members/{userId}` | RBAC |
 | `removeMerchantStoreMember` | `DELETE /merchant/stores/{storeId}/members/{userId}` | RBAC |
 | `getMerchantRoleCatalog` | `GET /merchant/role-catalog` | RBAC |
+| `searchMerchantUsers` | `GET /merchant/users/search` | RBAC |
 | `getOperatorDashboard` | `GET /operator/dashboard` | 운영자 |
 | `getOperatorOrderDetail` | `GET /operator/orders/{orderId}` | 운영자 |
 | `getOperatorPaymentDetail` | `GET /operator/payments/{paymentId}` | 운영자 |

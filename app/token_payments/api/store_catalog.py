@@ -18,7 +18,7 @@ from token_payments.contexts.store_catalog.application.commands import (
 )
 from token_payments.contexts.store_catalog.application.ports import StoreCatalogCommandStatus
 from token_payments.contexts.store_catalog.domain import ProductStatus, ProductVisibility, PublicProductId, PublicStoreId, StoreMembershipRole
-from token_payments.shared.domain import CommandId, Crypto, ProductId, StoreId, UserId, WalletAddress
+from token_payments.shared.domain import CommandId, Money, ProductId, StoreId, UserId, WalletAddress
 
 from .contracts import ApiRequest, ApiResponse, json_response
 from .idempotency import IdempotencyKeyConflict, idempotency_conflict_response, idempotency_key_from_request
@@ -490,20 +490,17 @@ def _idempotency_payload(request: ApiRequest, body: Mapping[str, Any], actor_use
     }
 
 
-def _price(body: Mapping[str, Any]) -> Crypto:
+def _price(body: Mapping[str, Any]) -> Money:
     raw = body.get("price")
     if not isinstance(raw, Mapping):
         raise ValueError("price must be an object")
-    return Crypto(
+    return Money(
         amount=_required_text(raw, "amount"),
-        symbol=_required_text(raw, "symbol"),
-        chain_id=_required_int(raw, "chainId"),
-        token_address=_optional_text(raw, "tokenAddress"),
-        decimals=_required_int(raw, "decimals"),
+        currency=_optional_text(raw, "currency") or "USD",
     )
 
 
-def _optional_price(body: Mapping[str, Any]) -> Crypto | None:
+def _optional_price(body: Mapping[str, Any]) -> Money | None:
     if "price" not in body:
         return None
     return _price(body)

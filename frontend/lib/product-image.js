@@ -16,13 +16,13 @@ export const PRODUCT_IMAGE_PLACEHOLDER = `data:image/svg+xml,${encodeURIComponen
 
 function resolveMediaRef(ref) {
   if (!ref) return "";
-  if (/^https?:\/\//.test(ref)) return ref;
+  if (/^https?:\/\//.test(ref) || /^data:image\//.test(ref)) return ref;
   return getS3Url(ref) || "";
 }
 
 // Pick the first image-like entry from a product's media array and resolve it to a servable URL.
 export function productImageFromMedia(media = []) {
-  const imageFile = (media || []).find((file) => /\.(png|jpe?g|webp|gif)$/i.test(file)) || (media || [])[0];
+  const imageFile = (media || []).find((file) => /^data:image\//.test(file) || /\.(png|jpe?g|webp|gif)$/i.test(file)) || (media || [])[0];
   return resolveMediaRef(imageFile) || PRODUCT_IMAGE_PLACEHOLDER;
 }
 

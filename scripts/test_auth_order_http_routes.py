@@ -65,6 +65,7 @@ from token_payments.shared.domain import (  # noqa: E402
 NOW = datetime(2026, 5, 10, 7, 0, tzinfo=UTC)
 WALLET = "0xABCDabcdABCDabcdABCDabcdABCDabcdABCDabcd"
 NORMALIZED_WALLET = "0xabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd"
+CHECKSUM_WALLET = "0xABCDabcdABcDabcDaBCDAbcdABcdAbCdABcDABCd"
 USER_ID = "018f33aa-9e6d-73d8-9dc3-47d6cdcc6c21"
 SESSION_ID = "018f33aa-9e6d-73d8-9dc3-47d6cdcc6c22"
 ORDER_ID = OrderId("018f33aa-9e6d-73d8-9dc3-47d6cdcc6c23")
@@ -169,7 +170,7 @@ def test_auth_http_routes_call_existing_auth_facade_methods() -> None:
             "smartWalletStandard": "ERC-1271",
             "supportedWalletTypes": ["EOA", "DEPLOYED_SMART_WALLET"],
         },
-        "walletAddress": NORMALIZED_WALLET,
+        "walletAddress": CHECKSUM_WALLET,
     }
     assert isinstance(use_case.calls[-1], RequestLoginChallengeCommand)
     assert use_case.calls[-1].wallet_address == WALLET

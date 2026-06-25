@@ -351,6 +351,8 @@ class GroupMembership:
     role_id: RoleId | str
     active: bool = True
     joined_at: datetime | None = None
+    display_name: str | None = None
+    wallet_address: WalletAddress | str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.user_id, UserId):
@@ -367,6 +369,10 @@ class GroupMembership:
                 "joined_at",
                 _require_aware_datetime(self.joined_at, "GroupMembership.joined_at"),
             )
+        if self.display_name is not None and not isinstance(self.display_name, str):
+            raise ValueError("GroupMembership.display_name must be a str")
+        if self.wallet_address is not None and not isinstance(self.wallet_address, (WalletAddress, str)):
+            raise ValueError("GroupMembership.wallet_address must be a WalletAddress or str")
 
 
 @dataclass(frozen=True)
@@ -380,6 +386,7 @@ class GroupInvitation:
     target_user_id: UserId | None = None
     target_wallet: WalletAddress | str | None = None
     expires_at: datetime | None = None
+    target_display_name: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.invitation_id, InvitationId):
@@ -398,6 +405,8 @@ class GroupInvitation:
             object.__setattr__(self, "target_wallet", _coerce_wallet(self.target_wallet))
         if self.expires_at is not None:
             object.__setattr__(self, "expires_at", _require_aware_datetime(self.expires_at, "GroupInvitation.expires_at"))
+        if self.target_display_name is not None and not isinstance(self.target_display_name, str):
+            raise ValueError("GroupInvitation.target_display_name must be a str")
         if self.target_user_id is None and self.target_wallet is None:
             raise ValueError("GroupInvitation requires a user or wallet target")
 

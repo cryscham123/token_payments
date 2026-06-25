@@ -114,6 +114,16 @@ class MerchantMembershipApi:
         except ValueError as exc:
             return _error_response("VALIDATION_ERROR", str(exc), 400, request.request_id)
 
+    def search_users(self, request: ApiRequest) -> ApiResponse:
+        try:
+            query = request.query.get("query", "")
+            return _result_response(
+                self._use_case.search_users(_actor(request), query),
+                request.request_id,
+            )
+        except ValueError as exc:
+            return _error_response("VALIDATION_ERROR", str(exc), 400, request.request_id)
+
 
 def _actor(request: ApiRequest) -> MerchantActor:
     context = request.auth_context

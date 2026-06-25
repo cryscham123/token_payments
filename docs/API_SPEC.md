@@ -8,14 +8,14 @@ description: Token Payments public HTTP API, OAuth, Postman 계약을 GitBook에
 
 Default `api`/`serve-api` commands keep the no-server-start preview boundary. Use `PYTHONPATH=app python3 -m token_payments serve-api --live --dry-run` for a bounded live server plan, and `PYTHONPATH=app python3 -m token_payments serve-api --live --confirm-live-api` only when an approved live environment is ready to start the long-running server.
 
-이 문서는 현재 로컬 backend API와 Phase 27 privacy-first identity contract를 기준으로 한다. Route surface는 현재 `app/token_payments/api/http.py`의 route manifest 55개를 기준으로 고정한다.
+이 문서는 현재 로컬 backend API와 Phase 27 privacy-first identity contract를 기준으로 한다. Route surface는 현재 `app/token_payments/api/http.py`의 route manifest 58개를 기준으로 고정한다.
 
 ## GitBook 탐색
 
 - [API 개요](api/README.md): base URL, 인증 방식, 공통 헤더와 오류 규약.
-- [OpenAPI Reference](api/openapi.yaml): GitBook OpenAPI import용 55-route interactive reference.
+- [OpenAPI Reference](api/openapi.yaml): GitBook OpenAPI import용 58-route interactive reference.
 - [공통 계약](api/runtime-contract.md): API evolution guardrail, route surface, runtime, header, cookie/CSRF, error, state, Postman 계약.
-- [전체 Route Summary](api/route-summary.md): 현재 55개 public HTTP route manifest의 GitBook용 전체 표.
+- [전체 Route Summary](api/route-summary.md): 현재 58개 public HTTP route manifest의 GitBook용 전체 표.
 - [인증과 OAuth](api/auth.md): SIWE, session, wallet link, user profile, provider-subject OAuth API.
 - [주문, 체크아웃, 결제](api/orders-checkout-payments.md): 주문 생성, checkout tracking, txHash 제출.
 - [상점과 상품 카탈로그](api/catalog-inventory.md): public store/product 읽기, merchant product 쓰기, store owner inventory.
@@ -43,7 +43,7 @@ Phase 26 hardens the public API and runtime architecture around externally safe 
 
 ### Public HTTP route surface
 
-Public HTTP route surface is exactly the current 57-route manifest from `app/token_payments/api/http.py`. This manifest contains auth session routes, OAuth provider-subject login/link/list/revoke routes, authenticated wallet link/list/primary/revoke routes, current user display profile routes, order creation, checkout tracking, customer payment history, payment txHash submission, public store profile reads, merchant store profile listing/update routes, admin store catalog provisioning routes, store-owner product registration, store owner inventory query/mutation routes, merchant member/invitation routes, operator dashboard/detail reads, and cancel/retry/replay operator actions. It does not include store owner manual approval routes, role/permission full CRUD, platform group CRUD, personal group CRUD, owner transfer, settlement wallet mutation, or checkout saga command endpoints.
+Public HTTP route surface is exactly the current 58-route manifest from `app/token_payments/api/http.py`. This manifest contains auth session routes, OAuth provider-subject login/link/list/revoke routes, authenticated wallet link/list/primary/revoke routes, current user display profile routes, order creation, checkout tracking, customer payment history, payment txHash submission, public store profile reads, merchant store profile listing/update routes, admin store catalog provisioning routes, store-owner product registration, store owner inventory query/mutation routes, merchant member/invitation/search routes, operator dashboard/detail reads, and cancel/retry/replay operator actions. It does not include store owner manual approval routes, role/permission full CRUD, platform group CRUD, personal group CRUD, owner transfer, settlement wallet mutation, or checkout saga command endpoints.
 
 ### Message listener input surface
 
@@ -357,6 +357,7 @@ Common status codes:
 | `updateMerchantStoreMemberRole` | `PATCH` | `/merchant/stores/{storeId}/members/{userId}` |
 | `removeMerchantStoreMember` | `DELETE` | `/merchant/stores/{storeId}/members/{userId}` |
 | `getMerchantRoleCatalog` | `GET` | `/merchant/role-catalog` |
+| `searchMerchantUsers` | `GET` | `/merchant/users/search` |
 | `getOperatorDashboard` | `GET` | `/operator/dashboard` |
 | `getOperatorOrderDetail` | `GET` | `/operator/orders/{orderId}` |
 | `getOperatorPaymentDetail` | `GET` | `/operator/payments/{paymentId}` |

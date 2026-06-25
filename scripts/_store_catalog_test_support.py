@@ -31,7 +31,7 @@ from token_payments.contexts.store_catalog.domain import (  # noqa: E402
     StoreProduct,
     StoreProfile,
 )
-from token_payments.shared.domain import Crypto, ProductId, StoreId, UserId, WalletAddress  # noqa: E402
+from token_payments.shared.domain import Money, ProductId, StoreId, UserId, WalletAddress  # noqa: E402
 
 
 NOW = datetime(2026, 5, 20, 1, 0, tzinfo=UTC)
@@ -49,24 +49,16 @@ STORE_WALLET = WalletAddress("0x4444444444444444444444444444444444444444")
 TOKEN_ADDRESS = WalletAddress("0x5555555555555555555555555555555555555555")
 
 
-def price(*, amount: str = "12.50", chain_id: int = 11155111) -> Crypto:
-    return Crypto(
-        amount=Decimal(amount),
-        symbol="USDC",
-        chain_id=chain_id,
-        token_address=TOKEN_ADDRESS,
-        decimals=6,
-    )
+def price(*, amount: str = "12.50", chain_id: int = 11155111) -> Money:
+    # chain_id is accepted for call-site compatibility; fiat prices are chain-agnostic.
+    return Money(amount=Decimal(amount), currency="USD")
 
 
 def price_payload(*, chain_id: int = 11155111) -> dict[str, Any]:
     value = price(chain_id=chain_id)
     return {
         "amount": format(value.amount, "f"),
-        "symbol": value.symbol,
-        "chainId": value.chain_id,
-        "tokenAddress": str(value.token_address),
-        "decimals": value.decimals,
+        "currency": value.currency,
     }
 
 

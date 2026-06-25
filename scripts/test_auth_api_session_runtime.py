@@ -54,6 +54,7 @@ from token_payments.shared.domain import UserId, WalletAddress  # noqa: E402
 NOW = datetime(2026, 5, 10, 6, 0, tzinfo=UTC)
 WALLET = "0xABCDabcdABCDabcdABCDabcdABCDabcdABCDabcd"
 NORMALIZED_WALLET = "0xabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd"
+CHECKSUM_WALLET = "0xABCDabcdABcDabcDaBCDAbcdABcdAbCdABcDABCd"
 OTHER_WALLET = "0x9999999999999999999999999999999999999999"
 USER_ID = "018f33aa-9e6d-73d8-9dc3-47d6cdcc6c21"
 SESSION_ID = "018f33aa-9e6d-73d8-9dc3-47d6cdcc6c22"
@@ -234,10 +235,10 @@ def test_auth_api_success_responses_and_structured_error_mapping() -> None:
     )
 
     assert challenge_response.status_code == 201
-    assert challenge_response.body["walletAddress"] == NORMALIZED_WALLET
+    assert challenge_response.body["walletAddress"] == CHECKSUM_WALLET
     assert challenge_response.body["nonce"] == "nonce1234"
     assert challenge_response.body["domain"] == DOMAIN
-    assert challenge_response.body["address"] == NORMALIZED_WALLET
+    assert challenge_response.body["address"] == CHECKSUM_WALLET
     assert challenge_response.body["uri"] == f"https://{DOMAIN}"
     assert challenge_response.body["version"] == "1"
     assert challenge_response.body["chainId"] == CHAIN_ID
@@ -262,7 +263,7 @@ def test_auth_api_success_responses_and_structured_error_mapping() -> None:
     )
 
     assert login_response.status_code == 200
-    assert login_response.body["user"]["walletAddress"] == NORMALIZED_WALLET
+    assert login_response.body["user"]["walletAddress"] == CHECKSUM_WALLET
     assert login_response.body["token"]["accessToken"].startswith(f"access:{USER_ID}:{SESSION_ID}")
 
     reuse_response = api.login_with_metamask(

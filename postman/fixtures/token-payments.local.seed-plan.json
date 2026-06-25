@@ -41,13 +41,13 @@
     "demoCustomerId": "22222222-2222-4222-8222-222222222222",
     "demoStoreOwnerUserId": "33333333-3333-4333-8333-333333333333",
     "demoStoreOwnerWalletId": "33333333-3333-4333-8333-333333333301",
-    "demoStoreOwnerWallet": "0xFFcf8FDEE24F7110ad822D611AB9a4598cE17709",
+    "demoStoreOwnerWallet": "0x3f9eF719045D2e3Bb7AcaEe67f64E083f8E365cE",
     "demoStoreId": "44444444-4444-4444-8444-444444444444",
     "demoPublicStoreId": "st_demo_store_001",
     "demoProductId": "55555555-5555-4555-8555-555555555555",
     "demoPublicProductId": "prd_local_hoodie_001",
     "demoInventoryAvailableStock": 25,
-    "paymentDestinationWallet": "0xFFcf8FDEE24F7110ad822D611AB9a4598cE17709",
+    "paymentDestinationWallet": "0x3f9eF719045D2e3Bb7AcaEe67f64E083f8E365cE",
     "paymentAssetId": "local-usdc",
     "paymentTokenAddress": "${DEPLOYED_USDC_ADDRESS}",
     "disabledPaymentAssetId": "local-disabled-dai",
@@ -87,7 +87,7 @@
       ],
       "values": {
         "user_id": "33333333-3333-4333-8333-333333333333",
-        "wallet_address": "0xFFcf8FDEE24F7110ad822D611AB9a4598cE17709",
+        "wallet_address": "0x3f9eF719045D2e3Bb7AcaEe67f64E083f8E365cE",
         "role": "CUSTOMER",
         "active": true
       }
@@ -168,7 +168,7 @@
       "values": {
         "wallet_id": "33333333-3333-4333-8333-333333333301",
         "user_id": "33333333-3333-4333-8333-333333333333",
-        "wallet_address": "0xFFcf8FDEE24F7110ad822D611AB9a4598cE17709",
+        "wallet_address": "0x3f9eF719045D2e3Bb7AcaEe67f64E083f8E365cE",
         "chain_id": 1337,
         "wallet_type": "EOA",
         "verification_status": "VERIFIED",
@@ -290,7 +290,7 @@
         "status": "ACTIVE",
         "support_email_public": false,
         "active": true,
-        "store_wallet_address": "0xFFcf8FDEE24F7110ad822D611AB9a4598cE17709",
+        "store_wallet_address": "0x3f9eF719045D2e3Bb7AcaEe67f64E083f8E365cE",
         "supported_chain_ids": [
           1337
         ],
@@ -332,11 +332,8 @@
         "attributes",
         "status",
         "visibility",
-        "price_numeric",
-        "price_symbol",
-        "price_chain_id",
-        "price_token_address",
-        "price_decimals",
+        "price_amount",
+        "price_currency",
         "active"
       ],
       "values": {
@@ -360,11 +357,8 @@
         },
         "status": "ACTIVE",
         "visibility": "PUBLIC",
-        "price_numeric": "0.010000000000000000",
-        "price_symbol": "ETH",
-        "price_chain_id": 1337,
-        "price_token_address": null,
-        "price_decimals": 18,
+        "price_amount": "0.01",
+        "price_currency": "USD",
         "active": true
       }
     },
@@ -385,7 +379,7 @@
         "active": true,
         "store_address_id": "store-address-001",
         "store_address_street": "1 Local Demo Way",
-        "store_wallet_address": "0xFFcf8FDEE24F7110ad822D611AB9a4598cE17709",
+        "store_wallet_address": "0x3f9eF719045D2e3Bb7AcaEe67f64E083f8E365cE",
         "supported_chain_ids": [
           1337
         ]
@@ -397,21 +391,15 @@
         "store_id",
         "product_id",
         "name",
-        "price_numeric",
-        "price_symbol",
-        "price_chain_id",
-        "price_token_address",
-        "price_decimals"
+        "price_amount",
+        "price_currency"
       ],
       "values": {
         "store_id": "44444444-4444-4444-8444-444444444444",
         "product_id": "55555555-5555-4555-8555-555555555555",
         "name": "Local Hoodie",
-        "price_numeric": "0.010000000000000000",
-        "price_symbol": "ETH",
-        "price_chain_id": 1337,
-        "price_token_address": null,
-        "price_decimals": 18
+        "price_amount": "0.01",
+        "price_currency": "USD"
       }
     },
     {
@@ -448,22 +436,12 @@
         "store_id",
         "product_id",
         "name",
-        "price_numeric",
-        "price_symbol",
-        "price_chain_id",
-        "price_token_address",
-        "price_decimals",
         "available"
       ],
       "values": {
         "store_id": "44444444-4444-4444-8444-444444444444",
         "product_id": "55555555-5555-4555-8555-555555555555",
         "name": "Local Hoodie",
-        "price_numeric": "0.010000000000000000",
-        "price_symbol": "ETH",
-        "price_chain_id": 1337,
-        "price_token_address": null,
-        "price_decimals": 18,
         "available": true
       }
     },

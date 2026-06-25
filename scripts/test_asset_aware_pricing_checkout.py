@@ -16,7 +16,7 @@ from token_payments.contexts.auth.domain.wallet import UserWallet, WalletId, Wal
 from token_payments.contexts.order.application import CreateOrderCommand, CreateOrderItem, OrderApplicationError, OrderApplicationService  # noqa: E402
 from token_payments.contexts.order.domain import Address, Customer, Product, Store  # noqa: E402
 from token_payments.contexts.payment.domain import PaymentAsset, PaymentAssetRegistry, PaymentChain  # noqa: E402
-from token_payments.shared.domain import Crypto, CustomerId, MessageId, OrderId, ProductId, StoreId, UserId, WalletAddress  # noqa: E402
+from token_payments.shared.domain import Crypto, CustomerId, ExchangeRate, MessageId, Money, OrderId, ProductId, StoreId, UserId, WalletAddress  # noqa: E402
 
 
 NOW = datetime(2026, 5, 22, 5, 30, tzinfo=UTC)
@@ -105,48 +105,40 @@ def test_asset_aware_checkout_defaults_wallet_to_selected_asset_chain_primary() 
     assert outbox.saved[0].payload["payerWalletId"] == str(WALLET_ID)
 
 
-def test_variant_and_addon_deltas_are_reexpressed_in_selected_asset() -> None:
-    # A product priced in USDC whose variant delta is stored in USDC must be payable in
-    # USDT without "variant priceDelta asset must match product price asset".
-    from token_payments.contexts.order.application.service import (
-        _option_values_for_asset,
-        _store_with_asset_prices,
-        _variants_for_asset,
-    )
+def test_variant_and_addon_deltas_convert_from_usd_to_selected_asset() -> None:
+    # A product priced in USD with a USD variant delta is converted into the selected asset
+    # at the fixed exchange rate (USDT is pegged 1:1, so $12.50 + $5.00 = 17.50 USDT).
     from token_payments.contexts.order.domain import ProductOptionValuePrice, ProductVariantPrice
+    from token_payments.shared.domain import PriceConversion
 
-    usdt = PaymentAsset.erc20("local-usdt", 1337, "USDT", 6, USDT)
+    rate = ExchangeRate({"ETH": Decimal(3000), "USDC": Decimal(1), "USDT": Decimal(1)})
+    conversion = PriceConversion(
+        rate=rate, asset_id="local-usdt", symbol="USDT", chain_id=1337, token_address=USDT, decimals=6
+    )
 
     variant = ProductVariantPrice(
         public_variant_id="var_x",
         option_values={"size": "large"},
-        price_delta=Crypto("5", "USDC", 1337, USDC, 6),
+        price_delta=Money("5.00", "USD"),
     )
-    reexpressed = _variants_for_asset({"var_x": variant}, usdt)["var_x"]
-    assert reexpressed.price_delta == Crypto("5", "USDT", 1337, USDT, 6)
-
     add_on = ProductOptionValuePrice(
         option_key="gift", value_key="wrap", display_value="Gift wrap", option_type="ADD_ON",
-        price_delta=Crypto("2", "USDC", 1337, USDC, 6),
+        price_delta=Money("2.00", "USD"),
     )
-    reexpressed_addon = _option_values_for_asset({"wrap": add_on}, usdt)["wrap"]
-    assert reexpressed_addon.price_delta == Crypto("2", "USDT", 1337, USDT, 6)
-
-    # End-to-end through the store enrichment + domain price computation.
     product = Product(
         PRODUCT_ID,
         "Variant Mug",
-        Crypto("12.50", "USDC", 1337, USDC, 6),
-        asset_prices={"local-usdc": Crypto("12.50", "USDC", 1337, USDC, 6)},
+        Money("12.50", "USD"),
         variants={"var_x": variant},
+        option_values={"gift:wrap": add_on},
     )
-    store = Store(
-        STORE_ID, USER_ID, products=(product,), active=True, store_wallet=STORE_WALLET,
-        supported_chain_ids=(1337,), supported_payment_asset_ids=("local-usdc", "local-usdt"),
-    )
-    enriched = _store_with_asset_prices(store, usdt)
-    price = enriched.products[0].price_for_selection("local-usdt", public_variant_id="var_x", selected_options={"size": "large"})
-    assert price == Crypto("17.50", "USDT", 1337, USDT, 6)
+
+    # USD unit price stays asset-agnostic until conversion: 12.50 + 5.00 + 2.00 = 19.50.
+    usd_price = product.unit_price_usd(public_variant_id="var_x", selected_options={"size": "large", "gift": "wrap"})
+    assert usd_price == Money("19.50", "USD")
+
+    price = product.price_for_selection(conversion, public_variant_id="var_x", selected_options={"size": "large", "gift": "wrap"})
+    assert price == Crypto("19.50", "USDT", 1337, USDT, 6)
 
 
 def _service(
@@ -161,6 +153,7 @@ def _service(
         outbox_messages=outbox or FakeOutboxRepository(),
         wallets=wallets or FakeWalletRepository(),
         payment_assets=_registry(),
+        exchange_rate=ExchangeRate({"ETH": Decimal(3000), "USDC": Decimal(1), "USDT": Decimal(1)}),
     )
 
 
@@ -188,14 +181,7 @@ class FakeStoreRepository:
     def get(self, store_id: StoreId) -> Store | None:
         if store_id != STORE_ID:
             return None
-        product = Product(PRODUCT_ID, "Stable Mug", Crypto("12.50", "USDC", 1337, USDC, 6))
-        object.__setattr__(
-            product,
-            "_asset_prices",
-            {
-                "local-usdc": Crypto("12.50", "USDC", 1337, USDC, 6),
-            },
-        )
+        product = Product(PRODUCT_ID, "Stable Mug", Money("12.50", "USD"))
         return Store(
             STORE_ID,
             USER_ID,
