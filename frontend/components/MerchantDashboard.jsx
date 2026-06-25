@@ -436,7 +436,7 @@ export default function MerchantDashboard({ publicStoreId }) {
         </section>
 
         {/* Inner Tabs Navigation */}
-        <div className="flex border-b border-slate-200 mb-6 gap-6">
+        <div className="flex border-b border-slate-200 mb-6 gap-6 overflow-x-auto scrollbar-none">
           {[
             { id: "profile", label: "상점 및 결제 설정", icon: Settings },
             { id: "products", label: "상품 관리", icon: Package },
@@ -445,14 +445,17 @@ export default function MerchantDashboard({ publicStoreId }) {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 pb-3.5 text-sm font-bold transition-all relative ${
+              className={`flex items-center gap-1.5 pb-3.5 text-sm transition-all relative ${
                 activeTab === tab.id 
-                  ? "text-blue-600 font-extrabold border-b-2 border-blue-600" 
-                  : "text-slate-400 hover:text-slate-600"
+                  ? "text-blue-600 font-bold" 
+                  : "text-slate-500 hover:text-slate-800 font-medium"
               }`}
             >
               <tab.icon size={16} />
               {tab.label}
+              {activeTab === tab.id && (
+                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-full" />
+              )}
             </button>
           ))}
         </div>
@@ -910,7 +913,7 @@ export default function MerchantDashboard({ publicStoreId }) {
                   <label className="text-xs font-bold text-slate-500">판매 가격</label>
                   <input
                     type="number"
-                    step="0.01"
+                    step="1"
                     min="0.01"
                     required
                     value={productPrice}
