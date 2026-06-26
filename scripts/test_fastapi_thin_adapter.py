@@ -100,7 +100,7 @@ def test_fastapi_route_metadata_matches_existing_http_route_manifest_when_depend
         }
         assert expected[operation_id]["method"] in getattr(route, "methods")
 
-    assert len(actual) == 59
+    assert len(actual) == 62
     assert actual == expected
 
     openapi = app.openapi()

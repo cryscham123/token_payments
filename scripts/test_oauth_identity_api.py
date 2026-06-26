@@ -53,7 +53,7 @@ def test_oauth_auth_routes_are_part_of_public_manifest_and_register_to_auth_faca
     router = HttpRouter(auth_context_factory=lambda _request: ApiAuthContext(user_id=USER_ID, session_id=SESSION_ID, scopes=("user:self",)))
     routes = register_auth_routes(router, AuthApi(use_case))
 
-    assert len(routes) == 17
+    assert len(routes) == 18
     assert {
         "requestOAuthAuthorization",
         "completeOAuthSession",
@@ -532,4 +532,3 @@ def test_complete_oauth_session_registers_wallet_if_wallets_configured() -> None
         assert wallet.user_id == UserId(USER_ID)
         assert wallet.primary is True
         assert wallet.verification_status == WalletVerificationStatus.VERIFIED
-

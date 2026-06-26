@@ -245,6 +245,7 @@ def test_list_merchant_stores_returns_public_ids_without_internal_store_ids() ->
             "supportEmail": "support@example.com",
             "storeWallet": str(STORE_WALLET),
             "role": "OWNER",
+            "merchantGroupId": str(GROUP_ID),
         }
     ]
     assert "storeId" not in payload["stores"][0]

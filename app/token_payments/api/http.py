@@ -326,7 +326,10 @@ class HttpRouter:
         if request.received_at is not None:
             api_kwargs["received_at"] = request.received_at
 
-        return HttpResponse.from_api_response(route.handler(ApiRequest(**api_kwargs)))
+        response = route.handler(ApiRequest(**api_kwargs))
+        if isinstance(response, HttpResponse):
+            return response
+        return HttpResponse.from_api_response(response)
 
     def _auth_context(self, request: HttpRequest, request_id: str) -> ApiAuthContext | None:
         if self._auth_context_factory is None:
@@ -554,6 +557,11 @@ def register_store_catalog_routes(router: HttpRouter, catalog_api: Any) -> tuple
         ),
         _add_manifest_route(
             router,
+            STORE_PROFILE_HTTP_ROUTES["get_product_asset"],
+            catalog_api.get_product_asset,
+        ),
+        _add_manifest_route(
+            router,
             STORE_PROFILE_HTTP_ROUTES["list_merchant_stores"],
             catalog_api.list_merchant_stores,
         ),
@@ -586,6 +594,11 @@ def register_store_catalog_routes(router: HttpRouter, catalog_api: Any) -> tuple
             router,
             STORE_OWNER_CATALOG_HTTP_ROUTES["get_merchant_product"],
             catalog_api.get_merchant_product,
+        ),
+        _add_manifest_route(
+            router,
+            STORE_OWNER_CATALOG_HTTP_ROUTES["upload_product_asset"],
+            catalog_api.upload_product_asset,
         ),
         _add_manifest_route(
             router,
@@ -1147,6 +1160,11 @@ STORE_PROFILE_HTTP_ROUTES: Mapping[str, HttpRouteSpec] = MappingProxyType(
             "/stores/{publicStoreId}/products/{publicProductId}",
             "getPublicProduct",
         ),
+        "get_product_asset": HttpRouteSpec(
+            "GET",
+            "/product-assets/{publicStoreId}/{assetFile}",
+            "getProductAsset",
+        ),
         "list_merchant_stores": HttpRouteSpec("GET", "/merchant/stores", "listMerchantStores"),
         "update_profile": HttpRouteSpec(
             "PATCH",
@@ -1182,6 +1200,11 @@ STORE_OWNER_CATALOG_HTTP_ROUTES: Mapping[str, HttpRouteSpec] = MappingProxyType(
             "/merchant/stores/{publicStoreId}/products/{publicProductId}",
             "getMerchantProduct",
         ),
+        "upload_product_asset": HttpRouteSpec(
+            "POST",
+            "/merchant/stores/{publicStoreId}/assets",
+            "uploadMerchantProductAsset",
+        ),
         "register_product": HttpRouteSpec(
             "POST",
             "/merchant/stores/{publicStoreId}/products",
@@ -1201,22 +1224,22 @@ STORE_OWNER_INVENTORY_HTTP_ROUTES: Mapping[str, HttpRouteSpec] = MappingProxyTyp
         "list_inventory": HttpRouteSpec("GET", "/store-owner/inventory", "listStoreOwnerInventory"),
         "increase_stock": HttpRouteSpec(
             "POST",
-            "/store-owner/stores/{storeId}/inventory/{productId}/intake",
+            "/store-owner/stores/{storeId}/inventory/{productId}/variants/{publicVariantId}/intake",
             "increaseStoreOwnerInventoryStock",
         ),
         "correct_stock": HttpRouteSpec(
             "POST",
-            "/store-owner/stores/{storeId}/inventory/{productId}/corrections",
+            "/store-owner/stores/{storeId}/inventory/{productId}/variants/{publicVariantId}/corrections",
             "correctStoreOwnerInventoryStock",
         ),
         "pause_sales": HttpRouteSpec(
             "POST",
-            "/store-owner/stores/{storeId}/inventory/{productId}/pause",
+            "/store-owner/stores/{storeId}/inventory/{productId}/variants/{publicVariantId}/pause",
             "pauseStoreOwnerInventorySales",
         ),
         "resume_sales": HttpRouteSpec(
             "POST",
-            "/store-owner/stores/{storeId}/inventory/{productId}/resume",
+            "/store-owner/stores/{storeId}/inventory/{productId}/variants/{publicVariantId}/resume",
             "resumeStoreOwnerInventorySales",
         ),
     }

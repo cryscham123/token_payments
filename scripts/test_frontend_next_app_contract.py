@@ -263,6 +263,12 @@ def test_frontend_merchant_dashboard_separates_read_and_write_permission_states(
     assert "권한이 없습니다" in dashboard
     assert "disabled={!canWriteStore || savingStore}" in dashboard
     assert "disabled={!canWriteProducts}" in dashboard
+    assert 'hasScope("inventory:write")' in dashboard
+    assert "canWriteInventory" in dashboard
+    assert "disabled={!canWriteInventory}" in dashboard
+    assert "STORE_OWNER_INVENTORY_FORBIDDEN" in dashboard
+    assert "await switchSession(targetGroupId)" in dashboard
+    assert "currentUserObj.activeGroupId !== targetGroupId" not in dashboard
     assert "disabled={!canInviteMembers || sendingInvite || hasPendingInviteForCurrentTarget || !internalStoreId}" in dashboard
     assert "disabled={!canManageMembers}" in dashboard
     assert "canRevokeInvitations" in dashboard
@@ -283,6 +289,102 @@ def test_frontend_merchant_dashboard_shows_read_only_settlement_wallet() -> None
     assert "handleCopySettlementWallet" in dashboard
     assert "navigator.clipboard.writeText(settlementWallet)" in dashboard
     assert "storeWalletAddress" not in dashboard
+
+
+def test_frontend_merchant_dashboard_updates_variant_inventory_separately_from_catalog_patch() -> None:
+    dashboard = (FRONTEND / "components" / "MerchantDashboard.jsx").read_text(encoding="utf-8")
+
+    assert "initialTotalStock: initialStockQuantity" in dashboard
+    assert "shouldSeedInitialStock(row)" in dashboard
+    assert "stockRowByPublicVariantId" in dashboard
+    assert "variant?.active !== false" in dashboard
+    assert "if (!stockRow || !isExistingStockRow(stockRow)) continue;" in dashboard
+    assert "/variants/${encodeURIComponent(variant.publicVariantId)}/intake" in dashboard
+    assert "variantStockIntakes[variant.publicVariantId]" in dashboard
+    assert 'idempotencyKey: `inventory-intake-${Date.now()}`' in dashboard
+    assert "inventoryVariantForProduct(editingProduct)" in dashboard
+    assert "productAvailableStock(product)" not in dashboard
+    assert "product.stock" not in dashboard
+    assert "stock:" not in dashboard
+    assert "재고:" not in dashboard
+
+
+def test_frontend_merchant_dashboard_edits_product_options_variants_pdf_and_media_refs() -> None:
+    dashboard = (FRONTEND / "components" / "MerchantDashboard.jsx").read_text(encoding="utf-8")
+
+    assert "productSuccess" in dashboard
+    assert "setProductSuccess" in dashboard
+    assert "상품 정보 수정이 완료되었습니다." in dashboard
+    assert "상품 등록이 완료되었습니다." in dashboard
+    assert "payload.options.length === 0 && !editingProduct" in dashboard
+    assert "payload.variants.length === 0 && !editingProduct" in dashboard
+    assert "productOptions" in dashboard
+    assert "productVariants" in dashboard
+    assert "productDetailPdfAssetKey" in dashboard
+    assert "productDetailPdfUpload" in dashboard
+    assert "variantStockIntakes" in dashboard
+    assert "options: serializeProductOptions()" in dashboard
+    assert "const serializedVariants = serializeProductVariants()" in dashboard
+    assert "variants: serializedVariants" in dashboard
+    assert "detailPdfAssetKey" in dashboard
+    assert "variantStockIntakes[variant.publicVariantId]" in dashboard
+    assert "readAsDataURL" not in dashboard
+    assert "URL.createObjectURL(file)" in dashboard
+    assert "setProductMediaUploads" in dashboard
+    assert "업로드 대기" in dashboard
+
+
+def test_frontend_merchant_dashboard_uploads_product_assets_before_catalog_save() -> None:
+    dashboard = (FRONTEND / "components" / "MerchantDashboard.jsx").read_text(encoding="utf-8")
+    product_detail = (FRONTEND / "components" / "ProductDetail.jsx").read_text(encoding="utf-8")
+
+    assert "uploadProductAsset" in dashboard
+    assert "assetType: \"PRODUCT_IMAGE\"" in dashboard
+    assert "assetType: \"PRODUCT_DETAIL_PDF\"" in dashboard
+    assert "contentBase64" in dashboard
+    assert "asset.mediaRef" in dashboard
+    assert "detailPdfAssetKey" in dashboard
+    assert "detailPdfUrl: productDetailPdfUrl" not in dashboard
+    assert "readAsDataURL" not in dashboard
+    assert "attributes.detailPdfAssetKey" in product_detail
+    assert "<iframe" not in product_detail
+    assert "상품 상세 PDF 열기" in product_detail
+    assert 'target="_blank"' in product_detail
+
+
+def test_frontend_merchant_dashboard_uses_required_option_stock_grid_without_variant_terms() -> None:
+    dashboard = (FRONTEND / "components" / "MerchantDashboard.jsx").read_text(encoding="utf-8")
+
+    assert "requiredOptionCombinations" in dashboard
+    assert "stockRowsForProductForm" in dashboard
+    assert "isExistingStockRow" in dashboard
+    assert "existingVariantForCombination" in dashboard
+    assert "displayOptionValues" in dashboard
+    assert "existingVariants.length === combinations.length" in dashboard
+    assert "usedVariantIds" in dashboard
+    assert "stockQuantityLabel(row)" in dashboard
+    assert "필수 옵션별 재고" in dashboard
+    assert "필수 옵션 조합" in dashboard
+    assert "추가 금액 (USD)" in dashboard
+    assert "입고 수량" in dashboard
+    assert "초기 재고" in dashboard
+    assert "선택 옵션" in dashboard
+    assert "사이즈나 색상처럼 재고를 나눠서 관리할 기준입니다." not in dashboard
+    assert "선물 포장처럼 재고를 나누지 않는 추가 선택입니다." not in dashboard
+    assert "필수 옵션 값을 바꾸면 재고 조합표가 자동으로 갱신됩니다." not in dashboard
+    assert "Variant 추가" not in dashboard
+    assert "Variant 표시명" not in dashboard
+    assert "Variant 삭제" not in dashboard
+    assert "variant마다" not in dashboard
+    assert "기본 variant" not in dashboard
+
+
+def test_frontend_merchant_product_modal_keeps_save_actions_visible_while_scrolling() -> None:
+    dashboard = (FRONTEND / "components" / "MerchantDashboard.jsx").read_text(encoding="utf-8")
+
+    assert 'className="sticky bottom-0' in dashboard
+    assert "저장하기" in dashboard
+    assert "취소" in dashboard
 
 
 def test_frontend_header_product_nav_only_shows_real_destinations() -> None:
@@ -352,7 +454,7 @@ def test_nginx_routes_frontend_root_and_api_paths_separately() -> None:
 
     assert "upstream token_payments_web" in config
     assert "server token_payments_web:3000;" in config
-    assert "location ~ ^/(auth|checkouts?|payments|stores|admin|operator|healthz|readyz)(/|$)" in config
+    assert "location ~ ^/(auth|checkouts?|payments|stores|store-owner|product-assets|admin|operator|healthz|readyz)(/|$)" in config
     assert "location ~ ^/merchant(/|$)" in config
     assert "location ~ ^/orders(/|$)" in config
     assert "proxy_pass http://token_payments_api;" in config

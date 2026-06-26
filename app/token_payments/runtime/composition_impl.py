@@ -47,6 +47,7 @@ from token_payments.contexts.auth.application import (
     RevokeOAuthIdentityCommand,
     RevokeWalletCommand,
     SetPrimaryWalletCommand,
+    SwitchSessionCommand,
     UpdateUserProfileCommand,
 )
 from token_payments.contexts.auth.domain import AuthEvent, AuthSession, IssuedToken, User
@@ -1802,6 +1803,12 @@ class _TransactionalAuthUseCase:
             lambda connection: self._service(connection).refreshSession(command),
         )
 
+    def switchSession(self, command: SwitchSessionCommand):
+        return _with_transaction(
+            self._dependencies,
+            lambda connection: self._service(connection).switchSession(command),
+        )
+
     def logout(self, command: LogoutCommand):
         return _with_transaction(
             self._dependencies,
@@ -2379,6 +2386,12 @@ class _TransactionalInventoryQuery:
             lambda connection: PostgresInventoryQueryRepository(connection).owner_for_store(store_id),
         )
 
+    def store_role_for_user(self, store_id, user_id):
+        return _with_transaction(
+            self._dependencies,
+            lambda connection: PostgresInventoryQueryRepository(connection).store_role_for_user(store_id, user_id),
+        )
+
 
 class _TransactionalStoreCatalogUseCase:
     def __init__(self, config: LiveRuntimeConfig, dependencies: LiveRuntimeDependencies) -> None:
@@ -2452,6 +2465,17 @@ class _TransactionalStoreCatalogUseCase:
 
     def update_store_product(self, command):
         return self._execute(lambda service: service.update_store_product(command))
+
+    def upload_store_product_asset(self, command):
+        return self._execute(lambda service: service.upload_store_product_asset(command))
+
+    def get_product_asset(self, *, public_store_id, asset_file):
+        return self._execute(
+            lambda service: service.get_product_asset(
+                public_store_id=public_store_id,
+                asset_file=asset_file,
+            )
+        )
 
     def _execute(self, callback: Callable[[StoreCatalogApplicationService], Any]) -> Any:
         return _with_transaction(

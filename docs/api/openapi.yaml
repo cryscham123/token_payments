@@ -16,7 +16,7 @@ info:
 
     ### How this reference works
 
-    - **Route manifest parity** - every operation mirrors the 55 public routes
+    - **Route manifest parity** - every operation mirrors the 62 public routes
     from `app/token_payments/api/http.py`.
     - **Page groups** - high-level tags such as *Commerce*, *Merchant*, and
     *Operations* group related endpoint pages in GitBook.
@@ -578,6 +578,84 @@ paths:
       - status: 409
         codes:
         - EXPIRED_CHALLENGE
+  /auth/sessions/switch:
+    post:
+      summary: Switch active session group
+      description: Reissues the signed session cookies for a selected personal or merchant group context.
+      tags:
+      - auth
+      operationId: switchSession
+      responses:
+        '200':
+          description: Successful response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JsonObject'
+              example:
+                token:
+                  transport: cookie
+                session:
+                  userId: <user-id>
+                  walletAddress: '0x1111111111111111111111111111111111111111'
+                  deviceId: browser-1
+                  expiresAt: '2026-06-16T10:00:00+09:00'
+                  revokedAt: null
+                csrfToken: <redacted-signed-csrf-token>
+        '400':
+          description: 'Validation error, malformed JSON, missing required input, unsupported enum, or rejected request shape.
+            Possible error codes: VALIDATION_ERROR.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: VALIDATION_ERROR
+                  message: Validation error, malformed JSON, missing required input, unsupported enum, or rejected request
+                    shape.
+                  status: 400
+        '401':
+          description: 'Authentication is missing, invalid, expired, or required for the requested operation. Possible error
+            codes: AUTHENTICATION_REQUIRED.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: AUTHENTICATION_REQUIRED
+                  message: Authentication is missing, invalid, expired, or required for the requested operation.
+                  status: 401
+        '403':
+          description: 'The authenticated principal is not allowed to access the target resource. Possible error codes:
+            AUTHORIZATION_ERROR.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: AUTHORIZATION_ERROR
+                  message: The authenticated principal is not allowed to access the target resource.
+                  status: 403
+      parameters:
+      - $ref: '#/components/parameters/XRequestIdHeader'
+      - $ref: '#/components/parameters/LocalUserIdHeader'
+      - $ref: '#/components/parameters/LocalScopesHeader'
+      - $ref: '#/components/parameters/CsrfTokenHeader'
+      requestBody:
+        $ref: '#/components/requestBodies/SwitchSessionRequest'
+      x-errorCodes:
+      - status: 400
+        codes:
+        - VALIDATION_ERROR
+      - status: 401
+        codes:
+        - AUTHENTICATION_REQUIRED
+      - status: 403
+        codes:
+        - AUTHORIZATION_ERROR
   /auth/me:
     get:
       summary: Get current user
@@ -2421,6 +2499,63 @@ paths:
       - status: 404
         codes:
         - PRODUCT_NOT_FOUND
+  /product-assets/{publicStoreId}/{assetFile}:
+    get:
+      summary: Get product asset
+      description: Serves uploaded product image or detail PDF bytes by internal product asset key.
+      tags:
+      - catalog
+      operationId: getProductAsset
+      security: []
+      responses:
+        '200':
+          description: Raw product asset bytes.
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+            image/gif:
+              schema:
+                type: string
+                format: binary
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: 'Validation error, malformed JSON, missing required input, unsupported enum, or rejected request shape.
+            Possible error codes: VALIDATION_ERROR.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: 'The requested resource does not exist or is not visible in the caller scope. Possible error codes:
+            ASSET_NOT_FOUND.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+      - $ref: '#/components/parameters/XRequestIdHeader'
+      - $ref: '#/components/parameters/publicStoreId'
+      - $ref: '#/components/parameters/assetFile'
+      x-errorCodes:
+      - status: 400
+        codes:
+        - VALIDATION_ERROR
+      - status: 404
+        codes:
+        - ASSET_NOT_FOUND
   /merchant/stores:
     get:
       summary: List merchant stores
@@ -2617,6 +2752,80 @@ paths:
       - status: 409
         codes:
         - IDEMPOTENCY_KEY_CONFLICT
+  /merchant/stores/{publicStoreId}/assets:
+    post:
+      summary: Upload merchant product asset
+      description: Uploads a bounded product image or product detail PDF and returns an internal mediaRef object key.
+      tags:
+      - merchant-products
+      operationId: uploadMerchantProductAsset
+      requestBody:
+        $ref: '#/components/requestBodies/ProductAssetUploadRequest'
+      responses:
+        '201':
+          description: Product asset uploaded successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JsonObject'
+              example:
+                operation: uploadMerchantProductAsset
+                status: uploaded
+                asset:
+                  assetType: PRODUCT_IMAGE
+                  mediaRef: product-assets/st_demo_store_001/4d9679e1a8c3f0bdf0c3d9b1.png
+                  fileName: demo-hoodie.png
+                  contentType: image/png
+                  sizeBytes: 1024
+        '400':
+          description: 'Validation error, malformed JSON, missing required input, unsupported enum, or rejected request shape.
+            Possible error codes: VALIDATION_ERROR, IDEMPOTENCY_KEY_REQUIRED.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: 'Authentication is missing, invalid, expired, or required for the requested operation. Possible error
+            codes: AUTHENTICATION_REQUIRED.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: 'Authenticated actor lacks permission, scoped membership, or required CSRF validation. Possible error
+            codes: STORE_OWNER_STORE_FORBIDDEN.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: 'The requested resource does not exist or is not visible in the caller scope. Possible error codes:
+            STORE_NOT_FOUND.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+      - $ref: '#/components/parameters/XRequestIdHeader'
+      - $ref: '#/components/parameters/publicStoreId'
+      - $ref: '#/components/parameters/LocalUserIdHeader'
+      - $ref: '#/components/parameters/LocalScopesHeader'
+      - $ref: '#/components/parameters/CsrfTokenHeader'
+      - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      x-errorCodes:
+      - status: 400
+        codes:
+        - VALIDATION_ERROR
+        - IDEMPOTENCY_KEY_REQUIRED
+      - status: 401
+        codes:
+        - AUTHENTICATION_REQUIRED
+      - status: 403
+        codes:
+        - STORE_OWNER_STORE_FORBIDDEN
+      - status: 404
+        codes:
+        - STORE_NOT_FOUND
   /merchant/stores/{publicStoreId}/products:
     get:
       summary: List merchant products
@@ -3073,6 +3282,7 @@ paths:
                 inventory:
                 - storeId: <store-id>
                   productId: <product-id>
+                  publicVariantId: <public-variant-id>
                   availableStock: 25
                   reservedStock: 0
                   confirmedStock: 0
@@ -3127,10 +3337,10 @@ paths:
       - status: 403
         codes:
         - STORE_OWNER_INVENTORY_FORBIDDEN
-  /store-owner/stores/{storeId}/inventory/{productId}/intake:
+  /store-owner/stores/{storeId}/inventory/{productId}/variants/{publicVariantId}/intake:
     post:
-      summary: Increase inventory stock
-      description: Records stock intake through an audited idempotent inventory command.
+      summary: Increase variant inventory stock
+      description: Records stock intake through an audited idempotent inventory command for one product variant.
       tags:
       - inventory
       operationId: increaseStoreOwnerInventoryStock
@@ -3148,7 +3358,9 @@ paths:
                 status: accepted
                 storeId: <store-id>
                 productId: <product-id>
+                publicVariantId: <public-variant-id>
                 inventory:
+                  publicVariantId: <public-variant-id>
                   availableStock: 30
                   reservedStock: 0
                   totalStock: 30
@@ -3216,6 +3428,7 @@ paths:
       - $ref: '#/components/parameters/XRequestIdHeader'
       - $ref: '#/components/parameters/storeId'
       - $ref: '#/components/parameters/productId'
+      - $ref: '#/components/parameters/publicVariantId'
       - $ref: '#/components/parameters/LocalUserIdHeader'
       - $ref: '#/components/parameters/LocalScopesHeader'
       - $ref: '#/components/parameters/CsrfTokenHeader'
@@ -3236,10 +3449,10 @@ paths:
         codes:
         - IDEMPOTENCY_KEY_CONFLICT
         - INVENTORY_COMMAND_REJECTED
-  /store-owner/stores/{storeId}/inventory/{productId}/corrections:
+  /store-owner/stores/{storeId}/inventory/{productId}/variants/{publicVariantId}/corrections:
     post:
-      summary: Correct inventory stock
-      description: Sets a target total stock level without dropping below reserved stock.
+      summary: Correct variant inventory stock
+      description: Sets a target total stock level for one product variant without dropping below reserved stock.
       tags:
       - inventory
       operationId: correctStoreOwnerInventoryStock
@@ -3257,7 +3470,9 @@ paths:
                 status: accepted
                 storeId: <store-id>
                 productId: <product-id>
+                publicVariantId: <public-variant-id>
                 inventory:
+                  publicVariantId: <public-variant-id>
                   availableStock: 18
                   reservedStock: 2
                   totalStock: 20
@@ -3325,6 +3540,7 @@ paths:
       - $ref: '#/components/parameters/XRequestIdHeader'
       - $ref: '#/components/parameters/storeId'
       - $ref: '#/components/parameters/productId'
+      - $ref: '#/components/parameters/publicVariantId'
       - $ref: '#/components/parameters/LocalUserIdHeader'
       - $ref: '#/components/parameters/LocalScopesHeader'
       - $ref: '#/components/parameters/CsrfTokenHeader'
@@ -3345,10 +3561,10 @@ paths:
         codes:
         - IDEMPOTENCY_KEY_CONFLICT
         - INVENTORY_COMMAND_REJECTED
-  /store-owner/stores/{storeId}/inventory/{productId}/pause:
+  /store-owner/stores/{storeId}/inventory/{productId}/variants/{publicVariantId}/pause:
     post:
-      summary: Pause inventory sales
-      description: Pauses new-order availability without releasing existing reservations.
+      summary: Pause variant inventory sales
+      description: Pauses new-order availability for one product variant without releasing existing reservations.
       tags:
       - inventory
       operationId: pauseStoreOwnerInventorySales
@@ -3366,7 +3582,9 @@ paths:
                 status: accepted
                 storeId: <store-id>
                 productId: <product-id>
+                publicVariantId: <public-variant-id>
                 inventory:
+                  publicVariantId: <public-variant-id>
                   saleStatus: PAUSED
         '400':
           description: 'Validation error, malformed JSON, missing required input, unsupported enum, or rejected request shape.
@@ -3431,6 +3649,7 @@ paths:
       - $ref: '#/components/parameters/XRequestIdHeader'
       - $ref: '#/components/parameters/storeId'
       - $ref: '#/components/parameters/productId'
+      - $ref: '#/components/parameters/publicVariantId'
       - $ref: '#/components/parameters/LocalUserIdHeader'
       - $ref: '#/components/parameters/LocalScopesHeader'
       - $ref: '#/components/parameters/CsrfTokenHeader'
@@ -3451,10 +3670,10 @@ paths:
         codes:
         - IDEMPOTENCY_KEY_CONFLICT
         - INVENTORY_COMMAND_REJECTED
-  /store-owner/stores/{storeId}/inventory/{productId}/resume:
+  /store-owner/stores/{storeId}/inventory/{productId}/variants/{publicVariantId}/resume:
     post:
-      summary: Resume inventory sales
-      description: Reopens new-order availability for a paused inventory item.
+      summary: Resume variant inventory sales
+      description: Reopens new-order availability for a paused product variant.
       tags:
       - inventory
       operationId: resumeStoreOwnerInventorySales
@@ -3472,7 +3691,9 @@ paths:
                 status: accepted
                 storeId: <store-id>
                 productId: <product-id>
+                publicVariantId: <public-variant-id>
                 inventory:
+                  publicVariantId: <public-variant-id>
                   saleStatus: ACTIVE
         '400':
           description: 'Validation error, malformed JSON, missing required input, unsupported enum, or rejected request shape.
@@ -3537,6 +3758,7 @@ paths:
       - $ref: '#/components/parameters/XRequestIdHeader'
       - $ref: '#/components/parameters/storeId'
       - $ref: '#/components/parameters/productId'
+      - $ref: '#/components/parameters/publicVariantId'
       - $ref: '#/components/parameters/LocalUserIdHeader'
       - $ref: '#/components/parameters/LocalScopesHeader'
       - $ref: '#/components/parameters/CsrfTokenHeader'
@@ -5392,6 +5614,14 @@ components:
       schema:
         type: string
         example: product_demo
+    assetFile:
+      name: assetFile
+      in: path
+      required: true
+      description: Uploaded product asset filename from the internal mediaRef.
+      schema:
+        type: string
+        example: 4d9679e1a8c3f0bdf0c3d9b1.png
     storeId:
       name: storeId
       in: path
@@ -5406,6 +5636,14 @@ components:
       description: Product id accepted by inventory command routes.
       schema:
         type: string
+    publicVariantId:
+      name: publicVariantId
+      in: path
+      required: true
+      description: Public product variant id targeted by inventory mutation routes.
+      schema:
+        type: string
+        example: var_ledger_hoodie_l
     invitationId:
       name: invitationId
       in: path
@@ -5707,6 +5945,14 @@ components:
           schema:
             $ref: '#/components/schemas/RefreshSessionRequest'
           example: {}
+    SwitchSessionRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/SwitchSessionRequest'
+          example:
+            activeGroupId: 018f33aa-9e6d-73d8-9dc3-47d6cdccb105
     UserProfileUpdateRequest:
       required: true
       content:
@@ -5745,6 +5991,17 @@ components:
             userId: user-001
             roleId: MERCHANT_MANAGER
             active: true
+    ProductAssetUploadRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProductAssetUploadRequest'
+          example:
+            assetType: PRODUCT_IMAGE
+            fileName: demo-hoodie.png
+            contentType: image/png
+            contentBase64: iVBORw0KGgo...
     ProductCreateRequest:
       required: true
       content:
@@ -6175,6 +6432,15 @@ components:
         refreshTokenHash:
           type: object
           description: Private harness compatibility shape. Browser clients do not send raw refresh token hashes.
+    SwitchSessionRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - activeGroupId
+      properties:
+        activeGroupId:
+          type: string
+          description: Target personal or merchant group id to activate for the current signed session.
     UserProfileUpdateRequest:
       type: object
       additionalProperties: false
@@ -6421,6 +6687,152 @@ components:
           type: integer
           description: Asset decimals.
           example: 18
+    CatalogMoneyInput:
+      type: object
+      additionalProperties: false
+      required:
+      - amount
+      properties:
+        amount:
+          type: string
+          description: Non-negative decimal amount as a string.
+          example: '2.50'
+        currency:
+          type: string
+          description: Fiat display currency. Defaults to USD when omitted.
+          example: USD
+    ProductOptionValueInput:
+      type: object
+      additionalProperties: false
+      required:
+      - value
+      properties:
+        value:
+          type: string
+          description: Stable option value key used in selected option payloads.
+        displayValue:
+          type: string
+          description: Merchant/customer display label for the option value.
+        priceDelta:
+          $ref: '#/components/schemas/CatalogMoneyInput'
+        sortOrder:
+          type: integer
+          minimum: 0
+        active:
+          type: boolean
+        optionValueId:
+          type: string
+          description: Optional stable internal option value id for replacement writes.
+    ProductOptionInput:
+      type: object
+      additionalProperties: false
+      required:
+      - key
+      properties:
+        key:
+          type: string
+          description: Stable option key such as size or gift_wrap.
+        displayName:
+          type: string
+          description: Merchant/customer display label for the option.
+        required:
+          type: boolean
+          description: Whether the customer must choose this option.
+        selectionType:
+          type: string
+          enum:
+          - SINGLE
+          - MULTI
+          description: Selection cardinality for the option.
+        optionType:
+          type: string
+          enum:
+          - VARIANT
+          - ADD_ON
+          description: VARIANT options define inventory variants; ADD_ON options are optional price adjustments.
+        values:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductOptionValueInput'
+        sortOrder:
+          type: integer
+          minimum: 0
+        active:
+          type: boolean
+        optionId:
+          type: string
+          description: Optional stable internal option id for replacement writes.
+    ProductVariantInput:
+      type: object
+      additionalProperties: false
+      required:
+      - displayName
+      - optionValues
+      properties:
+        publicVariantId:
+          type: string
+          description: Stable public variant id used by checkout and inventory APIs.
+        displayName:
+          type: string
+          description: Merchant/customer display label for the variant.
+        optionValues:
+          type: object
+          additionalProperties: true
+          description: Option key to value key map for VARIANT options.
+        priceDelta:
+          $ref: '#/components/schemas/CatalogMoneyInput'
+        sku:
+          type: string
+          nullable: true
+        status:
+          $ref: '#/components/schemas/ProductStatus'
+        active:
+          type: boolean
+        sortOrder:
+          type: integer
+          minimum: 0
+        initialTotalStock:
+          type: integer
+          minimum: 0
+          description: Initial stock for this variant on product creation or first variant creation.
+    ProductAssetUploadRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - assetType
+      - fileName
+      - contentType
+      - contentBase64
+      properties:
+        assetType:
+          type: string
+          enum:
+          - PRODUCT_IMAGE
+          - PRODUCT_DETAIL_PDF
+          description: PRODUCT_IMAGE accepts image/png, image/jpeg, image/webp, image/gif. PRODUCT_DETAIL_PDF accepts application/pdf.
+        fileName:
+          type: string
+          maxLength: 180
+          description: Original filename without path separators.
+        contentType:
+          type: string
+          enum:
+          - image/png
+          - image/jpeg
+          - image/webp
+          - image/gif
+          - application/pdf
+          description: Declared MIME type; must match assetType and file magic bytes.
+        contentBase64:
+          type: string
+          format: byte
+          description: Base64 encoded file bytes. Server validates decoded size and magic bytes.
+        idempotencyKey:
+          type: string
+          description: Body fallback for Idempotency-Key header.
+        commandId:
+          type: string
+          description: Compatibility command id fallback.
     ProductCreateRequest:
       type: object
       additionalProperties: false
@@ -6452,12 +6864,12 @@ components:
             type: string
         media:
           type: array
-          description: Product media URLs or object keys.
+          description: Product media HTTPS/IPFS URLs or object keys. Browser-uploaded base64 data URLs are rejected.
           items:
             type: string
         attributes:
           type: object
-          description: Bounded JSON attributes.
+          description: Bounded JSON attributes. Use detailPdfAssetKey for an uploaded product detail PDF asset key.
           additionalProperties: true
         status:
           $ref: '#/components/schemas/ProductStatus'
@@ -6469,6 +6881,16 @@ components:
           type: integer
           minimum: 0
           description: Initial inventory total stock.
+        options:
+          type: array
+          description: Optional product option definitions. VARIANT options define required variant axes; ADD_ON options are optional selections.
+          items:
+            $ref: '#/components/schemas/ProductOptionInput'
+        variants:
+          type: array
+          description: Optional product variants with option values, price delta, and variant initial stock.
+          items:
+            $ref: '#/components/schemas/ProductVariantInput'
         active:
           type: boolean
           description: Compatibility active flag.
@@ -6501,12 +6923,12 @@ components:
             type: string
         media:
           type: array
-          description: Replacement product media URLs or object keys.
+          description: Replacement product media HTTPS/IPFS URLs or object keys. Browser-uploaded base64 data URLs are rejected.
           items:
             type: string
         attributes:
           type: object
-          description: Bounded JSON attributes.
+          description: Bounded JSON attributes. Use detailPdfAssetKey for an uploaded product detail PDF asset key.
           additionalProperties: true
         status:
           $ref: '#/components/schemas/ProductStatus'
@@ -6514,6 +6936,16 @@ components:
           $ref: '#/components/schemas/ProductVisibility'
         price:
           $ref: '#/components/schemas/ProductPriceInput'
+        options:
+          type: array
+          description: Replacement product option definitions when present.
+          items:
+            $ref: '#/components/schemas/ProductOptionInput'
+        variants:
+          type: array
+          description: Replacement product variants when present. Quantity changes after creation use variant inventory APIs.
+          items:
+            $ref: '#/components/schemas/ProductVariantInput'
         idempotencyKey:
           type: string
           description: Body fallback for Idempotency-Key header.

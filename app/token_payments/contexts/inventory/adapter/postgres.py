@@ -30,6 +30,7 @@ FROM product_variant_inventory
 WHERE product_id = %(product_id)s
   AND store_id = %(store_id)s
   AND public_variant_id = %(public_variant_id)s
+FOR UPDATE
 """
 
 # Stock snapshots are per variant (required-option unit). Each row is one
@@ -439,7 +440,7 @@ class PostgresInventoryAuditRepository:
                 INSERT_INVENTORY_AUDIT_SQL,
                 {
                     "actor_user_id": str(audit_record.actor_user_id),
-                    "actor_role": audit_record.actor_role.value,
+                    "actor_role": audit_record.actor_role,
                     "store_id": str(audit_record.store_id),
                     "product_id": str(audit_record.product_id),
                     "public_variant_id": audit_record.public_variant_id,

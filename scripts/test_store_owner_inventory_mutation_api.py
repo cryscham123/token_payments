@@ -43,6 +43,7 @@ OWNER_ID = UserId("018f33aa-9e6d-73d8-9dc3-47d6cdcc8201")
 STORE_ID = StoreId("018f33aa-9e6d-73d8-9dc3-47d6cdcc8202")
 PRODUCT_ID = ProductId("018f33aa-9e6d-73d8-9dc3-47d6cdcc8203")
 ORDER_ID = OrderId("018f33aa-9e6d-73d8-9dc3-47d6cdcc8204")
+VARIANT_ID = "var_ledger_hoodie_l"
 
 
 def test_stock_intake_endpoint_requires_positive_quantity_reason_and_updates_stock() -> None:
@@ -51,14 +52,14 @@ def test_stock_intake_endpoint_requires_positive_quantity_reason_and_updates_sto
 
     response = router.handle(
         "POST",
-        f"/store-owner/stores/{STORE_ID}/inventory/{PRODUCT_ID}/intake",
+        f"/store-owner/stores/{STORE_ID}/inventory/{PRODUCT_ID}/variants/{VARIANT_ID}/intake",
         headers=_owner_headers("req-intake", idempotency_key="stock-intake-http-001"),
         body=_json_body({"quantity": 4, "reason": "warehouse intake"}),
         received_at=NOW,
     )
     bad_quantity = router.handle(
         "POST",
-        f"/store-owner/stores/{STORE_ID}/inventory/{PRODUCT_ID}/intake",
+        f"/store-owner/stores/{STORE_ID}/inventory/{PRODUCT_ID}/variants/{VARIANT_ID}/intake",
         headers=_owner_headers("req-bad-intake", idempotency_key="stock-intake-http-002"),
         body=_json_body({"quantity": 0, "reason": "bad intake"}),
         received_at=NOW,
@@ -77,9 +78,12 @@ def test_stock_intake_endpoint_requires_positive_quantity_reason_and_updates_sto
         reason="warehouse intake",
         requested_at=NOW,
         request_id="req-intake",
+        public_variant_id=VARIANT_ID,
         actor_store_role="OWNER",
     )
     assert payload["status"] == "accepted"
+    assert payload["publicVariantId"] == VARIANT_ID
+    assert payload["inventory"]["publicVariantId"] == VARIANT_ID
     assert payload["inventory"]["availableStock"] == 9
     assert payload["inventory"]["totalStock"] == 9
     assert bad_quantity.status_code == 400
@@ -91,7 +95,7 @@ def test_stock_correction_endpoint_rejects_reserved_below_target_total() -> None
     )
     response = _router(handler=handler).handle(
         "POST",
-        f"/store-owner/stores/{STORE_ID}/inventory/{PRODUCT_ID}/corrections",
+        f"/store-owner/stores/{STORE_ID}/inventory/{PRODUCT_ID}/variants/{VARIANT_ID}/corrections",
         headers=_owner_headers("req-correction", idempotency_key="stock-correction-http-001"),
         body=_json_body({"targetTotalStock": 2, "reason": "cycle count"}),
         received_at=NOW,
@@ -109,14 +113,14 @@ def test_sale_pause_and_resume_endpoints_toggle_availability_without_releasing_r
 
     pause = router.handle(
         "POST",
-        f"/store-owner/stores/{STORE_ID}/inventory/{PRODUCT_ID}/pause",
+        f"/store-owner/stores/{STORE_ID}/inventory/{PRODUCT_ID}/variants/{VARIANT_ID}/pause",
         headers=_owner_headers("req-pause", idempotency_key="sale-pause-http-001"),
         body=_json_body({"reason": "supplier hold"}),
         received_at=NOW,
     )
     resume = router.handle(
         "POST",
-        f"/store-owner/stores/{STORE_ID}/inventory/{PRODUCT_ID}/resume",
+        f"/store-owner/stores/{STORE_ID}/inventory/{PRODUCT_ID}/variants/{VARIANT_ID}/resume",
         headers=_owner_headers("req-resume", idempotency_key="sale-resume-http-001"),
         body=_json_body({"reason": "supplier released hold"}),
         received_at=NOW,
@@ -136,14 +140,14 @@ def test_mutation_routes_require_idempotency_key_and_csrf_for_cookie_auth() -> N
 
     missing_idempotency = router.handle(
         "POST",
-        f"/store-owner/stores/{STORE_ID}/inventory/{PRODUCT_ID}/intake",
+        f"/store-owner/stores/{STORE_ID}/inventory/{PRODUCT_ID}/variants/{VARIANT_ID}/intake",
         headers={"Content-Type": "application/json", "X-Request-Id": "req-missing-idem"},
         body=_json_body({"quantity": 1, "reason": "missing idempotency"}),
         received_at=NOW,
     )
     missing_csrf = router.handle(
         "POST",
-        f"/store-owner/stores/{STORE_ID}/inventory/{PRODUCT_ID}/intake",
+        f"/store-owner/stores/{STORE_ID}/inventory/{PRODUCT_ID}/variants/{VARIANT_ID}/intake",
         headers={
             "Content-Type": "application/json",
             "Cookie": f"access_token=session-token; csrf_token={csrf.issue_token(now=NOW).token}",
@@ -160,6 +164,30 @@ def test_mutation_routes_require_idempotency_key_and_csrf_for_cookie_auth() -> N
     assert _json(missing_csrf.body)["error"]["code"] == "CSRF_TOKEN_MISSING"
 
 
+def test_mutation_route_requires_variant_path_not_legacy_body_variant() -> None:
+    router = _router(handler=FakeMutationHandler(_inventory(available=5)))
+
+    legacy_route = router.handle(
+        "POST",
+        f"/store-owner/stores/{STORE_ID}/inventory/{PRODUCT_ID}/intake",
+        headers=_owner_headers("req-legacy-intake", idempotency_key="stock-intake-legacy-001"),
+        body=_json_body({"quantity": 1, "reason": "legacy product route", "publicVariantId": VARIANT_ID}),
+        received_at=NOW,
+    )
+    body_variant = router.handle(
+        "POST",
+        f"/store-owner/stores/{STORE_ID}/inventory/{PRODUCT_ID}/variants/{VARIANT_ID}/intake",
+        headers=_owner_headers("req-body-variant", idempotency_key="stock-intake-body-variant-001"),
+        body=_json_body({"quantity": 1, "reason": "body variant", "publicVariantId": VARIANT_ID}),
+        received_at=NOW,
+    )
+
+    assert legacy_route.status_code == 404
+    assert _json(legacy_route.body)["error"]["code"] == "ROUTE_NOT_FOUND"
+    assert body_variant.status_code == 400
+    assert _json(body_variant.body)["error"]["code"] == "VALIDATION_ERROR"
+
+
 def test_store_owner_inventory_mutation_route_manifest_matches_api_spec_names() -> None:
     actual = {
         key: (spec.method, spec.path, spec.operation_id)
@@ -168,22 +196,22 @@ def test_store_owner_inventory_mutation_route_manifest_matches_api_spec_names() 
     expected = {
         "increase_stock": (
             "POST",
-            "/store-owner/stores/{storeId}/inventory/{productId}/intake",
+            "/store-owner/stores/{storeId}/inventory/{productId}/variants/{publicVariantId}/intake",
             "increaseStoreOwnerInventoryStock",
         ),
         "correct_stock": (
             "POST",
-            "/store-owner/stores/{storeId}/inventory/{productId}/corrections",
+            "/store-owner/stores/{storeId}/inventory/{productId}/variants/{publicVariantId}/corrections",
             "correctStoreOwnerInventoryStock",
         ),
         "pause_sales": (
             "POST",
-            "/store-owner/stores/{storeId}/inventory/{productId}/pause",
+            "/store-owner/stores/{storeId}/inventory/{productId}/variants/{publicVariantId}/pause",
             "pauseStoreOwnerInventorySales",
         ),
         "resume_sales": (
             "POST",
-            "/store-owner/stores/{storeId}/inventory/{productId}/resume",
+            "/store-owner/stores/{storeId}/inventory/{productId}/variants/{publicVariantId}/resume",
             "resumeStoreOwnerInventorySales",
         ),
     }
@@ -226,6 +254,7 @@ def _inventory(*, available: int) -> ProductInventory:
         available_stock=Quantity(available),
         reserved_stock=Quantity(0),
         total_stock=Quantity(available),
+        public_variant_id=VARIANT_ID,
     )
 
 

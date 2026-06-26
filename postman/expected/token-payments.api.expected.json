@@ -16,6 +16,7 @@
     "setPrimaryWallet",
     "revokeWallet",
     "refreshSession",
+    "switchSession",
     "logout",
     "getCurrentUser",
     "getCurrentUserProfile",
@@ -31,6 +32,7 @@
     "getStoreProfile",
     "listPublicProducts",
     "getPublicProduct",
+    "getProductAsset",
     "listMerchantStores",
     "updateStoreProfile",
     "createOrReuseStoreUser",
@@ -38,6 +40,7 @@
     "grantStoreMembership",
     "listMerchantProducts",
     "getMerchantProduct",
+    "uploadMerchantProductAsset",
     "registerStoreProduct",
     "updateStoreProduct",
     "listStoreOwnerInventory",
@@ -422,8 +425,33 @@
       }
     },
     {
+      "operationId": "switchSession",
+      "requestName": "4. Switch session active group",
+      "method": "POST",
+      "path": "/auth/sessions/switch",
+      "status": 200,
+      "headers": {
+        "X-CSRF-Token": "{{csrfToken}}",
+        "X-Request-Id": "postman-auth-switch-001",
+        "Set-Cookie": "access_token=<redacted-signed-session-token>; refresh_token=<redacted-signed-session-token>; csrf_token=<redacted-signed-csrf-token>"
+      },
+      "body": {
+        "token": {
+          "transport": "cookie"
+        },
+        "session": {
+          "userId": "<user-id>",
+          "walletAddress": "<wallet-address>",
+          "deviceId": "<device-id>",
+          "expiresAt": "<timestamp>",
+          "revokedAt": null
+        },
+        "csrfToken": "<redacted-signed-csrf-token>"
+      }
+    },
+    {
       "operationId": "logout",
-      "requestName": "4. Logout with cookie jar",
+      "requestName": "5. Logout with cookie jar",
       "method": "DELETE",
       "path": "/auth/sessions",
       "status": 204,
@@ -438,7 +466,7 @@
     },
     {
       "operationId": "getCurrentUser",
-      "requestName": "5. Get current user with cookie jar",
+      "requestName": "6. Get current user with cookie jar",
       "method": "GET",
       "path": "/auth/me",
       "status": 200,
@@ -780,6 +808,21 @@
       }
     },
     {
+      "operationId": "getProductAsset",
+      "requestName": "Get product asset",
+      "method": "GET",
+      "path": "/product-assets/{publicStoreId}/{assetFile}",
+      "status": 200,
+      "headers": {
+        "X-Request-Id": "postman-product-asset-001",
+        "Content-Type": "image/png",
+        "X-Content-Type-Options": "nosniff"
+      },
+      "body": {
+        "asset": "<binary-product-asset>"
+      }
+    },
+    {
       "operationId": "listMerchantStores",
       "requestName": "List merchant stores",
       "method": "GET",
@@ -869,6 +912,29 @@
           "title": "Local Hoodie",
           "status": "ACTIVE",
           "visibility": "PUBLIC"
+        }
+      }
+    },
+    {
+      "operationId": "uploadMerchantProductAsset",
+      "requestName": "Upload merchant product asset",
+      "method": "POST",
+      "path": "/merchant/stores/{publicStoreId}/assets",
+      "status": 201,
+      "headers": {
+        "X-CSRF-Token": "{{csrfToken}}",
+        "Idempotency-Key": "postman-product-asset-upload-001",
+        "X-Request-Id": "postman-product-asset-upload-001"
+      },
+      "body": {
+        "operation": "uploadMerchantProductAsset",
+        "status": "uploaded",
+        "asset": {
+          "assetType": "PRODUCT_IMAGE",
+          "mediaRef": "product-assets/st_demo_store_001/4d9679e1a8c3f0bdf0c3d9b1.png",
+          "fileName": "demo-hoodie.png",
+          "contentType": "image/png",
+          "sizeBytes": 1024
         }
       }
     },
@@ -1001,6 +1067,7 @@
           {
             "storeId": "<store-id>",
             "productId": "<product-id>",
+            "publicVariantId": "<public-variant-id>",
             "availableStock": 25,
             "reservedStock": 0,
             "confirmedStock": 0,
@@ -1016,7 +1083,7 @@
       "operationId": "increaseStoreOwnerInventoryStock",
       "requestName": "Increase store owner inventory stock",
       "method": "POST",
-      "path": "/store-owner/stores/{storeId}/inventory/{productId}/intake",
+      "path": "/store-owner/stores/{storeId}/inventory/{productId}/variants/{publicVariantId}/intake",
       "status": 202,
       "headers": {
         "X-CSRF-Token": "{{csrfToken}}",
@@ -1028,7 +1095,9 @@
         "status": "accepted",
         "storeId": "<store-id>",
         "productId": "<product-id>",
+        "publicVariantId": "<public-variant-id>",
         "inventory": {
+          "publicVariantId": "<public-variant-id>",
           "availableStock": 30,
           "reservedStock": 0,
           "totalStock": 30,
@@ -1040,7 +1109,7 @@
       "operationId": "correctStoreOwnerInventoryStock",
       "requestName": "Correct store owner inventory stock",
       "method": "POST",
-      "path": "/store-owner/stores/{storeId}/inventory/{productId}/corrections",
+      "path": "/store-owner/stores/{storeId}/inventory/{productId}/variants/{publicVariantId}/corrections",
       "status": 202,
       "headers": {
         "X-CSRF-Token": "{{csrfToken}}",
@@ -1052,7 +1121,9 @@
         "status": "accepted",
         "storeId": "<store-id>",
         "productId": "<product-id>",
+        "publicVariantId": "<public-variant-id>",
         "inventory": {
+          "publicVariantId": "<public-variant-id>",
           "availableStock": 18,
           "reservedStock": 2,
           "totalStock": 20,
@@ -1064,7 +1135,7 @@
       "operationId": "pauseStoreOwnerInventorySales",
       "requestName": "Pause store owner inventory sales",
       "method": "POST",
-      "path": "/store-owner/stores/{storeId}/inventory/{productId}/pause",
+      "path": "/store-owner/stores/{storeId}/inventory/{productId}/variants/{publicVariantId}/pause",
       "status": 202,
       "headers": {
         "X-CSRF-Token": "{{csrfToken}}",
@@ -1076,7 +1147,9 @@
         "status": "accepted",
         "storeId": "<store-id>",
         "productId": "<product-id>",
+        "publicVariantId": "<public-variant-id>",
         "inventory": {
+          "publicVariantId": "<public-variant-id>",
           "saleStatus": "PAUSED"
         }
       }
@@ -1085,7 +1158,7 @@
       "operationId": "resumeStoreOwnerInventorySales",
       "requestName": "Resume store owner inventory sales",
       "method": "POST",
-      "path": "/store-owner/stores/{storeId}/inventory/{productId}/resume",
+      "path": "/store-owner/stores/{storeId}/inventory/{productId}/variants/{publicVariantId}/resume",
       "status": 202,
       "headers": {
         "X-CSRF-Token": "{{csrfToken}}",
@@ -1097,7 +1170,9 @@
         "status": "accepted",
         "storeId": "<store-id>",
         "productId": "<product-id>",
+        "publicVariantId": "<public-variant-id>",
         "inventory": {
+          "publicVariantId": "<public-variant-id>",
           "saleStatus": "ACTIVE"
         }
       }

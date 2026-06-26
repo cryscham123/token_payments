@@ -82,7 +82,7 @@ Merchant groups are created by store provisioning and linked to one store or mer
 
 ### Ports and Adapters
 
-- Input: `requestLoginChallenge` (SIWE challenge), `loginWithMetaMask` (SIWE login, operation name retained for route compatibility), `refreshSession`, `logout`, `getCurrentUser` (Adapter type: HTTP)
+- Input: `requestLoginChallenge` (SIWE challenge), `loginWithMetaMask` (SIWE login, operation name retained for route compatibility), `refreshSession`, `switchSession`, `logout`, `getCurrentUser` (Adapter type: HTTP)
 - Output: `UserRepository`, `LoginChallengeRepository`, `AuthSessionRepository`, `OutboxMessageRepository`, `WalletSignatureVerifier`, `TokenIssuer`, `AuthEventPublisher`
 - Adapters: MetaMask wallet client, signature verifier, PostgreSQL repositories, optional Redis cache-aside/TTL storage
 - Storage contract: PostgreSQL is the source of truth for auth users, login challenges, and sessions. Refresh reuse detection uses the PostgreSQL session repository hash/salt/rotation model. Redis is optional cache-aside/TTL optimization, not a live required dependency.

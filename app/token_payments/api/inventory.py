@@ -68,7 +68,9 @@ class StoreOwnerInventoryApi:
             claims = _claims_from_request(request)
             store_id = StoreId(_lookup_value(request, "storeId"))
             product_id = ProductId(_lookup_value(request, "productId"))
+            public_variant_id = _lookup_value(request, "publicVariantId")
             body = _body_mapping(request)
+            _reject_body_variant_id(body)
             idempotency_key = idempotency_key_from_request(request, body)
             if idempotency_key is None:
                 return _error_response(
@@ -87,7 +89,7 @@ class StoreOwnerInventoryApi:
                 "command_id": command_id,
                 "store_id": store_id,
                 "product_id": product_id,
-                "public_variant_id": _optional_text(body, "publicVariantId") or _optional_text(body, "public_variant_id"),
+                "public_variant_id": public_variant_id,
                 "actor_user_id": claims.user_id,
                 "actor_role": claims.role,
                 "reason": reason,
@@ -203,6 +205,8 @@ class StoreOwnerInventoryApi:
             "auditId": result.audit_id,
         }
         if result.inventory is not None:
+            if result.inventory.public_variant_id is not None:
+                body["publicVariantId"] = result.inventory.public_variant_id
             body["inventory"] = _inventory_payload(result.inventory)
         if result.duplicate_decision is not None:
             body["duplicateDecision"] = result.duplicate_decision.value
@@ -255,7 +259,7 @@ def _claims_from_request(request: ApiRequest) -> _InventoryClaims:
 
 
 def _snapshot_payload(snapshot: InventorySnapshot) -> dict[str, Any]:
-    return {
+    payload: dict[str, Any] = {
         "storeId": str(snapshot.store_id),
         "productId": str(snapshot.product_id),
         "availableStock": snapshot.available_stock,
@@ -266,6 +270,9 @@ def _snapshot_payload(snapshot: InventorySnapshot) -> dict[str, Any]:
         "saleStatus": snapshot.sale_status.value,
         "updatedAt": snapshot.updated_at.isoformat(),
     }
+    if snapshot.public_variant_id is not None:
+        payload["publicVariantId"] = snapshot.public_variant_id
+    return payload
 
 
 def _inventory_payload(inventory: ProductInventory, *, updated_at: datetime | None = None) -> dict[str, Any]:
@@ -274,7 +281,7 @@ def _inventory_payload(inventory: ProductInventory, *, updated_at: datetime | No
         for reservation in inventory.reservations
         if reservation.status.value == "CONFIRMED"
     )
-    return {
+    payload: dict[str, Any] = {
         "storeId": str(inventory.store_id),
         "productId": str(inventory.product_id),
         "availableStock": inventory.available_stock.value,
@@ -285,12 +292,20 @@ def _inventory_payload(inventory: ProductInventory, *, updated_at: datetime | No
         "saleStatus": inventory.sale_status.value,
         "updatedAt": updated_at.isoformat() if updated_at is not None else None,
     }
+    if inventory.public_variant_id is not None:
+        payload["publicVariantId"] = inventory.public_variant_id
+    return payload
 
 
 def _body_mapping(request: ApiRequest) -> Mapping[str, Any]:
     if not isinstance(request.body, Mapping):
         raise ValueError("request body must be an object")
     return request.body
+
+
+def _reject_body_variant_id(body: Mapping[str, Any]) -> None:
+    if "publicVariantId" in body or "public_variant_id" in body:
+        raise ValueError("publicVariantId must be supplied in the inventory variant route path")
 
 
 def _lookup_value(request: ApiRequest, key: str) -> str:

@@ -34,6 +34,7 @@ from _store_catalog_test_support import (  # noqa: E402
 
 
 NOW = datetime(2026, 5, 20, 1, 30, tzinfo=UTC)
+VARIANT_ID = "var_ledger_mug_default"
 
 
 def test_admin_mutations_require_server_side_admin_claim_and_idempotency_key() -> None:
@@ -147,7 +148,7 @@ def test_customer_role_store_member_can_mutate_inventory_and_audit_records_store
 
     response = router.handle(
         "POST",
-        f"/store-owner/stores/{STORE_ID}/inventory/{PRODUCT_ID}/intake",
+        _variant_inventory_path("intake"),
         headers={"Content-Type": "application/json", "Idempotency-Key": "customer-owner-stock-001", "X-Request-Id": "req-customer-owner-stock"},
         body=_json_body({"quantity": 3, "reason": "owner intake"}),
         received_at=NOW,
@@ -174,6 +175,7 @@ def test_customer_role_store_member_can_mutate_inventory_and_audit_records_store
             idempotency_key="customer-owner-stock-001",
             recorded_at=NOW,
             actor_store_role="OWNER",
+            public_variant_id=VARIANT_ID,
         )
     ]
 
@@ -211,7 +213,12 @@ def _inventory() -> ProductInventory:
         available_stock=Quantity(5),
         reserved_stock=Quantity(0),
         total_stock=Quantity(5),
+        public_variant_id=VARIANT_ID,
     )
+
+
+def _variant_inventory_path(action: str) -> str:
+    return f"/store-owner/stores/{STORE_ID}/inventory/{PRODUCT_ID}/variants/{VARIANT_ID}/{action}"
 
 
 def _json_body(payload: Mapping[str, Any]) -> bytes:

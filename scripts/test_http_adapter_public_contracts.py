@@ -56,7 +56,7 @@ def test_http_route_manifest_includes_every_phase_7_route_family() -> None:
     described = list(describe_http_routes())
 
     assert described == manifest
-    assert len(manifest) == 59
+    assert len(manifest) == 62
     assert {entry["operationId"] for entry in manifest} == {
         "requestLoginChallenge",
         "loginWithMetaMask",
@@ -69,9 +69,10 @@ def test_http_route_manifest_includes_every_phase_7_route_family() -> None:
         "linkWallet",
         "listWallets",
         "setPrimaryWallet",
-        "revokeWallet",
-        "refreshSession",
-        "logout",
+            "revokeWallet",
+            "refreshSession",
+            "switchSession",
+            "logout",
         "getCurrentUser",
         "getCurrentUserProfile",
         "updateCurrentUserProfile",
@@ -86,6 +87,7 @@ def test_http_route_manifest_includes_every_phase_7_route_family() -> None:
         "listAllPublicProducts",
         "listPublicProducts",
         "getPublicProduct",
+        "getProductAsset",
         "listMerchantStores",
         "updateStoreProfile",
         "createOrReuseStoreUser",
@@ -93,6 +95,7 @@ def test_http_route_manifest_includes_every_phase_7_route_family() -> None:
         "grantStoreMembership",
         "listMerchantProducts",
         "getMerchantProduct",
+        "uploadMerchantProductAsset",
         "registerStoreProduct",
         "updateStoreProduct",
         "listStoreOwnerInventory",
@@ -125,6 +128,7 @@ def test_http_route_manifest_includes_every_phase_7_route_family() -> None:
         "payments",
         "stores",
         "products",
+        "product-assets",
         "admin",
         "store-owner",
         "merchant",

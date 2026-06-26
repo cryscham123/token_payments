@@ -89,7 +89,7 @@ def test_api_spec_is_gitbook_ready_without_losing_route_manifest_contract() -> N
     ):
         assert f"]({link})" in api_spec
 
-    assert "Public HTTP route surface is exactly the current 59-route manifest" in api_spec
+    assert "Public HTTP route surface is exactly the current 62-route manifest" in api_spec
     for entry in http_route_manifest():
         route_row = f"| `{entry['operationId']}` | `{entry['method']}` | `{entry['path']}` |"
         assert route_row in api_spec
@@ -160,6 +160,7 @@ def test_gitbook_openapi_reference_documents_route_inputs_and_responses() -> Non
         "requestWalletLinkChallenge",
         "linkWallet",
         "refreshSession",
+        "switchSession",
         "updateCurrentUserProfile",
         "createOrder",
         "submitTransactionHash",
@@ -167,6 +168,7 @@ def test_gitbook_openapi_reference_documents_route_inputs_and_responses() -> Non
         "createOrReuseStoreUser",
         "createStore",
         "grantStoreMembership",
+        "uploadMerchantProductAsset",
         "registerStoreProduct",
         "updateStoreProduct",
         "increaseStoreOwnerInventoryStock",
@@ -216,6 +218,9 @@ def test_gitbook_openapi_reference_documents_route_inputs_and_responses() -> Non
         assert expected_status_by_operation[operation_id] in operation["responses"], operation_id
         for status, response in operation["responses"].items():
             assert response.get("description"), (operation_id, status)
+            if operation_id == "getProductAsset" and status == "200":
+                assert "application/pdf" in response.get("content", {}), (operation_id, status)
+                continue
             if status != "204":
                 media = response.get("content", {}).get("application/json")
                 assert media and "schema" in media, (operation_id, status)
@@ -322,7 +327,7 @@ def test_korean_gitbook_api_pages_cover_public_route_groups() -> None:
             "카탈로그",
             "`GET /stores`",
             "`POST /merchant/stores/{publicStoreId}/products`",
-            "`POST /store-owner/stores/{storeId}/inventory/{productId}/intake`",
+            "`POST /store-owner/stores/{storeId}/inventory/{productId}/variants/{publicVariantId}/intake`",
         ),
         "docs/api/merchant-admin-rbac.md": (
             "RBAC",

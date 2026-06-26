@@ -110,7 +110,7 @@ def test_api_and_serve_api_previews_include_asgi_fastapi_metadata_and_existing_m
         assert http["adapter"] == "framework-neutral-wsgi"
         assert http["longRunning"] is False
         assert http["serverStarted"] is False
-        assert http["routeCount"] == 59
+        assert http["routeCount"] == 62
         assert http["routes"] == expected_manifest
         assert http["wsgiFactory"] == "token_payments.api.build_wsgi_app"
         assert http["asgiFactory"] == "token_payments.api.build_asgi_app"

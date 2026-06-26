@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 from typing import Any, Mapping
 
 from token_payments.contexts.auth.domain import UserRole
@@ -11,16 +13,21 @@ from token_payments.contexts.store_catalog.application.commands import (
     GetStoreProfileQuery,
     GrantStoreMembershipCommand,
     ListMerchantStoresQuery,
+    ProductOptionInput,
+    ProductOptionValueInput,
+    ProductVariantInput,
     RegisterStoreProductCommand,
     UpdateStoreProfileCommand,
     UpdateStoreProductCommand,
+    UploadStoreProductAssetCommand,
     payload_hash,
 )
 from token_payments.contexts.store_catalog.application.ports import StoreCatalogCommandStatus
-from token_payments.contexts.store_catalog.domain import ProductStatus, ProductVisibility, PublicProductId, PublicStoreId, StoreMembershipRole
+from token_payments.contexts.store_catalog.domain import ProductStatus, ProductVisibility, PublicProductId, PublicStoreId, PublicVariantId, StoreMembershipRole
 from token_payments.shared.domain import CommandId, Money, ProductId, StoreId, UserId, WalletAddress
 
 from .contracts import ApiRequest, ApiResponse, json_response
+from .http import HttpResponse
 from .idempotency import IdempotencyKeyConflict, idempotency_conflict_response, idempotency_key_from_request
 
 
@@ -171,6 +178,27 @@ class StoreCatalogApi:
         except ValueError as exc:
             return _error_response("VALIDATION_ERROR", str(exc), 400, request.request_id)
 
+    def get_product_asset(self, request: ApiRequest) -> ApiResponse | HttpResponse:
+        try:
+            asset = self._use_case.get_product_asset(
+                public_store_id=PublicStoreId(_lookup_value(request, "publicStoreId")),
+                asset_file=_asset_file_lookup(request),
+            )
+            if asset is None:
+                return _error_response("ASSET_NOT_FOUND", "product asset was not found", 404, request.request_id)
+            return HttpResponse(
+                status_code=200,
+                headers={
+                    "Content-Type": asset.content_type,
+                    "Cache-Control": "public, max-age=31536000, immutable",
+                    "X-Content-Type-Options": "nosniff",
+                    "X-Request-Id": request.request_id,
+                },
+                body=asset.content,
+            )
+        except ValueError as exc:
+            return _error_response("VALIDATION_ERROR", str(exc), 400, request.request_id)
+
     def list_merchant_products(self, request: ApiRequest) -> ApiResponse:
         try:
             claims = _require_authenticated(request)
@@ -302,6 +330,8 @@ class StoreCatalogApi:
                     "tags",
                     "media",
                     "attributes",
+                    "options",
+                    "variants",
                     "status",
                     "visibility",
                     "price",
@@ -325,7 +355,9 @@ class StoreCatalogApi:
                 category=_optional_text(body, "category"),
                 tags=_optional_text_tuple(body, "tags"),
                 media=_optional_text_tuple(body, "media"),
-                attributes=_optional_mapping(body, "attributes"),
+                attributes=_optional_product_attributes(body, "attributes"),
+                options=_optional_product_options(body, "options"),
+                variants=_optional_product_variants(body, "variants"),
                 status=_optional_product_status(body, "status", ProductStatus.ACTIVE if active else ProductStatus.INACTIVE),
                 visibility=_optional_product_visibility(body, "visibility", ProductVisibility.PUBLIC),
                 price=_price(body),
@@ -338,6 +370,50 @@ class StoreCatalogApi:
             )
             return _result_response(
                 self._use_case.register_store_product(command),
+                request.request_id,
+                created_status=201,
+            )
+        except _ApiError as exc:
+            return exc.response(request.request_id)
+        except IdempotencyKeyConflict as exc:
+            return idempotency_conflict_response(exc, request.request_id)
+        except ValueError as exc:
+            return _error_response("VALIDATION_ERROR", str(exc), 400, request.request_id)
+
+    def upload_product_asset(self, request: ApiRequest) -> ApiResponse:
+        try:
+            claims = _require_authenticated(request)
+            if "product:write" not in claims.scopes and "product:write:any" not in claims.scopes:
+                raise _ApiError("STORE_OWNER_STORE_FORBIDDEN", "product:write permission is required", 403)
+            body = _body(request)
+            _reject_unknown_fields(
+                body,
+                {
+                    "assetType",
+                    "fileName",
+                    "contentType",
+                    "contentBase64",
+                    "idempotencyKey",
+                    "commandId",
+                },
+            )
+            idempotency_key = _required_idempotency_key(request, body)
+            content = _asset_content(body)
+            command = UploadStoreProductAssetCommand(
+                command_id=CommandId(idempotency_key),
+                actor_user_id=claims.user_id,
+                public_store_id=PublicStoreId(_lookup_value(request, "publicStoreId")),
+                asset_type=_asset_type(body),
+                file_name=_asset_file_name(body),
+                content_type=_asset_content_type(body),
+                content=content,
+                platform_override="product:write:any" in claims.scopes,
+                requested_at=request.received_at,
+                request_id=request.request_id,
+                payload_hash=payload_hash(_idempotency_payload(request, body, claims.user_id)),
+            )
+            return _result_response(
+                self._use_case.upload_store_product_asset(command),
                 request.request_id,
                 created_status=201,
             )
@@ -363,6 +439,8 @@ class StoreCatalogApi:
                     "tags",
                     "media",
                     "attributes",
+                    "options",
+                    "variants",
                     "status",
                     "visibility",
                     "price",
@@ -381,7 +459,9 @@ class StoreCatalogApi:
                 category=_optional_text(body, "category"),
                 tags=_optional_text_tuple_or_none(body, "tags"),
                 media=_optional_text_tuple_or_none(body, "media"),
-                attributes=_optional_mapping(body, "attributes"),
+                attributes=_optional_product_attributes(body, "attributes"),
+                options=_optional_product_options_or_none(body, "options"),
+                variants=_optional_product_variants_or_none(body, "variants"),
                 status=_optional_product_status_or_none(body, "status"),
                 visibility=_optional_product_visibility_or_none(body, "visibility"),
                 price=_optional_price(body),
@@ -490,6 +570,73 @@ def _idempotency_payload(request: ApiRequest, body: Mapping[str, Any], actor_use
     }
 
 
+_IMAGE_CONTENT_TYPES = frozenset({"image/png", "image/jpeg", "image/webp", "image/gif"})
+_PDF_CONTENT_TYPES = frozenset({"application/pdf"})
+_ASSET_CONTENT_TYPES = {
+    "PRODUCT_IMAGE": _IMAGE_CONTENT_TYPES,
+    "PRODUCT_DETAIL_PDF": _PDF_CONTENT_TYPES,
+}
+_MAX_IMAGE_BYTES = 5 * 1024 * 1024
+_MAX_PDF_BYTES = 10 * 1024 * 1024
+
+
+def _asset_type(body: Mapping[str, Any]) -> str:
+    value = _required_text(body, "assetType").upper()
+    if value not in _ASSET_CONTENT_TYPES:
+        raise ValueError("assetType must be PRODUCT_IMAGE or PRODUCT_DETAIL_PDF")
+    return value
+
+
+def _asset_content_type(body: Mapping[str, Any]) -> str:
+    asset_type = _asset_type(body)
+    content_type = _required_text(body, "contentType").lower()
+    if content_type not in _ASSET_CONTENT_TYPES[asset_type]:
+        allowed = ", ".join(sorted(_ASSET_CONTENT_TYPES[asset_type]))
+        raise ValueError(f"contentType must be one of {allowed} for {asset_type}")
+    return content_type
+
+
+def _asset_file_name(body: Mapping[str, Any]) -> str:
+    file_name = _required_text(body, "fileName")
+    if len(file_name) > 180:
+        raise ValueError("fileName must be at most 180 characters")
+    if any(char in file_name for char in "\x00\r\n/\\"):
+        raise ValueError("fileName must not contain path separators or control characters")
+    return file_name
+
+
+def _asset_content(body: Mapping[str, Any]) -> bytes:
+    asset_type = _asset_type(body)
+    content_type = _asset_content_type(body)
+    encoded = _required_text(body, "contentBase64")
+    try:
+        content = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError("contentBase64 must be valid base64") from exc
+    if not content:
+        raise ValueError("contentBase64 must decode to non-empty bytes")
+    max_bytes = _MAX_IMAGE_BYTES if asset_type == "PRODUCT_IMAGE" else _MAX_PDF_BYTES
+    if len(content) > max_bytes:
+        raise ValueError(f"contentBase64 decoded content must be at most {max_bytes} bytes")
+    _validate_asset_magic_bytes(content_type, content)
+    return content
+
+
+def _validate_asset_magic_bytes(content_type: str, content: bytes) -> None:
+    if content_type == "image/png" and not content.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise ValueError("asset content magic bytes do not match contentType")
+    if content_type == "image/jpeg" and not content.startswith(b"\xff\xd8\xff"):
+        raise ValueError("asset content magic bytes do not match contentType")
+    if content_type == "image/webp" and not (
+        len(content) >= 12 and content[:4] == b"RIFF" and content[8:12] == b"WEBP"
+    ):
+        raise ValueError("asset content magic bytes do not match contentType")
+    if content_type == "image/gif" and not (content.startswith(b"GIF87a") or content.startswith(b"GIF89a")):
+        raise ValueError("asset content magic bytes do not match contentType")
+    if content_type == "application/pdf" and not content.startswith(b"%PDF-"):
+        raise ValueError("asset content magic bytes do not match contentType")
+
+
 def _price(body: Mapping[str, Any]) -> Money:
     raw = body.get("price")
     if not isinstance(raw, Mapping):
@@ -524,6 +671,15 @@ def _lookup_value(request: ApiRequest, key: str) -> str:
     if isinstance(value, str) and value.strip():
         return value.strip()
     raise ValueError(f"{key} is required")
+
+
+def _asset_file_lookup(request: ApiRequest) -> str:
+    value = _lookup_value(request, "assetFile")
+    if len(value) > 120 or any(char in value for char in "\x00\r\n/\\"):
+        raise ValueError("assetFile has an invalid shape")
+    if not value.lower().endswith((".png", ".jpg", ".webp", ".gif", ".pdf")):
+        raise ValueError("assetFile has an unsupported extension")
+    return value
 
 
 def _reject_unknown_query(query: Mapping[str, Any], allowed: set[str]) -> None:
@@ -692,6 +848,124 @@ def _optional_mapping(body: Mapping[str, Any], key: str) -> Mapping[str, Any] | 
     return value
 
 
+def _optional_product_attributes(body: Mapping[str, Any], key: str) -> Mapping[str, Any] | None:
+    attributes = _optional_mapping(body, key)
+    if attributes is None:
+        return None
+    if "detailPdfUrl" in attributes:
+        raise ValueError("attributes.detailPdfUrl is not supported; upload a PDF asset and use detailPdfAssetKey")
+    detail_pdf_asset_key = attributes.get("detailPdfAssetKey")
+    if detail_pdf_asset_key is not None:
+        if not isinstance(detail_pdf_asset_key, str) or not detail_pdf_asset_key.strip():
+            raise ValueError("attributes.detailPdfAssetKey must be a non-empty string")
+        value = detail_pdf_asset_key.strip()
+        if value.startswith(("http://", "https://", "data:")):
+            raise ValueError("attributes.detailPdfAssetKey must be an internal product asset key")
+        parts = value.split("/")
+        if (
+            len(parts) != 3
+            or parts[0] != "product-assets"
+            or not parts[1]
+            or not parts[2].lower().endswith(".pdf")
+            or any(part in {".", ".."} for part in parts)
+        ):
+            raise ValueError("attributes.detailPdfAssetKey has an invalid shape")
+    return attributes
+
+
+def _optional_product_options(body: Mapping[str, Any], key: str) -> tuple[ProductOptionInput, ...] | None:
+    if key not in body:
+        return None
+    return _product_options(body.get(key), key)
+
+
+def _optional_product_options_or_none(body: Mapping[str, Any], key: str) -> tuple[ProductOptionInput, ...] | None:
+    if key not in body:
+        return None
+    return _product_options(body.get(key), key)
+
+
+def _product_options(value: Any, field_name: str) -> tuple[ProductOptionInput, ...]:
+    if not isinstance(value, list):
+        raise ValueError(f"{field_name} must be an array")
+    options: list[ProductOptionInput] = []
+    for index, raw_option in enumerate(value):
+        if not isinstance(raw_option, Mapping):
+            raise ValueError(f"{field_name}[{index}] must be an object")
+        option_key = _required_text(raw_option, "key")
+        raw_values = raw_option.get("values", [])
+        if not isinstance(raw_values, list):
+            raise ValueError(f"{field_name}[{index}].values must be an array")
+        values = tuple(_product_option_value(raw_value, f"{field_name}[{index}].values[{value_index}]") for value_index, raw_value in enumerate(raw_values))
+        options.append(
+            ProductOptionInput(
+                key=option_key,
+                option_id=_optional_text(raw_option, "optionId"),
+                display_name=_optional_text(raw_option, "displayName") or option_key,
+                required=_optional_bool(raw_option, "required", True),
+                selection_type=_optional_text(raw_option, "selectionType") or "SINGLE",
+                option_type=_optional_text(raw_option, "optionType") or "VARIANT",
+                sort_order=_optional_int(raw_option, "sortOrder", index),
+                active=_optional_bool(raw_option, "active", True),
+                values=values,
+            )
+        )
+    return tuple(options)
+
+
+def _product_option_value(raw_value: Any, field_name: str) -> ProductOptionValueInput:
+    if not isinstance(raw_value, Mapping):
+        raise ValueError(f"{field_name} must be an object")
+    value_key = _required_text(raw_value, "value")
+    return ProductOptionValueInput(
+        value=value_key,
+        option_value_id=_optional_text(raw_value, "optionValueId"),
+        display_value=_optional_text(raw_value, "displayValue") or value_key,
+        price_delta=_optional_price_from_mapping(raw_value, "priceDelta"),
+        sort_order=_optional_int(raw_value, "sortOrder", 0),
+        active=_optional_bool(raw_value, "active", True),
+    )
+
+
+def _optional_product_variants(body: Mapping[str, Any], key: str) -> tuple[ProductVariantInput, ...] | None:
+    if key not in body:
+        return None
+    return _product_variants(body.get(key), key)
+
+
+def _optional_product_variants_or_none(body: Mapping[str, Any], key: str) -> tuple[ProductVariantInput, ...] | None:
+    if key not in body:
+        return None
+    return _product_variants(body.get(key), key)
+
+
+def _product_variants(value: Any, field_name: str) -> tuple[ProductVariantInput, ...]:
+    if not isinstance(value, list):
+        raise ValueError(f"{field_name} must be an array")
+    variants: list[ProductVariantInput] = []
+    for index, raw_variant in enumerate(value):
+        if not isinstance(raw_variant, Mapping):
+            raise ValueError(f"{field_name}[{index}] must be an object")
+        option_values = raw_variant.get("optionValues", {})
+        if not isinstance(option_values, Mapping):
+            raise ValueError(f"{field_name}[{index}].optionValues must be an object")
+        public_variant_id = _optional_text(raw_variant, "publicVariantId")
+        variants.append(
+            ProductVariantInput(
+                public_variant_id=PublicVariantId(public_variant_id) if public_variant_id is not None else None,
+                display_name=_required_text(raw_variant, "displayName"),
+                option_values=option_values,
+                price_delta=_optional_price_from_mapping(raw_variant, "priceDelta") or Money(0, "USD"),
+                sku=_optional_text(raw_variant, "sku"),
+                status=_optional_product_status(raw_variant, "status", ProductStatus.ACTIVE),
+                active=_optional_bool(raw_variant, "active", True),
+                sort_order=_optional_int(raw_variant, "sortOrder", index),
+                initial_total_stock=_optional_int_or_none(raw_variant, "initialTotalStock"),
+            )
+        )
+    return tuple(variants)
+
+
 def _optional_product_status(body: Mapping[str, Any], key: str, default: ProductStatus) -> ProductStatus:
     value = _optional_text(body, key)
     return default if value is None else ProductStatus(value)
@@ -720,6 +994,36 @@ def _text_value(value: Any, field_name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field_name} must contain non-empty strings")
     return value.strip()
+
+
+def _optional_int(body: Mapping[str, Any], key: str, default: int) -> int:
+    if key not in body:
+        return default
+    value = body.get(key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{key} must be an integer")
+    return value
+
+
+def _optional_int_or_none(body: Mapping[str, Any], key: str) -> int | None:
+    if key not in body or body[key] is None:
+        return None
+    value = body.get(key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{key} must be an integer")
+    return value
+
+
+def _optional_price_from_mapping(body: Mapping[str, Any], key: str) -> Money | None:
+    if key not in body or body[key] is None:
+        return None
+    raw = body.get(key)
+    if not isinstance(raw, Mapping):
+        raise ValueError(f"{key} must be an object")
+    return Money(
+        amount=_required_text(raw, "amount"),
+        currency=_optional_text(raw, "currency") or "USD",
+    )
 
 
 def _reject_unknown_fields(body: Mapping[str, Any], allowed: set[str]) -> None:

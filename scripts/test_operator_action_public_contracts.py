@@ -96,7 +96,7 @@ def test_http_route_manifest_keeps_existing_routes_and_adds_store_owner_inventor
     specs = list(list_http_route_specs())
     operation_ids = [entry["operationId"] for entry in manifest]
 
-    assert len(manifest) == 59
+    assert len(manifest) == 62
     assert len(operation_ids) == len(set(operation_ids))
     assert PHASE_7_OPERATION_IDS <= set(operation_ids)
     assert PHASE_8_OPERATION_IDS <= set(operation_ids)
@@ -104,6 +104,8 @@ def test_http_route_manifest_keeps_existing_routes_and_adds_store_owner_inventor
         "createOrReuseStoreUser",
         "createStore",
         "grantStoreMembership",
+        "getProductAsset",
+        "uploadMerchantProductAsset",
         "registerStoreProduct",
         "listStoreOwnerInventory",
         "increaseStoreOwnerInventoryStock",

@@ -196,6 +196,9 @@ export default function Home() {
                       {formatAssetPriceHint(product.assetPrices) && (
                         <span className="block text-[11px] font-medium text-slate-400">{formatAssetPriceHint(product.assetPrices)}</span>
                       )}
+                      <span className="block text-[11px] font-medium text-slate-400">
+                        {homePaymentSummary(product.paymentCapability)}
+                      </span>
 
                     </div>
                   </div>
@@ -239,6 +242,9 @@ export default function Home() {
                       {formatAssetPriceHint(product.assetPrices) && (
                         <span className="block text-[11px] font-medium text-slate-400">{formatAssetPriceHint(product.assetPrices)}</span>
                       )}
+                      <span className="block text-[11px] font-medium text-slate-400">
+                        {homePaymentSummary(product.paymentCapability)}
+                      </span>
 
                     </div>
                   </div>

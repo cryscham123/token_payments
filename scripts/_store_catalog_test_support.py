@@ -16,6 +16,7 @@ from token_payments.contexts.auth.domain import User, UserRole  # noqa: E402
 from token_payments.contexts.store_catalog.application import (  # noqa: E402
     CatalogAuditRecord,
     CatalogIdempotencyRecord,
+    ProductAssetRecord,
     StoreCatalogApplicationService,
 )
 from token_payments.contexts.store_catalog.domain import (  # noqa: E402
@@ -30,6 +31,7 @@ from token_payments.contexts.store_catalog.domain import (  # noqa: E402
     StoreMembershipRole,
     StoreProduct,
     StoreProfile,
+    PublicVariantId,
 )
 from token_payments.shared.domain import Money, ProductId, StoreId, UserId, WalletAddress  # noqa: E402
 
@@ -120,6 +122,8 @@ class FakeStoreCatalogRepository:
         self.product_option_values: dict[str, tuple[ProductOptionValue, ...]] = {}
         self.product_variants: dict[tuple[StoreId, ProductId], tuple[ProductVariant, ...]] = {}
         self.variant_inventory: dict[str, int] = {}
+        self.variant_inventory_seed_calls: list[tuple[str, int]] = []
+        self.product_assets: dict[str, dict[str, Any]] = {}
         self.audit_records: list[CatalogAuditRecord] = []
 
     def seed_user(
@@ -313,6 +317,68 @@ class FakeStoreCatalogRepository:
 
     def save_inventory_projection(self, product: StoreProduct, initial_total_stock: int) -> None:
         self.inventory.setdefault((product.store_id, product.product_id), initial_total_stock)
+
+    def save_product_asset(self, asset: ProductAssetRecord) -> None:
+        self.product_assets[asset.media_ref] = {
+            "store_id": asset.store_id,
+            "public_store_id": asset.public_store_id,
+            "asset_type": asset.asset_type,
+            "file_name": asset.file_name,
+            "content_type": asset.content_type,
+            "size_bytes": asset.size_bytes,
+            "content_sha256": asset.content_sha256,
+            "content": asset.content,
+        }
+
+    def get_product_asset(self, media_ref: str) -> ProductAssetRecord | None:
+        row = self.product_assets.get(media_ref)
+        if row is None:
+            return None
+        return ProductAssetRecord(
+            store_id=row["store_id"],
+            public_store_id=row["public_store_id"],
+            media_ref=media_ref,
+            asset_type=row["asset_type"],
+            file_name=row["file_name"],
+            content_type=row["content_type"],
+            size_bytes=row["size_bytes"],
+            content_sha256=row["content_sha256"],
+            content=row["content"],
+            created_at=NOW,
+        )
+
+    def replace_product_options(
+        self,
+        store_id: StoreId,
+        product_id: ProductId,
+        options: tuple[ProductOption, ...],
+        option_values: Mapping[str, tuple[ProductOptionValue, ...]],
+    ) -> None:
+        self.product_options[(store_id, product_id)] = tuple(options)
+        active_option_ids = {option.option_id for option in options}
+        for option_id in tuple(self.product_option_values):
+            if option_id not in active_option_ids:
+                del self.product_option_values[option_id]
+        for option_id, values in option_values.items():
+            self.product_option_values[option_id] = tuple(values)
+
+    def replace_product_variants(
+        self,
+        store_id: StoreId,
+        product_id: ProductId,
+        variants: tuple[ProductVariant, ...],
+    ) -> None:
+        self.product_variants[(store_id, product_id)] = tuple(variants)
+
+    def save_variant_inventory_projection(
+        self,
+        product: StoreProduct,
+        public_variant_id: PublicVariantId,
+        initial_total_stock: int,
+    ) -> None:
+        self.variant_inventory_seed_calls.append((str(public_variant_id), int(initial_total_stock)))
+        self.inventory.setdefault((product.store_id, product.product_id), 0)
+        self.variant_inventory.setdefault(str(public_variant_id), int(initial_total_stock))
 
     def record_audit(self, record: CatalogAuditRecord) -> str | None:
         self.audit_records.append(record)

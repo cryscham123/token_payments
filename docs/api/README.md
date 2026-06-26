@@ -28,7 +28,7 @@ Token Payments API는 로컬 backend의 public HTTP surface를 설명한다. 이
 
 ## 현재 public route surface
 
-현재 public HTTP route surface는 `app/token_payments/api/http.py`의 55개 route manifest와 일치해야 한다. Postman collection과 expected response fixture도 같은 surface를 따라야 하며, 새 기능 phase는 API가 내부 전용 예외인지 명시하지 않는 한 API 문서와 테스트를 함께 갱신한다.
+현재 public HTTP route surface는 `app/token_payments/api/http.py`의 62개 route manifest와 일치해야 한다. Postman collection과 expected response fixture도 같은 surface를 따라야 하며, 새 기능 phase는 API가 내부 전용 예외인지 명시하지 않는 한 API 문서와 테스트를 함께 갱신한다.
 
 ## 공통 요청 규칙
 

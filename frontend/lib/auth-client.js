@@ -117,6 +117,14 @@ export async function listMerchantStores() {
   return apiJson("/merchant/stores", { method: "GET" });
 }
 
+export async function uploadProductAsset(publicStoreId, payload, idempotencyKey) {
+  return apiJson(`/merchant/stores/${encodeURIComponent(publicStoreId)}/assets`, {
+    method: "POST",
+    idempotencyKey,
+    body: payload
+  });
+}
+
 export async function listUserInvitations() {
   return apiJson("/merchant/invitations", { method: "GET" });
 }

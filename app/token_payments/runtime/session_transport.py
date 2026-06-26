@@ -410,6 +410,8 @@ class CookieSessionTransport:
             raise ValueError("auth_context_from_http_request requires HttpRequest")
         allow_refresh_only = request.path == "/auth/sessions/refresh" or (
             request.path == "/auth/sessions" and request.method == "DELETE"
+        ) or (
+            request.path == "/auth/sessions/switch" and request.method == "POST"
         )
         return self.extract_auth_context(request.headers, allow_refresh_only=allow_refresh_only)
 

@@ -633,8 +633,71 @@
           ]
         },
         {
+          "id": "switchSession",
+          "name": "4. Switch session active group",
+          "description": "Reissues auth cookies for a selected personal or merchant active group. The activeGroupId variable should point to a group visible to the authenticated user.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "postman-auth-switch-001"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"activeGroupId\": \"{{activeGroupId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/sessions/switch",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "sessions",
+                "switch"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get(\"csrfToken\")) { throw new Error(\"csrfToken is required for cookie-authenticated switchSession.\"); }",
+                  "if (!pm.environment.get(\"activeGroupId\")) { throw new Error(\"activeGroupId is required for switchSession.\"); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"switch session rotates cookies and csrf token\", function () {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(pm.response.code).to.eql(200);",
+                  "  pm.expect(pm.cookies.has(\"access_token\")).to.eql(true);",
+                  "  if (body.csrfToken) { pm.environment.set(\"csrfToken\", body.csrfToken); }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "id": "logout",
-          "name": "4. Logout with cookie jar",
+          "name": "5. Logout with cookie jar",
           "description": "Postman sends the current auth cookies from the cookie jar. Logout is mutating, so X-CSRF-Token must use the latest csrfToken variable.",
           "request": {
             "method": "DELETE",
@@ -694,7 +757,7 @@
         },
         {
           "id": "getCurrentUser",
-          "name": "5. Get current user from cookie auth",
+          "name": "6. Get current user from cookie auth",
           "description": "Safe GET request. When run before logout, Postman sends access_token from the cookie jar; X-CSRF-Token is not required for safe methods.",
           "request": {
             "method": "GET",
@@ -1206,6 +1269,26 @@
           }
         },
         {
+          "id": "getProductAsset",
+          "name": "Get product asset",
+          "description": "Reads an uploaded product image or detail PDF asset by internal product asset key.",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/product-assets/{{publicStoreId}}/{{assetFile}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "product-assets",
+                "{{publicStoreId}}",
+                "{{assetFile}}"
+              ]
+            }
+          }
+        },
+        {
           "id": "listMerchantStores",
           "name": "List merchant stores",
           "description": "Lists stores visible to the authenticated merchant session through scoped membership.",
@@ -1322,6 +1405,61 @@
               ]
             }
           }
+        },
+        {
+          "id": "uploadMerchantProductAsset",
+          "name": "Upload merchant product asset",
+          "description": "Uploads a product image or detail PDF and returns an internal mediaRef for product media or attributes.detailPdfAssetKey.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrfToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "postman-product-asset-upload-001"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/merchant/stores/{{publicStoreId}}/assets",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "merchant",
+                "stores",
+                "{{publicStoreId}}",
+                "assets"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"assetType\": \"PRODUCT_IMAGE\",\n  \"fileName\": \"demo-hoodie.png\",\n  \"contentType\": \"image/png\",\n  \"contentBase64\": \"iVBORw0KGgo=\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"product asset ref is available\", function () {",
+                  "  const asset = pm.response.json().asset;",
+                  "  pm.expect(asset.mediaRef).to.be.a(\"string\");",
+                  "  pm.environment.set(\"productImageAssetKey\", asset.mediaRef);",
+                  "  const parts = asset.mediaRef.split(\"/\");",
+                  "  pm.environment.set(\"assetFile\", parts[parts.length - 1]);",
+                  "});"
+                ]
+              }
+            }
+          ]
         },
         {
           "id": "createOrReuseStoreUser",
@@ -1514,6 +1652,10 @@
                   "  pm.expect(body.publicProductId).to.be.a(\"string\");",
                   "  pm.environment.set(\"productId\", body.productId);",
                   "  pm.environment.set(\"publicProductId\", body.publicProductId);",
+                  "  const variant = (body.variants || body.product?.variants || [])[0];",
+                  "  if (variant && variant.publicVariantId) {",
+                  "    pm.environment.set(\"publicVariantId\", variant.publicVariantId);",
+                  "  }",
                   "});"
                 ]
               }
@@ -1587,7 +1729,7 @@
         {
           "id": "increaseStoreOwnerInventoryStock",
           "name": "Increase store owner inventory stock",
-          "description": "Records audited stock intake for a product. Requires scoped merchant or platform inventory permission.",
+          "description": "Records audited stock intake for one product variant. Requires scoped merchant or platform inventory permission.",
           "request": {
             "method": "POST",
             "header": [
@@ -1605,7 +1747,7 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/store-owner/stores/{{storeId}}/inventory/{{productId}}/intake",
+              "raw": "{{baseUrl}}/store-owner/stores/{{storeId}}/inventory/{{productId}}/variants/{{publicVariantId}}/intake",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1615,6 +1757,8 @@
                 "{{storeId}}",
                 "inventory",
                 "{{productId}}",
+                "variants",
+                "{{publicVariantId}}",
                 "intake"
               ]
             },
@@ -1645,7 +1789,7 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/store-owner/stores/{{storeId}}/inventory/{{productId}}/corrections",
+              "raw": "{{baseUrl}}/store-owner/stores/{{storeId}}/inventory/{{productId}}/variants/{{publicVariantId}}/corrections",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1655,6 +1799,8 @@
                 "{{storeId}}",
                 "inventory",
                 "{{productId}}",
+                "variants",
+                "{{publicVariantId}}",
                 "corrections"
               ]
             },
@@ -1667,7 +1813,7 @@
         {
           "id": "pauseStoreOwnerInventorySales",
           "name": "Pause store owner inventory sales",
-          "description": "Pauses new order availability without releasing existing reservations.",
+          "description": "Pauses new order availability for one product variant without releasing existing reservations.",
           "request": {
             "method": "POST",
             "header": [
@@ -1685,7 +1831,7 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/store-owner/stores/{{storeId}}/inventory/{{productId}}/pause",
+              "raw": "{{baseUrl}}/store-owner/stores/{{storeId}}/inventory/{{productId}}/variants/{{publicVariantId}}/pause",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1695,6 +1841,8 @@
                 "{{storeId}}",
                 "inventory",
                 "{{productId}}",
+                "variants",
+                "{{publicVariantId}}",
                 "pause"
               ]
             },
@@ -1707,7 +1855,7 @@
         {
           "id": "resumeStoreOwnerInventorySales",
           "name": "Resume store owner inventory sales",
-          "description": "Resumes new order availability after a pause.",
+          "description": "Resumes new order availability for one product variant after a pause.",
           "request": {
             "method": "POST",
             "header": [
@@ -1725,7 +1873,7 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/store-owner/stores/{{storeId}}/inventory/{{productId}}/resume",
+              "raw": "{{baseUrl}}/store-owner/stores/{{storeId}}/inventory/{{productId}}/variants/{{publicVariantId}}/resume",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1735,6 +1883,8 @@
                 "{{storeId}}",
                 "inventory",
                 "{{productId}}",
+                "variants",
+                "{{publicVariantId}}",
                 "resume"
               ]
             },

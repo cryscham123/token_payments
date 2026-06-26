@@ -15,7 +15,7 @@ AsgiReceive: TypeAlias = Callable[[], Awaitable[AsgiMessage]]
 AsgiSend: TypeAlias = Callable[[AsgiMessage], Awaitable[None]]
 AsgiApplication: TypeAlias = Callable[[AsgiScope, AsgiReceive, AsgiSend], Awaitable[None]]
 
-_MAX_BODY_BYTES = 1024 * 1024
+_MAX_BODY_BYTES = 16 * 1024 * 1024
 _MAX_BODY_EVENTS = 128
 
 
