@@ -274,6 +274,17 @@ def test_frontend_merchant_dashboard_separates_read_and_write_permission_states(
     assert "catch(() => ({ invitations: [] }))" not in dashboard
 
 
+def test_frontend_merchant_dashboard_shows_read_only_settlement_wallet() -> None:
+    dashboard = (FRONTEND / "components" / "MerchantDashboard.jsx").read_text(encoding="utf-8")
+
+    assert "settlementWallet" in dashboard
+    assert "currentStoreSummary?.storeWallet" in dashboard
+    assert "정산 지갑 주소" in dashboard
+    assert "handleCopySettlementWallet" in dashboard
+    assert "navigator.clipboard.writeText(settlementWallet)" in dashboard
+    assert "storeWalletAddress" not in dashboard
+
+
 def test_frontend_header_product_nav_only_shows_real_destinations() -> None:
     header = (FRONTEND / "components" / "SiteHeader.jsx").read_text(encoding="utf-8")
 

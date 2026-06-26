@@ -2443,6 +2443,7 @@ paths:
                   description: Local token payments demo store
                   descriptionHtml: Local token payments demo store
                   status: ACTIVE
+                  storeWallet: '0x3f9eF719045D2e3Bb7AcaEe67f64E083f8E365cE'
         '400':
           description: 'Validation error, malformed JSON, missing required input, unsupported enum, or rejected request shape.
             Possible error codes: VALIDATION_ERROR.'
