@@ -147,6 +147,9 @@ def test_postgres_schema_adds_additive_rbac_tables_and_store_group_link() -> Non
         assert f"CREATE TABLE IF NOT EXISTS {table}" in compatibility
     assert "group_id UUID REFERENCES auth_groups (group_id)" in schema
     assert "ALTER TABLE IF EXISTS store_catalog_stores" in compatibility
+    assert "('MERCHANT_OWNER', 'inventory:write', true)" in compatibility
+    assert "('MERCHANT_MANAGER', 'inventory:write', true)" in compatibility
+    assert "ON CONFLICT (role_id, permission_name) DO UPDATE SET" in compatibility
     assert "auth_users.role column is legacy compatibility only" in (ROOT / "docs" / "DOMAIN_MODEL.md").read_text(
         encoding="utf-8"
     )

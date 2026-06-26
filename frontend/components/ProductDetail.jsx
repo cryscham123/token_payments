@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Minus, Plus } from "lucide-react";
+import { ExternalLink, Minus, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import SiteHeader from "./SiteHeader";
@@ -43,10 +43,10 @@ export default function ProductDetail({ publicProductId }) {
         const res = await apiJson(`/stores/${storeId}/products/${publicProductId}`);
         if (active && res && res.product) {
           const p = res.product;
+          const attributes = p.attributes || {};
           const galleryImages = productImageGallery(p.media);
-
-          const pdfFile = (p.media || []).find((file) => /\.pdf$/i.test(file));
-          const pdfUrl = pdfFile ? getS3Url(pdfFile) : null;
+          const detailPdfAssetKey = attributes.detailPdfAssetKey || "";
+          const pdfUrl = detailPdfAssetKey ? getS3Url(detailPdfAssetKey) : null;
 
           const item = {
             id: p.publicProductId,
@@ -61,7 +61,7 @@ export default function ProductDetail({ publicProductId }) {
             cryptoDecimals: p.displayPrice?.decimals || 18,
             paymentCapability: p.paymentCapability || null,
             availability: p.availability || null,
-            attributes: p.attributes || {},
+            attributes,
             tags: p.tags || [],
             media: p.media || [],
             galleryImages,
@@ -99,21 +99,7 @@ export default function ProductDetail({ publicProductId }) {
   }, [publicProductId]);
 
   useEffect(() => {
-    if (product?.pdfUrl) {
-      fetch(product.pdfUrl, { method: "HEAD" })
-        .then((res) => {
-          if (!res.ok) {
-            setPdfExists(false);
-          } else {
-            setPdfExists(true);
-          }
-        })
-        .catch(() => {
-          setPdfExists(false);
-        });
-    } else {
-      setPdfExists(false);
-    }
+    setPdfExists(Boolean(product?.pdfUrl));
   }, [product?.pdfUrl]);
 
   const priceOptions = product ? priceOptionsFromProduct(product) : [];
@@ -474,12 +460,17 @@ export default function ProductDetail({ publicProductId }) {
             {activeTab === "detail" ? (
               <div className="flex flex-col items-center justify-center py-4 w-full">
                 {pdfExists && product.pdfUrl ? (
-                  <div className="w-full overflow-hidden">
-                    <iframe
-                      src={`${product.pdfUrl}#toolbar=0&navpanes=0&view=FitH`}
-                      className="h-[600px] w-full rounded-xl border border-slate-200 overflow-hidden max-w-full"
-                      title="Product Detail PDF"
-                    />
+                  <div className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-6 py-10 text-center">
+                    <p className="text-sm font-bold text-slate-800">상품 상세 PDF</p>
+                    <a
+                      href={product.pdfUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-4 inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-slate-700"
+                    >
+                      <ExternalLink size={14} />
+                      상품 상세 PDF 열기
+                    </a>
                   </div>
                 ) : (
                   <div className="w-full text-center py-16 bg-slate-50/50 rounded-2xl border border-dashed border-slate-350">

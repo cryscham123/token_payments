@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from html import escape
 from collections.abc import Callable
 from typing import Any, Mapping
@@ -15,6 +16,7 @@ from token_payments.contexts.store_catalog.domain import (
     ProductVisibility,
     PublicProductId,
     PublicStoreId,
+    PublicVariantId,
     StoreMembership,
     StoreMembershipRole,
     StorePaymentSettings,
@@ -32,12 +34,14 @@ from .commands import (
     RegisterStoreProductCommand,
     UpdateStoreProfileCommand,
     UpdateStoreProductCommand,
+    UploadStoreProductAssetCommand,
 )
 from .ports import (
     CatalogAuditRecord,
     CatalogIdempotencyRecord,
     CatalogUserRecord,
     CatalogWriteRepository,
+    ProductAssetRecord,
     StoreCatalogCommandResult,
     StoreCatalogCommandStatus,
 )
@@ -52,6 +56,7 @@ class StoreCatalogApplicationService:
     REGISTER_PRODUCT_HANDLER = "registerStoreProduct"
     UPDATE_STORE_PROFILE_HANDLER = "updateStoreProfile"
     UPDATE_PRODUCT_HANDLER = "updateStoreProduct"
+    UPLOAD_PRODUCT_ASSET_HANDLER = "uploadMerchantProductAsset"
 
     def __init__(
         self,
@@ -281,6 +286,15 @@ class StoreCatalogApplicationService:
             ),
         }
 
+    def get_product_asset(self, *, public_store_id: PublicStoreId, asset_file: str) -> ProductAssetRecord | None:
+        if "/" in asset_file or "\\" in asset_file or not asset_file.strip():
+            return None
+        media_ref = f"product-assets/{public_store_id}/{asset_file.strip()}"
+        asset = self._repository.get_product_asset(media_ref)
+        if asset is None or asset.public_store_id != public_store_id:
+            return None
+        return asset
+
     def list_merchant_products(
         self,
         *,
@@ -309,7 +323,20 @@ class StoreCatalogApplicationService:
         )
         return {
             "store": _owner_store_payload(store),
-            "products": [_merchant_product_payload(store, product, self._availability(product)) for product in products],
+            "products": [
+                _merchant_product_payload(
+                    store,
+                    product,
+                    self._availability(product),
+                    options=self._options_for_product(product),
+                    option_values=self._option_values_for_product(product),
+                    variants=self._variants_for_product(product),
+                    variant_availability=self._variant_availability_for_product(product),
+                    asset_registry=self._payment_assets,
+                    exchange_rate=self._exchange_rate,
+                )
+                for product in products
+            ],
             "pagination": _pagination(limit=int(filters["limit"]), offset=int(filters["offset"]), count=len(products)),
         }
 
@@ -332,7 +359,18 @@ class StoreCatalogApplicationService:
             return _rejected("PRODUCT_NOT_FOUND", "product was not found")
         return {
             "store": _owner_store_payload(store),
-            "product": _merchant_product_payload(store, product, self._availability(product), include_internal=True),
+            "product": _merchant_product_payload(
+                store,
+                product,
+                self._availability(product),
+                include_internal=True,
+                options=self._options_for_product(product),
+                option_values=self._option_values_for_product(product),
+                variants=self._variants_for_product(product),
+                variant_availability=self._variant_availability_for_product(product),
+                asset_registry=self._payment_assets,
+                exchange_rate=self._exchange_rate,
+            ),
         }
 
     def update_store_profile(self, command: UpdateStoreProfileCommand) -> StoreCatalogCommandResult:
@@ -361,6 +399,13 @@ class StoreCatalogApplicationService:
             self.UPDATE_PRODUCT_HANDLER,
             command,
             lambda: self._update_store_product(command),
+        )
+
+    def upload_store_product_asset(self, command: UploadStoreProductAssetCommand) -> StoreCatalogCommandResult:
+        return self._idempotent(
+            self.UPLOAD_PRODUCT_ASSET_HANDLER,
+            command,
+            lambda: self._upload_store_product_asset(command),
         )
 
     def _create_or_reuse_store_user(self, command: CreateOrReuseStoreUserCommand) -> Mapping[str, Any]:
@@ -596,7 +641,16 @@ class StoreCatalogApplicationService:
         self._repository.save_product(product)
         self._repository.save_order_product_projection(product)
         self._repository.save_store_approval_product_projection(product)
-        self._repository.save_inventory_projection(product, command.initial_total_stock)
+        if command.options is not None or command.variants is not None:
+            self._save_product_configuration(
+                product,
+                options=command.options,
+                variants=command.variants,
+                default_initial_total_stock=command.initial_total_stock,
+                seed_existing_variant_inventory=True,
+            )
+        else:
+            self._repository.save_inventory_projection(product, command.initial_total_stock)
         self._repository.record_audit(
             CatalogAuditRecord(
                 actor_user_id=command.actor_user_id,
@@ -614,7 +668,7 @@ class StoreCatalogApplicationService:
                 resource_id=str(store.public_store_id),
             )
         )
-        product_payload = _owner_product_payload(product)
+        product_payload = self._merchant_product_payload_for_store(store, product, include_internal=False)
         return {
             "operation": self.REGISTER_PRODUCT_HANDLER,
             "status": "created",
@@ -662,6 +716,14 @@ class StoreCatalogApplicationService:
         self._repository.save_product(updated)
         self._repository.save_order_product_projection(updated)
         self._repository.save_store_approval_product_projection(updated)
+        if command.options is not None or command.variants is not None:
+            self._save_product_configuration(
+                updated,
+                options=command.options,
+                variants=command.variants,
+                default_initial_total_stock=0,
+                seed_existing_variant_inventory=False,
+            )
         self._repository.record_audit(
             CatalogAuditRecord(
                 actor_user_id=command.actor_user_id,
@@ -683,8 +745,134 @@ class StoreCatalogApplicationService:
         return {
             "operation": self.UPDATE_PRODUCT_HANDLER,
             "status": "updated",
-            "product": _owner_product_payload(updated),
+            "product": self._merchant_product_payload_for_store(store, updated, include_internal=False),
         }
+
+    def _upload_store_product_asset(self, command: UploadStoreProductAssetCommand) -> Mapping[str, Any]:
+        store = self._repository.get_store_by_public_id(command.public_store_id)
+        if store is None:
+            return _rejected("STORE_NOT_FOUND", "product asset upload requires an existing store")
+        if not store.active:
+            return _rejected("STORE_INACTIVE", "product asset upload requires an active store")
+        store_role = self._repository.get_store_role(store.store_id, command.actor_user_id)
+        if store_role is None and not command.platform_override:
+            return _rejected("STORE_OWNER_STORE_FORBIDDEN", "product:write requires scoped merchant membership")
+
+        content_sha256 = hashlib.sha256(command.content).hexdigest()
+        extension = _asset_extension(command.content_type)
+        media_ref = f"product-assets/{store.public_store_id}/{content_sha256[:24]}.{extension}"
+        asset = ProductAssetRecord(
+            store_id=store.store_id,
+            public_store_id=store.public_store_id,
+            media_ref=media_ref,
+            asset_type=command.asset_type,
+            file_name=command.file_name,
+            content_type=command.content_type,
+            size_bytes=len(command.content),
+            content_sha256=content_sha256,
+            content=command.content,
+            created_at=command.requested_at,
+        )
+        self._repository.save_product_asset(asset)
+        self._repository.record_audit(
+            CatalogAuditRecord(
+                actor_user_id=command.actor_user_id,
+                action=self.UPLOAD_PRODUCT_ASSET_HANDLER,
+                store_id=store.store_id,
+                product_id=None,
+                target_user_id=store.owner_user_id,
+                request_id=command.request_id,
+                idempotency_key=str(command.command_id),
+                before={"asset": None, "storeRole": store_role.value if store_role else None},
+                after={
+                    "asset": {
+                        "assetType": asset.asset_type,
+                        "mediaRef": asset.media_ref,
+                        "fileName": asset.file_name,
+                        "contentType": asset.content_type,
+                        "sizeBytes": asset.size_bytes,
+                        "sha256": asset.content_sha256,
+                    }
+                },
+                recorded_at=command.requested_at,
+                group_id=str(store.group_id) if store.group_id is not None else None,
+                permission="product:write:any" if command.platform_override else "product:write",
+                resource_type="store",
+                resource_id=str(store.public_store_id),
+            )
+        )
+        return {
+            "operation": self.UPLOAD_PRODUCT_ASSET_HANDLER,
+            "status": "uploaded",
+            "asset": {
+                "assetType": asset.asset_type,
+                "mediaRef": asset.media_ref,
+                "fileName": asset.file_name,
+                "contentType": asset.content_type,
+                "sizeBytes": asset.size_bytes,
+                "sha256": asset.content_sha256,
+            },
+        }
+
+    def _merchant_product_payload_for_store(
+        self,
+        store: StoreProfile,
+        product: StoreProduct,
+        *,
+        include_internal: bool,
+    ) -> dict[str, Any]:
+        return _merchant_product_payload(
+            store,
+            product,
+            self._availability(product),
+            include_internal=include_internal,
+            options=self._options_for_product(product),
+            option_values=self._option_values_for_product(product),
+            variants=self._variants_for_product(product),
+            variant_availability=self._variant_availability_for_product(product),
+            asset_registry=self._payment_assets,
+            exchange_rate=self._exchange_rate,
+        )
+
+    def _save_product_configuration(
+        self,
+        product: StoreProduct,
+        *,
+        options: tuple[Any, ...] | None,
+        variants: tuple[Any, ...] | None,
+        default_initial_total_stock: int,
+        seed_existing_variant_inventory: bool,
+    ) -> None:
+        if options is not None:
+            option_rows, value_rows = _product_option_rows(product, options)
+            save_options = getattr(self._repository, "replace_product_options", None)
+            if callable(save_options):
+                save_options(product.store_id, product.product_id, option_rows, value_rows)
+        if variants is not None:
+            variant_rows = _product_variant_rows(product, variants)
+            save_variants = getattr(self._repository, "replace_product_variants", None)
+            if callable(save_variants):
+                save_variants(product.store_id, product.product_id, variant_rows)
+            for variant_input, variant in zip(variants, variant_rows, strict=True):
+                get_variant_availability = getattr(self._repository, "get_variant_availability", None)
+                has_existing_inventory = (
+                    callable(get_variant_availability)
+                    and get_variant_availability(product.store_id, product.product_id, variant.public_variant_id) is not None
+                )
+                if has_existing_inventory and not seed_existing_variant_inventory:
+                    continue
+                initial_stock = (
+                    int(variant_input.initial_total_stock)
+                    if getattr(variant_input, "initial_total_stock", None) is not None
+                    else default_initial_total_stock
+                    if len(variant_rows) == 1
+                    else 0
+                )
+                save_variant_inventory = getattr(self._repository, "save_variant_inventory_projection", None)
+                if callable(save_variant_inventory):
+                    save_variant_inventory(product, variant.public_variant_id, initial_stock)
+        else:
+            self._repository.save_inventory_projection(product, default_initial_total_stock)
 
     def _idempotent(self, handler: str, command: Any, callback: Callable[[], Mapping[str, Any]]) -> StoreCatalogCommandResult:
         key = str(command.command_id)
@@ -1123,8 +1311,9 @@ def _public_product_payload(
 ) -> dict[str, Any]:
     option_values = option_values or {}
     variant_availability = variant_availability or {}
-    display_price = _display_price_payload(product, variants, variant_availability)
-    display_availability = _aggregate_availability(availability, variants, variant_availability)
+    active_variants = tuple(variant for variant in variants if variant.active)
+    display_price = _display_price_payload(product, active_variants, variant_availability)
+    display_availability = _aggregate_availability(availability, active_variants, variant_availability)
 
     # Per-asset display amounts: the product is priced in fiat (USD); convert it into each
     # accepted on-chain asset at the fixed exchange rate so the storefront can show, e.g.,
@@ -1176,7 +1365,7 @@ def _public_product_payload(
         "options": [_public_option_payload(option, option_values.get(option.option_id, ())) for option in options if option.active],
         "variants": [
             _public_variant_payload(product, variant, variant_availability.get(str(variant.public_variant_id)))
-            for variant in variants
+            for variant in active_variants
         ],
     }
     if include_detail:
@@ -1190,6 +1379,10 @@ def _merchant_product_payload(
     availability: Mapping[str, Any],
     *,
     include_internal: bool = False,
+    options: tuple[ProductOption, ...] = (),
+    option_values: Mapping[str, tuple[ProductOptionValue, ...]] | None = None,
+    variants: tuple[ProductVariant, ...] = (),
+    variant_availability: Mapping[str, Mapping[str, Any]] | None = None,
     asset_registry: Any | None = None,
     exchange_rate: Any | None = None,
 ) -> dict[str, Any]:
@@ -1198,6 +1391,10 @@ def _merchant_product_payload(
         product,
         availability,
         include_detail=True,
+        options=options,
+        option_values=option_values,
+        variants=variants,
+        variant_availability=variant_availability,
         asset_registry=asset_registry,
         exchange_rate=exchange_rate,
     )
@@ -1226,6 +1423,75 @@ def _public_option_payload(option: ProductOption, values: tuple[ProductOptionVal
             if value.active
         ],
     }
+
+
+def _product_option_rows(
+    product: StoreProduct,
+    options: tuple[Any, ...],
+) -> tuple[tuple[ProductOption, ...], Mapping[str, tuple[ProductOptionValue, ...]]]:
+    option_rows: list[ProductOption] = []
+    value_rows: dict[str, tuple[ProductOptionValue, ...]] = {}
+    for sort_order, option_input in enumerate(options):
+        option = ProductOption(
+            store_id=product.store_id,
+            product_id=product.product_id,
+            option_id=getattr(option_input, "option_id", None),
+            option_key=option_input.key,
+            display_name=option_input.display_name,
+            sort_order=getattr(option_input, "sort_order", sort_order),
+            required=option_input.required,
+            selection_type=option_input.selection_type,
+            option_type=option_input.option_type,
+            active=option_input.active,
+        )
+        option_rows.append(option)
+        values: list[ProductOptionValue] = []
+        for value_sort_order, value_input in enumerate(option_input.values):
+            values.append(
+                ProductOptionValue(
+                    store_id=product.store_id,
+                    product_id=product.product_id,
+                    option_id=option.option_id,
+                    option_value_id=getattr(value_input, "option_value_id", None),
+                    value_key=value_input.value,
+                    display_value=value_input.display_value,
+                    sort_order=getattr(value_input, "sort_order", value_sort_order),
+                    price_delta=value_input.price_delta,
+                    active=value_input.active,
+                )
+            )
+        value_rows[option.option_id] = tuple(values)
+    return tuple(option_rows), value_rows
+
+
+def _product_variant_rows(product: StoreProduct, variants: tuple[Any, ...]) -> tuple[ProductVariant, ...]:
+    rows: list[ProductVariant] = []
+    for sort_order, variant_input in enumerate(variants):
+        public_variant_id = variant_input.public_variant_id or PublicVariantId.for_variant_key(
+            product.product_id,
+            _variant_key(variant_input.option_values, fallback=str(sort_order)),
+        )
+        rows.append(
+            ProductVariant(
+                store_id=product.store_id,
+                product_id=product.product_id,
+                public_variant_id=public_variant_id,
+                display_name=variant_input.display_name,
+                option_values=variant_input.option_values,
+                price_delta=variant_input.price_delta,
+                sku=variant_input.sku,
+                status=variant_input.status,
+                active=variant_input.active,
+                sort_order=getattr(variant_input, "sort_order", sort_order),
+            )
+        )
+    return tuple(rows)
+
+
+def _variant_key(option_values: Mapping[str, Any], *, fallback: str) -> str:
+    if not option_values:
+        return fallback
+    return "|".join(f"{key}:{option_values[key]}" for key in sorted(option_values))
 
 
 def _public_variant_payload(
@@ -1353,6 +1619,17 @@ def _money_payload(price: Any) -> dict[str, Any]:
         "amount": format(price.amount, "f"),
         "currency": price.currency,
     }
+
+
+def _asset_extension(content_type: str) -> str:
+    extensions = {
+        "image/png": "png",
+        "image/jpeg": "jpg",
+        "image/webp": "webp",
+        "image/gif": "gif",
+        "application/pdf": "pdf",
+    }
+    return extensions.get(content_type, "bin")
 
 
 def _role_value(value: Any) -> str:

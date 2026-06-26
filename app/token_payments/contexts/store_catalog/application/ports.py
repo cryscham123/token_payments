@@ -8,8 +8,12 @@ from enum import StrEnum
 from typing import Any, Mapping, Protocol
 
 from token_payments.contexts.store_catalog.domain import (
+    ProductOption,
+    ProductOptionValue,
+    ProductVariant,
     PublicProductId,
     PublicStoreId,
+    PublicVariantId,
     StoreMembership,
     StoreMembershipRole,
     StoreProduct,
@@ -119,6 +123,37 @@ class CatalogAuditRecord:
                 object.__setattr__(self, field_name, _text(str(value), field_name))
 
 
+@dataclass(frozen=True)
+class ProductAssetRecord:
+    store_id: StoreId
+    public_store_id: PublicStoreId
+    media_ref: str
+    asset_type: str
+    file_name: str
+    content_type: str
+    size_bytes: int
+    content_sha256: str
+    content: bytes
+    created_at: datetime
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.store_id, StoreId):
+            raise ValueError("ProductAssetRecord.store_id must be a StoreId")
+        if not isinstance(self.public_store_id, PublicStoreId):
+            raise ValueError("ProductAssetRecord.public_store_id must be a PublicStoreId")
+        object.__setattr__(self, "media_ref", _text(self.media_ref, "media_ref"))
+        object.__setattr__(self, "asset_type", _text(self.asset_type, "asset_type"))
+        object.__setattr__(self, "file_name", _text(self.file_name, "file_name"))
+        object.__setattr__(self, "content_type", _text(self.content_type, "content_type"))
+        if isinstance(self.size_bytes, bool) or not isinstance(self.size_bytes, int) or self.size_bytes < 1:
+            raise ValueError("ProductAssetRecord.size_bytes must be a positive integer")
+        object.__setattr__(self, "content_sha256", _text(self.content_sha256, "content_sha256"))
+        if not isinstance(self.content, bytes) or not self.content:
+            raise ValueError("ProductAssetRecord.content must be non-empty bytes")
+        if not isinstance(self.created_at, datetime) or self.created_at.tzinfo is None:
+            raise ValueError("ProductAssetRecord.created_at must be timezone-aware")
+
+
 class CatalogWriteRepository(Protocol):
     def get_idempotency_record(self, handler: str, idempotency_key: str) -> CatalogIdempotencyRecord | None:
         ...
@@ -181,6 +216,37 @@ class CatalogWriteRepository(Protocol):
         ...
 
     def save_inventory_projection(self, product: StoreProduct, initial_total_stock: int) -> None:
+        ...
+
+    def save_product_asset(self, asset: ProductAssetRecord) -> None:
+        ...
+
+    def get_product_asset(self, media_ref: str) -> ProductAssetRecord | None:
+        ...
+
+    def replace_product_options(
+        self,
+        store_id: StoreId,
+        product_id: ProductId,
+        options: tuple[ProductOption, ...],
+        option_values: Mapping[str, tuple[ProductOptionValue, ...]],
+    ) -> None:
+        ...
+
+    def replace_product_variants(
+        self,
+        store_id: StoreId,
+        product_id: ProductId,
+        variants: tuple[ProductVariant, ...],
+    ) -> None:
+        ...
+
+    def save_variant_inventory_projection(
+        self,
+        product: StoreProduct,
+        public_variant_id: PublicVariantId,
+        initial_total_stock: int,
+    ) -> None:
         ...
 
     def record_audit(self, record: CatalogAuditRecord) -> str | None:

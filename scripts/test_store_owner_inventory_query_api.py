@@ -29,6 +29,7 @@ OTHER_OWNER_ID = UserId("018f33aa-9e6d-73d8-9dc3-47d6cdcc8102")
 STORE_ID = StoreId("018f33aa-9e6d-73d8-9dc3-47d6cdcc8103")
 OTHER_STORE_ID = StoreId("018f33aa-9e6d-73d8-9dc3-47d6cdcc8104")
 PRODUCT_ID = ProductId("018f33aa-9e6d-73d8-9dc3-47d6cdcc8105")
+VARIANT_ID = "var_ledger_hoodie_l"
 
 
 def test_store_owner_inventory_route_manifest_exposes_query_endpoint() -> None:
@@ -68,6 +69,7 @@ def test_store_owner_can_query_only_owned_store_inventory_from_cookie_auth_conte
         {
             "storeId": str(STORE_ID),
             "productId": str(PRODUCT_ID),
+            "publicVariantId": VARIANT_ID,
             "availableStock": 8,
             "reservedStock": 2,
             "soldStock": 3,
@@ -145,6 +147,7 @@ def _snapshot(
         total_stock=10,
         sale_status=sale_status,
         updated_at=NOW,
+        public_variant_id=VARIANT_ID,
     )
 
 

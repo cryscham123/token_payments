@@ -283,6 +283,16 @@ def _seed_catalog() -> FakeStoreCatalogRepository:
             price_delta=price(amount="2.50"),
             sort_order=2,
         ),
+        ProductVariant(
+            store_id=store.store_id,
+            product_id=PRODUCT_ID,
+            public_variant_id=PublicVariantId("var_ledger_mug_deleted"),
+            display_name="Deleted option",
+            option_values={"capacityMl": "deleted"},
+            price_delta=price(amount="0.00"),
+            sort_order=3,
+            active=False,
+        ),
     )
     repository.variant_inventory["var_ledger_mug_350"] = 8
     repository.variant_inventory["var_ledger_mug_500"] = 3

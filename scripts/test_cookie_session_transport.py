@@ -25,6 +25,7 @@ from token_payments.contexts.auth.application import (  # noqa: E402
     LogoutCommand,
     RefreshSessionCommand,
     RequestLoginChallengeCommand,
+    SwitchSessionCommand,
 )
 from token_payments.contexts.auth.domain import (  # noqa: E402
     AuthNonce,
@@ -227,6 +228,43 @@ def test_auth_routes_set_rotate_and_expire_cookies_without_exposing_internal_ref
     assert all("Max-Age=0" in header for header in logout_cookies)
     assert all("Expires=Thu, 01 Jan 1970 00:00:00 GMT" in header for header in logout_cookies)
     assert use_case.logout_commands[0].session_id == SessionId(SESSION_ID)
+
+
+def test_switch_session_route_accepts_refresh_cookie_when_access_cookie_is_absent() -> None:
+    transport = _transport()
+    use_case = CookieAuthUseCase(transport)
+    router = HttpRouter(auth_context_factory=transport.auth_context_from_http_request)
+    register_auth_routes(router, AuthApi(use_case), session_transport=transport)
+    refresh_token = transport.signer.sign(
+        _claims(token_type="refresh", expires_at=NOW + timedelta(days=30), rotation_version=0)
+    )
+    refresh_cookie = transport.issue_cookies(
+        access_token=transport.signer.sign(_claims(token_type="access", expires_at=NOW + timedelta(minutes=15))),
+        refresh_token=refresh_token,
+        now=NOW,
+    ).refresh_cookie
+
+    switched = router.handle(
+        "POST",
+        "/auth/sessions/switch",
+        headers={
+            "Content-Type": "application/json",
+            "X-Request-Id": "req-switch",
+            "Cookie": _cookie_header((refresh_cookie,)),
+        },
+        body=_json_body({"activeGroupId": USER_ID}),
+        received_at=NOW + timedelta(minutes=10),
+    )
+
+    switched_body = _json(switched.body)
+    switched_cookies = _header_values(switched, "Set-Cookie")
+    assert switched.status_code == 200
+    assert len(switched_cookies) == 2
+    assert switched_body["token"]["transport"] == "cookie"
+    assert switched_body["token"]["accessToken"] == "<set-cookie>"
+    assert switched_body["token"]["refreshToken"] == "<set-cookie>"
+    assert use_case.switch_commands[0].session_id == SessionId(SESSION_ID)
+    assert use_case.switch_commands[0].refresh_token_hash == _refresh_hash(refresh_token, rotation_version=0)
 
 
 def test_live_runtime_session_config_parses_redacts_and_rejects_live_placeholder_keys() -> None:
@@ -449,6 +487,7 @@ class CookieAuthUseCase:
             _claims(token_type="refresh", expires_at=NOW + timedelta(days=30, minutes=10), rotation_version=1)
         )
         self.refresh_commands: list[RefreshSessionCommand] = []
+        self.switch_commands: list[SwitchSessionCommand] = []
         self.logout_commands: list[LogoutCommand] = []
 
     def requestLoginChallenge(self, command: RequestLoginChallengeCommand) -> LoginChallengeResult:
@@ -466,6 +505,14 @@ class CookieAuthUseCase:
 
     def refreshSession(self, command: RefreshSessionCommand) -> LoginResult:
         self.refresh_commands.append(command)
+        return _login_result(
+            access_token=self.refreshed_access_token,
+            refresh_token=self.refreshed_refresh_token,
+            refresh_token_hash=_refresh_hash(self.refreshed_refresh_token, rotation_version=1),
+        )
+
+    def switchSession(self, command: SwitchSessionCommand) -> LoginResult:
+        self.switch_commands.append(command)
         return _login_result(
             access_token=self.refreshed_access_token,
             refresh_token=self.refreshed_refresh_token,

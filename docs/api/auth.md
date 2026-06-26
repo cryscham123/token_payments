@@ -17,6 +17,7 @@
 | SIWE challenge 발급 | `POST` | `/auth/challenges` | `walletAddress`, `domain`, `uri`, `chainId` |
 | SIWE session 생성 | `POST` | `/auth/sessions` | `walletAddress`, `message`, `signature`, `deviceId` |
 | session refresh | `POST` | `/auth/sessions/refresh` | refresh cookie/session context |
+| session group switch | `POST` | `/auth/sessions/switch` | `activeGroupId` |
 | logout | `DELETE` | `/auth/sessions` | active session |
 | current user 조회 | `GET` | `/auth/me` | active session |
 | current profile 조회 | `GET` | `/auth/me/profile` | active session |
@@ -77,6 +78,7 @@
 | `PATCH /auth/wallets/{walletId}/primary` | active session, wallet owner | path `walletId` | `200` updated `wallet`; same chain의 다른 active wallet은 primary 해제 | `401 AUTHENTICATION_REQUIRED`, `404 WALLET_NOT_FOUND`, `409 WALLET_NOT_ACTIVE` |
 | `DELETE /auth/wallets/{walletId}` | active session, wallet owner | path `walletId` | `200` revoked `wallet` with `verificationStatus=REVOKED` | `401 AUTHENTICATION_REQUIRED`, `404 WALLET_NOT_FOUND`, `409 WALLET_NOT_ACTIVE`, `409 LAST_WALLET_REVOKE_DENIED` |
 | `POST /auth/sessions/refresh` | refresh cookie/session context | browser는 empty body 가능; non-browser harness는 `sessionId` 모델 사용 가능 | `200` same shape as session login, access/refresh cookies rotate | `400 VALIDATION_ERROR`, `401 INVALID_SIGNATURE`, `409 EXPIRED_CHALLENGE` |
+| `POST /auth/sessions/switch` | active session, target merchant/personal group membership | JSON body: `activeGroupId` | `200` same shape as session login, access/refresh cookies rotate with reduced active group claims | `400 VALIDATION_ERROR`, `403 AUTHORIZATION_ERROR` |
 | `DELETE /auth/sessions` | active session | no JSON body; browser/public flow uses cookie/auth context, non-browser facade compatibility may pass `sessionId` internally | `200` revoked redacted `session` | `401 AUTHENTICATION_REQUIRED`, `404 SESSION_NOT_FOUND` |
 | `GET /auth/me` | active session | optional local fallback query `userId` | `200` `user` with `userId`, primary `walletAddress`, `active`, `lastLoginAt` | `401 AUTHENTICATION_REQUIRED`, `404 USER_NOT_FOUND` |
 | `GET /auth/me/profile` | active session | no body | `200` profile data such as optional `displayName`; email/locale/timezone은 저장하지 않음 | `401 AUTHENTICATION_REQUIRED`, `404 USER_NOT_FOUND` |

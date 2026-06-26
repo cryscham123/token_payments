@@ -9,12 +9,14 @@ from .commands import (
     RegisterStoreProductCommand,
     UpdateStoreProfileCommand,
     UpdateStoreProductCommand,
+    UploadStoreProductAssetCommand,
 )
 from .ports import (
     CatalogAuditRecord,
     CatalogIdempotencyRecord,
     CatalogUserRecord,
     CatalogWriteRepository,
+    ProductAssetRecord,
     StoreCatalogCommandResult,
     StoreCatalogCommandStatus,
 )
@@ -30,9 +32,11 @@ __all__ = [
     "GetStoreProfileQuery",
     "GrantStoreMembershipCommand",
     "ListMerchantStoresQuery",
+    "ProductAssetRecord",
     "RegisterStoreProductCommand",
     "UpdateStoreProfileCommand",
     "UpdateStoreProductCommand",
+    "UploadStoreProductAssetCommand",
     "StoreCatalogApplicationService",
     "StoreCatalogCommandResult",
     "StoreCatalogCommandStatus",

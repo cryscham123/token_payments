@@ -6,7 +6,11 @@ import json
 from typing import Any, Mapping
 
 from token_payments.contexts.auth.domain import Group, GroupId, GroupType, User, UserRole
-from token_payments.contexts.store_catalog.application import CatalogAuditRecord, CatalogIdempotencyRecord
+from token_payments.contexts.store_catalog.application import (
+    CatalogAuditRecord,
+    CatalogIdempotencyRecord,
+    ProductAssetRecord,
+)
 from token_payments.contexts.store_catalog.domain import (
     ProductOption,
     ProductOptionValue,
@@ -505,6 +509,144 @@ ORDER BY sort_order ASC, value_key ASC
 
 SELECT_PRODUCT_VARIANTS_SQL = """
 SELECT
+    variants.store_id AS store_id,
+    variants.product_id AS product_id,
+    variants.public_variant_id AS public_variant_id,
+    variants.display_name AS display_name,
+    COALESCE(canonical_option_values.option_values, variants.option_values) AS option_values,
+    variants.sku AS sku,
+    variants.status AS status,
+    variants.active AS active,
+    variants.sort_order AS sort_order,
+    variants.price_delta_amount AS price_delta_amount,
+    variants.price_delta_currency AS price_delta_currency
+FROM store_catalog_product_variants variants
+LEFT JOIN LATERAL (
+    SELECT jsonb_object_agg(options.option_key, values.value_key ORDER BY options.sort_order ASC, values.sort_order ASC) AS option_values
+    FROM store_catalog_product_variant_option_values links
+    JOIN store_catalog_product_options options
+      ON options.store_id = links.store_id
+     AND options.product_id = links.product_id
+     AND options.option_id = links.option_id
+    JOIN store_catalog_product_option_values values
+      ON values.store_id = links.store_id
+     AND values.product_id = links.product_id
+     AND values.option_id = links.option_id
+     AND values.option_value_id = links.option_value_id
+    WHERE links.store_id = variants.store_id
+      AND links.product_id = variants.product_id
+      AND links.public_variant_id = variants.public_variant_id
+      AND options.active = true
+      AND values.active = true
+) canonical_option_values ON true
+WHERE variants.store_id = %(store_id)s
+  AND variants.product_id = %(product_id)s
+ORDER BY variants.sort_order ASC, variants.public_variant_id ASC
+"""
+
+SELECT_PRODUCT_VARIANT_AVAILABILITY_SQL = """
+SELECT available_stock, total_stock, sale_status
+FROM product_variant_inventory
+WHERE store_id = %(store_id)s
+  AND product_id = %(product_id)s
+  AND public_variant_id = %(public_variant_id)s
+"""
+
+DEACTIVATE_PRODUCT_OPTIONS_SQL = """
+UPDATE store_catalog_product_options
+SET active = false,
+    updated_at = now()
+WHERE store_id = %(store_id)s
+  AND product_id = %(product_id)s
+"""
+
+DEACTIVATE_PRODUCT_OPTION_VALUES_SQL = """
+UPDATE store_catalog_product_option_values
+SET active = false,
+    updated_at = now()
+WHERE store_id = %(store_id)s
+  AND product_id = %(product_id)s
+"""
+
+UPSERT_PRODUCT_OPTION_SQL = """
+INSERT INTO store_catalog_product_options (
+    store_id,
+    product_id,
+    option_id,
+    option_key,
+    display_name,
+    sort_order,
+    required,
+    selection_type,
+    option_type,
+    active
+) VALUES (
+    %(store_id)s,
+    %(product_id)s,
+    %(option_id)s,
+    %(option_key)s,
+    %(display_name)s,
+    %(sort_order)s,
+    %(required)s,
+    %(selection_type)s,
+    %(option_type)s,
+    %(active)s
+)
+ON CONFLICT (store_id, product_id, option_key) DO UPDATE SET
+    display_name = EXCLUDED.display_name,
+    sort_order = EXCLUDED.sort_order,
+    required = EXCLUDED.required,
+    selection_type = EXCLUDED.selection_type,
+    option_type = EXCLUDED.option_type,
+    active = EXCLUDED.active,
+    updated_at = now()
+RETURNING option_id
+"""
+
+UPSERT_PRODUCT_OPTION_VALUE_SQL = """
+INSERT INTO store_catalog_product_option_values (
+    store_id,
+    product_id,
+    option_id,
+    option_value_id,
+    value_key,
+    display_value,
+    sort_order,
+    price_delta_amount,
+    price_delta_currency,
+    active
+) VALUES (
+    %(store_id)s,
+    %(product_id)s,
+    %(option_id)s,
+    %(option_value_id)s,
+    %(value_key)s,
+    %(display_value)s,
+    %(sort_order)s,
+    %(price_delta_amount)s,
+    %(price_delta_currency)s,
+    %(active)s
+)
+ON CONFLICT (store_id, product_id, option_id, value_key) DO UPDATE SET
+    display_value = EXCLUDED.display_value,
+    sort_order = EXCLUDED.sort_order,
+    price_delta_amount = EXCLUDED.price_delta_amount,
+    price_delta_currency = EXCLUDED.price_delta_currency,
+    active = EXCLUDED.active,
+    updated_at = now()
+RETURNING option_value_id
+"""
+
+DEACTIVATE_PRODUCT_VARIANTS_SQL = """
+UPDATE store_catalog_product_variants
+SET active = false,
+    updated_at = now()
+WHERE store_id = %(store_id)s
+  AND product_id = %(product_id)s
+"""
+
+UPSERT_PRODUCT_VARIANT_SQL = """
+INSERT INTO store_catalog_product_variants (
     store_id,
     product_id,
     public_variant_id,
@@ -515,19 +657,33 @@ SELECT
     active,
     sort_order,
     price_delta_amount,
-    price_delta_currency
-FROM store_catalog_product_variants
-WHERE store_id = %(store_id)s
-  AND product_id = %(product_id)s
-ORDER BY sort_order ASC, public_variant_id ASC
-"""
-
-SELECT_PRODUCT_VARIANT_AVAILABILITY_SQL = """
-SELECT available_stock, total_stock, sale_status
-FROM product_variant_inventory
-WHERE store_id = %(store_id)s
-  AND product_id = %(product_id)s
-  AND public_variant_id = %(public_variant_id)s
+    price_delta_currency,
+    price_delta_numeric
+) VALUES (
+    %(store_id)s,
+    %(product_id)s,
+    %(public_variant_id)s,
+    %(display_name)s,
+    %(option_values)s::jsonb,
+    %(sku)s,
+    %(status)s,
+    %(active)s,
+    %(sort_order)s,
+    %(price_delta_amount)s,
+    %(price_delta_currency)s,
+    %(price_delta_numeric)s
+)
+ON CONFLICT (store_id, product_id, public_variant_id) DO UPDATE SET
+    display_name = EXCLUDED.display_name,
+    option_values = EXCLUDED.option_values,
+    sku = EXCLUDED.sku,
+    status = EXCLUDED.status,
+    active = EXCLUDED.active,
+    sort_order = EXCLUDED.sort_order,
+    price_delta_amount = EXCLUDED.price_delta_amount,
+    price_delta_currency = EXCLUDED.price_delta_currency,
+    price_delta_numeric = EXCLUDED.price_delta_numeric,
+    updated_at = now()
 """
 
 PRODUCT_LIST_SELECT_SQL = """
@@ -604,6 +760,55 @@ ON CONFLICT (store_id, product_id) DO UPDATE SET
     price_currency = EXCLUDED.price_currency,
     active = EXCLUDED.active,
     updated_at = now()
+"""
+
+UPSERT_PRODUCT_ASSET_SQL = """
+INSERT INTO store_catalog_product_assets (
+    store_id,
+    public_store_id,
+    media_ref,
+    asset_type,
+    file_name,
+    content_type,
+    size_bytes,
+    content_sha256,
+    content,
+    created_at
+) VALUES (
+    %(store_id)s,
+    %(public_store_id)s,
+    %(media_ref)s,
+    %(asset_type)s,
+    %(file_name)s,
+    %(content_type)s,
+    %(size_bytes)s,
+    %(content_sha256)s,
+    %(content)s,
+    %(created_at)s
+)
+ON CONFLICT (media_ref) DO UPDATE SET
+    file_name = EXCLUDED.file_name,
+    content_type = EXCLUDED.content_type,
+    size_bytes = EXCLUDED.size_bytes,
+    content_sha256 = EXCLUDED.content_sha256,
+    content = EXCLUDED.content,
+    created_at = EXCLUDED.created_at
+"""
+
+SELECT_PRODUCT_ASSET_SQL = """
+SELECT
+    store_id,
+    public_store_id,
+    media_ref,
+    asset_type,
+    file_name,
+    content_type,
+    size_bytes,
+    content_sha256,
+    content,
+    created_at
+FROM store_catalog_product_assets
+WHERE media_ref = %(media_ref)s
 """
 
 UPSERT_ORDER_PRODUCT_SQL = """
@@ -1135,6 +1340,69 @@ class PostgresStoreCatalogRepository:
             },
         )
 
+    def save_product_asset(self, asset: ProductAssetRecord) -> None:
+        self._connection.execute(UPSERT_PRODUCT_ASSET_SQL, _product_asset_params(asset))
+
+    def get_product_asset(self, media_ref: str) -> ProductAssetRecord | None:
+        row = _fetch_one(self._connection.execute(SELECT_PRODUCT_ASSET_SQL, {"media_ref": media_ref}))
+        return _row_to_product_asset(row) if row is not None else None
+
+    def replace_product_options(
+        self,
+        store_id: StoreId,
+        product_id: ProductId,
+        options: tuple[ProductOption, ...],
+        option_values: Mapping[str, tuple[ProductOptionValue, ...]],
+    ) -> None:
+        ids = {"store_id": str(store_id), "product_id": str(product_id)}
+        self._connection.execute(DEACTIVATE_PRODUCT_OPTION_VALUES_SQL, ids)
+        self._connection.execute(DEACTIVATE_PRODUCT_OPTIONS_SQL, ids)
+        for option in options:
+            option_row = _fetch_one(self._connection.execute(UPSERT_PRODUCT_OPTION_SQL, _product_option_params(option)))
+            canonical_option_id = (
+                str(_row_value(option_row, "option_id")) if option_row is not None else str(option.option_id)
+            )
+            for value in option_values.get(option.option_id, ()):
+                value_params = _product_option_value_params(value)
+                value_params["option_id"] = canonical_option_id
+                self._connection.execute(UPSERT_PRODUCT_OPTION_VALUE_SQL, value_params)
+
+    def replace_product_variants(
+        self,
+        store_id: StoreId,
+        product_id: ProductId,
+        variants: tuple[ProductVariant, ...],
+    ) -> None:
+        self._connection.execute(
+            DEACTIVATE_PRODUCT_VARIANTS_SQL,
+            {"store_id": str(store_id), "product_id": str(product_id)},
+        )
+        for variant in variants:
+            self._connection.execute(UPSERT_PRODUCT_VARIANT_SQL, _product_variant_params(variant))
+
+    def save_variant_inventory_projection(
+        self,
+        product: StoreProduct,
+        public_variant_id: PublicVariantId,
+        initial_total_stock: int,
+    ) -> None:
+        product_id = str(product.product_id)
+        store_id = str(product.store_id)
+        self._connection.execute(
+            INSERT_INITIAL_INVENTORY_SQL,
+            {"product_id": product_id, "store_id": store_id},
+        )
+        self._connection.execute(
+            INSERT_DEFAULT_VARIANT_INVENTORY_SQL,
+            {
+                "public_variant_id": str(public_variant_id),
+                "product_id": product_id,
+                "store_id": store_id,
+                "available_stock": initial_total_stock,
+                "total_stock": initial_total_stock,
+            },
+        )
+
     def record_audit(self, record: CatalogAuditRecord) -> str | None:
         row = _fetch_one(
             self._connection.execute(
@@ -1339,6 +1607,88 @@ def _product_params(product: StoreProduct) -> dict[str, Any]:
         "price_amount": product.price.amount,
         "price_currency": product.price.currency,
         "active": product.active,
+    }
+
+
+def _product_asset_params(asset: ProductAssetRecord) -> dict[str, Any]:
+    return {
+        "store_id": str(asset.store_id),
+        "public_store_id": str(asset.public_store_id),
+        "media_ref": asset.media_ref,
+        "asset_type": asset.asset_type,
+        "file_name": asset.file_name,
+        "content_type": asset.content_type,
+        "size_bytes": asset.size_bytes,
+        "content_sha256": asset.content_sha256,
+        "content": asset.content,
+        "created_at": asset.created_at,
+    }
+
+
+def _row_to_product_asset(row: Mapping[str, Any]) -> ProductAssetRecord:
+    content = _row_value(row, "content")
+    if isinstance(content, memoryview):
+        content = content.tobytes()
+    elif isinstance(content, bytearray):
+        content = bytes(content)
+    return ProductAssetRecord(
+        store_id=StoreId(str(_row_value(row, "store_id"))),
+        public_store_id=PublicStoreId(str(_row_value(row, "public_store_id"))),
+        media_ref=str(_row_value(row, "media_ref")),
+        asset_type=str(_row_value(row, "asset_type")),
+        file_name=str(_row_value(row, "file_name")),
+        content_type=str(_row_value(row, "content_type")),
+        size_bytes=int(_row_value(row, "size_bytes")),
+        content_sha256=str(_row_value(row, "content_sha256")),
+        content=content,
+        created_at=_row_value(row, "created_at"),
+    )
+
+
+def _product_option_params(option: ProductOption) -> dict[str, Any]:
+    return {
+        "store_id": str(option.store_id),
+        "product_id": str(option.product_id),
+        "option_id": option.option_id,
+        "option_key": option.option_key,
+        "display_name": option.display_name,
+        "sort_order": option.sort_order,
+        "required": option.required,
+        "selection_type": option.selection_type,
+        "option_type": option.option_type,
+        "active": option.active,
+    }
+
+
+def _product_option_value_params(value: ProductOptionValue) -> dict[str, Any]:
+    return {
+        "store_id": str(value.store_id),
+        "product_id": str(value.product_id),
+        "option_id": value.option_id,
+        "option_value_id": value.option_value_id,
+        "value_key": value.value_key,
+        "display_value": value.display_value,
+        "sort_order": value.sort_order,
+        "price_delta_amount": value.price_delta.amount if value.price_delta is not None else None,
+        "price_delta_currency": value.price_delta.currency if value.price_delta is not None else None,
+        "active": value.active,
+    }
+
+
+def _product_variant_params(variant: ProductVariant) -> dict[str, Any]:
+    return {
+        "store_id": str(variant.store_id),
+        "product_id": str(variant.product_id),
+        "public_variant_id": str(variant.public_variant_id),
+        "display_name": variant.display_name,
+        "option_values": json.dumps(dict(variant.option_values)),
+        "sku": variant.sku,
+        "status": variant.status.value,
+        "active": variant.active,
+        "sort_order": variant.sort_order,
+        "price_delta_amount": variant.price_delta.amount,
+        "price_delta_currency": variant.price_delta.currency,
+        "price_delta_numeric": variant.price_delta.amount,
     }
 
 

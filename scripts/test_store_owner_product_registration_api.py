@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import sys
 from pathlib import Path
 
@@ -27,6 +28,306 @@ from _store_catalog_test_support import (  # noqa: E402
     price,
     price_payload,
 )
+
+
+PNG_BYTES = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+PDF_BYTES = b"%PDF-1.7\n% product detail\n"
+PDF_ASSET_KEY = "product-assets/st_ledger_cafe_001/ledger-mug-detail.pdf"
+PDF_ASSET_KEY_V2 = "product-assets/st_ledger_cafe_001/ledger-mug-v2.pdf"
+
+
+def test_merchant_product_asset_upload_accepts_image_and_returns_internal_media_ref() -> None:
+    repository = _seed_owner_store()
+    router = catalog_router(
+        repository,
+        auth(OWNER_ID, UserRole.CUSTOMER),
+        id_generator=FixedIdGenerator(str(PRODUCT_ID)),
+    )
+
+    response = router.handle(
+        "POST",
+        f"/merchant/stores/{repository.stores[STORE_ID].public_store_id}/assets",
+        headers={"Content-Type": "application/json", "Idempotency-Key": "product-image-upload-001"},
+        body=json_body(
+            {
+                "assetType": "PRODUCT_IMAGE",
+                "fileName": "Ledger Mug.png",
+                "contentType": "image/png",
+                "contentBase64": base64.b64encode(PNG_BYTES).decode("ascii"),
+            }
+        ),
+    )
+
+    payload = decode(response.body)
+
+    assert response.status_code == 201
+    assert payload["asset"]["assetType"] == "PRODUCT_IMAGE"
+    assert payload["asset"]["contentType"] == "image/png"
+    assert payload["asset"]["sizeBytes"] == len(PNG_BYTES)
+    assert payload["asset"]["mediaRef"].startswith("product-assets/")
+    assert payload["asset"]["mediaRef"].endswith(".png")
+    assert payload["asset"]["mediaRef"] in repository.product_assets
+    assert repository.product_assets[payload["asset"]["mediaRef"]]["content"] == PNG_BYTES
+    assert "https://" not in payload["asset"]["mediaRef"]
+    assert not payload["asset"]["mediaRef"].startswith("data:")
+
+    asset_response = router.handle("GET", f"/{payload['asset']['mediaRef']}")
+
+    assert asset_response.status_code == 200
+    assert asset_response.headers["Content-Type"] == "image/png"
+    assert asset_response.body == PNG_BYTES
+
+
+def test_merchant_product_asset_upload_accepts_pdf_for_detail_asset() -> None:
+    repository = _seed_owner_store()
+    router = catalog_router(
+        repository,
+        auth(OWNER_ID, UserRole.CUSTOMER),
+        id_generator=FixedIdGenerator(str(PRODUCT_ID)),
+    )
+
+    response = router.handle(
+        "POST",
+        f"/merchant/stores/{repository.stores[STORE_ID].public_store_id}/assets",
+        headers={"Content-Type": "application/json", "Idempotency-Key": "product-pdf-upload-001"},
+        body=json_body(
+            {
+                "assetType": "PRODUCT_DETAIL_PDF",
+                "fileName": "ledger-detail.pdf",
+                "contentType": "application/pdf",
+                "contentBase64": base64.b64encode(PDF_BYTES).decode("ascii"),
+            }
+        ),
+    )
+
+    payload = decode(response.body)
+
+    assert response.status_code == 201
+    assert payload["asset"]["assetType"] == "PRODUCT_DETAIL_PDF"
+    assert payload["asset"]["mediaRef"].endswith(".pdf")
+    assert repository.product_assets[payload["asset"]["mediaRef"]]["content"] == PDF_BYTES
+
+    asset_response = router.handle("GET", f"/{payload['asset']['mediaRef']}")
+
+    assert asset_response.status_code == 200
+    assert asset_response.headers["Content-Type"] == "application/pdf"
+    assert asset_response.body == PDF_BYTES
+
+
+def test_merchant_product_asset_upload_rejects_mismatched_content_type_magic_bytes() -> None:
+    repository = _seed_owner_store()
+    router = catalog_router(
+        repository,
+        auth(OWNER_ID, UserRole.CUSTOMER),
+        id_generator=FixedIdGenerator(str(PRODUCT_ID)),
+    )
+
+    response = router.handle(
+        "POST",
+        f"/merchant/stores/{repository.stores[STORE_ID].public_store_id}/assets",
+        headers={"Content-Type": "application/json", "Idempotency-Key": "product-image-upload-invalid-001"},
+        body=json_body(
+            {
+                "assetType": "PRODUCT_IMAGE",
+                "fileName": "not-image.png",
+                "contentType": "image/png",
+                "contentBase64": base64.b64encode(PDF_BYTES).decode("ascii"),
+            }
+        ),
+    )
+
+    payload = decode(response.body)
+
+    assert response.status_code == 400
+    assert payload["error"]["code"] == "VALIDATION_ERROR"
+    assert "magic bytes" in payload["error"]["message"]
+
+
+def test_product_registration_accepts_options_variants_variant_stock_and_pdf_attribute() -> None:
+    repository = _seed_owner_store()
+    router = catalog_router(
+        repository,
+        auth(OWNER_ID, UserRole.CUSTOMER),
+        id_generator=FixedIdGenerator(str(PRODUCT_ID)),
+    )
+
+    response = router.handle(
+        "POST",
+        f"/merchant/stores/{repository.stores[STORE_ID].public_store_id}/products",
+        headers={"Content-Type": "application/json", "Idempotency-Key": "product-register-options-001"},
+        body=json_body(_product_body_with_options()),
+    )
+
+    payload = decode(response.body)
+
+    assert response.status_code == 201
+    assert payload["product"]["attributes"]["detailPdfAssetKey"] == PDF_ASSET_KEY
+    assert [option.option_key for option in repository.product_options[(STORE_ID, PRODUCT_ID)]] == ["size", "gift_wrap"]
+    gift_wrap_values = repository.product_option_values["opt_gift_wrap"]
+    assert gift_wrap_values[0].price_delta == price(amount="2.50")
+    assert [str(variant.public_variant_id) for variant in repository.product_variants[(STORE_ID, PRODUCT_ID)]] == [
+        "var_ledger_mug_small",
+        "var_ledger_mug_large",
+    ]
+    assert repository.variant_inventory["var_ledger_mug_small"] == 12
+    assert repository.variant_inventory["var_ledger_mug_large"] == 4
+    assert payload["product"]["options"][0]["values"][1]["priceDelta"] == {"amount": "1.00", "currency": "USD"}
+    assert payload["product"]["variants"][1]["availability"]["availableStock"] == 4
+
+
+def test_product_registration_rejects_external_pdf_url_attribute() -> None:
+    repository = _seed_owner_store()
+    router = catalog_router(
+        repository,
+        auth(OWNER_ID, UserRole.CUSTOMER),
+        id_generator=FixedIdGenerator(str(PRODUCT_ID)),
+    )
+    body = _product_body_with_options()
+    body["attributes"] = {"detailPdfUrl": "https://cdn.example.com/ledger-mug-detail.pdf"}
+
+    response = router.handle(
+        "POST",
+        f"/merchant/stores/{repository.stores[STORE_ID].public_store_id}/products",
+        headers={"Content-Type": "application/json", "Idempotency-Key": "product-register-pdf-url-001"},
+        body=json_body(body),
+    )
+
+    payload = decode(response.body)
+
+    assert response.status_code == 400
+    assert payload["error"]["code"] == "VALIDATION_ERROR"
+    assert "detailPdfUrl is not supported" in payload["error"]["message"]
+
+
+def test_product_update_replaces_option_variant_payload_without_catalog_stock_patch() -> None:
+    repository = _seed_owner_store()
+    router = catalog_router(
+        repository,
+        auth(OWNER_ID, UserRole.CUSTOMER),
+        id_generator=FixedIdGenerator(str(PRODUCT_ID)),
+    )
+    create = router.handle(
+        "POST",
+        f"/merchant/stores/{repository.stores[STORE_ID].public_store_id}/products",
+        headers={"Content-Type": "application/json", "Idempotency-Key": "product-update-options-create-001"},
+        body=json_body(_product_body_with_options()),
+    )
+    public_product_id = decode(create.body)["publicProductId"]
+
+    response = router.handle(
+        "PATCH",
+        f"/merchant/stores/{repository.stores[STORE_ID].public_store_id}/products/{public_product_id}",
+        headers={"Content-Type": "application/json", "Idempotency-Key": "product-update-options-001"},
+        body=json_body(
+            {
+                "title": "Ledger Mug v2",
+                "attributes": {"detailPdfAssetKey": PDF_ASSET_KEY_V2},
+                "options": [
+                    {
+                        "key": "size",
+                        "displayName": "Size",
+                        "required": True,
+                        "optionType": "VARIANT",
+                        "values": [
+                            {"value": "large", "displayValue": "Large", "priceDelta": {"amount": "1.50", "currency": "USD"}}
+                        ],
+                    }
+                ],
+                "variants": [
+                    {
+                        "publicVariantId": "var_ledger_mug_large",
+                        "displayName": "Large",
+                        "optionValues": {"size": "large"},
+                        "priceDelta": {"amount": "1.50", "currency": "USD"},
+                    }
+                ],
+            }
+        ),
+    )
+
+    payload = decode(response.body)
+
+    assert response.status_code == 200
+    assert payload["product"]["attributes"]["detailPdfAssetKey"] == PDF_ASSET_KEY_V2
+    assert [option.option_key for option in repository.product_options[(STORE_ID, PRODUCT_ID)] if option.active] == ["size"]
+    assert repository.product_option_values["opt_size"][0].display_value == "Large"
+    assert [str(variant.public_variant_id) for variant in repository.product_variants[(STORE_ID, PRODUCT_ID)] if variant.active] == [
+        "var_ledger_mug_large"
+    ]
+    assert "stock" not in payload["product"]
+
+
+def test_product_update_seeds_inventory_only_for_new_option_combinations() -> None:
+    repository = _seed_owner_store()
+    router = catalog_router(
+        repository,
+        auth(OWNER_ID, UserRole.CUSTOMER),
+        id_generator=FixedIdGenerator(str(PRODUCT_ID)),
+    )
+    create = router.handle(
+        "POST",
+        f"/merchant/stores/{repository.stores[STORE_ID].public_store_id}/products",
+        headers={"Content-Type": "application/json", "Idempotency-Key": "product-update-stock-create-001"},
+        body=json_body(_product_body_with_options()),
+    )
+    public_product_id = decode(create.body)["publicProductId"]
+    repository.variant_inventory_seed_calls.clear()
+
+    response = router.handle(
+        "PATCH",
+        f"/merchant/stores/{repository.stores[STORE_ID].public_store_id}/products/{public_product_id}",
+        headers={"Content-Type": "application/json", "Idempotency-Key": "product-update-stock-001"},
+        body=json_body(
+            {
+                "title": "Ledger Mug v2",
+                "options": [
+                    {
+                        "key": "size",
+                        "displayName": "Size",
+                        "required": True,
+                        "optionType": "VARIANT",
+                        "values": [
+                            {"value": "small", "displayValue": "Small", "priceDelta": {"amount": "0.00", "currency": "USD"}},
+                            {"value": "medium", "displayValue": "Medium", "priceDelta": {"amount": "0.50", "currency": "USD"}},
+                            {"value": "large", "displayValue": "Large", "priceDelta": {"amount": "1.00", "currency": "USD"}},
+                        ],
+                    }
+                ],
+                "variants": [
+                    {
+                        "publicVariantId": "var_ledger_mug_small",
+                        "displayName": "Small",
+                        "optionValues": {"size": "small"},
+                        "priceDelta": {"amount": "0.00", "currency": "USD"},
+                    },
+                    {
+                        "publicVariantId": "var_ledger_mug_medium",
+                        "displayName": "Medium",
+                        "optionValues": {"size": "medium"},
+                        "priceDelta": {"amount": "0.50", "currency": "USD"},
+                        "initialTotalStock": 7,
+                    },
+                    {
+                        "publicVariantId": "var_ledger_mug_large",
+                        "displayName": "Large",
+                        "optionValues": {"size": "large"},
+                        "priceDelta": {"amount": "1.00", "currency": "USD"},
+                    },
+                ],
+            }
+        ),
+    )
+
+    payload = decode(response.body)
+
+    assert response.status_code == 200
+    assert payload["product"]["variants"][0]["availability"]["availableStock"] == 12
+    assert payload["product"]["variants"][1]["availability"]["availableStock"] == 7
+    assert payload["product"]["variants"][2]["availability"]["availableStock"] == 4
+    assert repository.variant_inventory["var_ledger_mug_small"] == 12
+    assert repository.variant_inventory["var_ledger_mug_large"] == 4
+    assert repository.variant_inventory["var_ledger_mug_medium"] == 7
+    assert repository.variant_inventory_seed_calls == [("var_ledger_mug_medium", 7)]
 
 
 def test_customer_role_store_member_can_register_checkoutable_product_without_global_store_owner_role() -> None:
@@ -317,3 +618,52 @@ def _product_body_no_id() -> bytes:
             "active": True,
         }
     )
+
+
+def _product_body_with_options() -> dict[str, object]:
+    return {
+        "name": "Ledger Mug",
+        "price": price_payload(),
+        "initialTotalStock": 25,
+        "active": True,
+        "attributes": {"detailPdfAssetKey": PDF_ASSET_KEY},
+        "options": [
+            {
+                "key": "size",
+                "displayName": "Size",
+                "required": True,
+                "selectionType": "SINGLE",
+                "optionType": "VARIANT",
+                "values": [
+                    {"value": "small", "displayValue": "Small", "priceDelta": {"amount": "0.00", "currency": "USD"}},
+                    {"value": "large", "displayValue": "Large", "priceDelta": {"amount": "1.00", "currency": "USD"}},
+                ],
+            },
+            {
+                "key": "gift_wrap",
+                "displayName": "Gift wrap",
+                "required": False,
+                "selectionType": "SINGLE",
+                "optionType": "ADD_ON",
+                "values": [
+                    {"value": "yes", "displayValue": "Yes", "priceDelta": {"amount": "2.50", "currency": "USD"}},
+                ],
+            },
+        ],
+        "variants": [
+            {
+                "publicVariantId": "var_ledger_mug_small",
+                "displayName": "Small",
+                "optionValues": {"size": "small"},
+                "priceDelta": {"amount": "0.00", "currency": "USD"},
+                "initialTotalStock": 12,
+            },
+            {
+                "publicVariantId": "var_ledger_mug_large",
+                "displayName": "Large",
+                "optionValues": {"size": "large"},
+                "priceDelta": {"amount": "1.00", "currency": "USD"},
+                "initialTotalStock": 4,
+            },
+        ],
+    }

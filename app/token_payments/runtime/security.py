@@ -20,7 +20,7 @@ DEFAULT_CSRF_ACTIVE_KEY_ID = "local-dev-csrf"
 DEFAULT_CSRF_SIGNING_KEY = "replace_with_local_dev_only_csrf_signing_key"
 DEFAULT_CSRF_MAX_AGE_SECONDS = 1_296_000
 DEFAULT_CORS_ALLOWED_ORIGINS = ("http://localhost:5173", "http://127.0.0.1:8765")
-DEFAULT_REQUEST_BODY_MAX_BYTES = 1024 * 1024
+DEFAULT_REQUEST_BODY_MAX_BYTES = 16 * 1024 * 1024
 SECURITY_PLACEHOLDER_MARKERS = (
     "placeholder",
     "replace_with",

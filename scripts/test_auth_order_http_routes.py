@@ -136,7 +136,7 @@ def test_auth_http_routes_call_existing_auth_facade_methods() -> None:
 
     routes = register_auth_routes(router, AuthApi(use_case))
 
-    assert len(routes) == 17
+    assert len(routes) == 18
     assert {route.operation_id for route in routes} == {
         "requestLoginChallenge",
         "loginWithMetaMask",
@@ -151,6 +151,7 @@ def test_auth_http_routes_call_existing_auth_facade_methods() -> None:
         "setPrimaryWallet",
         "revokeWallet",
         "refreshSession",
+        "switchSession",
         "logout",
         "getCurrentUser",
         "getCurrentUserProfile",

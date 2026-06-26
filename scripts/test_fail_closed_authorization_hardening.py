@@ -36,6 +36,7 @@ from _store_catalog_test_support import (  # noqa: E402
 
 
 NOW = datetime(2026, 5, 22, 4, 0, tzinfo=UTC)
+VARIANT_ID = "var_ledger_mug_default"
 
 
 def test_inventory_write_requires_scope_even_for_canonical_owner() -> None:
@@ -51,7 +52,7 @@ def test_inventory_write_requires_scope_even_for_canonical_owner() -> None:
 
     response = router.handle(
         "POST",
-        f"/store-owner/stores/{STORE_ID}/inventory/{PRODUCT_ID}/intake",
+        _variant_inventory_path("intake"),
         headers={"Content-Type": "application/json", "Idempotency-Key": "fail-closed-no-scope"},
         body=_json_body({"quantity": 1, "reason": "missing write scope"}),
         received_at=NOW,
@@ -78,7 +79,7 @@ def test_inventory_write_requires_canonical_store_membership_when_scope_is_prese
 
     response = router.handle(
         "POST",
-        f"/store-owner/stores/{STORE_ID}/inventory/{PRODUCT_ID}/intake",
+        _variant_inventory_path("intake"),
         headers={"Content-Type": "application/json", "Idempotency-Key": "fail-closed-stale-projection"},
         body=_json_body({"quantity": 1, "reason": "stale projection must not authorize"}),
         received_at=NOW,
@@ -105,7 +106,7 @@ def test_inventory_write_allows_owner_or_manager_only_with_scope_and_canonical_m
 
         response = router.handle(
             "POST",
-            f"/store-owner/stores/{STORE_ID}/inventory/{PRODUCT_ID}/intake",
+            _variant_inventory_path("intake"),
             headers={"Content-Type": "application/json", "Idempotency-Key": f"inventory-{role.lower()}-allowed"},
             body=_json_body({"quantity": 2, "reason": f"{role.lower()} stock intake"}),
             received_at=NOW,
@@ -128,7 +129,7 @@ def test_inventory_write_rejects_revoked_canonical_membership() -> None:
 
     response = router.handle(
         "POST",
-        f"/store-owner/stores/{STORE_ID}/inventory/{PRODUCT_ID}/intake",
+        _variant_inventory_path("intake"),
         headers={"Content-Type": "application/json", "Idempotency-Key": "fail-closed-revoked"},
         body=_json_body({"quantity": 1, "reason": "revoked member"}),
         received_at=NOW,
@@ -201,6 +202,10 @@ def _product_body() -> bytes:
 
 def _json_body(payload: Mapping[str, Any]) -> bytes:
     return json.dumps(payload, ensure_ascii=True, separators=(",", ":"), sort_keys=True).encode("utf-8")
+
+
+def _variant_inventory_path(action: str) -> str:
+    return f"/store-owner/stores/{STORE_ID}/inventory/{PRODUCT_ID}/variants/{VARIANT_ID}/{action}"
 
 
 def _json(body: bytes) -> dict[str, Any]:
@@ -276,6 +281,7 @@ class CapturingInventoryHandler:
             available_stock=Quantity(5),
             reserved_stock=Quantity(0),
             total_stock=Quantity(5),
+            public_variant_id=VARIANT_ID,
         )
 
     def increase_stock(self, command: Any) -> StoreOwnerInventoryCommandResult:

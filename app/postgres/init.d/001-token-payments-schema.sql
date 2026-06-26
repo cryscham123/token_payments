@@ -426,6 +426,22 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_store_catalog_products_public_store_produc
 CREATE INDEX IF NOT EXISTS idx_store_catalog_products_store_status_visibility
     ON store_catalog_products (store_id, status, visibility);
 
+CREATE TABLE IF NOT EXISTS store_catalog_product_assets (
+    media_ref TEXT PRIMARY KEY,
+    store_id UUID NOT NULL REFERENCES store_catalog_stores (store_id),
+    public_store_id TEXT NOT NULL,
+    asset_type TEXT NOT NULL CHECK (asset_type IN ('PRODUCT_IMAGE', 'PRODUCT_DETAIL_PDF')),
+    file_name TEXT NOT NULL,
+    content_type TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL CHECK (size_bytes > 0),
+    content_sha256 TEXT NOT NULL,
+    content BYTEA NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_store_catalog_product_assets_store
+    ON store_catalog_product_assets (public_store_id, asset_type, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS store_catalog_product_options (
     store_id UUID NOT NULL,
     product_id UUID NOT NULL,

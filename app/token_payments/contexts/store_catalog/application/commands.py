@@ -10,6 +10,7 @@ from token_payments.contexts.store_catalog.domain import (
     ProductStatus,
     ProductVisibility,
     PublicProductId,
+    PublicVariantId,
     PublicStoreId,
     StoreMembershipRole,
 )
@@ -104,6 +105,35 @@ class ListMerchantStoresQuery:
 
 
 @dataclass(frozen=True)
+class UploadStoreProductAssetCommand:
+    command_id: CommandId
+    actor_user_id: UserId
+    public_store_id: PublicStoreId
+    asset_type: str
+    file_name: str
+    content_type: str
+    content: bytes
+    requested_at: datetime
+    request_id: str
+    payload_hash: str
+    platform_override: bool = False
+
+    def __post_init__(self) -> None:
+        _validate_common(self)
+        if not isinstance(self.actor_user_id, UserId):
+            raise ValueError("UploadStoreProductAssetCommand.actor_user_id must be a UserId")
+        if not isinstance(self.public_store_id, PublicStoreId):
+            object.__setattr__(self, "public_store_id", PublicStoreId(str(self.public_store_id)))
+        object.__setattr__(self, "asset_type", _text(str(self.asset_type), "asset_type").upper())
+        object.__setattr__(self, "file_name", _text(self.file_name, "file_name"))
+        object.__setattr__(self, "content_type", _text(self.content_type, "content_type").lower())
+        if not isinstance(self.content, bytes) or not self.content:
+            raise ValueError("UploadStoreProductAssetCommand.content must be non-empty bytes")
+        if not isinstance(self.platform_override, bool):
+            raise ValueError("UploadStoreProductAssetCommand.platform_override must be a bool")
+
+
+@dataclass(frozen=True)
 class UpdateStoreProfileCommand:
     command_id: CommandId
     actor_user_id: UserId
@@ -190,6 +220,8 @@ class RegisterStoreProductCommand:
     tags: tuple[str, ...] = ()
     media: tuple[str, ...] = ()
     attributes: Mapping[str, object] | None = None
+    options: tuple["ProductOptionInput", ...] | None = None
+    variants: tuple["ProductVariantInput", ...] | None = None
     status: ProductStatus | str = ProductStatus.ACTIVE
     visibility: ProductVisibility | str = ProductVisibility.PUBLIC
     active: bool = True
@@ -222,6 +254,10 @@ class RegisterStoreProductCommand:
         object.__setattr__(self, "media", _text_tuple(self.media, "media"))
         if self.attributes is not None and not isinstance(self.attributes, Mapping):
             raise ValueError("RegisterStoreProductCommand.attributes must be an object")
+        if self.options is not None:
+            object.__setattr__(self, "options", _option_inputs(self.options, "options"))
+        if self.variants is not None:
+            object.__setattr__(self, "variants", _variant_inputs(self.variants, "variants"))
         if not isinstance(self.status, ProductStatus):
             object.__setattr__(self, "status", ProductStatus(_text(str(self.status), "status")))
         if not isinstance(self.visibility, ProductVisibility):
@@ -246,6 +282,8 @@ class UpdateStoreProductCommand:
     request_id: str
     payload_hash: str
     price: Money | None = None
+    options: tuple["ProductOptionInput", ...] | None = None
+    variants: tuple["ProductVariantInput", ...] | None = None
     platform_override: bool = False
 
     def __post_init__(self) -> None:
@@ -266,6 +304,10 @@ class UpdateStoreProductCommand:
             object.__setattr__(self, "media", _text_tuple(self.media, "media"))
         if self.attributes is not None and not isinstance(self.attributes, Mapping):
             raise ValueError("UpdateStoreProductCommand.attributes must be an object")
+        if self.options is not None:
+            object.__setattr__(self, "options", _option_inputs(self.options, "options"))
+        if self.variants is not None:
+            object.__setattr__(self, "variants", _variant_inputs(self.variants, "variants"))
         if self.status is not None and not isinstance(self.status, ProductStatus):
             object.__setattr__(self, "status", ProductStatus(_text(str(self.status), "status")))
         if self.visibility is not None and not isinstance(self.visibility, ProductVisibility):
@@ -274,6 +316,89 @@ class UpdateStoreProductCommand:
             raise ValueError("UpdateStoreProductCommand.price must be a Money")
         if not isinstance(self.platform_override, bool):
             raise ValueError("UpdateStoreProductCommand.platform_override must be a bool")
+
+
+@dataclass(frozen=True)
+class ProductOptionValueInput:
+    value: str
+    display_value: str
+    price_delta: Money | None = None
+    sort_order: int = 0
+    active: bool = True
+    option_value_id: str | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "value", _text(self.value, "ProductOptionValueInput.value"))
+        object.__setattr__(self, "display_value", _text(self.display_value, "ProductOptionValueInput.display_value"))
+        if self.price_delta is not None and not isinstance(self.price_delta, Money):
+            raise ValueError("ProductOptionValueInput.price_delta must be a Money or None")
+        object.__setattr__(self, "sort_order", _non_negative_int(self.sort_order, "ProductOptionValueInput.sort_order"))
+        if not isinstance(self.active, bool):
+            raise ValueError("ProductOptionValueInput.active must be a bool")
+        if self.option_value_id is not None:
+            object.__setattr__(self, "option_value_id", _text(self.option_value_id, "ProductOptionValueInput.option_value_id"))
+
+
+@dataclass(frozen=True)
+class ProductOptionInput:
+    key: str
+    display_name: str
+    values: tuple[ProductOptionValueInput, ...] = ()
+    required: bool = True
+    selection_type: str = "SINGLE"
+    option_type: str = "VARIANT"
+    sort_order: int = 0
+    active: bool = True
+    option_id: str | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "key", _text(self.key, "ProductOptionInput.key"))
+        object.__setattr__(self, "display_name", _text(self.display_name, "ProductOptionInput.display_name"))
+        object.__setattr__(self, "values", _option_value_inputs(self.values, "ProductOptionInput.values"))
+        if not isinstance(self.required, bool):
+            raise ValueError("ProductOptionInput.required must be a bool")
+        object.__setattr__(self, "selection_type", _text(str(self.selection_type), "ProductOptionInput.selection_type").upper())
+        object.__setattr__(self, "option_type", _text(str(self.option_type), "ProductOptionInput.option_type").upper())
+        object.__setattr__(self, "sort_order", _non_negative_int(self.sort_order, "ProductOptionInput.sort_order"))
+        if not isinstance(self.active, bool):
+            raise ValueError("ProductOptionInput.active must be a bool")
+        if self.option_id is not None:
+            object.__setattr__(self, "option_id", _text(self.option_id, "ProductOptionInput.option_id"))
+
+
+@dataclass(frozen=True)
+class ProductVariantInput:
+    display_name: str
+    option_values: Mapping[str, object]
+    price_delta: Money
+    public_variant_id: PublicVariantId | None = None
+    sku: str | None = None
+    status: ProductStatus | str = ProductStatus.ACTIVE
+    active: bool = True
+    sort_order: int = 0
+    initial_total_stock: int | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "display_name", _text(self.display_name, "ProductVariantInput.display_name"))
+        if not isinstance(self.option_values, Mapping):
+            raise ValueError("ProductVariantInput.option_values must be an object")
+        if not isinstance(self.price_delta, Money):
+            raise ValueError("ProductVariantInput.price_delta must be a Money")
+        if self.public_variant_id is not None and not isinstance(self.public_variant_id, PublicVariantId):
+            object.__setattr__(self, "public_variant_id", PublicVariantId(str(self.public_variant_id)))
+        if self.sku is not None:
+            object.__setattr__(self, "sku", _text(self.sku, "ProductVariantInput.sku"))
+        if not isinstance(self.status, ProductStatus):
+            object.__setattr__(self, "status", ProductStatus(_text(str(self.status), "ProductVariantInput.status")))
+        if not isinstance(self.active, bool):
+            raise ValueError("ProductVariantInput.active must be a bool")
+        object.__setattr__(self, "sort_order", _non_negative_int(self.sort_order, "ProductVariantInput.sort_order"))
+        if self.initial_total_stock is not None:
+            object.__setattr__(
+                self,
+                "initial_total_stock",
+                _non_negative_int(self.initial_total_stock, "ProductVariantInput.initial_total_stock"),
+            )
 
 
 def _validate_common(command: object) -> None:
@@ -299,6 +424,12 @@ def _positive_int(value: int, field_name: str) -> int:
     return value
 
 
+def _non_negative_int(value: int, field_name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"{field_name} must be a non-negative integer")
+    return value
+
+
 def _text(value: str, field_name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field_name} must be a non-empty string")
@@ -309,3 +440,27 @@ def _text_tuple(values: tuple[str, ...] | list[str], field_name: str) -> tuple[s
     if not isinstance(values, tuple | list):
         raise ValueError(f"{field_name} must be an array")
     return tuple(_text(value, field_name) for value in values)
+
+
+def _option_inputs(values: tuple[ProductOptionInput, ...], field_name: str) -> tuple[ProductOptionInput, ...]:
+    if not isinstance(values, tuple | list):
+        raise ValueError(f"{field_name} must be an array")
+    return tuple(value if isinstance(value, ProductOptionInput) else ProductOptionInput(**value) for value in values)
+
+
+def _option_value_inputs(
+    values: tuple[ProductOptionValueInput, ...],
+    field_name: str,
+) -> tuple[ProductOptionValueInput, ...]:
+    if not isinstance(values, tuple | list):
+        raise ValueError(f"{field_name} must be an array")
+    return tuple(
+        value if isinstance(value, ProductOptionValueInput) else ProductOptionValueInput(**value)
+        for value in values
+    )
+
+
+def _variant_inputs(values: tuple[ProductVariantInput, ...], field_name: str) -> tuple[ProductVariantInput, ...]:
+    if not isinstance(values, tuple | list):
+        raise ValueError(f"{field_name} must be an array")
+    return tuple(value if isinstance(value, ProductVariantInput) else ProductVariantInput(**value) for value in values)

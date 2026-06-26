@@ -108,7 +108,7 @@ def test_build_live_api_router_uses_route_registration_helpers_and_manifest_cont
     assert [(route.method, route.path_template, route.operation_id) for route in router.routes] == [
         (entry["method"], entry["path"], entry["operationId"]) for entry in http_route_manifest()
     ]
-    assert len(router.routes) == 59
+    assert len(router.routes) == 62
 
 
 def test_live_merchant_membership_facade_exposes_user_invitation_listing() -> None:
@@ -117,6 +117,38 @@ def test_live_merchant_membership_facade_exposes_user_invitation_listing() -> No
     assert type(facades.merchant).__name__ == "MerchantMembershipApi"
     assert type(facades.merchant._use_case).__name__ == "_TransactionalMerchantMembershipUseCase"
     assert hasattr(facades.merchant._use_case, "list_user_invitations")
+
+
+def test_live_auth_facade_exposes_session_switch_on_transactional_use_case() -> None:
+    facades = build_live_api_facades(config=_config(), dependencies=_dependencies(FakePostgresSession()))
+
+    assert type(facades.auth).__name__ == "AuthApi"
+    assert type(facades.auth._use_case).__name__ == "_TransactionalAuthUseCase"
+    assert hasattr(facades.auth._use_case, "switchSession")
+
+
+def test_live_store_catalog_facade_exposes_product_asset_upload_on_transactional_use_case() -> None:
+    facades = build_live_api_facades(config=_config(), dependencies=_dependencies(FakePostgresSession()))
+
+    assert type(facades.catalog).__name__ == "StoreCatalogApi"
+    assert type(facades.catalog._use_case).__name__ == "_TransactionalStoreCatalogUseCase"
+    assert hasattr(facades.catalog._use_case, "upload_store_product_asset")
+
+
+def test_live_store_catalog_facade_exposes_product_asset_read_on_transactional_use_case() -> None:
+    facades = build_live_api_facades(config=_config(), dependencies=_dependencies(FakePostgresSession()))
+
+    assert type(facades.catalog).__name__ == "StoreCatalogApi"
+    assert type(facades.catalog._use_case).__name__ == "_TransactionalStoreCatalogUseCase"
+    assert hasattr(facades.catalog._use_case, "get_product_asset")
+
+
+def test_live_inventory_facade_exposes_canonical_store_role_lookup_on_transactional_query() -> None:
+    facades = build_live_api_facades(config=_config(), dependencies=_dependencies(FakePostgresSession()))
+
+    assert type(facades.inventory).__name__ == "StoreOwnerInventoryApi"
+    assert type(facades.inventory._query).__name__ == "_TransactionalInventoryQuery"
+    assert hasattr(facades.inventory._query, "store_role_for_user")
 
 
 def test_live_api_facade_wiring_dispatches_routes_through_injected_transactional_repositories() -> None:

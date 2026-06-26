@@ -28,6 +28,7 @@ OTHER_OWNER_ID = UserId("018f33aa-9e6d-73d8-9dc3-47d6cdcc8304")
 STORE_ID = StoreId("018f33aa-9e6d-73d8-9dc3-47d6cdcc8305")
 OTHER_STORE_ID = StoreId("018f33aa-9e6d-73d8-9dc3-47d6cdcc8306")
 PRODUCT_ID = ProductId("018f33aa-9e6d-73d8-9dc3-47d6cdcc8307")
+VARIANT_ID = "var_ledger_hoodie_l"
 
 
 def test_store_owner_can_mutate_only_owned_store_and_denied_attempt_has_no_audit() -> None:
@@ -90,6 +91,7 @@ def test_inventory_mutation_audit_records_before_after_reason_request_and_idempo
             idempotency_key="stock-intake-audit-001",
             recorded_at=NOW,
             actor_store_role="OWNER",
+            public_variant_id=VARIANT_ID,
         )
     ]
 
@@ -136,7 +138,7 @@ class ApiFixture:
     def post_intake(self, store_id: StoreId, idempotency_key: str):
         return self.router.handle(
             "POST",
-            f"/store-owner/stores/{store_id}/inventory/{PRODUCT_ID}/intake",
+            f"/store-owner/stores/{store_id}/inventory/{PRODUCT_ID}/variants/{VARIANT_ID}/intake",
             headers={
                 "Content-Type": "application/json",
                 "Idempotency-Key": idempotency_key,
@@ -163,6 +165,7 @@ def _inventory(store_id: StoreId, *, available: int) -> ProductInventory:
         available_stock=Quantity(available),
         reserved_stock=Quantity(0),
         total_stock=Quantity(available),
+        public_variant_id=VARIANT_ID,
     )
 
 

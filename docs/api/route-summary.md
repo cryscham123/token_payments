@@ -1,6 +1,6 @@
 # 전체 Route Summary
 
-이 페이지는 `app/token_payments/api/http.py`의 현재 public HTTP route manifest 58개를 GitBook에서 검색하기 위한 전체 표다. 요청/응답/오류/권한은 각 도메인별 페이지를 기준으로 한다.
+이 페이지는 `app/token_payments/api/http.py`의 현재 public HTTP route manifest 62개를 GitBook에서 검색하기 위한 전체 표다. 요청/응답/오류/권한은 각 도메인별 페이지를 기준으로 한다.
 
 | Operation ID | Route | 영역 |
 | --- | --- | --- |
@@ -17,6 +17,7 @@
 | `setPrimaryWallet` | `PATCH /auth/wallets/{walletId}/primary` | Wallet |
 | `revokeWallet` | `DELETE /auth/wallets/{walletId}` | Wallet |
 | `refreshSession` | `POST /auth/sessions/refresh` | 인증 |
+| `switchSession` | `POST /auth/sessions/switch` | 인증 |
 | `logout` | `DELETE /auth/sessions` | 인증 |
 | `getCurrentUser` | `GET /auth/me` | 사용자 |
 | `getCurrentUserProfile` | `GET /auth/me/profile` | 사용자 |
@@ -32,6 +33,7 @@
 | `listAllPublicProducts` | `GET /products` | 상품 |
 | `listPublicProducts` | `GET /stores/{publicStoreId}/products` | 상품 |
 | `getPublicProduct` | `GET /stores/{publicStoreId}/products/{publicProductId}` | 상품 |
+| `getProductAsset` | `GET /product-assets/{publicStoreId}/{assetFile}` | 상품 |
 | `listMerchantStores` | `GET /merchant/stores` | 머천트 |
 | `updateStoreProfile` | `PATCH /merchant/stores/{publicStoreId}/profile` | 머천트 |
 | `createOrReuseStoreUser` | `POST /admin/store-users` | 관리자 |
@@ -39,13 +41,14 @@
 | `grantStoreMembership` | `POST /admin/stores/{storeId}/memberships` | 관리자 |
 | `listMerchantProducts` | `GET /merchant/stores/{publicStoreId}/products` | 상품 |
 | `getMerchantProduct` | `GET /merchant/stores/{publicStoreId}/products/{publicProductId}` | 상품 |
+| `uploadMerchantProductAsset` | `POST /merchant/stores/{publicStoreId}/assets` | 상품 |
 | `registerStoreProduct` | `POST /merchant/stores/{publicStoreId}/products` | 상품 |
 | `updateStoreProduct` | `PATCH /merchant/stores/{publicStoreId}/products/{publicProductId}` | 상품 |
 | `listStoreOwnerInventory` | `GET /store-owner/inventory` | 재고 |
-| `increaseStoreOwnerInventoryStock` | `POST /store-owner/stores/{storeId}/inventory/{productId}/intake` | 재고 |
-| `correctStoreOwnerInventoryStock` | `POST /store-owner/stores/{storeId}/inventory/{productId}/corrections` | 재고 |
-| `pauseStoreOwnerInventorySales` | `POST /store-owner/stores/{storeId}/inventory/{productId}/pause` | 재고 |
-| `resumeStoreOwnerInventorySales` | `POST /store-owner/stores/{storeId}/inventory/{productId}/resume` | 재고 |
+| `increaseStoreOwnerInventoryStock` | `POST /store-owner/stores/{storeId}/inventory/{productId}/variants/{publicVariantId}/intake` | 재고 |
+| `correctStoreOwnerInventoryStock` | `POST /store-owner/stores/{storeId}/inventory/{productId}/variants/{publicVariantId}/corrections` | 재고 |
+| `pauseStoreOwnerInventorySales` | `POST /store-owner/stores/{storeId}/inventory/{productId}/variants/{publicVariantId}/pause` | 재고 |
+| `resumeStoreOwnerInventorySales` | `POST /store-owner/stores/{storeId}/inventory/{productId}/variants/{publicVariantId}/resume` | 재고 |
 | `listMerchantStoreMembers` | `GET /merchant/stores/{storeId}/members` | RBAC |
 | `listMerchantStoreInvitations` | `GET /merchant/stores/{storeId}/invitations` | RBAC |
 | `listMerchantUserInvitations` | `GET /merchant/invitations` | RBAC |

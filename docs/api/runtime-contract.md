@@ -10,7 +10,7 @@ API가 없는 순수 내부 기능은 phase step과 완료 summary에 `intention
 
 ## Route Surface Contract
 
-현재 public HTTP route surface는 `app/token_payments/api/http.py`의 55개 route manifest와 정확히 일치해야 한다. 여기에는 auth session, OAuth provider-subject login/link/list/revoke, wallet link/list/primary/revoke, current user profile, order creation, checkout tracking, customer payment history, payment txHash submission, public/merchant store profile, admin provisioning, merchant product, store owner inventory, merchant member/invitation, operator dashboard/detail/action API가 포함된다.
+현재 public HTTP route surface는 `app/token_payments/api/http.py`의 62개 route manifest와 정확히 일치해야 한다. 여기에는 auth session, OAuth provider-subject login/link/list/revoke, wallet link/list/primary/revoke, current user profile, order creation, checkout tracking, customer payment history, payment txHash submission, public/merchant store profile, public product asset read, admin provisioning, merchant product asset upload, merchant product, store owner inventory, merchant member/invitation, operator dashboard/detail/action API가 포함된다.
 
 현재 범위에 포함되지 않는 HTTP API는 store owner manual approval, role/permission full CRUD, platform group CRUD, personal group CRUD, owner transfer, settlement wallet mutation, checkout saga command endpoint다.
 
@@ -73,7 +73,7 @@ Browser cookie auth write 요청은 CSRF header 검증을 통과해야 한다. C
 
 ## Live System Routes And Observability
 
-`GET /healthz`와 `GET /readyz`는 live server-only system route이며 55개 public facade manifest에 포함하지 않는다. `/healthz`는 process/runtime health만 보고, `/readyz`는 주입된 PostgreSQL/Kafka/Blockchain readiness probe 결과를 bounded component detail로 요약한다.
+`GET /healthz`와 `GET /readyz`는 live server-only system route이며 62개 public facade manifest에 포함하지 않는다. `/healthz`는 process/runtime health만 보고, `/readyz`는 주입된 PostgreSQL/Kafka/Blockchain readiness probe 결과를 bounded component detail로 요약한다.
 
 모든 HTTP response는 가능한 경우 `X-Request-Id`를 포함한다. Access log는 method, path template 또는 route id, status, request id, duration, actor summary, error code를 기록하되 secret payload는 기록하지 않는다.
 

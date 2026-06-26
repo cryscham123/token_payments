@@ -12,8 +12,10 @@ from typing import Any, Mapping
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "app"))
 
-from token_payments.contexts.inventory.adapter import PostgresInventoryRepository  # noqa: E402
+from token_payments.contexts.inventory.adapter import PostgresInventoryAuditRepository, PostgresInventoryRepository  # noqa: E402
+from token_payments.contexts.inventory.application import InventoryAuditRecord  # noqa: E402
 from token_payments.contexts.inventory.domain import (  # noqa: E402
+    InventorySaleStatus,
     InventoryReservation,
     ProductInventory,
     Quantity,
@@ -45,6 +47,9 @@ from token_payments.contexts.store_approval.domain import (  # noqa: E402
     Product,
     Store,
 )
+from token_payments.contexts.store_catalog.adapter import PostgresStoreCatalogRepository  # noqa: E402
+from token_payments.contexts.store_catalog.adapter import postgres as store_catalog_postgres  # noqa: E402
+from token_payments.contexts.store_catalog.domain import ProductOption, ProductOptionValue  # noqa: E402
 from token_payments.shared.adapter.postgres import PostgresOutboxMessageRepository  # noqa: E402
 from token_payments.shared.domain import (  # noqa: E402
     ChainNetwork,
@@ -53,6 +58,7 @@ from token_payments.shared.domain import (  # noqa: E402
     CustomerId,
     EventMetadata,
     MessageId,
+    Money,
     OrderId,
     OutboxMessage,
     PaymentId,
@@ -100,6 +106,155 @@ def test_inventory_repository_round_trips_inventory_and_missing_lookup() -> None
     assert "insert into product_variant_inventory" in normalized_sql
     assert "insert into inventory_reservations" in normalized_sql
     assert "select" in normalized_sql and "from product_variant_inventory" in normalized_sql
+    assert "for update" in normalized_sql
+
+
+def test_inventory_audit_repository_persists_actor_role_as_boundary_string() -> None:
+    connection = FakePostgresConnection()
+    repository = PostgresInventoryAuditRepository(connection)
+
+    audit_id = repository.record(
+        InventoryAuditRecord(
+            actor_user_id=USER_ID,
+            actor_role="CUSTOMER",
+            store_id=STORE_ID,
+            product_id=PRODUCT_ID,
+            public_variant_id=default_public_variant_id(PRODUCT_ID),
+            action="increaseStock",
+            before_available_stock=1,
+            before_reserved_stock=0,
+            before_total_stock=1,
+            before_sale_status=InventorySaleStatus.ACTIVE,
+            after_available_stock=2,
+            after_reserved_stock=0,
+            after_total_stock=2,
+            after_sale_status=InventorySaleStatus.ACTIVE,
+            reason="warehouse intake",
+            request_id="req-stock-increase",
+            idempotency_key="stock-intake-001",
+            actor_store_role="OWNER",
+            recorded_at=NOW,
+        )
+    )
+
+    assert audit_id == "audit-1"
+    audit_statement = next(statement for statement in connection.statements if "inventory_audit_log" in statement.sql)
+    assert audit_statement.params["actor_role"] == "CUSTOMER"
+    assert audit_statement.params["actor_store_role"] == "OWNER"
+
+
+def test_store_catalog_replace_product_options_reuses_existing_option_and_value_natural_keys() -> None:
+    class _Rows:
+        def __init__(self, rows: list[Mapping[str, Any]] | None = None) -> None:
+            self._rows = rows or []
+
+        def fetchone(self) -> Mapping[str, Any] | None:
+            return self._rows[0] if self._rows else None
+
+    class _Conn:
+        def __init__(self) -> None:
+            self.option_rows: dict[tuple[str, str, str], dict[str, Any]] = {
+                (str(STORE_ID), str(PRODUCT_ID), "size"): {
+                    "option_id": "opt-size",
+                    "option_key": "size",
+                    "display_name": "Size",
+                    "active": True,
+                }
+            }
+            self.value_rows: dict[tuple[str, str, str, str], dict[str, Any]] = {
+                (str(STORE_ID), str(PRODUCT_ID), "opt-size", "large"): {
+                    "option_value_id": "val-size-large",
+                    "value_key": "large",
+                    "display_value": "Large",
+                    "active": True,
+                }
+            }
+            self.option_value_params: list[dict[str, Any]] = []
+
+        def execute(self, sql: str, params: Mapping[str, Any] | None = None) -> _Rows:
+            normalized_sql = _normalize_sql(sql)
+            payload = dict(params or {})
+            if normalized_sql.startswith("update store_catalog_product_option_values"):
+                return _Rows()
+            if normalized_sql.startswith("update store_catalog_product_options"):
+                return _Rows()
+            if normalized_sql.startswith("insert into store_catalog_product_options"):
+                key = (payload["store_id"], payload["product_id"], payload["option_key"])
+                existing = self.option_rows.get(key)
+                if existing is not None:
+                    existing.update(
+                        {
+                            "display_name": payload["display_name"],
+                            "sort_order": payload["sort_order"],
+                            "required": payload["required"],
+                            "selection_type": payload["selection_type"],
+                            "option_type": payload["option_type"],
+                            "active": payload["active"],
+                        }
+                    )
+                    return _Rows([{"option_id": existing["option_id"]}])
+                self.option_rows[key] = payload
+                return _Rows([{"option_id": payload["option_id"]}])
+            if normalized_sql.startswith("insert into store_catalog_product_option_values"):
+                self.option_value_params.append(payload)
+                key = (payload["store_id"], payload["product_id"], payload["option_id"], payload["value_key"])
+                existing = self.value_rows.get(key)
+                if existing is not None:
+                    existing.update(
+                        {
+                            "display_value": payload["display_value"],
+                            "sort_order": payload["sort_order"],
+                            "price_delta_amount": payload["price_delta_amount"],
+                            "price_delta_currency": payload["price_delta_currency"],
+                            "active": payload["active"],
+                        }
+                    )
+                    return _Rows([{"option_value_id": existing["option_value_id"]}])
+                self.value_rows[key] = payload
+                return _Rows([{"option_value_id": payload["option_value_id"]}])
+            raise AssertionError(f"unexpected SQL: {sql}")
+
+    connection = _Conn()
+    option = ProductOption(
+        store_id=STORE_ID,
+        product_id=PRODUCT_ID,
+        option_id="opt_size",
+        option_key="size",
+        display_name="Size updated",
+        required=True,
+        selection_type="SINGLE",
+        option_type="VARIANT",
+    )
+    value = ProductOptionValue(
+        store_id=STORE_ID,
+        product_id=PRODUCT_ID,
+        option_id="opt_size",
+        option_value_id="val_large",
+        value_key="large",
+        display_value="Large updated",
+        price_delta=Money(Decimal("1.00"), "USD"),
+    )
+
+    PostgresStoreCatalogRepository(connection).replace_product_options(
+        STORE_ID,
+        PRODUCT_ID,
+        (option,),
+        {"opt_size": (value,)},
+    )
+
+    assert connection.option_rows[(str(STORE_ID), str(PRODUCT_ID), "size")]["option_id"] == "opt-size"
+    assert connection.option_rows[(str(STORE_ID), str(PRODUCT_ID), "size")]["display_name"] == "Size updated"
+    assert connection.option_value_params[0]["option_id"] == "opt-size"
+    assert connection.value_rows[(str(STORE_ID), str(PRODUCT_ID), "opt-size", "large")]["option_value_id"] == "val-size-large"
+    assert connection.value_rows[(str(STORE_ID), str(PRODUCT_ID), "opt-size", "large")]["display_value"] == "Large updated"
+
+
+def test_store_catalog_variant_query_reconstructs_option_value_keys_from_variant_links() -> None:
+    normalized_sql = _normalize_sql(store_catalog_postgres.SELECT_PRODUCT_VARIANTS_SQL)
+
+    assert "store_catalog_product_variant_option_values" in normalized_sql
+    assert "jsonb_object_agg(options.option_key, values.value_key" in normalized_sql
+    assert "coalesce(canonical_option_values.option_values, variants.option_values)" in normalized_sql
 
 
 def test_payment_repositories_round_trip_payment_authorization_and_missing_lookup() -> None:
@@ -661,6 +816,8 @@ class FakePostgresConnection:
             return self._upsert_product_inventory(statement.params)
         if "insert into inventory_reservations" in normalized_sql:
             return self._upsert_inventory_reservation(statement.params)
+        if "insert into inventory_audit_log" in normalized_sql:
+            return FakeResult([{"audit_id": "audit-1"}])
         if "delete from inventory_reservations" in normalized_sql:
             return self._delete_missing_inventory_reservations(statement.params)
         if "from product_variant_inventory" in normalized_sql and "select" in normalized_sql:

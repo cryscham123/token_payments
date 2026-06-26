@@ -8,14 +8,14 @@ description: Token Payments public HTTP API, OAuth, Postman 계약을 GitBook에
 
 Default `api`/`serve-api` commands keep the no-server-start preview boundary. Use `PYTHONPATH=app python3 -m token_payments serve-api --live --dry-run` for a bounded live server plan, and `PYTHONPATH=app python3 -m token_payments serve-api --live --confirm-live-api` only when an approved live environment is ready to start the long-running server.
 
-이 문서는 현재 로컬 backend API와 Phase 27 privacy-first identity contract를 기준으로 한다. Route surface는 현재 `app/token_payments/api/http.py`의 route manifest 59개를 기준으로 고정한다.
+이 문서는 현재 로컬 backend API와 Phase 27 privacy-first identity contract를 기준으로 한다. Route surface는 현재 `app/token_payments/api/http.py`의 route manifest 62개를 기준으로 고정한다.
 
 ## GitBook 탐색
 
 - [API 개요](api/README.md): base URL, 인증 방식, 공통 헤더와 오류 규약.
-- [OpenAPI Reference](api/openapi.yaml): GitBook OpenAPI import용 59-route interactive reference.
+- [OpenAPI Reference](api/openapi.yaml): GitBook OpenAPI import용 62-route interactive reference.
 - [공통 계약](api/runtime-contract.md): API evolution guardrail, route surface, runtime, header, cookie/CSRF, error, state, Postman 계약.
-- [전체 Route Summary](api/route-summary.md): 현재 59개 public HTTP route manifest의 GitBook용 전체 표.
+- [전체 Route Summary](api/route-summary.md): 현재 62개 public HTTP route manifest의 GitBook용 전체 표.
 - [인증과 OAuth](api/auth.md): SIWE, session, wallet link, user profile, provider-subject OAuth API.
 - [주문, 체크아웃, 결제](api/orders-checkout-payments.md): 주문 생성, checkout tracking, txHash 제출.
 - [상점과 상품 카탈로그](api/catalog-inventory.md): public store/product 읽기, merchant product 쓰기, store owner inventory.
@@ -43,7 +43,7 @@ Phase 26 hardens the public API and runtime architecture around externally safe 
 
 ### Public HTTP route surface
 
-Public HTTP route surface is exactly the current 59-route manifest from `app/token_payments/api/http.py`. This manifest contains auth session routes, OAuth provider-subject login/link/list/revoke routes, authenticated wallet link/list/primary/revoke routes, current user display profile routes, order creation, checkout tracking, customer payment history, payment txHash submission, public store profile reads, merchant store profile listing/update routes, admin store catalog provisioning routes, store-owner product registration, store owner inventory query/mutation routes, merchant member/invitation/search routes, operator dashboard/detail reads, and cancel/retry/replay operator actions. It does not include store owner manual approval routes, role/permission full CRUD, platform group CRUD, personal group CRUD, owner transfer, settlement wallet mutation, or checkout saga command endpoints.
+Public HTTP route surface is exactly the current 62-route manifest from `app/token_payments/api/http.py`. This manifest contains auth session routes, OAuth provider-subject login/link/list/revoke routes, authenticated wallet link/list/primary/revoke routes, current user display profile routes, order creation, checkout tracking, customer payment history, payment txHash submission, public store profile reads, public product asset reads, merchant store profile listing/update routes, admin store catalog provisioning routes, merchant product asset upload, store-owner product registration, store owner inventory query/mutation routes, merchant member/invitation/search routes, operator dashboard/detail reads, and cancel/retry/replay operator actions. It does not include store owner manual approval routes, role/permission full CRUD, platform group CRUD, personal group CRUD, owner transfer, settlement wallet mutation, or checkout saga command endpoints.
 
 ### Message listener input surface
 
@@ -63,9 +63,11 @@ Store ownership is represented by canonical store records plus merchant group me
 
 Store wallet and supported chains live on the store profile compatibility payload while phase 23 keeps public business profile fields and payment settings as separate policy-gated concerns.
 
-`POST /merchant/stores/{publicStoreId}/products` registers a checkoutable catalog product for an active store using the public store identifier, not internal `store_id`. The request accepts internal `productId` only as a merchant write concern and exposes stable `publicProductId`/`public_product_id` for customer and merchant read paths. The caller must have `product:write` for that store scope; platform override requires explicit policy permission. The command writes through canonical `store_catalog_products`, checkout `order_store_products`, approval `store_approval_products`, and `product_inventory` in one transaction.
+`POST /merchant/stores/{publicStoreId}/assets` uploads bounded product image/PDF bytes for an active merchant store and returns an internal `asset.mediaRef` object key. The request is JSON with `assetType`, `fileName`, `contentType`, and `contentBase64`; the server validates the asset type/content type allowlist, decoded byte size, file magic bytes, idempotency key, and active store membership before saving `store_catalog_product_assets`. `GET /product-assets/{publicStoreId}/{assetFile}` serves saved bytes for public storefront rendering with `X-Content-Type-Options: nosniff`.
 
-`PATCH /merchant/stores/{publicStoreId}/products/{publicProductId}` updates product catalog detail fields without mutating inventory sale status or stock. Product catalog records carry internal `product_id`, external `public_product_id`, internal `store_id`, external `public_store_id`, `title`, optional `description`, `category`, `tags`, `media`, JSON `attributes`, `status`, `visibility`, and timestamps. `public_product_id` is stable and unique inside the public store scope; it must not expose the internal UUID primary key or a sequential id. Search engine integration remains future scope.
+`POST /merchant/stores/{publicStoreId}/products` registers a checkoutable catalog product for an active store using the public store identifier, not internal `store_id`. The request accepts internal `productId` only as a merchant write concern and exposes stable `publicProductId`/`public_product_id` for customer and merchant read paths. The caller must have `product:write` for that store scope; platform override requires explicit policy permission. The command writes through canonical `store_catalog_products`, checkout `order_store_products`, approval `store_approval_products`, `product_inventory`, optional `store_catalog_product_options`, optional `store_catalog_product_option_values`, optional `store_catalog_product_variants`, and variant inventory rows in one transaction boundary. Product detail PDFs are catalog attributes stored as `attributes.detailPdfAssetKey`; product media remains bounded media references such as HTTPS/IPFS URLs or object keys, not browser-uploaded base64 data URLs.
+
+`PATCH /merchant/stores/{publicStoreId}/products/{publicProductId}` updates product catalog detail fields without mutating inventory sale status or stock. When `options` or `variants` are present, the merchant product option configuration is replaced by the request payload: `VARIANT` options define required selection axes and variant inventory units, while optional `ADD_ON` options can carry option-value `priceDelta` without defining inventory. Variants expose `publicVariantId`, `optionValues`, `priceDelta`, and optional `initialTotalStock` on create; later quantity changes use the variant inventory APIs. Product catalog records carry internal `product_id`, external `public_product_id`, internal `store_id`, external `public_store_id`, `title`, optional `description`, `category`, `tags`, `media`, JSON `attributes`, `status`, `visibility`, and timestamps. `public_product_id` is stable and unique inside the public store scope; it must not expose the internal UUID primary key or a sequential id. Search engine integration remains future scope.
 
 `GET /stores`, `GET /stores/{publicStoreId}/products`, and `GET /stores/{publicStoreId}/products/{publicProductId}` are public read APIs keyed only by public store/product ids. Store responses expose business profile and bounded payment capability summaries, not internal settlement wallet values or internal UUID keys. Product responses expose `publicProductId`, media, display price, aggregate availability, option definitions, variants, and payment capability summaries while omitting internal `store_id`, `product_id`, and customer ids. Option definitions expose `required`, `selectionType`, `optionType`, and option value `priceDelta`; required `VARIANT` options are selected before purchase and participate in variant matching, while optional `ADD_ON` options are customer selections that can add to the item price but do not define store/product payment capability. Variant responses expose `publicVariantId`, option values, `priceDelta`, calculated `displayPrice`, sale status, and variant-level availability; product `displayPrice` is the lowest currently purchaseable `product.price + variant.priceDelta` amount and carries `priceLabel: "from"` when derived from variants. Product-level payment capability remains store/product-scoped; chain/asset selection is a checkout payment choice, not a product variant axis. `GET /merchant/stores/{publicStoreId}/products` and `GET /merchant/stores/{publicStoreId}/products/{publicProductId}` are permission-protected merchant reads that can include private/inactive catalog records and bounded filters for status, visibility, category, tag, query text, sort, limit, and offset.
 
@@ -274,7 +276,7 @@ Request body size is bounded by `REQUEST_BODY_MAX_BYTES`. Exceeding it returns `
 
 ## Live System Routes And Observability
 
-`GET /healthz` and `GET /readyz` are live server-only system routes and are not part of the 55-route public facade manifest. `/healthz` reports process/runtime health only and must not open PostgreSQL, Kafka, Blockchain, Docker, or local `.env`. `/readyz` summarizes injected PostgreSQL/Kafka/Blockchain readiness probes; unavailable components return `503` with bounded component details.
+`GET /healthz` and `GET /readyz` are live server-only system routes and are not part of the 62-route public facade manifest. `/healthz` reports process/runtime health only and must not open PostgreSQL, Kafka, Blockchain, Docker, or local `.env`. `/readyz` summarizes injected PostgreSQL/Kafka/Blockchain readiness probes; unavailable components return `503` with bounded component details.
 
 All HTTP responses include `X-Request-Id` when a request id is known, and an incoming `X-Request-Id` is preserved. Live access log events include method, path template or route id, status, request id, duration, actor summary, and error code. Access logs must not record cookie values, signed tokens, authorization headers, private keys, signatures, or full request bodies.
 
@@ -336,6 +338,7 @@ Common status codes:
 | `listAllPublicProducts` | `GET` | `/products` |
 | `listPublicProducts` | `GET` | `/stores/{publicStoreId}/products` |
 | `getPublicProduct` | `GET` | `/stores/{publicStoreId}/products/{publicProductId}` |
+| `getProductAsset` | `GET` | `/product-assets/{publicStoreId}/{assetFile}` |
 | `listMerchantStores` | `GET` | `/merchant/stores` |
 | `updateStoreProfile` | `PATCH` | `/merchant/stores/{publicStoreId}/profile` |
 | `createOrReuseStoreUser` | `POST` | `/admin/store-users` |
@@ -343,13 +346,14 @@ Common status codes:
 | `grantStoreMembership` | `POST` | `/admin/stores/{storeId}/memberships` |
 | `listMerchantProducts` | `GET` | `/merchant/stores/{publicStoreId}/products` |
 | `getMerchantProduct` | `GET` | `/merchant/stores/{publicStoreId}/products/{publicProductId}` |
+| `uploadMerchantProductAsset` | `POST` | `/merchant/stores/{publicStoreId}/assets` |
 | `registerStoreProduct` | `POST` | `/merchant/stores/{publicStoreId}/products` |
 | `updateStoreProduct` | `PATCH` | `/merchant/stores/{publicStoreId}/products/{publicProductId}` |
 | `listStoreOwnerInventory` | `GET` | `/store-owner/inventory` |
-| `increaseStoreOwnerInventoryStock` | `POST` | `/store-owner/stores/{storeId}/inventory/{productId}/intake` |
-| `correctStoreOwnerInventoryStock` | `POST` | `/store-owner/stores/{storeId}/inventory/{productId}/corrections` |
-| `pauseStoreOwnerInventorySales` | `POST` | `/store-owner/stores/{storeId}/inventory/{productId}/pause` |
-| `resumeStoreOwnerInventorySales` | `POST` | `/store-owner/stores/{storeId}/inventory/{productId}/resume` |
+| `increaseStoreOwnerInventoryStock` | `POST` | `/store-owner/stores/{storeId}/inventory/{productId}/variants/{publicVariantId}/intake` |
+| `correctStoreOwnerInventoryStock` | `POST` | `/store-owner/stores/{storeId}/inventory/{productId}/variants/{publicVariantId}/corrections` |
+| `pauseStoreOwnerInventorySales` | `POST` | `/store-owner/stores/{storeId}/inventory/{productId}/variants/{publicVariantId}/pause` |
+| `resumeStoreOwnerInventorySales` | `POST` | `/store-owner/stores/{storeId}/inventory/{productId}/variants/{publicVariantId}/resume` |
 | `listMerchantStoreMembers` | `GET` | `/merchant/stores/{storeId}/members` |
 | `listMerchantStoreInvitations` | `GET` | `/merchant/stores/{storeId}/invitations` |
 | `listMerchantUserInvitations` | `GET` | `/merchant/invitations` |
@@ -1330,7 +1334,7 @@ Final local verification should run in this order:
 9. Use operator dashboard/detail endpoints for observability.
 10. Use operator action endpoints only for explicit manual recovery.
 
-For cookie auth setup, import `postman/token-payments.local.postman_collection.json` and `postman/token-payments.local.postman_environment.json`. The auth folder runs `POST /auth/challenges`, MetaMask signing, `POST /auth/sessions`, `POST /auth/sessions/refresh`, `DELETE /auth/sessions`, and `GET /auth/me` in order. Postman stores `Set-Cookie` responses in its cookie jar; happy-path requests do not use manual `Cookie`, Bearer, localStorage, or sessionStorage auth. `postman/token-payments.cookie-auth.expected.json` records redacted signed token shape, active key id metadata, CSRF header/cookie names, cookie attributes, and expired/invalid-signature negative cases.
+For cookie auth setup, import `postman/token-payments.local.postman_collection.json` and `postman/token-payments.local.postman_environment.json`. The auth folder runs `POST /auth/challenges`, MetaMask signing, `POST /auth/sessions`, `POST /auth/sessions/refresh`, `POST /auth/sessions/switch`, `DELETE /auth/sessions`, and `GET /auth/me` in order. Postman stores `Set-Cookie` responses in its cookie jar; happy-path requests do not use manual `Cookie`, Bearer, localStorage, or sessionStorage auth. `postman/token-payments.cookie-auth.expected.json` records redacted signed token shape, active key id metadata, CSRF header/cookie names, cookie attributes, and expired/invalid-signature negative cases.
 
 Default PostgreSQL bootstrap uses `app/postgres/init.d/002-token-payments-default-seed.sh` for static RBAC plus the local platform admin identity, then `app/postgres/init.d/003-token-payments-demo-seed.sh` for deterministic local demo data. New postgres volumes run both after schema creation, and `docker compose up` also runs the idempotent `postgres_seed` one-shot service after postgres is healthy. The admin wallet is controlled by `.env` `BOOTSTRAP_ADMIN_WALLET_ADDRESS` and defaults to `TEST_NETWORK_ACCOUNT` when left empty. The demo seed adds a customer, store owner, platform admin persona, one active demo store, one public product, inventory, payment asset rows, merchant/platform groups, and checkout/approval projections using stable local IDs.
 

@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import SiteHeader from "./SiteHeader";
 import UserSearchInput from "./UserSearchInput";
-import { apiJson, getCurrentUser, listMerchantStores, switchSession } from "@/lib/auth-client";
+import { apiJson, getCurrentUser, listMerchantStores, switchSession, uploadProductAsset } from "@/lib/auth-client";
 import { formatCryptoAmount, formatFiatAmount, formatAssetPriceHint } from "@/lib/format";
 import { productImageFromMedia, getCategoryFallback, resolveProductImage } from "@/lib/product-image";
 
@@ -65,13 +65,18 @@ export default function MerchantDashboard({ publicStoreId }) {
   const [productCategory, setProductCategory] = useState("fashion");
   const [productPrice, setProductPrice] = useState("10.0");
   const [productPriceCurrency, setProductPriceCurrency] = useState("USD");
-  const [productStock, setProductStock] = useState("50");
   const [productMediaUrls, setProductMediaUrls] = useState([]);
-  const [tempMediaUrl, setTempMediaUrl] = useState("");
-  const [productVisibility, setProductVisibility] = useState("VISIBLE");
+  const [productMediaUploads, setProductMediaUploads] = useState([]);
+  const [productDetailPdfAssetKey, setProductDetailPdfAssetKey] = useState("");
+  const [productDetailPdfUpload, setProductDetailPdfUpload] = useState(null);
+  const [productOptions, setProductOptions] = useState([]);
+  const [productVariants, setProductVariants] = useState([]);
+  const [variantStockIntakes, setVariantStockIntakes] = useState({});
+  const [productVisibility, setProductVisibility] = useState("PUBLIC");
   const [productStatus, setProductStatus] = useState("ACTIVE");
   const [savingProduct, setSavingProduct] = useState(false);
   const [productError, setProductError] = useState("");
+  const [productSuccess, setProductSuccess] = useState("");
 
   // Member Invitation States
   const [inviteDisplayName, setInviteDisplayName] = useState("");
@@ -99,6 +104,7 @@ export default function MerchantDashboard({ publicStoreId }) {
   const isStaffLike = staffRoles.includes(currentStoreRole);
   const canReadProducts = hasScope("product:read") || hasScope("product:read:any") || isOwnerLike || isManagerLike || isStaffLike;
   const canWriteProducts = hasScope("product:write") || hasScope("product:write:any") || isOwnerLike || isManagerLike;
+  const canWriteInventory = hasScope("inventory:write") || hasScope("inventory:write:any");
   const canWriteStore = hasScope("store:write") || hasScope("store:write:any") || isOwnerLike || isManagerLike;
   const canReadMembers = hasScope("merchant_member:read") || isOwnerLike || isManagerLike || isStaffLike;
   const canInviteMembers = hasScope("merchant_member:invite") || isOwnerLike || isManagerLike;
@@ -133,6 +139,276 @@ export default function MerchantDashboard({ publicStoreId }) {
     } catch (err) {
       console.error("Failed to copy settlement wallet:", err);
     }
+  }
+
+  function inventoryVariantForProduct(product) {
+    const variants = Array.isArray(product?.variants) ? product.variants : [];
+    return (
+      variants.find((variant) => variant?.publicVariantId && Object.keys(variant.optionValues || {}).length === 0) ||
+      variants.find((variant) => variant?.publicVariantId) ||
+      (product?.publicVariantId ? { publicVariantId: product.publicVariantId } : null)
+    );
+  }
+
+  function variantAvailableStock(variant) {
+    return numberOrNull(variant?.availability?.availableStock) || 0;
+  }
+
+  function productStockRows(product) {
+    const variants = Array.isArray(product?.variants) ? product.variants : [];
+    return variants.filter(variant => variant?.publicVariantId && variant?.active !== false);
+  }
+
+  function replaceProductInList(product) {
+    if (!product?.publicProductId) return;
+    setProducts(prev => {
+      const exists = prev.some(item => item.publicProductId === product.publicProductId);
+      if (!exists) return [product, ...prev];
+      return prev.map(item => item.publicProductId === product.publicProductId ? product : item);
+    });
+  }
+
+  function normalizeProductOptions(options) {
+    return (Array.isArray(options) ? options : []).map((option, optionIndex) => ({
+      optionId: option?.optionId || option?.option_id || "",
+      key: option?.key || option?.optionKey || `option_${optionIndex + 1}`,
+      displayName: option?.displayName || option?.key || `옵션 ${optionIndex + 1}`,
+      required: option?.required !== false,
+      selectionType: option?.selectionType || "SINGLE",
+      optionType: option?.optionType || "VARIANT",
+      values: (Array.isArray(option?.values) ? option.values : []).map((value, valueIndex) => ({
+        optionValueId: value?.optionValueId || value?.option_value_id || "",
+        value: value?.value || value?.valueKey || `value_${valueIndex + 1}`,
+        displayValue: value?.displayValue || value?.value || `값 ${valueIndex + 1}`,
+        priceDelta: value?.priceDelta?.amount ? String(value.priceDelta.amount) : "0"
+      }))
+    }));
+  }
+
+  function normalizeProductVariants(variants) {
+    return (Array.isArray(variants) ? variants : []).map((variant, index) => ({
+      publicVariantId: variant?.publicVariantId || "",
+      displayName: variant?.displayName || `재고 조합 ${index + 1}`,
+      optionValues: { ...(variant?.optionValues || {}) },
+      priceDelta: variant?.priceDelta?.amount ? String(variant.priceDelta.amount) : "0",
+      availability: variant?.availability || null
+    }));
+  }
+
+  function emptyProductOption(optionType = "VARIANT", index = productOptions.length) {
+    const optionNumber = index + 1;
+    return {
+      key: optionType === "ADD_ON" ? `addon_${optionNumber}` : `option_${optionNumber}`,
+      displayName: optionType === "ADD_ON" ? "선택 옵션" : "필수 옵션",
+      required: optionType === "VARIANT",
+      selectionType: "SINGLE",
+      optionType,
+      values: [
+        {
+          value: "default",
+          displayValue: "기본",
+          priceDelta: "0"
+        }
+      ]
+    };
+  }
+
+  function moneyPayload(amount) {
+    return {
+      amount: String(amount || "0"),
+      currency: productPriceCurrency
+    };
+  }
+
+  function generatedPublicVariantId(variant, index) {
+    if (variant.publicVariantId && variant.publicVariantId.trim()) {
+      return variant.publicVariantId.trim();
+    }
+    const rawKey = Object.entries(variant.optionValues || {})
+      .map(([key, value]) => `${key}_${value}`)
+      .join("_");
+    const slug = rawKey
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 48);
+    return slug.length >= 4 ? `var_${slug}` : `var_variant_${index + 1}`;
+  }
+
+  function optionAmount(value) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
+  }
+
+  function optionAmountText(value) {
+    const numeric = optionAmount(value);
+    return numeric % 1 === 0 ? String(numeric) : numeric.toFixed(2);
+  }
+
+  function requiredProductOptions(options = productOptions) {
+    return options.filter(option => option.optionType === "VARIANT" && option.key.trim());
+  }
+
+  function sameOptionValues(left, right) {
+    const leftKeys = Object.keys(left || {}).sort();
+    const rightKeys = Object.keys(right || {}).sort();
+    if (leftKeys.length !== rightKeys.length) return false;
+    return leftKeys.every((key, index) => key === rightKeys[index] && String(left[key]) === String(right[key]));
+  }
+
+  function optionLabelText(labels) {
+    return (labels || []).map(label => String(label || "").trim()).filter(Boolean).join(" / ").toLowerCase();
+  }
+
+  function variantOptionLabelText(variant) {
+    const labels = String(variant?.displayName || "").split("/").map(label => label.trim()).filter(Boolean);
+    return optionLabelText(labels.length > 1 ? labels.slice(1) : labels);
+  }
+
+  function existingVariantForCombination(row, index, combinations, usedVariantIds) {
+    const existingVariants = productVariants.filter(variant => variant?.publicVariantId);
+    const availableVariants = existingVariants.filter(variant => !usedVariantIds.has(variant.publicVariantId));
+    const exactMatch = availableVariants.find(variant => sameOptionValues(variant.optionValues, row.optionValues));
+    if (exactMatch) return exactMatch;
+
+    const displayValueMatch = availableVariants.find(variant => sameOptionValues(variant.optionValues, row.displayOptionValues));
+    if (displayValueMatch) return displayValueMatch;
+
+    const rowLabelText = optionLabelText(row.labels);
+    const labelMatch = rowLabelText
+      ? availableVariants.find(variant => variantOptionLabelText(variant) === rowLabelText)
+      : null;
+    if (labelMatch) return labelMatch;
+
+    if (editingProduct && existingVariants.length === combinations.length) {
+      const indexedVariant = existingVariants[index];
+      if (indexedVariant && !usedVariantIds.has(indexedVariant.publicVariantId)) {
+        return indexedVariant;
+      }
+    }
+    return null;
+  }
+
+  function requiredOptionCombinations(options = productOptions) {
+    const requiredOptions = requiredProductOptions(options)
+      .map(option => ({
+        ...option,
+        values: option.values.filter(value => value.value.trim() && value.displayValue.trim())
+      }))
+      .filter(option => option.values.length > 0);
+    if (requiredOptions.length === 0) {
+      return [];
+    }
+    const combinations = requiredOptions.reduce(
+      (rows, option) => rows.flatMap(row => option.values.map(value => ({
+        labels: [...row.labels, value.displayValue],
+        optionValues: {
+          ...row.optionValues,
+          [option.key]: value.value
+        },
+        displayOptionValues: {
+          ...row.displayOptionValues,
+          [option.key]: value.displayValue
+        },
+        priceDelta: row.priceDelta + optionAmount(value.priceDelta)
+      }))),
+      [{ labels: [], optionValues: {}, displayOptionValues: {}, priceDelta: 0 }]
+    );
+    const usedVariantIds = new Set();
+    return combinations.map((row, index) => {
+      const existingVariant = existingVariantForCombination(row, index, combinations, usedVariantIds);
+      if (existingVariant?.publicVariantId) {
+        usedVariantIds.add(existingVariant.publicVariantId);
+      }
+      const publicVariantId = existingVariant?.publicVariantId || generatedPublicVariantId({ optionValues: row.optionValues }, index);
+      return {
+        publicVariantId,
+        displayName: row.labels.join(" / "),
+        optionValues: row.optionValues,
+        displayOptionValues: row.displayOptionValues,
+        priceDelta: optionAmountText(row.priceDelta),
+        availability: existingVariant?.availability || null,
+        existing: Boolean(existingVariant)
+      };
+    });
+  }
+
+  function stockRowsForProductForm() {
+    const combinations = requiredOptionCombinations();
+    if (combinations.length > 0) {
+      return combinations;
+    }
+    const defaultVariant = inventoryVariantForProduct(editingProduct);
+    return [
+      {
+        publicVariantId: defaultVariant?.publicVariantId || "default_configuration",
+        displayName: "기본 구성",
+        optionValues: {},
+        priceDelta: "0",
+        availability: defaultVariant?.availability || null,
+        existing: Boolean(defaultVariant?.publicVariantId)
+      }
+    ];
+  }
+
+  function isExistingStockRow(row) {
+    return Boolean(row?.existing);
+  }
+
+  function stockQuantityValue(row) {
+    return Math.max(0, Number.parseInt(variantStockIntakes[row?.publicVariantId], 10) || 0);
+  }
+
+  function shouldSeedInitialStock(row) {
+    return !editingProduct || !isExistingStockRow(row);
+  }
+
+  function stockQuantityLabel(row) {
+    return shouldSeedInitialStock(row) ? "초기 재고" : "입고 수량";
+  }
+
+  function serializeProductOptions() {
+    return productOptions
+      .filter(option => option.key.trim() && option.displayName.trim())
+      .map((option, optionIndex) => ({
+        optionId: option.optionId || undefined,
+        key: option.key.trim(),
+        displayName: option.displayName.trim(),
+        required: option.required,
+        selectionType: option.selectionType,
+        optionType: option.optionType,
+        sortOrder: optionIndex,
+        values: option.values
+          .filter(value => value.value.trim() && value.displayValue.trim())
+          .map((value, valueIndex) => ({
+            optionValueId: value.optionValueId || undefined,
+            value: value.value.trim(),
+            displayValue: value.displayValue.trim(),
+            sortOrder: valueIndex,
+            priceDelta: moneyPayload(value.priceDelta)
+          }))
+      }));
+  }
+
+  function serializeProductVariants() {
+    return requiredOptionCombinations()
+      .map((row) => {
+        const serialized = {
+          publicVariantId: row.publicVariantId,
+          displayName: row.displayName.trim(),
+          optionValues: { ...(row.optionValues || {}) },
+          priceDelta: moneyPayload(row.priceDelta)
+        };
+        if (shouldSeedInitialStock(row)) {
+          serialized.initialTotalStock = stockQuantityValue(row);
+        }
+        return serialized;
+      });
+  }
+
+  function numberOrNull(value) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
   }
 
   async function loadDashboardData() {
@@ -173,7 +449,7 @@ export default function MerchantDashboard({ publicStoreId }) {
         }
 
         const targetGroupId = s.merchantGroupId;
-        if (targetGroupId && currentUserObj && currentUserObj.activeGroupId !== targetGroupId) {
+        if (targetGroupId && currentUserObj) {
           try {
             await switchSession(targetGroupId);
             const newUserPayload = await getCurrentUser().catch(() => null);
@@ -289,47 +565,53 @@ export default function MerchantDashboard({ publicStoreId }) {
   };
 
   // Product Add / Edit Modal Trigger
-  const openProductModal = (product = null) => {
+  const openProductModal = async (product = null) => {
     if (!canWriteProducts) return;
-    setEditingProduct(product);
     setProductError("");
+    setProductSuccess("");
+    let editableProduct = product;
     if (product) {
-      setProductTitle(product.title || "");
-      setProductDesc(product.description || "");
-      setProductCategory(product.category || "fashion");
-      setProductPrice(product.basePrice?.amount ? String(product.basePrice.amount) : (product.displayPrice?.amount ? String(product.displayPrice.amount) : "10.0"));
-      setProductPriceCurrency(product.basePrice?.currency || product.displayPrice?.currency || "USD");
-      setProductStock("0");
-      setProductMediaUrls(product.media ? (Array.isArray(product.media) ? product.media : [product.media]) : []);
-      setTempMediaUrl("");
-      setProductVisibility(product.visibility || "VISIBLE");
-      setProductStatus(product.status || "ACTIVE");
+      try {
+        const detail = await apiJson(`/merchant/stores/${publicStoreId}/products/${product.publicProductId}`);
+        editableProduct = detail?.product || product;
+      } catch (err) {
+        editableProduct = product;
+        setProductError(err?.message || "상품 상세 정보를 불러오지 못했습니다.");
+      }
+    }
+    setEditingProduct(editableProduct);
+    if (editableProduct) {
+      setProductTitle(editableProduct.title || "");
+      setProductDesc(editableProduct.description || "");
+      setProductCategory(editableProduct.category || "fashion");
+      setProductPrice(editableProduct.basePrice?.amount ? String(editableProduct.basePrice.amount) : (editableProduct.displayPrice?.amount ? String(editableProduct.displayPrice.amount) : "10.0"));
+      setProductPriceCurrency(editableProduct.basePrice?.currency || editableProduct.displayPrice?.currency || "USD");
+      setProductMediaUrls(editableProduct.media ? (Array.isArray(editableProduct.media) ? editableProduct.media : [editableProduct.media]) : []);
+      setProductMediaUploads([]);
+      setProductDetailPdfAssetKey(editableProduct.attributes?.detailPdfAssetKey || "");
+      setProductDetailPdfUpload(null);
+      setProductOptions(normalizeProductOptions(editableProduct.options));
+      setProductVariants(normalizeProductVariants(editableProduct.variants));
+      setVariantStockIntakes({});
+      setProductVisibility(editableProduct.visibility || "PUBLIC");
+      setProductStatus(editableProduct.status || "ACTIVE");
     } else {
       setProductTitle("");
       setProductDesc("");
       setProductCategory("fashion");
       setProductPrice("10.0");
       setProductPriceCurrency("USD");
-      setProductStock("0");
       setProductMediaUrls([]);
-      setTempMediaUrl("");
-      setProductVisibility("VISIBLE");
+      setProductMediaUploads([]);
+      setProductDetailPdfAssetKey("");
+      setProductDetailPdfUpload(null);
+      setProductOptions([]);
+      setProductVariants([]);
+      setVariantStockIntakes({});
+      setProductVisibility("PUBLIC");
       setProductStatus("ACTIVE");
     }
     setShowProductModal(true);
-  };
-
-  const handleAddMediaUrl = () => {
-    if (!canWriteProducts) return;
-    const url = tempMediaUrl.trim();
-    if (url) {
-      if (!url.startsWith("http://") && !url.startsWith("https://")) {
-        alert("이미지 URL은 http:// 또는 https:// 경로로 시작해야 합니다.");
-        return;
-      }
-      setProductMediaUrls(prev => [...prev, url]);
-      setTempMediaUrl("");
-    }
   };
 
   const handleRemoveMediaUrl = (indexToRemove) => {
@@ -337,22 +619,168 @@ export default function MerchantDashboard({ publicStoreId }) {
     setProductMediaUrls(prev => prev.filter((_, idx) => idx !== indexToRemove));
   };
 
+  const handleRemoveMediaUpload = (indexToRemove) => {
+    if (!canWriteProducts) return;
+    setProductMediaUploads(prev => {
+      const removed = prev[indexToRemove];
+      if (removed?.previewUrl) URL.revokeObjectURL(removed.previewUrl);
+      return prev.filter((_, idx) => idx !== indexToRemove);
+    });
+  };
+
+  function fileContentType(file, fallback) {
+    if (file.type) return file.type;
+    const name = file.name.toLowerCase();
+    if (name.endsWith(".png")) return "image/png";
+    if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg";
+    if (name.endsWith(".webp")) return "image/webp";
+    if (name.endsWith(".gif")) return "image/gif";
+    if (name.endsWith(".pdf")) return "application/pdf";
+    return fallback;
+  }
+
+  async function fileToBase64(file) {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let binary = "";
+    const chunkSize = 0x8000;
+    for (let index = 0; index < bytes.length; index += chunkSize) {
+      binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+    }
+    return btoa(binary);
+  }
+
+  async function uploadPendingProductAssets() {
+    const uploadedMediaRefs = [];
+    for (const upload of productMediaUploads) {
+      if (!upload.file) continue;
+      const contentBase64 = await fileToBase64(upload.file);
+      const result = await uploadProductAsset(
+        publicStoreId,
+        {
+          assetType: "PRODUCT_IMAGE",
+          fileName: upload.file.name,
+          contentType: fileContentType(upload.file, "image/png"),
+          contentBase64
+        },
+        `product-image-${Date.now()}-${uploadedMediaRefs.length}`
+      );
+      const asset = result?.asset;
+      if (!asset?.mediaRef) {
+        throw new Error("이미지 업로드 응답에서 파일 참조를 확인하지 못했습니다.");
+      }
+      uploadedMediaRefs.push(asset.mediaRef);
+    }
+    return uploadedMediaRefs;
+  }
+
+  async function uploadPendingProductDetailPdf() {
+    if (!productDetailPdfUpload?.file) {
+      return productDetailPdfAssetKey.trim();
+    }
+    const contentBase64 = await fileToBase64(productDetailPdfUpload.file);
+    const result = await uploadProductAsset(
+      publicStoreId,
+      {
+        assetType: "PRODUCT_DETAIL_PDF",
+        fileName: productDetailPdfUpload.file.name,
+        contentType: fileContentType(productDetailPdfUpload.file, "application/pdf"),
+        contentBase64
+      },
+      `product-detail-pdf-${Date.now()}`
+    );
+    const asset = result?.asset;
+    if (!asset?.mediaRef) {
+      throw new Error("PDF 업로드 응답에서 파일 참조를 확인하지 못했습니다.");
+    }
+    return asset.mediaRef;
+  }
+
   const handleLocalImageUpload = (e) => {
     if (!canWriteProducts) return;
     const files = e.target.files;
     if (!files || files.length === 0) return;
     
     Array.from(files).forEach(file => {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const base64Url = event.target.result;
-        if (base64Url) {
-          setProductMediaUrls(prev => [...prev, base64Url]);
-        }
-      };
-      reader.readAsDataURL(file);
+      const previewUrl = URL.createObjectURL(file);
+      setProductMediaUploads(prev => [...prev, { name: file.name, previewUrl, file }]);
     });
+    setProductError("");
     e.target.value = "";
+  };
+
+  const handleLocalPdfUpload = (e) => {
+    if (!canWriteProducts) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const contentType = fileContentType(file, "");
+    if (contentType !== "application/pdf") {
+      setProductError("상품 상세 설명 파일은 PDF만 업로드할 수 있습니다.");
+      e.target.value = "";
+      return;
+    }
+    if (productDetailPdfUpload?.previewUrl) {
+      URL.revokeObjectURL(productDetailPdfUpload.previewUrl);
+    }
+    setProductDetailPdfUpload({ name: file.name, previewUrl: URL.createObjectURL(file), file });
+    setProductDetailPdfAssetKey("");
+    setProductError("");
+    e.target.value = "";
+  };
+
+  const updateProductOption = (index, patch) => {
+    if (!canWriteProducts) return;
+    setProductOptions(prev => prev.map((option, idx) => (idx === index ? { ...option, ...patch } : option)));
+  };
+
+  const addProductOption = (optionType) => {
+    if (!canWriteProducts) return;
+    setProductOptions(prev => [...prev, emptyProductOption(optionType, prev.length)]);
+  };
+
+  const removeProductOption = (index) => {
+    if (!canWriteProducts) return;
+    setProductOptions(prev => prev.filter((_, idx) => idx !== index));
+  };
+
+  const updateProductOptionValue = (optionIndex, valueIndex, patch) => {
+    if (!canWriteProducts) return;
+    setProductOptions(prev => prev.map((option, idx) => {
+      if (idx !== optionIndex) return option;
+      return {
+        ...option,
+        values: option.values.map((value, innerIdx) => (innerIdx === valueIndex ? { ...value, ...patch } : value))
+      };
+    }));
+  };
+
+  const addProductOptionValue = (optionIndex) => {
+    if (!canWriteProducts) return;
+    setProductOptions(prev => prev.map((option, idx) => {
+      if (idx !== optionIndex) return option;
+      const valueNumber = option.values.length + 1;
+      return {
+        ...option,
+        values: [
+          ...option.values,
+          {
+            value: `value_${valueNumber}`,
+            displayValue: `값 ${valueNumber}`,
+            priceDelta: "0"
+          }
+        ]
+      };
+    }));
+  };
+
+  const removeProductOptionValue = (optionIndex, valueIndex) => {
+    if (!canWriteProducts) return;
+    setProductOptions(prev => prev.map((option, idx) => {
+      if (idx !== optionIndex) return option;
+      return {
+        ...option,
+        values: option.values.filter((_, innerIdx) => innerIdx !== valueIndex)
+      };
+    }));
   };
 
   const handleSaveProduct = async (e) => {
@@ -363,46 +791,142 @@ export default function MerchantDashboard({ publicStoreId }) {
     }
     setSavingProduct(true);
     setProductError("");
+    setProductSuccess("");
 
-    const payload = {
-      title: productTitle,
-      description: productDesc,
-      category: productCategory,
-      price: {
-        amount: String(productPrice),
-        currency: productPriceCurrency
-      },
-      stock: (editingProduct ? (editingProduct.stock || 0) : 0) + (Number.parseInt(productStock) || 0),
-      media: productMediaUrls.filter(url => url && url.trim() !== ""),
-      visibility: productVisibility,
-      status: productStatus,
-      idempotencyKey: `save-product-${Date.now()}`
-    };
+    const hasNegativeVariantIntake = Object.values(variantStockIntakes).some((value) => Number.parseInt(value, 10) < 0);
+    if (hasNegativeVariantIntake) {
+      setProductError("재고 수량은 0 이상으로 입력하세요. 기존 재고 차감은 재고 정정 API에서 처리해야 합니다.");
+      setSavingProduct(false);
+      return;
+    }
+
+    const hasRequestedInventoryIntake = Object.values(variantStockIntakes).some((value) => Number.parseInt(value, 10) > 0);
+    if (hasRequestedInventoryIntake && !canWriteInventory) {
+      setProductError("현재 세션에 재고 입고 권한이 없습니다. 상점 소유주 또는 관리자 세션으로 다시 전환한 뒤 시도해 주세요.");
+      setSavingProduct(false);
+      return;
+    }
+
+    const stockRows = stockRowsForProductForm();
+    const serializedVariants = serializeProductVariants();
+    const stockRowByPublicVariantId = new Map(stockRows.map((row) => [row.publicVariantId, row]));
+    const initialStockQuantity = serializedVariants.length > 0
+      ? 0
+      : stockQuantityValue(stockRows[0]);
 
     try {
+      const uploadedMediaRefs = await uploadPendingProductAssets();
+      const detailPdfAssetKey = await uploadPendingProductDetailPdf();
+      const productAttributes = {
+        ...(editingProduct?.attributes || {})
+      };
+      delete productAttributes.detailPdfUrl;
+      if (detailPdfAssetKey) {
+        productAttributes.detailPdfAssetKey = detailPdfAssetKey;
+      } else {
+        delete productAttributes.detailPdfAssetKey;
+      }
+      const payload = {
+        title: productTitle,
+        description: productDesc,
+        category: productCategory,
+        price: {
+          amount: String(productPrice),
+          currency: productPriceCurrency
+        },
+        media: [
+          ...productMediaUrls.filter(url => url && url.trim() !== ""),
+          ...uploadedMediaRefs
+        ],
+        attributes: productAttributes,
+        options: serializeProductOptions(),
+        variants: serializedVariants,
+        visibility: productVisibility,
+        status: productStatus,
+        idempotencyKey: `save-product-${Date.now()}`
+      };
+      if (payload.options.length === 0 && !editingProduct) {
+        delete payload.options;
+      }
+      if (payload.variants.length === 0 && !editingProduct) {
+        delete payload.variants;
+      }
+
       let res;
+      const wasEditing = Boolean(editingProduct);
       if (editingProduct) {
         res = await apiJson(`/merchant/stores/${publicStoreId}/products/${editingProduct.publicProductId}`, {
           method: "PATCH",
           body: payload
         });
+        if (serializedVariants.length > 0) {
+          for (const variant of serializedVariants) {
+            const stockRow = stockRowByPublicVariantId.get(variant.publicVariantId);
+            if (!stockRow || !isExistingStockRow(stockRow)) continue;
+            const quantity = Number.parseInt(variantStockIntakes[variant.publicVariantId], 10) || 0;
+            if (quantity <= 0) continue;
+            if (!internalStoreId || !editingProduct.productId || !variant?.publicVariantId) {
+              throw new Error("재고를 변경할 상품 재고 식별자를 확인하지 못했습니다.");
+            }
+            await apiJson(
+              `/store-owner/stores/${encodeURIComponent(internalStoreId)}/inventory/${encodeURIComponent(editingProduct.productId)}/variants/${encodeURIComponent(variant.publicVariantId)}/intake`,
+              {
+                method: "POST",
+                idempotencyKey: `inventory-intake-${variant.publicVariantId}-${Date.now()}`,
+                body: {
+                  quantity,
+                  reason: "merchant dashboard option stock intake"
+                }
+              }
+            );
+          }
+        } else {
+          const defaultStockQuantity = Number.parseInt(variantStockIntakes[stockRows[0]?.publicVariantId], 10) || 0;
+          if (defaultStockQuantity > 0) {
+            const variant = inventoryVariantForProduct(editingProduct);
+            if (!internalStoreId || !editingProduct.productId || !variant?.publicVariantId) {
+              throw new Error("재고를 변경할 상품 재고 식별자를 확인하지 못했습니다.");
+            }
+            await apiJson(
+              `/store-owner/stores/${encodeURIComponent(internalStoreId)}/inventory/${encodeURIComponent(editingProduct.productId)}/variants/${encodeURIComponent(variant.publicVariantId)}/intake`,
+              {
+                method: "POST",
+                idempotencyKey: `inventory-intake-${Date.now()}`,
+                body: {
+                  quantity: defaultStockQuantity,
+                  reason: "merchant dashboard stock intake"
+                }
+              }
+            );
+          }
+        }
       } else {
         res = await apiJson(`/merchant/stores/${publicStoreId}/products`, {
           method: "POST",
-          body: payload
+          body: {
+            ...payload,
+            initialTotalStock: initialStockQuantity
+          }
         });
       }
 
       if (res) {
-        // Reload products list
-        const productsPayload = await apiJson(`/merchant/stores/${publicStoreId}/products`);
-        if (productsPayload?.products) {
-          setProducts(productsPayload.products);
+        if (res.product) {
+          replaceProductInList(res.product);
         }
+        try {
+          const productsPayload = await apiJson(`/merchant/stores/${publicStoreId}/products`);
+          if (productsPayload?.products) {
+            setProducts(productsPayload.products);
+          }
+        } catch (reloadErr) {
+          console.error("Failed to reload merchant products after save:", reloadErr);
+        }
+        setProductSuccess(wasEditing ? "상품 정보 수정이 완료되었습니다." : "상품 등록이 완료되었습니다.");
         setShowProductModal(false);
       }
     } catch (err) {
-      setProductError(err?.message || "상품 저장에 실패했습니다.");
+      setProductError(getFriendlyErrorMessage(err, "상품 저장에 실패했습니다."));
     } finally {
       setSavingProduct(false);
     }
@@ -690,7 +1214,7 @@ export default function MerchantDashboard({ publicStoreId }) {
                   <Settings size={16} className="text-blue-600" />
                   허용 결제수단 설정
                 </h3>
-                
+
                 <div className="space-y-2">
                   <span className="text-xs font-bold text-slate-500 block mb-1">정산 지갑 주소</span>
                   {settlementWallet ? (
@@ -823,6 +1347,12 @@ export default function MerchantDashboard({ publicStoreId }) {
               </button>
             </div>
 
+            {productSuccess && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-semibold text-emerald-800">
+                {productSuccess}
+              </div>
+            )}
+
             {productsReadBlocked ? (
               <PermissionNotice message="현재 상점 컨텍스트에서 상품 목록을 조회하거나 관리할 수 있는 권한이 부여되지 않았습니다." />
             ) : products.length === 0 ? (
@@ -844,7 +1374,7 @@ export default function MerchantDashboard({ publicStoreId }) {
                         }}
                       />
                       <span className={`absolute top-3 right-3 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border shadow-sm ${
-                        product.visibility === "VISIBLE" 
+                        product.visibility === "PUBLIC" || product.visibility === "VISIBLE"
                           ? "bg-emerald-50 border-emerald-200 text-emerald-700" 
                           : "bg-slate-100 border-slate-200 text-slate-500"
                       }`}>
@@ -867,10 +1397,7 @@ export default function MerchantDashboard({ publicStoreId }) {
                         {product.description || "등록된 상품 설명이 없습니다."}
                       </p>
                       
-                      <div className="border-t border-slate-100 pt-3 mt-4 flex items-center justify-between">
-                        <span className="text-[10px] text-slate-400 font-semibold">
-                          재고: <b className="text-slate-700">{product.stock !== undefined ? product.stock : "N/A"}개</b>
-                        </span>
+                      <div className="border-t border-slate-100 pt-3 mt-4 flex items-center justify-end">
                         <button
                           onClick={() => openProductModal(product)}
                           disabled={!canWriteProducts}
@@ -880,6 +1407,23 @@ export default function MerchantDashboard({ publicStoreId }) {
                           수정하기
                         </button>
                       </div>
+                      {productStockRows(product).length > 0 ? (
+                        <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
+                          {productStockRows(product).slice(0, 4).map((variant) => (
+                            <div key={variant.publicVariantId} className="flex items-center justify-between gap-2 text-[10px] text-slate-500">
+                              <span className="truncate font-semibold">{variant.displayName}</span>
+                              <span className="shrink-0 font-bold text-slate-700">{variantAvailableStock(variant)}개</span>
+                            </div>
+                          ))}
+                          {productStockRows(product).length > 4 && (
+                            <div className="text-[10px] font-semibold text-slate-400">외 {productStockRows(product).length - 4}개 옵션</div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="mt-2 border-t border-slate-100 pt-2 text-[10px] font-semibold text-slate-400">
+                          옵션별 재고 정보 없음
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -1073,7 +1617,7 @@ export default function MerchantDashboard({ publicStoreId }) {
       {/* Product Registration / Mutation Modal */}
       {showProductModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 backdrop-blur-sm">
-          <div className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-slate-100 bg-white p-6 shadow-2xl space-y-4">
+          <div className="relative w-full max-w-3xl overflow-hidden rounded-2xl border border-slate-100 bg-white p-6 shadow-2xl space-y-4">
             <button
               onClick={() => setShowProductModal(false)}
               className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100"
@@ -1119,195 +1663,442 @@ export default function MerchantDashboard({ publicStoreId }) {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-500">카테고리</label>
-                  <select
-                    value={productCategory}
-                    onChange={(e) => setProductCategory(e.target.value)}
-                    disabled={!canWriteProducts}
-                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs outline-none bg-white"
-                  >
-                    <option value="fashion">패션 / 의류 (Fashion)</option>
-                    <option value="coffee">커피 / 식음료 (Coffee)</option>
-                    <option value="electronics">가전 / 디지털 (Electronics)</option>
-                    <option value="books">도서 (Books)</option>
-                    <option value="groceries">식료품 (Groceries)</option>
-                    <option value="sports">스포츠 / 레저 (Sports)</option>
-                    <option value="beauty">뷰티 / 화장품 (Beauty)</option>
-                    <option value="home-decor">가구 / 홈데코 (Home & Decor)</option>
-                    <option value="toys">완구 / 장난감 (Toys)</option>
-                    <option value="pets">반려동물 용품 (Pets)</option>
-                    <option value="music">음반 / 악기 (Music)</option>
-                    <option value="art-craft">미술 / 공예 (Art & Craft)</option>
-                    <option value="travel">여행 / 레저 (Travel)</option>
-                    <option value="health-food">건강식품 (Health Food)</option>
-                    <option value="digital-goods">디지털 자산 / 상품 (Digital Goods)</option>
-                    
-                    {/* fallback for any category values not currently listed */}
-                    {!["fashion", "coffee", "electronics", "books", "groceries", "sports", "beauty", "home-decor", "toys", "pets", "music", "art-craft", "travel", "health-food", "digital-goods"].includes(productCategory) && (
-                      <option value={productCategory}>{productCategory} (기존 카테고리)</option>
-                    )}
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-500">
-                    {editingProduct ? "추가할 재고 수량" : "초기 재고 수량"}
-                    {editingProduct && (
-                      <span className="text-[10px] text-slate-400 font-semibold ml-1.5">
-                        (현재 재고: {editingProduct.stock !== undefined ? editingProduct.stock : 0}개)
-                      </span>
-                    )}
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    value={productStock}
-                    onChange={(e) => setProductStock(e.target.value)}
-                    disabled={!canWriteProducts}
-                    placeholder={editingProduct ? "추가할 재고 입력 (음수 시 차감)" : "초기 재고 입력"}
-                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs outline-none focus:border-blue-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-500">판매 가격</label>
-                  <input
-                    type="number"
-                    step="any"
-                    min="0.01"
-                    required
-                    value={productPrice}
-                    onChange={(e) => setProductPrice(e.target.value)}
-                    disabled={!canWriteProducts}
-                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs outline-none focus:border-blue-500"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-500">가격 통화단위 (Symbol)</label>
-                  <select
-                    value={productPriceCurrency}
-                    onChange={(e) => setProductPriceCurrency(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs text-slate-500 outline-none cursor-not-allowed"
-                    disabled
-                  >
-                    <option value="USD">USD</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <label className="text-xs font-bold text-slate-500">상품 이미지 목록</label>
-                
-                {/* Image Thumbnails Grid */}
-                <div className="flex flex-wrap gap-2">
-                  {productMediaUrls.map((url, idx) => (
-                    <div 
-                      key={idx} 
-                      className="relative w-16 h-16 rounded-xl border border-slate-200 overflow-hidden bg-slate-50 shadow-sm group hover:scale-[1.02] hover:border-slate-350 transition-all duration-200"
+              <div className="space-y-3 rounded-xl border border-slate-200 p-3">
+                <label className="text-xs font-bold text-slate-700">판매 설정</label>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500">카테고리</label>
+                    <select
+                      value={productCategory}
+                      onChange={(e) => setProductCategory(e.target.value)}
+                      disabled={!canWriteProducts}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs outline-none"
                     >
-                      <img 
-                        src={resolveProductImage(url)} 
-                        alt={`Product image ${idx + 1}`}
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          e.target.src = resolveProductImage(""); // fallback on broken image
-                        }}
+                      <option value="fashion">패션 / 의류 (Fashion)</option>
+                      <option value="coffee">커피 / 식음료 (Coffee)</option>
+                      <option value="electronics">가전 / 디지털 (Electronics)</option>
+                      <option value="books">도서 (Books)</option>
+                      <option value="groceries">식료품 (Groceries)</option>
+                      <option value="sports">스포츠 / 레저 (Sports)</option>
+                      <option value="beauty">뷰티 / 화장품 (Beauty)</option>
+                      <option value="home-decor">가구 / 홈데코 (Home & Decor)</option>
+                      <option value="toys">완구 / 장난감 (Toys)</option>
+                      <option value="pets">반려동물 용품 (Pets)</option>
+                      <option value="music">음반 / 악기 (Music)</option>
+                      <option value="art-craft">미술 / 공예 (Art & Craft)</option>
+                      <option value="travel">여행 / 레저 (Travel)</option>
+                      <option value="health-food">건강식품 (Health Food)</option>
+                      <option value="digital-goods">디지털 자산 / 상품 (Digital Goods)</option>
+                      {!["fashion", "coffee", "electronics", "books", "groceries", "sports", "beauty", "home-decor", "toys", "pets", "music", "art-craft", "travel", "health-food", "digital-goods"].includes(productCategory) && (
+                        <option value={productCategory}>{productCategory} (기존 카테고리)</option>
+                      )}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500">판매 가격 (USD)</label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0.01"
+                      required
+                      value={productPrice}
+                      onChange={(e) => setProductPrice(e.target.value)}
+                      disabled={!canWriteProducts}
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs outline-none focus:border-blue-500"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500">스토어 노출 상태</label>
+                    <select
+                      value={productVisibility}
+                      onChange={(e) => setProductVisibility(e.target.value)}
+                      disabled={!canWriteProducts}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs outline-none"
+                    >
+                      <option value="PUBLIC">노출 (PUBLIC)</option>
+                      <option value="PRIVATE">숨김 (PRIVATE)</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500">상품 판매 상태</label>
+                    <select
+                      value={productStatus}
+                      onChange={(e) => setProductStatus(e.target.value)}
+                      disabled={!canWriteProducts}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs outline-none"
+                    >
+                      <option value="ACTIVE">판매중 (ACTIVE)</option>
+                      <option value="ARCHIVED">아카이브 (ARCHIVED)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3 rounded-xl border border-slate-200 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="text-xs font-bold text-slate-700">이미지 및 PDF</label>
+                  <div className="flex flex-wrap gap-2">
+                    <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[10px] font-bold text-slate-700 transition hover:bg-slate-50">
+                      <Upload className="h-3.5 w-3.5 text-slate-500" />
+                      이미지 선택
+                      <input
+                        type="file"
+                        multiple
+                        accept="image/*"
+                        onChange={handleLocalImageUpload}
+                        disabled={!canWriteProducts}
+                        className="hidden"
                       />
-                      <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    </label>
+                    <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[10px] font-bold text-slate-700 transition hover:bg-slate-50">
+                      <Upload className="h-3.5 w-3.5 text-slate-500" />
+                      PDF 선택
+                      <input
+                        type="file"
+                        accept="application/pdf,.pdf"
+                        onChange={handleLocalPdfUpload}
+                        disabled={!canWriteProducts}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-500">상품 이미지</label>
+                  <div className="flex flex-wrap gap-2">
+                    {productMediaUrls.map((url, idx) => (
+                      <div
+                        key={idx}
+                        className="group relative h-16 w-16 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 shadow-sm transition-all duration-200 hover:border-slate-300"
+                      >
+                        <img
+                          src={resolveProductImage(url)}
+                          alt={`Product image ${idx + 1}`}
+                          className="h-full w-full object-cover"
+                          onError={(e) => {
+                            e.target.src = resolveProductImage("");
+                          }}
+                        />
                         <button
                           type="button"
                           onClick={() => handleRemoveMediaUrl(idx)}
                           disabled={!canWriteProducts}
-                          className="p-1 bg-red-600 hover:bg-red-700 text-white rounded-full transition shadow-sm transform scale-90 group-hover:scale-100 duration-200"
+                          className="absolute right-1 top-1 rounded-full bg-red-600 p-0.5 text-white opacity-0 transition group-hover:opacity-100"
+                          title="이미지 제거"
                         >
-                          <X className="w-3 h-3" />
+                          <X className="h-3 w-3" />
                         </button>
                       </div>
-                    </div>
-                  ))}
+                    ))}
 
-                  {productMediaUrls.length === 0 && (
-                    <div className="w-full py-4 flex flex-col items-center justify-center border border-dashed border-slate-200 rounded-xl bg-slate-50 text-slate-400 text-[10px]">
-                      <ImageIcon className="w-5 h-5 mb-0.5 text-slate-300" />
-                      등록된 이미지가 없습니다.
+                    {productMediaUploads.map((upload, idx) => (
+                      <div
+                        key={`${upload.name}-${idx}`}
+                        className="group relative h-16 w-16 overflow-hidden rounded-lg border border-blue-200 bg-blue-50 shadow-sm"
+                        title="저장 시 업로드"
+                      >
+                        <img
+                          src={upload.previewUrl}
+                          alt={upload.name || `Uploaded preview ${idx + 1}`}
+                          className="h-full w-full object-cover"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveMediaUpload(idx)}
+                          disabled={!canWriteProducts}
+                          className="absolute right-1 top-1 rounded-full bg-red-600 p-0.5 text-white opacity-0 transition group-hover:opacity-100"
+                          title="업로드 대기 이미지 제거"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                        <span className="absolute bottom-0 left-0 right-0 bg-blue-600/90 px-1 py-0.5 text-center text-[8px] font-bold text-white">
+                          업로드 대기
+                        </span>
+                      </div>
+                    ))}
+
+                    {productMediaUrls.length === 0 && productMediaUploads.length === 0 && (
+                      <div className="flex w-full items-center justify-center gap-1 rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-[10px] font-semibold text-slate-400">
+                        <ImageIcon className="h-4 w-4 text-slate-300" />
+                        등록된 이미지가 없습니다.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-500">상품 상세 설명 PDF</label>
+                  {productDetailPdfUpload || productDetailPdfAssetKey ? (
+                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 px-3 py-2">
+                      <span className="min-w-0 truncate text-[10px] font-semibold text-slate-500">
+                        {productDetailPdfUpload?.name || productDetailPdfAssetKey}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (productDetailPdfUpload?.previewUrl) URL.revokeObjectURL(productDetailPdfUpload.previewUrl);
+                          setProductDetailPdfUpload(null);
+                          setProductDetailPdfAssetKey("");
+                        }}
+                        disabled={!canWriteProducts}
+                        className="inline-flex items-center gap-1 rounded-lg border border-red-100 px-2.5 py-1.5 text-[10px] font-bold text-red-600 transition hover:bg-red-50 disabled:opacity-40"
+                      >
+                        <Trash2 size={12} />
+                        PDF 제거
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-[10px] font-semibold text-slate-400">
+                      등록된 PDF가 없습니다.
                     </div>
                   )}
                 </div>
+              </div>
 
-                {/* Controls */}
-                <div className="flex flex-col gap-2">
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={tempMediaUrl}
-                      onChange={(e) => setTempMediaUrl(e.target.value)}
-                      disabled={!canWriteProducts}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          handleAddMediaUrl();
-                        }
-                      }}
-                      className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 outline-none focus:border-blue-500 transition hover:border-slate-300"
-                      placeholder="이미지 URL을 입력하세요"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleAddMediaUrl}
-                      disabled={!canWriteProducts}
-                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl transition shadow-sm flex items-center shrink-0"
-                    >
-                      <Plus className="w-3.5 h-3.5 mr-0.5" />
-                      추가
-                    </button>
+              <div className="space-y-3 rounded-xl border border-slate-200 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="text-xs font-bold text-slate-700">필수 옵션</label>
+                  <button
+                    type="button"
+                    onClick={() => addProductOption("VARIANT")}
+                    disabled={!canWriteProducts}
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[10px] font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                  >
+                    <Plus size={12} />
+                    필수 옵션 추가
+                  </button>
+                </div>
+
+                {productOptions.filter(option => option.optionType === "VARIANT").length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-[10px] font-semibold text-slate-400">
+                    필수 옵션이 없으면 기본 구성 한 줄로 재고를 관리합니다.
                   </div>
+                ) : (
+                  <div className="space-y-3">
+                    {productOptions.map((option, optionIndex) => option.optionType === "VARIANT" && (
+                      <div key={`${option.key}-${optionIndex}`} className="rounded-lg border border-slate-200 p-3">
+                        <div className="grid gap-2 md:grid-cols-[1fr_36px]">
+                          <label className="space-y-1">
+                            <span className="block text-[10px] font-bold text-slate-500">옵션명</span>
+                            <input
+                              type="text"
+                              value={option.displayName}
+                              onChange={(e) => updateProductOption(optionIndex, { displayName: e.target.value })}
+                              disabled={!canWriteProducts}
+                              className="w-full rounded-lg border border-slate-200 px-2.5 py-2 text-xs outline-none focus:border-blue-500"
+                              placeholder="예: 사이즈"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => removeProductOption(optionIndex)}
+                            disabled={!canWriteProducts}
+                            className="flex h-9 w-9 items-center justify-center rounded-lg border border-red-100 text-red-600 hover:bg-red-50 disabled:opacity-40"
+                            title="옵션 삭제"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
 
-                  <label className="flex items-center justify-center px-3 py-1.5 bg-slate-50 border border-slate-200 hover:border-slate-300 hover:bg-slate-100 rounded-xl cursor-pointer text-xs font-semibold text-slate-700 transition">
-                    <Upload className="w-3.5 h-3.5 mr-1 text-slate-500" />
-                    컴퓨터에서 파일 업로드
-                    <input
-                      type="file"
-                      multiple
-                      accept="image/*"
-                      onChange={handleLocalImageUpload}
-                      disabled={!canWriteProducts}
-                      className="hidden"
-                    />
-                  </label>
-                </div>
+                        <div className="mt-3 space-y-2">
+                          {option.values.map((value, valueIndex) => (
+                            <div key={`${value.value}-${valueIndex}`} className="grid gap-2 md:grid-cols-[1fr_120px_36px]">
+                              <label className="space-y-1">
+                                <span className="block text-[10px] font-bold text-slate-500">옵션값</span>
+                                <input
+                                  type="text"
+                                  value={value.displayValue}
+                                  onChange={(e) => updateProductOptionValue(optionIndex, valueIndex, { displayValue: e.target.value })}
+                                  disabled={!canWriteProducts}
+                                  className="w-full rounded-lg border border-slate-200 px-2.5 py-2 text-xs outline-none focus:border-blue-500"
+                                  placeholder="예: M"
+                                />
+                              </label>
+                              <label className="space-y-1">
+                                <span className="block text-[10px] font-bold text-slate-500">추가 금액 (USD)</span>
+                                <input
+                                  type="number"
+                                  step="any"
+                                  min="0"
+                                  value={value.priceDelta}
+                                  onChange={(e) => updateProductOptionValue(optionIndex, valueIndex, { priceDelta: e.target.value })}
+                                  disabled={!canWriteProducts}
+                                  className="w-full rounded-lg border border-slate-200 px-2.5 py-2 text-xs outline-none focus:border-blue-500"
+                                  placeholder="0.00"
+                                />
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() => removeProductOptionValue(optionIndex, valueIndex)}
+                                disabled={!canWriteProducts || option.values.length <= 1}
+                                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40"
+                                title="옵션값 삭제"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => addProductOptionValue(optionIndex)}
+                            disabled={!canWriteProducts}
+                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[10px] font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                          >
+                            <Plus size={12} />
+                            옵션값 추가
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-500">스토어 노출 상태</label>
-                  <select
-                    value={productVisibility}
-                    onChange={(e) => setProductVisibility(e.target.value)}
+              <div className="space-y-3 rounded-xl border border-slate-200 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="text-xs font-bold text-slate-700">선택 옵션</label>
+                  <button
+                    type="button"
+                    onClick={() => addProductOption("ADD_ON")}
                     disabled={!canWriteProducts}
-                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs outline-none bg-white"
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[10px] font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
                   >
-                    <option value="VISIBLE">노출 (VISIBLE)</option>
-                    <option value="HIDDEN">숨김 (HIDDEN)</option>
-                  </select>
+                    <Plus size={12} />
+                    선택 옵션 추가
+                  </button>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-500">상품 판매 상태</label>
-                  <select
-                    value={productStatus}
-                    onChange={(e) => setProductStatus(e.target.value)}
-                    disabled={!canWriteProducts}
-                    className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs outline-none bg-white"
-                  >
-                    <option value="ACTIVE">판매중 (ACTIVE)</option>
-                    <option value="ARCHIVED">아카이브 (ARCHIVED)</option>
-                  </select>
-                </div>
+
+                {productOptions.filter(option => option.optionType === "ADD_ON").length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-[10px] font-semibold text-slate-400">
+                    등록된 선택 옵션이 없습니다.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {productOptions.map((option, optionIndex) => option.optionType === "ADD_ON" && (
+                      <div key={`${option.key}-${optionIndex}`} className="rounded-lg border border-slate-200 p-3">
+                        <div className="grid gap-2 md:grid-cols-[1fr_36px]">
+                          <label className="space-y-1">
+                            <span className="block text-[10px] font-bold text-slate-500">옵션명</span>
+                            <input
+                              type="text"
+                              value={option.displayName}
+                              onChange={(e) => updateProductOption(optionIndex, { displayName: e.target.value })}
+                              disabled={!canWriteProducts}
+                              className="w-full rounded-lg border border-slate-200 px-2.5 py-2 text-xs outline-none focus:border-blue-500"
+                              placeholder="예: 선물 포장"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => removeProductOption(optionIndex)}
+                            disabled={!canWriteProducts}
+                            className="flex h-9 w-9 items-center justify-center rounded-lg border border-red-100 text-red-600 hover:bg-red-50 disabled:opacity-40"
+                            title="옵션 삭제"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+
+                        <div className="mt-3 space-y-2">
+                          {option.values.map((value, valueIndex) => (
+                            <div key={`${value.value}-${valueIndex}`} className="grid gap-2 md:grid-cols-[1fr_120px_36px]">
+                              <label className="space-y-1">
+                                <span className="block text-[10px] font-bold text-slate-500">옵션값</span>
+                                <input
+                                  type="text"
+                                  value={value.displayValue}
+                                  onChange={(e) => updateProductOptionValue(optionIndex, valueIndex, { displayValue: e.target.value })}
+                                  disabled={!canWriteProducts}
+                                  className="w-full rounded-lg border border-slate-200 px-2.5 py-2 text-xs outline-none focus:border-blue-500"
+                                  placeholder="예: 추가"
+                                />
+                              </label>
+                              <label className="space-y-1">
+                                <span className="block text-[10px] font-bold text-slate-500">추가 금액 (USD)</span>
+                                <input
+                                  type="number"
+                                  step="any"
+                                  min="0"
+                                  value={value.priceDelta}
+                                  onChange={(e) => updateProductOptionValue(optionIndex, valueIndex, { priceDelta: e.target.value })}
+                                  disabled={!canWriteProducts}
+                                  className="w-full rounded-lg border border-slate-200 px-2.5 py-2 text-xs outline-none focus:border-blue-500"
+                                  placeholder="0.00"
+                                />
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() => removeProductOptionValue(optionIndex, valueIndex)}
+                                disabled={!canWriteProducts || option.values.length <= 1}
+                                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40"
+                                title="옵션값 삭제"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => addProductOptionValue(optionIndex)}
+                            disabled={!canWriteProducts}
+                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[10px] font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                          >
+                            <Plus size={12} />
+                            옵션값 추가
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
-              <div className="flex justify-end gap-2 pt-4 border-t">
+              <div className="space-y-3 rounded-xl border border-slate-200 p-3">
+                <label className="text-xs font-bold text-slate-700">필수 옵션별 재고</label>
+
+                {(() => {
+                  const stockRows = stockRowsForProductForm();
+                  return (
+                    <div className="overflow-hidden rounded-lg border border-slate-200">
+                      <div className={`grid gap-2 bg-slate-50 px-3 py-2 text-[10px] font-black text-slate-400 ${editingProduct ? "grid-cols-[1.2fr_92px_78px_120px]" : "grid-cols-[1.2fr_92px_120px]"}`}>
+                        <span>필수 옵션 조합</span>
+                        <span>추가 금액 (USD)</span>
+                        {editingProduct && <span>현재 재고</span>}
+                        <span>재고 입력</span>
+                      </div>
+                      <div className="divide-y divide-slate-100 bg-white">
+                        {stockRows.map((row) => (
+                          <div key={row.publicVariantId} className={`grid items-center gap-2 px-3 py-2 text-xs ${editingProduct ? "grid-cols-[1.2fr_92px_78px_120px]" : "grid-cols-[1.2fr_92px_120px]"}`}>
+                            <span className="min-w-0 truncate font-bold text-slate-800">{row.displayName}</span>
+                            <span className="text-[10px] font-semibold text-slate-500">+{row.priceDelta}</span>
+                            {editingProduct && (
+                              <span className="text-[10px] font-bold text-slate-700">
+                                {isExistingStockRow(row) ? `${variantAvailableStock(row)}개` : "신규"}
+                              </span>
+                            )}
+                            <label className="space-y-1">
+                              <span className="block text-[9px] font-bold text-slate-400">{stockQuantityLabel(row)}</span>
+                              <input
+                                type="number"
+                                min="0"
+                                value={variantStockIntakes[row.publicVariantId] || ""}
+                                onChange={(e) => setVariantStockIntakes(prev => ({ ...prev, [row.publicVariantId]: e.target.value }))}
+                                disabled={!canWriteInventory}
+                                title={!canWriteInventory ? "현재 세션에 재고 입고 권한이 없습니다." : stockQuantityLabel(row)}
+                                className="h-8 w-full rounded-lg border border-slate-200 px-2 text-xs outline-none focus:border-blue-500"
+                                placeholder="0"
+                              />
+                            </label>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              <div className="sticky bottom-0 z-10 -mx-1 flex justify-end gap-2 border-t bg-white/95 px-1 py-3 backdrop-blur">
                 <button
                   type="button"
                   onClick={() => setShowProductModal(false)}
@@ -1354,6 +2145,10 @@ function PermissionNotice({ message }) {
 
 function getFriendlyErrorMessage(err, defaultMsg) {
   const msg = err?.message || "";
+  const code = err?.code || err?.body?.error?.code || "";
+  if (code === "STORE_OWNER_INVENTORY_FORBIDDEN" || msg.includes("inventory:write")) {
+    return "현재 세션에 재고 입고 권한이 없습니다. 상점 소유주 또는 관리자 세션으로 다시 전환한 뒤 시도해 주세요.";
+  }
   if (msg.includes("is required for store") || msg.includes("MERCHANT_MEMBER_FORBIDDEN")) {
     return "현재 상점 컨텍스트에서 해당 작업을 수행할 수 있는 권한이 없습니다. 상점 소유주(Owner)이거나 적절한 관리 권한(초대/스태프 관리)을 가진 계정인지 확인해 주세요.";
   }
