@@ -93,7 +93,7 @@ OAuth/social identity is keyed by `provider` plus `providerSubject`, not by emai
 
 `GET /stores/{publicStoreId}` returns a public business profile projection only: `publicStoreId`, display name, optional description, status, escaped display/description variants for HTML rendering, and `supportEmail` only when the store has explicitly marked support email as public. It never returns internal `store_id`, owner user id, group id, settlement wallet, supported chains, private support contact, or business registration label.
 
-`GET /merchant/stores` lists stores visible to the authenticated merchant session using scoped merchant membership and `store:read`. The response is keyed by `publicStoreId`; internal `store_id` remains a persistence detail.
+`GET /merchant/stores` lists stores visible to the authenticated merchant session using scoped merchant membership and `store:read`. The response is keyed by `publicStoreId` and includes the read-only `storeWallet` settlement address for the merchant dashboard; internal `store_id` remains a persistence detail.
 
 `PATCH /merchant/stores/{publicStoreId}/profile` updates store business profile fields (`displayName`, `description`, `supportEmail`, `supportEmailPublic`, `businessRegistrationLabel`) and payment settings (`supportedChainIds`, `supportedPaymentAssetIds`). It requires `store:write` for the scoped merchant group or explicit platform override. `store:manage` or platform approval flows are reserved for sensitive status changes like settlement wallet configuration. Owner transfer, member invite/remove, and role/permission changes remain RBAC/membership provisioning responsibilities.
 

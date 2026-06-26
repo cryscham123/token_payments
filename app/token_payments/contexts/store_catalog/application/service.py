@@ -95,6 +95,7 @@ class StoreCatalogApplicationService:
             payload = _public_store_payload(store)
             if payload is not None:
                 role = self._repository.get_store_role(store.store_id, query.actor_user_id)
+                payload["storeWallet"] = str(store.store_wallet) if store.store_wallet is not None else None
                 payload["role"] = role.value if role is not None else None
                 payloads.append(payload)
         return tuple(payloads)
@@ -1041,6 +1042,7 @@ def _owner_store_payload(store: StoreProfile) -> dict[str, Any]:
         "supportEmail": store.support_email,
         "supportEmailPublic": store.support_email_public,
         "businessRegistrationLabel": store.business_registration_label,
+        "storeWallet": str(store.store_wallet) if store.store_wallet is not None else None,
     }
 
 

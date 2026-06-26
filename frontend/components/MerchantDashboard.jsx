@@ -16,6 +16,7 @@ import {
   Loader2, 
   AlertTriangle,
   ExternalLink,
+  Copy,
   Trash2,
   X,
   Upload,
@@ -49,6 +50,7 @@ export default function MerchantDashboard({ publicStoreId }) {
   const [savingStore, setSavingStore] = useState(false);
   const [storeSuccess, setStoreSuccess] = useState("");
   const [storeError, setStoreError] = useState("");
+  const [copiedSettlementWallet, setCopiedSettlementWallet] = useState(false);
 
   const [displayName, setDisplayName] = useState("");
   const [description, setDescription] = useState("");
@@ -83,6 +85,7 @@ export default function MerchantDashboard({ publicStoreId }) {
     s.publicStoreId === publicStoreId || s.storeId === internalStoreId
   ));
   const currentStoreRole = currentStoreSummary?.role || "";
+  const settlementWallet = currentStoreSummary?.storeWallet || store?.storeWallet || store?.paymentCapability?.settlement?.walletAddress || "";
   const ownerRoles = ["OWNER", "MERCHANT_OWNER"];
   const managerRoles = ["MANAGER", "MERCHANT_MANAGER", "MERCHANT_ADMIN", "ADMIN"];
   const staffRoles = ["STAFF", "MERCHANT_STAFF"];
@@ -119,6 +122,17 @@ export default function MerchantDashboard({ publicStoreId }) {
   function isForbiddenError(err) {
     const code = err?.error?.code || err?.code || "";
     return err?.status === 403 || code === "FORBIDDEN" || code.endsWith("_FORBIDDEN");
+  }
+
+  async function handleCopySettlementWallet() {
+    if (!settlementWallet || typeof navigator === "undefined" || !navigator.clipboard) return;
+    try {
+      await navigator.clipboard.writeText(settlementWallet);
+      setCopiedSettlementWallet(true);
+      window.setTimeout(() => setCopiedSettlementWallet(false), 1600);
+    } catch (err) {
+      console.error("Failed to copy settlement wallet:", err);
+    }
   }
 
   async function loadDashboardData() {
@@ -179,6 +193,9 @@ export default function MerchantDashboard({ publicStoreId }) {
         setProducts([]);
       } else if (productsPayload) {
         setProductReadForbidden(false);
+        if (productsPayload.store) {
+          setStore(prev => (prev ? { ...prev, ...productsPayload.store } : productsPayload.store));
+        }
         if (productsPayload.products) {
           setProducts(productsPayload.products);
         }
@@ -674,6 +691,30 @@ export default function MerchantDashboard({ publicStoreId }) {
                   허용 결제수단 설정
                 </h3>
                 
+                <div className="space-y-2">
+                  <span className="text-xs font-bold text-slate-500 block mb-1">정산 지갑 주소</span>
+                  {settlementWallet ? (
+                    <div className="flex items-stretch gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2">
+                      <code className="min-w-0 flex-1 break-all px-2 py-1.5 font-mono text-[11px] font-semibold leading-relaxed text-slate-900">
+                        {settlementWallet}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={handleCopySettlementWallet}
+                        title="정산 지갑 주소 복사"
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:border-blue-200 hover:text-blue-600"
+                      >
+                        {copiedSettlementWallet ? <CheckCircle2 size={15} className="text-emerald-600" /> : <Copy size={15} />}
+                        <span className="sr-only">정산 지갑 주소 복사</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3.5 py-3 text-xs font-semibold text-slate-400">
+                      등록된 정산 지갑이 없습니다.
+                    </div>
+                  )}
+                </div>
+
                 {/* Chains card selection list */}
                 <div className="space-y-2">
                   <span className="text-xs font-bold text-slate-500 block mb-1">지원 블록체인 네트워크</span>
