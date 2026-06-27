@@ -71,6 +71,17 @@ def test_frontend_wallet_login_uses_cookie_first_siwe_api_flow() -> None:
     assert "headers.Authorization" not in combined
 
 
+def test_frontend_header_search_placeholder_targets_products_only() -> None:
+    header = (FRONTEND / "components" / "SiteHeader.jsx").read_text(encoding="utf-8")
+
+    assert 'placeholder="상품명을 검색해보세요"' in header
+    assert "상품명이나 가게를 검색해보세요" not in header
+    assert "canRestoreSearchFocus" in header
+    assert '"(hover: hover) and (pointer: fine)"' in header
+    assert "searchInputRef.current.blur()" in header
+    assert "Auto focus and place cursor" not in header
+
+
 def test_frontend_checkout_starts_with_empty_cart_and_uses_real_payment_api_flow() -> None:
     cart = (FRONTEND / "lib" / "cart.js").read_text(encoding="utf-8")
     checkout_client = (FRONTEND / "lib" / "checkout-client.js").read_text(encoding="utf-8")
@@ -231,7 +242,8 @@ def test_frontend_home_product_cards_show_catalog_context_without_fake_discounts
 
     assert "category: p.category" in home
     assert "fromPriceLabel(product)" in home
-    assert "homePaymentSummary(product.paymentCapability)" in home
+    assert "homePaymentSummary" not in home
+    assert "formatAssetPriceHint(product.assetPrices)" in home
     assert "15%" not in home
     assert "특가" not in home
 
@@ -396,7 +408,7 @@ def test_frontend_header_product_nav_only_shows_real_destinations() -> None:
     assert 'href="/#products"' in header
     assert 'href="/#new-products"' in header
     assert 'href="/stores"' in header
-    assert "상품명이나 가게를 검색해보세요" in header
+    assert "상품명을 검색해보세요" in header
 
     assert "카테고리" not in header
     assert "로컬 상품" not in header

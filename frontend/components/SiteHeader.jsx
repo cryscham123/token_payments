@@ -8,6 +8,19 @@ import WalletConnectModal from "./WalletConnectModal";
 import { getCurrentUser, logout, apiJson } from "@/lib/auth-client";
 import { loadCart } from "@/lib/cart";
 
+let shouldRestoreSearchFocus = false;
+
+function canRestoreSearchFocus() {
+  if (typeof window === "undefined") return false;
+  return window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+}
+
+function focusSearchInput(input) {
+  input.focus();
+  const length = input.value.length;
+  input.setSelectionRange(length, length);
+}
+
 function SearchBar() {
   const router = useRouter();
   const pathname = usePathname();
@@ -18,13 +31,14 @@ function SearchBar() {
   useEffect(() => {
     const q = searchParams.get("q") || "";
     setSearchVal(q);
-    
-    // Auto focus and place cursor at the end of the text on route/query change
-    if (searchInputRef.current) {
-      searchInputRef.current.focus();
-      const length = searchInputRef.current.value.length;
-      searchInputRef.current.setSelectionRange(length, length);
+
+    if (shouldRestoreSearchFocus && searchInputRef.current && canRestoreSearchFocus()) {
+      shouldRestoreSearchFocus = false;
+      focusSearchInput(searchInputRef.current);
+      return;
     }
+
+    shouldRestoreSearchFocus = false;
   }, [searchParams]);
 
 
@@ -43,8 +57,14 @@ function SearchBar() {
       router.push(`/?${params.toString()}`);
     }
 
-    if (searchInputRef.current) {
-      searchInputRef.current.focus();
+    if (canRestoreSearchFocus()) {
+      shouldRestoreSearchFocus = true;
+      if (searchInputRef.current) {
+        focusSearchInput(searchInputRef.current);
+      }
+    } else if (searchInputRef.current) {
+      shouldRestoreSearchFocus = false;
+      searchInputRef.current.blur();
     }
   };
 
@@ -60,7 +80,7 @@ function SearchBar() {
           value={searchVal}
           onChange={(e) => setSearchVal(e.target.value)}
           className="w-full min-w-0 px-4 py-2.5 text-sm outline-none"
-          placeholder="상품명이나 가게를 검색해보세요"
+          placeholder="상품명을 검색해보세요"
         />
         <button type="submit" className="flex h-11 w-14 items-center justify-center text-blue-600 transition-colors hover:text-blue-700">
           <Search size={22} />

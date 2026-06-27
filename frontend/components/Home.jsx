@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import SiteHeader from "./SiteHeader";
 import { apiJson } from "@/lib/auth-client";
-import { formatCryptoAmount, formatFiatAmount, formatAssetPriceHint } from "@/lib/format";
+import { formatFiatAmount, formatAssetPriceHint } from "@/lib/format";
 import { productImageFromMedia, PRODUCT_IMAGE_PLACEHOLDER, getCategoryFallback } from "@/lib/product-image";
 
 export default function Home() {
@@ -196,10 +196,6 @@ export default function Home() {
                       {formatAssetPriceHint(product.assetPrices) && (
                         <span className="block text-[11px] font-medium text-slate-400">{formatAssetPriceHint(product.assetPrices)}</span>
                       )}
-                      <span className="block text-[11px] font-medium text-slate-400">
-                        {homePaymentSummary(product.paymentCapability)}
-                      </span>
-
                     </div>
                   </div>
                 </Link>
@@ -242,10 +238,6 @@ export default function Home() {
                       {formatAssetPriceHint(product.assetPrices) && (
                         <span className="block text-[11px] font-medium text-slate-400">{formatAssetPriceHint(product.assetPrices)}</span>
                       )}
-                      <span className="block text-[11px] font-medium text-slate-400">
-                        {homePaymentSummary(product.paymentCapability)}
-                      </span>
-
                     </div>
                   </div>
                 </Link>
@@ -271,19 +263,6 @@ export default function Home() {
 
 
 
-function homeStoreLabel(storeProfile) {
-  return storeProfile?.displayName || "스토어";
-}
-
 function fromPriceLabel(product) {
   return product.displayPrice?.priceLabel === "from" ? "" : "";
-}
-
-function homePaymentSummary(capability) {
-  const assets = capability?.acceptedAssets || capability?.assets || [];
-  if (assets.length > 0) {
-    return assets.map((asset) => asset.symbol || "TOKEN").join(" / ");
-  }
-  const chainIds = capability?.supportedChainIds || [];
-  return chainIds.length > 0 ? `Chain ${chainIds.join(", ")}` : "결제 수단 확인";
 }
